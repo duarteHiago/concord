@@ -32,8 +32,9 @@ ssh -i $key -o BatchMode=yes "$VpsUser@$VpsHost" "echo chave OK"
 
 Write-Host ">> Salvando secrets e variáveis no GitHub..."
 cmd /c "gh secret set VPS_SSH_KEY -R $Repo < `"$key`""
+# usa a identificação da VPS que este PC já confia (gravada no known_hosts ao conectar acima)
 $known = Join-Path $env:TEMP "concord_known_hosts"
-ssh-keyscan -t ed25519 $VpsHost 2>$null | Out-File -Encoding ascii $known
+cmd /c "ssh-keygen -F $VpsHost | findstr /v /b # > `"$known`""
 cmd /c "gh secret set VPS_KNOWN_HOSTS -R $Repo < `"$known`""
 Remove-Item $known
 gh variable set VPS_HOST -R $Repo -b $VpsHost
