@@ -614,6 +614,39 @@ interface Stats {
   height: number;
   kbps: number;
   codec: string;
+  /** só de quem transmite: o que o próprio WebRTC diz sobre a transmissão */
+  diag?: ShareDiag;
+}
+
+interface ShareDiag {
+  captureFps: number;
+  limitation: 'cpu' | 'bandwidth' | 'other' | 'none';
+  encoder: string;
+  hardware: boolean | null;
+  encodeMs: number;
+  uplinkKbps: number;
+}
+
+const LIMITATION: Record<ShareDiag['limitation'], string> = {
+  cpu: 'processador',
+  bandwidth: 'internet (upload)',
+  other: 'outro motivo',
+  none: 'nada',
+};
+
+/** Explica em português o que está segurando a transmissão. */
+function shareAdvice(d: ShareDiag, fps: number, target: number): string | null {
+  if (d.captureFps > 0 && d.captureFps < target * 0.6 && d.limitation === 'none') {
+    return `O Windows está entregando só ${d.captureFps} quadros por segundo da tela. Costuma ser a placa de vídeo ocupada com outro programa no mesmo momento.`;
+  }
+  if (d.limitation === 'cpu') {
+    return d.hardware === false
+      ? 'O processador não está dando conta: a tela está sendo codificada por software. Feche programas pesados, ou transmita em 720p.'
+      : 'O codificador não está dando conta. Feche programas pesados ou transmita em 720p.';
+  }
+  if (d.limitation === 'bandwidth') return 'A internet de upload está limitando. Tente 720p ou um preset de qualidade menor.';
+  if (fps < target * 0.6 && d.encodeMs > 1000 / target) return `Cada quadro está levando ${d.encodeMs.toFixed(0)} ms para codificar (o limite para ${target} fps é ${(1000 / target).toFixed(0)} ms).`;
+  return null;
 }
 
 function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; targetFps?: number }) {
@@ -623,6 +656,7 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
     // camada tem seu próprio contador cumulativo, e a "melhor" pode trocar de uma hora para
     // outra — somar todas misturava a banda de camadas diferentes com a resolução de só uma.
     const prevByLayer = new Map<string, { bytes: number; ts: number }>();
+    let prevEncode: { time: number; frames: number } | null = null;
     let last: Stats | null = null;
     const poll = async () => {
       const report = await track.getRTCStatsReport().catch(() => undefined);
@@ -640,6 +674,29 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
       const prevLayer = prevByLayer.get(layerId);
       prevByLayer.set(layerId, { bytes, ts });
       const codec = (report.get(String(best.codecId)) as { mimeType?: string } | undefined)?.mimeType?.split('/')[1] ?? last?.codec ?? '?';
+      let diag: ShareDiag | undefined;
+      if (best.type === 'outbound-rtp') {
+        let captureFps = 0;
+        let uplinkKbps = 0;
+        report.forEach((s: Record<string, number | string | boolean>) => {
+          if (s.type === 'media-source' && s.kind === 'video') captureFps = Math.round(Number(s.framesPerSecond ?? 0));
+          if (s.type === 'candidate-pair' && (s.nominated || s.selected) && s.availableOutgoingBitrate) uplinkKbps = Math.round(Number(s.availableOutgoingBitrate) / 1000);
+        });
+        const encTime = Number(best.totalEncodeTime ?? 0);
+        const encFrames = Number(best.framesEncoded ?? 0);
+        const encodeMs =
+          prevEncode && encFrames > prevEncode.frames ? ((encTime - prevEncode.time) * 1000) / (encFrames - prevEncode.frames) : (last?.diag?.encodeMs ?? 0);
+        prevEncode = { time: encTime, frames: encFrames };
+        const reason = String(best.qualityLimitationReason ?? 'none');
+        diag = {
+          captureFps,
+          limitation: (['cpu', 'bandwidth', 'other'].includes(reason) ? reason : 'none') as ShareDiag['limitation'],
+          encoder: String(best.encoderImplementation ?? '?'),
+          hardware: typeof best.powerEfficientEncoder === 'boolean' ? best.powerEfficientEncoder : null,
+          encodeMs,
+          uplinkKbps,
+        };
+      }
       // sem ponto anterior desta mesma camada (começou agora ou trocou de camada): mantém o último valor em vez de pular para 0
       const kbps = prevLayer && ts > prevLayer.ts ? ((bytes - prevLayer.bytes) * 8) / (ts - prevLayer.ts) : last?.kbps ?? 0;
       setStats(
@@ -649,6 +706,7 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
           height: Number(best.frameHeight || last?.height || 0),
           kbps: Math.max(0, Math.round(kbps)),
           codec,
+          diag,
         }),
       );
     };
@@ -674,11 +732,38 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
   // sem meta conhecida (assistindo alguém), usa 60 fps como referência de "bom"
   const good = (targetFps ?? 60) * 0.9;
   const warn = (targetFps ?? 60) * 0.5;
-  return (
+  const badge = (
     <span className="rounded-full bg-surface-1/85 px-3 py-1 text-xs font-bold text-fg backdrop-blur">
       {stats.width}×{stats.height} · <span className={stats.fps >= good ? 'text-ok' : stats.fps >= warn ? 'text-warn' : 'text-danger'}>{stats.fps} fps</span> ·{' '}
       {(stats.kbps / 1000).toFixed(1)} Mbps · {stats.codec}
     </span>
+  );
+  const d = stats.diag;
+  if (!d) return badge;
+  const target = targetFps ?? 60;
+  const advice = shareAdvice(d, stats.fps, target);
+  return (
+    <div className="flex max-w-[360px] flex-col items-start gap-1.5">
+      {badge}
+      <div className="rounded-2xl bg-surface-1/90 px-3 py-2 text-[11px] leading-relaxed text-fg-muted backdrop-blur" aria-label="Diagnóstico da transmissão">
+        <div>
+          Captura: <b className={cx('text-fg', d.captureFps < target * 0.6 && d.captureFps > 0 && 'text-warn')}>{d.captureFps || '?'} fps</b> → envio:{' '}
+          <b className="text-fg">{stats.fps} fps</b>
+        </div>
+        <div>
+          Limitado por: <b className={d.limitation === 'none' ? 'text-ok' : 'text-warn'}>{LIMITATION[d.limitation]}</b>
+        </div>
+        <div>
+          Codificador:{' '}
+          <b className="text-fg">
+            {d.hardware === true ? 'placa de vídeo' : d.hardware === false ? 'processador' : '?'} ({d.encoder})
+          </b>
+          {d.encodeMs > 0 && <> · {d.encodeMs.toFixed(1)} ms/quadro</>}
+        </div>
+        {d.uplinkKbps > 0 && <div>Upload disponível: {(d.uplinkKbps / 1000).toFixed(1)} Mbps</div>}
+        {advice && <div className="mt-1 text-warn">{advice}</div>}
+      </div>
+    </div>
   );
 }
 
