@@ -5,6 +5,7 @@ import { ChatView } from './components/ChatView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
 import { Spinner, Toasts } from './components/ui';
+import { UpdateBanner } from './components/UpdateBanner';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
 import { useActiveDetail, useApp } from './store/app';
@@ -31,6 +32,7 @@ export default function App() {
       {me ? <Shell /> : <AuthScreen />}
       <ModalHost />
       <Toasts />
+      <UpdateBanner />
     </>
   );
 }

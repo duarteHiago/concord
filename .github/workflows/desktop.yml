@@ -43,16 +43,32 @@ jobs:
         working-directory: desktop
         run: npm ci --no-audit --no-fund
 
+      # cada build tem versão nova (1.0.<nº da execução>): é o que o atualizador compara
+      - name: Definir versão
+        working-directory: desktop
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
       - name: Gerar instalador
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win --publish never
 
+      - name: Conferir pacote (atualizador incluído)
+        working-directory: desktop
+        shell: bash
+        run: |
+          npx --yes @electron/asar@3.4.1 list release/win-unpacked/resources/app.asar | grep -q "node_modules/electron-updater/package.json"
+          ls release
+          cat release/latest.yml
+
       - uses: actions/upload-artifact@v4
         with:
           name: concord-desktop
-          path: desktop/release/Concord-Setup-*.exe
+          path: |
+            desktop/release/Concord-Setup-*.exe
+            desktop/release/Concord-Setup-*.exe.blockmap
+            desktop/release/latest.yml
           if-no-files-found: error
 
   publish:
@@ -74,10 +90,16 @@ jobs:
           printf '%s\n' "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
-      # o app serve <dados>/downloads em https://DOMINIO/downloads/Concord-Setup.exe
-      - name: Enviar instalador
+      # O app serve <dados>/downloads em https://DOMINIO/downloads/.
+      # O latest.yml vai por último: só depois que o instalador está lá os apps veem a versão nova.
+      - name: Publicar versão
         run: |
+          D=/opt/concord/data/downloads
           FILE=$(ls Concord-Setup-*.exe | head -1)
-          ssh "$TARGET" "mkdir -p /opt/concord/data/downloads"
-          scp -q "$FILE" "$TARGET:/opt/concord/data/downloads/Concord-Setup.exe.tmp"
-          ssh "$TARGET" "mv /opt/concord/data/downloads/Concord-Setup.exe.tmp /opt/concord/data/downloads/Concord-Setup.exe"
+          ssh "$TARGET" "mkdir -p $D"
+          scp -q "$FILE" "$FILE.blockmap" "$TARGET:$D/"
+          scp -q latest.yml "$TARGET:$D/latest.yml.tmp"
+          ssh "$TARGET" "cd $D && mv latest.yml.tmp latest.yml \
+            && cp '$FILE' Concord-Setup.exe.tmp && mv Concord-Setup.exe.tmp Concord-Setup.exe \
+            && ls -t Concord-Setup-*.exe | tail -n +4 | while read f; do rm -f \"\$f\" \"\$f.blockmap\"; done \
+            && ls -la"

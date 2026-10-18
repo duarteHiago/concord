@@ -237,6 +237,45 @@ handle('concord:set-server', (_e, url) => {
 
 handle('concord:reload', () => void win?.loadURL(config.server));
 
+// ------------------------------------------------------------------ atualização automática
+//
+// A interface vem do servidor e já se atualiza a cada deploy. Aqui se atualiza a "casca"
+// (Electron + capturador de áudio): o CI publica o instalador e o latest.yml em
+// <servidor>/downloads/, o app baixa em segundo plano e instala ao reiniciar ou fechar.
+
+let updateReady = null;
+
+function setupAutoUpdate() {
+  if (!app.isPackaged) return;
+  let autoUpdater;
+  try {
+    ({ autoUpdater } = require('electron-updater'));
+  } catch {
+    return;
+  }
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  // as atualizações vêm do mesmo servidor que o app abre
+  autoUpdater.setFeedURL({ provider: 'generic', url: `${serverOrigin()}/downloads/` });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    updateReady = { version: info.version };
+    win?.webContents.send('concord:update-ready', updateReady);
+  });
+  autoUpdater.on('error', (err) => console.warn('[atualização]', err?.message ?? err));
+
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  setTimeout(check, 5_000);
+  setInterval(check, 30 * 60_000);
+
+  handle('concord:update-status', () => updateReady);
+  handle('concord:update-install', () => {
+    stopCapture();
+    // isSilent=true: sem telas do instalador; isForceRunAfter=true: abre o app de novo
+    setImmediate(() => autoUpdater.quitAndInstall(true, true));
+  });
+}
+
 // ------------------------------------------------------------------ ciclo de vida
 
 app.whenReady().then(() => {
@@ -260,6 +299,7 @@ app.whenReady().then(() => {
   );
   setupSession();
   createWindow();
+  setupAutoUpdate();
 });
 
 app.on('before-quit', stopCapture);

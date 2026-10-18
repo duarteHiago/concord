@@ -25,6 +25,10 @@ interface DesktopBridge {
   onAudioEnded(cb: (e: { code: number; message: string }) => void): () => void;
   setServer(url: string): Promise<void>;
   reload(): Promise<void>;
+  // ausentes em versões antigas do app desktop
+  updateStatus?(): Promise<{ version: string } | null>;
+  onUpdateReady?(cb: (info: { version: string }) => void): () => void;
+  installUpdate?(): Promise<void>;
 }
 
 export const desktop: DesktopBridge | undefined = (window as unknown as { concordDesktop?: DesktopBridge }).concordDesktop;

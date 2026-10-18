@@ -16,5 +16,8 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   onAudioData: listen('concord:audio-data'),
   onAudioEnded: listen('concord:audio-ended'),
   setServer: (url) => ipcRenderer.invoke('concord:set-server', url),
+  updateStatus: () => ipcRenderer.invoke('concord:update-status').catch(() => null),
+  onUpdateReady: listen('concord:update-ready'),
+  installUpdate: () => ipcRenderer.invoke('concord:update-install'),
   reload: () => ipcRenderer.invoke('concord:reload'),
 });
