@@ -74,5 +74,8 @@ jobs:
             && cd /opt/concord && chmod +x deploy/setup.sh \
             && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} ./deploy/setup.sh"
 
+      # Verifica de dentro da VPS: a Cloudflare costuma bloquear (403) os runners do GitHub.
       - name: Verificar saúde
-        run: curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${{ vars.DEPLOY_DOMAIN }}/health"
+        run: |
+          ssh "$TARGET" "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:3000/health \
+            && echo && cd /opt/concord && docker compose ps --format '{{.Service}}: {{.Status}}'"
