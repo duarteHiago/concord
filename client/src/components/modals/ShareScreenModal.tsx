@@ -241,6 +241,12 @@ function SourcePicker({ selected, onSelect }: { selected: DesktopSource | null; 
           <RefreshCw size={15} />
         </button>
       </div>
+      {kind === 'window' && (
+        <p className="mb-2 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
+          Para jogos em modo janela, capturar a janela específica pode travar justo quando ela está em foco (o Windows muda como desenha a
+          janela nesse momento). Se notar isso, prefira transmitir a <b>tela</b> inteira.
+        </p>
+      )}
       <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
         {!sources && (
           <div className="col-span-full flex justify-center py-8">
