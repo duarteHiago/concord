@@ -440,6 +440,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
   const speaking = useVoice((s) => !!s.speaking[p.identity]);
   const watching = useVoice((s) => !!s.watching[p.identity]);
   const setWatching = useVoice((s) => s.setWatching);
+  const shareFps = useVoice((s) => s.shareSettings.fps);
   const ref = useRef<HTMLDivElement>(null);
   const [isFullscreen, setFullscreen] = useState(false);
   const [showStats, setShowStats] = useState(false);
@@ -493,7 +494,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
 
         <div className="pointer-events-none absolute top-5 left-5 flex items-center gap-2">
           <LivePill className="px-3 py-1 text-xs">ao vivo</LivePill>
-          {showStats && track && <StatsBadge track={track} />}
+          {showStats && track && <StatsBadge track={track} targetFps={isLocal ? shareFps : undefined} />}
         </div>
 
         {!focused && (
@@ -614,44 +615,52 @@ interface Stats {
   codec: string;
 }
 
-function StatsBadge({ track }: { track: LocalTrack | RemoteTrack }) {
+function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; targetFps?: number }) {
   const [stats, setStats] = useState<Stats | null>(null);
   useEffect(() => {
-    let prevBytes = 0;
-    let prevTs = 0;
+    // bytes/timestamp anteriores por camada (ssrc): quando transmite com simulcast, cada
+    // camada tem seu próprio contador cumulativo, e a "melhor" pode trocar de uma hora para
+    // outra — somar todas misturava a banda de camadas diferentes com a resolução de só uma.
+    const prevByLayer = new Map<string, { bytes: number; ts: number }>();
+    let last: Stats | null = null;
     const id = setInterval(async () => {
       const report = await track.getRTCStatsReport().catch(() => undefined);
       if (!report) return;
-      let best: Record<string, number | string> | undefined;
-      let totalBytes = 0;
-      let ts = 0;
-      report.forEach((s: Record<string, number | string>) => {
-        if ((s.type === 'inbound-rtp' || s.type === 'outbound-rtp') && s.kind === 'video') {
-          totalBytes += Number(s.bytesReceived ?? s.bytesSent ?? 0);
-          ts = Number(s.timestamp);
-          if (!best || Number(s.frameWidth ?? 0) > Number(best.frameWidth ?? 0)) best = s;
-        }
+      let best: Record<string, number | string | boolean> | undefined;
+      report.forEach((s: Record<string, number | string | boolean>) => {
+        if ((s.type !== 'inbound-rtp' && s.type !== 'outbound-rtp') || s.kind !== 'video') return;
+        if (s.active === false) return; // camada de simulcast pausada no momento
+        if (!best || Number(s.frameWidth ?? 0) > Number(best.frameWidth ?? 0)) best = s;
       });
       if (!best) return;
-      const codec = (report.get(String(best.codecId)) as { mimeType?: string } | undefined)?.mimeType?.split('/')[1] ?? '?';
-      const kbps = prevTs ? ((totalBytes - prevBytes) * 8) / (ts - prevTs) : 0;
-      prevBytes = totalBytes;
-      prevTs = ts;
-      setStats({
-        fps: Math.round(Number(best.framesPerSecond ?? 0)),
-        width: Number(best.frameWidth ?? 0),
-        height: Number(best.frameHeight ?? 0),
-        kbps: Math.round(kbps),
-        codec,
-      });
+      const layerId = String(best.ssrc ?? best.id);
+      const bytes = Number(best.bytesReceived ?? best.bytesSent ?? 0);
+      const ts = Number(best.timestamp);
+      const prevLayer = prevByLayer.get(layerId);
+      prevByLayer.set(layerId, { bytes, ts });
+      const codec = (report.get(String(best.codecId)) as { mimeType?: string } | undefined)?.mimeType?.split('/')[1] ?? last?.codec ?? '?';
+      // sem ponto anterior desta mesma camada (começou agora ou trocou de camada): mantém o último valor em vez de pular para 0
+      const kbps = prevLayer && ts > prevLayer.ts ? ((bytes - prevLayer.bytes) * 8) / (ts - prevLayer.ts) : last?.kbps ?? 0;
+      setStats(
+        (last = {
+          fps: Math.round(Number(best.framesPerSecond ?? last?.fps ?? 0)),
+          width: Number(best.frameWidth || last?.width || 0),
+          height: Number(best.frameHeight || last?.height || 0),
+          kbps: Math.max(0, Math.round(kbps)),
+          codec,
+        }),
+      );
     }, 1000);
     return () => clearInterval(id);
   }, [track]);
 
   if (!stats) return null;
+  // sem meta conhecida (assistindo alguém), usa 60 fps como referência de "bom"
+  const good = (targetFps ?? 60) * 0.9;
+  const warn = (targetFps ?? 60) * 0.5;
   return (
     <span className="rounded-full bg-surface-1/85 px-3 py-1 text-xs font-bold text-fg backdrop-blur">
-      {stats.width}×{stats.height} · <span className={stats.fps >= 55 ? 'text-ok' : stats.fps >= 30 ? 'text-warn' : 'text-danger'}>{stats.fps} fps</span> ·{' '}
+      {stats.width}×{stats.height} · <span className={stats.fps >= good ? 'text-ok' : stats.fps >= warn ? 'text-warn' : 'text-danger'}>{stats.fps} fps</span> ·{' '}
       {(stats.kbps / 1000).toFixed(1)} Mbps · {stats.codec}
     </span>
   );

@@ -28,20 +28,29 @@ export interface SharePreset {
   hint: string;
   width: number;
   height: number;
-  fps: number;
+  /** bitrate de referência, calibrado para 60 fps (outras taxas escalam a partir dele) */
   bitrate: number;
 }
 
 export const SHARE_PRESETS: SharePreset[] = [
-  { id: '720p60', label: '720p · 60 fps', hint: 'Leve, ótimo para conexões modestas', width: 1280, height: 720, fps: 60, bitrate: 4_500_000 },
-  { id: '1080p60', label: '1080p · 60 fps', hint: 'Recomendado para jogos e vídeos', width: 1920, height: 1080, fps: 60, bitrate: 9_000_000 },
-  { id: '1440p60', label: '1440p · 60 fps', hint: 'Alta definição, exige bom upload', width: 2560, height: 1440, fps: 60, bitrate: 15_000_000 },
-  { id: 'source', label: 'Nativa · 60 fps', hint: 'Resolução da tela/janela, até 4K', width: 3840, height: 2160, fps: 60, bitrate: 22_000_000 },
-  { id: '1080p30', label: '1080p · 30 fps', hint: 'Textos e código, economiza banda', width: 1920, height: 1080, fps: 30, bitrate: 4_000_000 },
+  { id: '720p', label: '720p', hint: 'Leve, ótimo para conexões modestas', width: 1280, height: 720, bitrate: 4_500_000 },
+  { id: '1080p', label: '1080p', hint: 'Recomendado para jogos e vídeos', width: 1920, height: 1080, bitrate: 9_000_000 },
+  { id: '1440p', label: '1440p', hint: 'Alta definição, exige bom upload', width: 2560, height: 1440, bitrate: 15_000_000 },
+  { id: 'source', label: 'Nativa', hint: 'Resolução da tela/janela, até 4K', width: 3840, height: 2160, bitrate: 22_000_000 },
 ];
+
+/** Taxas de quadro disponíveis; acima de 60 só faz sentido com monitor e GPU compatíveis. */
+export const FPS_OPTIONS = [30, 60, 120, 144, 240] as const;
+export type FpsOption = (typeof FPS_OPTIONS)[number];
+
+/** Estima o bitrate necessário para uma taxa de quadros diferente da referência (60 fps), com retorno decrescente. */
+export function estimateBitrate(preset: SharePreset, fps: number): number {
+  return Math.round(preset.bitrate * Math.sqrt(fps / 60));
+}
 
 export interface ShareSettings {
   presetId: string;
+  fps: FpsOption;
   audio: boolean;
   mode: 'motion' | 'detail';
   codec: VideoCodec;
@@ -115,7 +124,27 @@ function save(key: string, value: unknown) {
   }
 }
 
-const DEFAULT_SHARE: ShareSettings = { presetId: '1080p60', audio: true, mode: 'motion', codec: 'h264' };
+const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'h264' };
+
+/** Carrega as preferências salvas, migrando o formato antigo (fps embutido no id do preset, ex.: "1080p60"). */
+function loadShareSettings(): ShareSettings {
+  const raw = load<Partial<ShareSettings> & { presetId?: string }>('concord.share', {});
+  let presetId = raw.presetId ?? DEFAULT_SHARE.presetId;
+  let fps = FPS_OPTIONS.includes(raw.fps as FpsOption) ? (raw.fps as FpsOption) : undefined;
+  const legacy = /^(.*?)(30|60)$/.exec(presetId);
+  if (legacy) {
+    presetId = legacy[1] || DEFAULT_SHARE.presetId;
+    fps = fps ?? (Number(legacy[2]) as FpsOption);
+  }
+  if (!SHARE_PRESETS.some((p) => p.id === presetId)) presetId = DEFAULT_SHARE.presetId;
+  return {
+    presetId,
+    fps: fps ?? DEFAULT_SHARE.fps,
+    audio: raw.audio ?? DEFAULT_SHARE.audio,
+    mode: raw.mode ?? DEFAULT_SHARE.mode,
+    codec: raw.codec ?? DEFAULT_SHARE.codec,
+  };
+}
 const DEFAULT_AUDIO: AudioSettings = {
   inputId: 'default',
   outputId: 'default',
@@ -377,7 +406,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       if (get().micOn) await applyCurrentEffect();
     },
     streamVolumes: load('concord.streamVolumes', {} as Record<string, number>),
-    shareSettings: load('concord.share', DEFAULT_SHARE),
+    shareSettings: loadShareSettings(),
     audioSettings: loadAudioSettings(),
     tick: 0,
 
@@ -512,6 +541,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
       const support = screenShareSupport();
       if (support) return toast.error(support);
       const preset = SHARE_PRESETS.find((p) => p.id === settings.presetId) ?? SHARE_PRESETS[1];
+      const fps = settings.fps;
+      const bitrate = estimateBitrate(preset, fps);
       const lp = s.room.localParticipant;
       const startedAt = performance.now();
       // No app desktop o áudio vem do capturador por processo (sem as vozes da sala),
@@ -524,7 +555,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
           true,
           {
             audio: settings.audio && !desktopShare ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
-            resolution: { width: preset.width, height: preset.height, frameRate: preset.fps },
+            resolution: { width: preset.width, height: preset.height, frameRate: fps },
             contentHint: settings.mode === 'motion' ? 'motion' : 'detail',
             selfBrowserSurface: 'exclude',
             surfaceSwitching: 'include',
@@ -533,7 +564,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
           },
           {
             videoCodec: settings.codec,
-            screenShareEncoding: { maxBitrate: preset.bitrate, maxFramerate: preset.fps, priority: 'high' },
+            screenShareEncoding: { maxBitrate: bitrate, maxFramerate: fps, priority: 'high' },
             screenShareSimulcastLayers: preset.height > 720 ? [new VideoPreset(1280, 720, 2_000_000, 30)] : [],
             simulcast: true,
             degradationPreference: settings.mode === 'motion' ? 'maintain-framerate' : 'maintain-resolution',

@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react';
 import type { VideoCodec } from 'livekit-client';
 import { desktop, desktopInfo, type DesktopSource } from '../../lib/desktop';
 import { useApp } from '../../store/app';
-import { SHARE_PRESETS, screenShareSupport, useVoice, type ShareSettings } from '../../store/voice';
+import { estimateBitrate, FPS_OPTIONS, SHARE_PRESETS, screenShareSupport, useVoice, type ShareSettings } from '../../store/voice';
 import { Button, Modal, Spinner, Toggle, cx } from '../ui';
 
 const CODECS: { id: VideoCodec; label: string; hint: string }[] = [
-  { id: 'h264', label: 'H.264', hint: 'Usa aceleração de hardware (GPU). Menor uso de CPU — recomendado para 60 fps.' },
+  { id: 'h264', label: 'H.264', hint: 'Usa aceleração de hardware (GPU). Menor uso de CPU — recomendado para taxas altas (120 fps ou mais).' },
   { id: 'vp9', label: 'VP9', hint: 'Mais qualidade por bit, usa mais CPU.' },
   { id: 'av1', label: 'AV1', hint: 'Máxima eficiência; requer GPU recente para codificar em tempo real.' },
   { id: 'vp8', label: 'VP8', hint: 'Compatibilidade máxima.' },
@@ -58,12 +58,12 @@ export function ShareScreenModal() {
         {desktop && <SourcePicker selected={source} onSelect={setSource} />}
 
         <div>
-          <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Resolução e taxa de quadros</h3>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Resolução</h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {SHARE_PRESETS.map((p) => (
               <button
                 key={p.id}
-                onClick={() => update({ presetId: p.id, mode: p.fps === 30 ? 'detail' : settings.mode })}
+                onClick={() => update({ presetId: p.id })}
                 className={cx(
                   'rounded-xl border p-3 text-left transition-all',
                   settings.presetId === p.id ? 'border-accent bg-accent/10 shadow-lg shadow-accent/10' : 'border-line bg-surface-0 hover:border-line-strong',
@@ -74,9 +74,28 @@ export function ShareScreenModal() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Taxa de quadros</h3>
+          <div className="grid grid-cols-5 gap-2">
+            {FPS_OPTIONS.map((fps) => (
+              <button
+                key={fps}
+                onClick={() => update({ fps, mode: fps <= 30 ? 'detail' : settings.mode })}
+                className={cx(
+                  'rounded-xl border py-2.5 text-center text-sm font-bold transition-all',
+                  settings.fps === fps ? 'border-accent bg-accent/10 shadow-lg shadow-accent/10' : 'border-line bg-surface-0 hover:border-line-strong',
+                )}
+              >
+                {fps}
+              </button>
+            ))}
+          </div>
           <p className="mt-2 text-xs text-fg-subtle">
-            Upload estimado: até <b className="text-fg-muted">{(preset.bitrate / 1_000_000).toFixed(1)} Mbps</b>. Cada espectador recebe o
-            vídeo pelo servidor, então o seu upload não aumenta com mais pessoas assistindo.
+            Upload estimado: até <b className="text-fg-muted">{(estimateBitrate(preset, settings.fps) / 1_000_000).toFixed(1)} Mbps</b>. Cada
+            espectador recebe o vídeo pelo servidor, então o seu upload não aumenta com mais pessoas assistindo.
+            {settings.fps > 60 && ' Acima de 60 fps, a taxa final depende do seu monitor, GPU e do jogo/app transmitido — o Concord só envia o que conseguir capturar.'}
           </p>
         </div>
 
@@ -85,7 +104,7 @@ export function ShareScreenModal() {
           <div className="grid grid-cols-2 gap-2">
             {(
               [
-                ['motion', <Gamepad2 size={20} />, 'Fluidez', 'Jogos e vídeos: prioriza manter 60 fps'],
+                ['motion', <Gamepad2 size={20} />, 'Fluidez', 'Jogos e vídeos: prioriza manter a taxa de quadros'],
                 ['detail', <Type size={20} />, 'Nitidez', 'Texto e código: prioriza a resolução'],
               ] as const
             ).map(([id, icon, label, hint]) => (
