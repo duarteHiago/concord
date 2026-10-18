@@ -42,6 +42,8 @@ interface DesktopBridge {
   notify?(opts: { title: string; body: string; data?: unknown }): Promise<void>;
   shakeWindow?(): Promise<void>;
   showClip?(data: { text: string; from: string; autoCopy: boolean }): Promise<boolean>;
+  /** prioridade alta para os processos de captura enquanto transmite */
+  setStreaming?(on: boolean): Promise<number[]>;
   onNotificationClick?(cb: (data: unknown) => void): () => void;
   getActivity?(): Promise<unknown>;
   refreshActivity?(): Promise<unknown>;

@@ -65,6 +65,14 @@ function helperPath() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
+// A transmissão de tela é capturada e codificada pelos processos do app. Quando a janela perde o foco ou fica
+// coberta (ex.: a pessoa vai mexer no outro monitor), o Chromium marca o app como "em segundo plano" e o
+// Windows 11 coloca esses processos em modo de eficiência (EcoQoS): a codificação atrasa e a qualidade da live
+// cai (perde a camada 1080p60 e fica na de 720p30). Isso desliga esse rebaixamento.
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+
 // o Windows só mostra notificações de apps com um AppUserModelID (o mesmo appId do instalador)
 if (process.platform === 'win32') app.setAppUserModelId('com.duartehiago.concord');
 
@@ -352,6 +360,41 @@ async function pollActivity() {
   currentActivity = next && { ...next, since: currentActivity?.name === next.name ? currentActivity.since : Date.now() };
   win?.webContents.send('concord:activity', currentActivity);
 }
+
+// ------------------------------------------------------------------ prioridade durante a transmissão
+// Enquanto transmite, os processos que capturam e codificam a tela ganham prioridade "acima do normal"
+// (como o OBS faz), para um jogo no outro monitor não roubar a CPU da live. Volta ao normal ao parar.
+
+const CAPTURE_PROCESS = /video.?capture|gpu|audio/i;
+let boosted = new Set();
+
+function setStreamingPriority(on) {
+  const level = on ? os.constants.priority.PRIORITY_ABOVE_NORMAL : os.constants.priority.PRIORITY_NORMAL;
+  const pids = new Set();
+  if (on) {
+    pids.add(process.pid); // processo principal: a captura da tela (Windows Graphics Capture) roda nele
+    const page = win?.webContents.getOSProcessId();
+    if (page) pids.add(page); // a página: o codificador de vídeo do WebRTC roda nela
+    for (const m of app.getAppMetrics()) {
+      if (m.type === 'GPU' || (m.type === 'Utility' && CAPTURE_PROCESS.test(`${m.serviceName ?? ''} ${m.name ?? ''}`))) pids.add(m.pid);
+    }
+    if (capture?.pid) pids.add(capture.pid); // capturador de áudio da transmissão
+  } else {
+    for (const pid of boosted) pids.add(pid);
+  }
+  for (const pid of pids) {
+    try {
+      os.setPriority(pid, level);
+    } catch {
+      // processo já terminou
+    }
+  }
+  boosted = on ? pids : new Set();
+  return [...pids];
+}
+
+handle('concord:streaming', (_e, on) => setStreamingPriority(!!on));
+app.on('will-quit', () => setStreamingPriority(false));
 
 handle('concord:activity', () => currentActivity);
 handle('concord:activity-refresh', async () => {

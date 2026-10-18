@@ -731,6 +731,12 @@ function loadEffect(): EffectId {
 }
 
 /** Preferências de áudio salvas; converte o antigo "noiseSuppression" (liga/desliga) no modo novo. */
+// no app desktop, os processos de captura ganham prioridade enquanto a pessoa transmite (vale para qualquer
+// jeito de parar: botão, Windows cortando a captura, sair da sala...)
+useVoice.subscribe((state, prev) => {
+  if (state.sharing !== prev.sharing) void desktop?.setStreaming?.(state.sharing);
+});
+
 function loadAudioSettings(): AudioSettings {
   const saved = load('concord.audio', DEFAULT_AUDIO) as AudioSettings & { noiseSuppression?: boolean };
   let hadMode = false;
