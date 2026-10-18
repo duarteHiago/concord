@@ -33,7 +33,7 @@ export function MemberList() {
             {g.title} — {g.members.length}
           </h3>
           {g.members.map((m) => (
-            <MemberRow key={m.id} detail={detail} member={m} online={!!online[m.id]} />
+            <MemberRow key={m.id} detail={detail} member={m} status={online[m.id] ?? 'offline'} />
           ))}
         </div>
       ))}
@@ -41,7 +41,8 @@ export function MemberList() {
   );
 }
 
-function MemberRow({ detail, member, online }: { detail: ServerDetail; member: Member; online: boolean }) {
+function MemberRow({ detail, member, status }: { detail: ServerDetail; member: Member; status: 'online' | 'dnd' | 'offline' }) {
+  const online = status !== 'offline';
   const openPopover = usePopover((s) => s.open);
   const streaming = useApp((s) => s.voiceStates[detail.server.id]?.find((v) => v.userId === member.id)?.streaming);
   return (
@@ -49,7 +50,7 @@ function MemberRow({ detail, member, online }: { detail: ServerDetail; member: M
       onClick={(e) => openPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
       className={cx('flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-surface-3', !online && 'opacity-40 hover:opacity-100')}
     >
-      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} size={34} status={online ? 'online' : 'offline'} />
+      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} size={34} status={status} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
           <span className="truncate text-sm font-medium" style={{ color: memberColor(detail, member.id) }}>

@@ -1,7 +1,7 @@
 // Concord Desktop — processo principal do Electron.
 // Carrega o Concord do servidor configurado e adiciona o que o navegador não oferece:
 // seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
-const { app, BrowserWindow, desktopCapturer, ipcMain, Menu, session, shell } = require('electron');
+const { app, BrowserWindow, desktopCapturer, ipcMain, Menu, Notification, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -56,6 +56,9 @@ function helperPath() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
+// o Windows só mostra notificações de apps com um AppUserModelID (o mesmo appId do instalador)
+if (process.platform === 'win32') app.setAppUserModelId('com.duartehiago.concord');
+
 let win = null;
 let pendingSourceId = null;
 let capture = null;
@@ -87,6 +90,7 @@ function createWindow() {
     saveConfig();
   };
   win.on('close', remember);
+  win.on('focus', () => win?.flashFrame(false));
 
   // links externos abrem no navegador padrão
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -236,6 +240,50 @@ handle('concord:set-server', (_e, url) => {
 });
 
 handle('concord:reload', () => void win?.loadURL(config.server));
+
+// ------------------------------------------------------------------ chamar atenção (estilo MSN)
+
+const activeNotifications = new Set(); // evita que o coletor de lixo descarte a notificação antes do clique
+
+handle('concord:notify', (_e, opts) => {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({
+    title: String(opts?.title ?? 'Concord').slice(0, 120),
+    body: String(opts?.body ?? '').slice(0, 300),
+    icon: path.join(__dirname, 'build', 'icon.png'),
+    silent: true, // o som é do próprio app (e respeita as preferências)
+  });
+  activeNotifications.add(n);
+  const forget = () => activeNotifications.delete(n);
+  n.on('click', () => {
+    forget();
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send('concord:notification-click', opts?.data ?? null);
+  });
+  n.on('close', forget);
+  n.show();
+  // pisca na barra de tarefas até a janela receber foco
+  if (win && !win.isFocused()) win.flashFrame(true);
+});
+
+let shaking = false;
+handle('concord:shake-window', () => {
+  if (!win || shaking || win.isMinimized() || win.isFullScreen()) return;
+  if (win.isMaximized()) return; // maximizada não dá para mover: a interface treme sozinha
+  shaking = true;
+  const [x, y] = win.getPosition();
+  const offsets = [[-12, 4], [10, -6], [-10, -4], [12, 6], [-8, 2], [8, -4], [-6, 4], [4, -2], [-2, 2], [0, 0]];
+  offsets.forEach(([dx, dy], i) =>
+    setTimeout(() => {
+      if (!win || win.isDestroyed()) return;
+      win.setPosition(x + dx, y + dy);
+      if (i === offsets.length - 1) shaking = false;
+    }, i * 40),
+  );
+});
 
 // ------------------------------------------------------------------ atualização automática
 //

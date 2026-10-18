@@ -49,6 +49,8 @@ import {
   serverChanged,
   setServerMute,
   voiceStatesFor,
+  broadcastStatus,
+  isOnline,
 } from './realtime.ts';
 
 export const api = Router();
@@ -208,6 +210,7 @@ api.patch('/me', async (req, res) => {
     const json = JSON.stringify(req.body.settings ?? {});
     if (json.length > 20_000) fail(400, 'Configurações muito grandes');
     run('UPDATE users SET settings = ? WHERE id = ?', json, me);
+    broadcastStatus(me);
   }
   if (req.body?.newPassword !== undefined) {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
@@ -631,6 +634,57 @@ api.post('/servers/:id/members/:userId/voice-disconnect', async (req, res) => {
   const v = voiceTarget(req.params.id, uid(res), req.params.userId, P.MOVE_MEMBERS);
   dropVoice(v.userId, 'Você foi desconectado da sala por um moderador.');
   await removeFromRoom(v.channelId, v.userId);
+  res.json({ ok: true });
+});
+
+// ============================================================ Chamar atenção (estilo MSN)
+
+const NUDGE_COOLDOWN_MS = 15_000;
+const lastNudge = new Map<string, number>(); // `${de}:${para}` -> quando
+
+interface NudgePrefs {
+  status?: string;
+  notifications?: { nudges?: boolean };
+  mutedNudges?: string[];
+}
+
+api.post('/servers/:id/members/:userId/nudge', (req, res) => {
+  const me = uid(res);
+  const target = req.params.userId;
+  const server = requireMember(req.params.id, me);
+  if (target === me) fail(400, 'Você não pode chamar a sua própria atenção');
+  const targetUser = get<UserRow>('SELECT * FROM users WHERE id = ?', target);
+  if (!targetUser || !isMember(server.id, target)) fail(404, 'Membro não encontrado');
+  const name = get<{ nickname: string | null }>('SELECT nickname FROM members WHERE server_id = ? AND user_id = ?', server.id, target)?.nickname || targetUser!.display_name;
+  if (!isOnline(target)) fail(409, `${name} está offline`);
+
+  let prefs: NudgePrefs = {};
+  try {
+    prefs = JSON.parse(targetUser!.settings || '{}');
+  } catch {
+    // ignorado
+  }
+  if (prefs.status === 'dnd') fail(409, `${name} está em "Não perturbe"`);
+  if (prefs.notifications?.nudges === false) fail(409, `${name} não está recebendo chamadas de atenção`);
+
+  const key = `${me}:${target}`;
+  const wait = (lastNudge.get(key) ?? 0) + NUDGE_COOLDOWN_MS - now();
+  if (wait > 0) fail(429, `Calma! Espere ${Math.ceil(wait / 1000)}s para chamar de novo`);
+  lastNudge.set(key, now());
+
+  // quem foi silenciado não fica sabendo: a resposta é a mesma, só não entregamos
+  if (!prefs.mutedNudges?.includes(me)) {
+    const sender = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+    const senderNick = get<{ nickname: string | null }>('SELECT nickname FROM members WHERE server_id = ? AND user_id = ?', server.id, me)?.nickname;
+    const voice = getVoiceState(me);
+    emitToUser(target, 'nudge', {
+      from: { ...userJson(sender), nickname: senderNick ?? null },
+      serverId: server.id,
+      serverName: server.name,
+      channelId: voice?.serverId === server.id ? voice.channelId : null,
+      at: now(),
+    });
+  }
   res.json({ ok: true });
 });
 

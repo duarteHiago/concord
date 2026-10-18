@@ -29,6 +29,9 @@ interface DesktopBridge {
   updateStatus?(): Promise<{ version: string } | null>;
   onUpdateReady?(cb: (info: { version: string }) => void): () => void;
   installUpdate?(): Promise<void>;
+  notify?(opts: { title: string; body: string; data?: unknown }): Promise<void>;
+  shakeWindow?(): Promise<void>;
+  onNotificationClick?(cb: (data: unknown) => void): () => void;
 }
 
 export const desktop: DesktopBridge | undefined = (window as unknown as { concordDesktop?: DesktopBridge }).concordDesktop;

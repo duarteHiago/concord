@@ -1,9 +1,10 @@
-import { Check, ImagePlus, LogOut, RotateCcw, Trash2 } from 'lucide-react';
+import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
+import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { desktop, desktopInfo } from '../../lib/desktop';
 import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
-import type { Me, ThemeSettings } from '../../lib/types';
+import { memberName, type Me, type ThemeSettings } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
@@ -12,7 +13,7 @@ import { Avatar, Button, Input, Modal, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
-type Tab = 'profile' | 'appearance' | 'audio' | 'account';
+type Tab = 'profile' | 'appearance' | 'notifications' | 'audio' | 'account';
 
 export function UserSettingsModal() {
   const close = useApp((s) => s.closeModal);
@@ -24,6 +25,7 @@ export function UserSettingsModal() {
           [
             ['profile', 'Perfil'],
             ['appearance', 'Aparência'],
+            ['notifications', 'Notificações'],
             ['audio', 'Voz e áudio'],
             ['account', 'Conta'],
           ] as const
@@ -39,6 +41,7 @@ export function UserSettingsModal() {
       </div>
       {tab === 'profile' && <Profile />}
       {tab === 'appearance' && <Appearance />}
+      {tab === 'notifications' && <Notifications />}
       {tab === 'audio' && <Audio />}
       {tab === 'account' && <Account />}
     </Modal>
@@ -327,6 +330,126 @@ function Slider({
       </span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full" />
     </label>
+  );
+}
+
+// ------------------------------------------------------------------ Notificações
+
+function Notifications() {
+  const me = useApp((s) => s.me)!;
+  const details = useApp((s) => s.details);
+  const saveSettings = useApp((s) => s.saveSettings);
+  const prefs = notifySettings(me);
+  const status = me.settings.status === 'dnd' ? 'dnd' : 'online';
+  const muted = me.settings.mutedNudges ?? [];
+  const [permission, setPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
+
+  const set = (patch: Partial<typeof prefs>) => void saveSettings({ notifications: { ...prefs, ...patch } });
+  const nameOf = (id: string) => {
+    for (const d of Object.values(details)) {
+      const m = d.members.find((x) => x.id === id);
+      if (m) return memberName(m);
+    }
+    return 'Pessoa de outro servidor';
+  };
+
+  const row = (title: string, hint: string, checked: boolean, onChange: (v: boolean) => void, disabled = false) => (
+    <div className="flex items-center justify-between gap-4 p-4">
+      <div>
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-xs text-fg-muted">{hint}</div>
+      </div>
+      <Toggle checked={checked} onChange={onChange} disabled={disabled} />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <SectionTitle>Status</SectionTitle>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ['online', 'Online', 'Recebe chamadas de atenção', 'bg-ok'],
+              ['dnd', 'Não perturbe', 'Ninguém consegue chamar sua atenção', 'bg-danger'],
+            ] as const
+          ).map(([value, label, hint, dot]) => (
+            <button
+              key={value}
+              onClick={() => void saveSettings({ status: value })}
+              className={cx(
+                'flex items-start gap-3 rounded-2xl border-2 p-3 text-left transition-colors',
+                status === value ? 'border-accent bg-accent/10' : 'border-transparent bg-surface-0 hover:bg-surface-3',
+              )}
+            >
+              <span className={cx('mt-1 h-3 w-3 shrink-0 rounded-full', dot)} />
+              <span>
+                <span className="block text-sm font-bold">{label}</span>
+                <span className="block text-xs text-fg-muted">{hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <SectionTitle>Chamar atenção</SectionTitle>
+          <Button
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            onClick={() =>
+              receiveNudge({ from: { ...me, nickname: null }, serverId: '', serverName: 'teste', channelId: null, at: Date.now() })
+            }
+          >
+            <Zap size={14} /> Testar em mim
+          </Button>
+        </div>
+        <div className="divide-y divide-line rounded-2xl bg-surface-0">
+          {row('Receber chamadas de atenção', 'Amigos podem fazer sua tela tremer para chamar você.', prefs.nudges, (nudges) => set({ nudges }))}
+          {row('Tremer a tela', 'A interface (e a janela, no app desktop) chacoalha.', prefs.shake, (shake) => set({ shake }), !prefs.nudges)}
+          {row('Tocar som', 'Um trinado curto, diferente dos sons da sala.', prefs.sound, (sound) => set({ sound }), !prefs.nudges)}
+          {row(
+            'Notificação do sistema',
+            desktop ? 'Aparece na central de notificações do Windows.' : 'Aparece quando a aba do Concord não está visível.',
+            prefs.desktop,
+            (v) => set({ desktop: v }),
+            !prefs.nudges,
+          )}
+        </div>
+        {!desktop && prefs.desktop && permission !== 'granted' && (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl bg-warn/10 p-3 text-sm text-warn">
+            {permission === 'denied' ? 'O navegador está bloqueando notificações deste site. Libere no cadeado ao lado do endereço.' : 'Falta permitir as notificações neste navegador.'}
+            {permission === 'default' && (
+              <Button variant="secondary" className="h-8 shrink-0 px-3 text-xs" onClick={() => void Notification.requestPermission().then(setPermission)}>
+                Permitir
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <SectionTitle>Pessoas silenciadas</SectionTitle>
+        {muted.length === 0 ? (
+          <p className="text-sm text-fg-muted">Ninguém. Para silenciar alguém, abra o perfil da pessoa e toque no sininho.</p>
+        ) : (
+          <div className="divide-y divide-line rounded-2xl bg-surface-0">
+            {muted.map((id) => (
+              <div key={id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                <span className="flex items-center gap-2 font-semibold">
+                  <BellOff size={15} className="text-danger" /> {nameOf(id)}
+                </span>
+                <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => void saveSettings({ mutedNudges: muted.filter((x) => x !== id) })}>
+                  Reativar
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-xs text-fg-subtle">Quem você silencia não fica sabendo: para essa pessoa, o chamado parece ter sido entregue.</p>
+      </div>
+    </div>
   );
 }
 

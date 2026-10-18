@@ -24,7 +24,7 @@ export function Avatar({
   color: string;
   src?: string | null;
   size?: number;
-  status?: 'online' | 'offline' | null;
+  status?: 'online' | 'dnd' | 'offline' | null;
   speaking?: boolean;
   className?: string;
 }) {
@@ -50,12 +50,15 @@ export function Avatar({
       )}
       {status && (
         <span
+          title={status === 'dnd' ? 'Não perturbe' : status === 'online' ? 'Online' : 'Offline'}
           className={cx(
-            'absolute -right-0.5 -bottom-0.5 rounded-full border-[3px] border-surface-1',
-            status === 'online' ? 'bg-ok' : 'bg-fg-subtle',
+            'absolute -right-0.5 -bottom-0.5 flex items-center justify-center rounded-full border-[3px] border-surface-2',
+            status === 'online' ? 'bg-ok' : status === 'dnd' ? 'bg-danger' : 'bg-fg-subtle',
           )}
           style={{ width: Math.max(12, size * 0.34), height: Math.max(12, size * 0.34) }}
-        />
+        >
+          {status === 'dnd' && <span className="h-[2px] w-1/2 rounded-full bg-surface-2" />}
+        </span>
       )}
     </div>
   );

@@ -10,8 +10,35 @@ export interface User {
   bio: string;
 }
 
+export type PresenceStatus = 'online' | 'dnd';
+
+/** Preferências de "Chamar atenção" e notificações. */
+export interface NotifySettings {
+  nudges: boolean; // receber chamadas de atenção
+  shake: boolean; // tremer a tela/janela
+  sound: boolean;
+  desktop: boolean; // notificação do sistema
+}
+
+export const DEFAULT_NOTIFY: NotifySettings = { nudges: true, shake: true, sound: true, desktop: true };
+
+export interface UserSettings {
+  theme?: Partial<ThemeSettings>;
+  status?: PresenceStatus;
+  notifications?: Partial<NotifySettings>;
+  mutedNudges?: string[];
+}
+
 export interface Me extends User {
-  settings: { theme?: Partial<ThemeSettings> } & Record<string, unknown>;
+  settings: UserSettings & Record<string, unknown>;
+}
+
+export interface NudgeEvent {
+  from: User & { nickname: string | null };
+  serverId: string;
+  serverName: string;
+  channelId: string | null;
+  at: number;
 }
 
 export interface ThemeSettings {

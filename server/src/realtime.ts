@@ -103,6 +103,27 @@ export function setServerMute(serverId: string, userId: string, muted: boolean) 
   }
 }
 
+export type PresenceStatus = 'online' | 'dnd';
+
+/** Status escolhido pelo usuário (fica nas preferências do perfil). */
+export function statusOf(userId: string): PresenceStatus {
+  const row = get<{ settings: string }>('SELECT settings FROM users WHERE id = ?', userId);
+  try {
+    return JSON.parse(row?.settings || '{}').status === 'dnd' ? 'dnd' : 'online';
+  } catch {
+    return 'online';
+  }
+}
+
+export function isOnline(userId: string) {
+  return online.has(userId);
+}
+
+/** Reenvia a presença quando o usuário troca de status (online / não perturbe). */
+export function broadcastStatus(userId: string) {
+  if (online.has(userId)) io.emit('presence', { userId, online: true, status: statusOf(userId) });
+}
+
 export function onlineUserIds() {
   return [...online.keys()];
 }
@@ -129,8 +150,11 @@ export function setupRealtime(httpServer: HttpServer) {
 
     const count = (online.get(userId) ?? 0) + 1;
     online.set(userId, count);
-    socket.emit('presence:list', onlineUserIds());
-    if (count === 1) io.emit('presence', { userId, online: true });
+    socket.emit(
+      'presence:list',
+      onlineUserIds().map((id) => ({ userId: id, status: statusOf(id) })),
+    );
+    if (count === 1) io.emit('presence', { userId, online: true, status: statusOf(userId) });
 
     socket.on('voice:join', (data: { channelId: string }, ack?: (r: unknown) => void) => {
       try {

@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { applyTheme, normalizeTheme } from '../lib/theme';
-import type { Me, Message, ServerDetail, ServerSummary, ThemeSettings, VoiceState } from '../lib/types';
+import { receiveNudge } from '../lib/nudge';
+import type { Me, Message, NudgeEvent, PresenceStatus, ServerDetail, ServerSummary, ThemeSettings, UserSettings, VoiceState } from '../lib/types';
 import { toast } from './toast';
 import { useVoice } from './voice';
 
@@ -27,7 +28,9 @@ interface AppState {
   messages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
   voiceStates: Record<string, VoiceState[]>;
-  online: Record<string, true>;
+  online: Record<string, PresenceStatus>;
+  /** chamada de atenção recebida, mostrada no cartão do app */
+  nudge: NudgeEvent | null;
   typing: Record<string, Record<string, number>>;
   modal: Modal | null;
   memberListOpen: boolean;
@@ -39,6 +42,7 @@ interface AppState {
   logout: () => void;
   setMe: (me: Me) => void;
   saveTheme: (theme: ThemeSettings) => void;
+  saveSettings: (patch: Partial<UserSettings>) => Promise<void>;
   loadServers: () => Promise<void>;
   loadDetail: (serverId: string) => Promise<void>;
   openServer: (serverId: string) => void;
@@ -100,15 +104,16 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('voice:states', ({ serverId, states }: { serverId: string; states: VoiceState[] }) => {
       set({ voiceStates: { ...get().voiceStates, [serverId]: states } });
     });
-    socket.on('presence:list', (ids: string[]) => {
-      set({ online: Object.fromEntries(ids.map((id) => [id, true as const])) });
+    socket.on('presence:list', (list: { userId: string; status: PresenceStatus }[]) => {
+      set({ online: Object.fromEntries(list.map((p) => [p.userId, p.status])) });
     });
-    socket.on('presence', ({ userId, online }: { userId: string; online: boolean }) => {
+    socket.on('presence', ({ userId, online, status }: { userId: string; online: boolean; status?: PresenceStatus }) => {
       const next = { ...get().online };
-      if (online) next[userId] = true;
+      if (online) next[userId] = status ?? 'online';
       else delete next[userId];
       set({ online: next });
     });
+    socket.on('nudge', (n: NudgeEvent) => receiveNudge(n));
     socket.on('message:new', (msg: Message) => {
       const list = get().messages[msg.channelId];
       const typing = { ...get().typing[msg.channelId] };
@@ -144,6 +149,7 @@ export const useApp = create<AppState>((set, get) => {
     hasMore: {},
     voiceStates: {},
     online: {},
+    nudge: null,
     typing: {},
     modal: null,
     memberListOpen: true,
@@ -187,6 +193,20 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     setMe: (me) => set({ me }),
+
+    saveSettings: async (patch) => {
+      const me = get().me;
+      if (!me) return;
+      const previous = me.settings;
+      const settings = { ...previous, ...patch };
+      set({ me: { ...me, settings } });
+      try {
+        await api.patch('/me', { settings });
+      } catch (err) {
+        set({ me: { ...get().me!, settings: previous } });
+        toast.error(err);
+      }
+    },
 
     saveTheme: (theme) => {
       applyTheme(theme);

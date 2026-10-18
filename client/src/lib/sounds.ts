@@ -9,6 +9,9 @@ const SOUNDS: Record<string, [number, number][]> = {
   mute: [[440, 0]],
   unmute: [[660, 0]],
   stream: [[523, 0], [659, 0.07], [784, 0.14]],
+  // "chamar atenção": um trinado curto, fácil de reconhecer
+  nudge: [[880, 0], [660, 0.06], [880, 0.12], [660, 0.18], [880, 0.24], [1175, 0.32]],
+  nudgeSent: [[660, 0], [880, 0.06]],
 };
 
 export function playSound(name: keyof typeof SOUNDS) {

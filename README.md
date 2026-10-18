@@ -26,6 +26,16 @@ O áudio sem retorno exige **Windows 11**, ou Windows 10 a partir do build 20348
 
 O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, gera o instalador e o publica em `https://SEU-DOMINIO/downloads/Concord-Setup.exe`. No site aparece um botão de download na barra da esquerda. O instalador não é assinado digitalmente, então o Windows pode exibir o aviso do SmartScreen: clique em "Mais informações" e depois em "Executar assim mesmo".
 
+## Chamar atenção
+
+Inspirado no MSN. No perfil de alguém, o botão **Chamar atenção** faz a tela da pessoa tremer (no app desktop, a janela chacoalha), toca um som e mostra uma notificação do Windows. Para quem recebe, aparece um cartão com **"Ir até lá"** e **"Chamar de volta"**.
+
+Para não incomodar:
+- o status **Não perturbe** bloqueia os chamados, e quem tentou chamar é avisado;
+- o **sininho** no perfil de uma pessoa silencia só ela, sem que ela saiba;
+- dá para desligar a tremida, o som e a notificação separadamente, em Configurações → Notificações;
+- cada pessoa só pode chamar a mesma pessoa uma vez a cada 15 segundos.
+
 ## Personalização
 
 - **Perfil:** foto, cor do banner, "sobre mim" e **apelido por servidor**.

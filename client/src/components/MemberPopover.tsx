@@ -1,4 +1,5 @@
-import { Crown, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X } from 'lucide-react';
+import { Bell, BellOff, Crown, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
+import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useRef, useState } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
@@ -15,12 +16,14 @@ export function MemberPopover() {
   const [addingRole, setAddingRole] = useState(false);
   const detail = useApp((s) => (serverId ? s.details[serverId] : undefined));
   const me = useApp((s) => s.me);
-  const online = useApp((s) => (userId ? !!s.online[userId] : false));
+  const presence = useApp((s) => (userId ? s.online[userId] : undefined));
+  const online = !!presence;
   const voiceState = useApp((s) => (serverId && userId ? s.voiceStates[serverId]?.find((v) => v.userId === userId) : undefined));
   const myChannel = useVoice((s) => s.channelId);
   const volume = useVoice((s) => (userId ? (s.volumes[userId] ?? 1) : 1));
   const setVolume = useVoice((s) => s.setVolume);
   const openModal = useApp((s) => s.openModal);
+  const saveSettings = useApp((s) => s.saveSettings);
 
   useEffect(() => {
     if (!userId) return;
@@ -58,6 +61,8 @@ export function MemberPopover() {
     openModal({ type: 'nickname', serverId: detail!.server.id, userId: member!.id });
   }
   const sameRoom = voiceState && voiceState.channelId === myChannel;
+  const mutedNudges = me.settings.mutedNudges ?? [];
+  const nudgeMuted = mutedNudges.includes(member.id);
 
   async function setRoles(roleIds: string[]) {
     await api.put(`/servers/${detail!.server.id}/members/${member!.id}/roles`, { roleIds }).catch(toast.error);
@@ -81,7 +86,7 @@ export function MemberPopover() {
       <div className="h-16" style={{ background: `linear-gradient(135deg, ${topColor}, ${topColor}55)` }} />
       <div className="px-4 pb-4">
         <div className="-mt-9 mb-2">
-          <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} size={72} status={online ? 'online' : 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
+          <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} size={72} status={presence ?? 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
         </div>
         <div className="rounded-xl bg-surface-0 p-3">
           <div className="flex items-center gap-1.5 text-lg font-bold">
@@ -153,6 +158,34 @@ export function MemberPopover() {
               </div>
             )}
           </div>
+
+          {!isMe && (
+            <div className="mt-3 flex gap-2">
+              <button
+                disabled={!online || presence === 'dnd'}
+                onClick={() => void sendNudge(detail.server.id, member.id, name)}
+                title={!online ? `${name} está offline` : presence === 'dnd' ? `${name} está em "Não perturbe"` : 'Faz a tela da pessoa tremer, com som e notificação'}
+                className="flex h-10 flex-1 items-center justify-center gap-2 rounded-full bg-accent font-display text-sm font-bold text-on-accent transition-all hover:bg-accent-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Zap size={16} /> {presence === 'dnd' ? 'Não perturbe' : 'Chamar atenção'}
+              </button>
+              <button
+                onClick={() =>
+                  void saveSettings({
+                    mutedNudges: nudgeMuted ? mutedNudges.filter((id) => id !== member.id) : [...mutedNudges, member.id],
+                  })
+                }
+                title={nudgeMuted ? `Voltar a receber chamadas de atenção de ${name}` : `Não receber chamadas de atenção de ${name}`}
+                aria-label={nudgeMuted ? 'Permitir chamadas de atenção desta pessoa' : 'Silenciar chamadas de atenção desta pessoa'}
+                className={cx(
+                  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors',
+                  nudgeMuted ? 'bg-danger/15 text-danger' : 'bg-surface-3 text-fg-muted hover:text-fg',
+                )}
+              >
+                {nudgeMuted ? <BellOff size={16} /> : <Bell size={16} />}
+              </button>
+            </div>
+          )}
 
           {sameRoom && !isMe && (
             <>

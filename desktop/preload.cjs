@@ -19,5 +19,8 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   updateStatus: () => ipcRenderer.invoke('concord:update-status').catch(() => null),
   onUpdateReady: listen('concord:update-ready'),
   installUpdate: () => ipcRenderer.invoke('concord:update-install'),
+  notify: (opts) => ipcRenderer.invoke('concord:notify', opts),
+  shakeWindow: () => ipcRenderer.invoke('concord:shake-window'),
+  onNotificationClick: listen('concord:notification-click'),
   reload: () => ipcRenderer.invoke('concord:reload'),
 });

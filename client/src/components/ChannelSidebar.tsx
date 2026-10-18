@@ -365,16 +365,61 @@ function UserCard() {
   const me = useApp((s) => s.me)!;
   const openModal = useApp((s) => s.openModal);
   const { status, micOn, deafened, serverMuted, toggleMic, toggleDeafen } = useVoice();
+  const saveSettings = useApp((s) => s.saveSettings);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inCall = status !== 'idle';
   const micOff = (inCall && !micOn) || serverMuted;
+  const presence = me.settings.status === 'dnd' ? 'dnd' : 'online';
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: MouseEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(false);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [menu]);
+
+  const option = (value: 'online' | 'dnd', label: string, hint: string) => (
+    <button
+      onClick={() => {
+        setMenu(false);
+        void saveSettings({ status: value });
+      }}
+      className={cx('flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left hover:bg-surface-4', presence === value && 'bg-surface-4')}
+    >
+      <span className={cx('mt-1 h-3 w-3 shrink-0 rounded-full', value === 'online' ? 'bg-ok' : 'bg-danger')} />
+      <span>
+        <span className="block text-sm font-bold">{label}</span>
+        <span className="block text-xs text-fg-muted">{hint}</span>
+      </span>
+    </button>
+  );
 
   return (
-    <div className="mx-3 mb-3 flex items-center gap-2.5 rounded-[20px] bg-surface-3 p-2.5">
-      <button onClick={() => openModal({ type: 'userSettings' })} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" title="Editar perfil">
-        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={40} status="online" />
+    <div ref={menuRef} className="relative mx-3 mb-3 flex items-center gap-2.5 rounded-[20px] bg-surface-3 p-2.5">
+      {menu && (
+        <div className="absolute right-0 bottom-full left-0 z-30 mb-2 animate-pop-in space-y-0.5 rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line">
+          {option('online', 'Online', 'Recebe chamadas de atenção e avisos')}
+          {option('dnd', 'Não perturbe', 'Ninguém consegue chamar sua atenção')}
+          <div className="mx-2 my-1 h-px bg-line" />
+          <button
+            onClick={() => {
+              setMenu(false);
+              openModal({ type: 'userSettings' });
+            }}
+            className="w-full rounded-2xl px-3 py-2.5 text-left text-sm font-semibold text-fg-muted hover:bg-surface-4 hover:text-fg"
+          >
+            Editar perfil e notificações
+          </button>
+        </div>
+      )}
+      <button onClick={() => setMenu(!menu)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" title="Status e perfil" aria-expanded={menu}>
+        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={40} status={presence} />
         <div className="min-w-0 leading-tight">
           <div className="truncate text-sm font-bold">{me.displayName}</div>
-          <div className="truncate text-xs text-fg-muted">{me.bio || `@${me.username}`}</div>
+          <div className={cx('truncate text-xs', presence === 'dnd' ? 'text-danger' : 'text-fg-muted')}>
+            {presence === 'dnd' ? 'Não perturbe' : me.bio || `@${me.username}`}
+          </div>
         </div>
       </button>
       <IconButton
