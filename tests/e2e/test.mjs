@@ -61,6 +61,11 @@ async function open(name, token) {
   page.on('console', (m) => m.type() === 'error' && console.log(`  [${name}] ${m.text().slice(0, 200)}`));
   await page.addInitScript((t) => localStorage.setItem('concord.token', t), token);
   await page.goto(APP);
+  // conta nova: fecha o tutorial de boas-vindas antes de interagir com o app
+  const onboarding = page.getByRole('dialog', { name: 'Tutorial do Concord' });
+  if (await onboarding.waitFor({ timeout: 3000 }).then(() => true, () => false)) {
+    await page.getByRole('button', { name: /Pular|Fechar/ }).first().click();
+  }
   await page.getByText('Sala de Transmissão').first().click();
   return { browser, page };
 }
