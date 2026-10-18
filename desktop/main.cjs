@@ -17,6 +17,8 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 const DEFAULT_SERVER = 'https://concord.yaatoro.com';
+// No Windows o .ico traz versões desenhadas para 16–48 px (barra de tarefas, Alt+Tab, título da janela)
+const APP_ICON = path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
 
 // ------------------------------------------------------------------ configuração
 
@@ -89,7 +91,7 @@ function createWindow() {
     title: 'Concord',
     backgroundColor: '#0a0b0f',
     autoHideMenuBar: true,
-    icon: path.join(__dirname, 'build', 'icon.png'),
+    icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -121,7 +123,7 @@ function createWindow() {
           backgroundColor: '#000000',
           autoHideMenuBar: true,
           title: 'Transmissão · Concord',
-          icon: path.join(__dirname, 'build', 'icon.png'),
+          icon: APP_ICON,
           webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
         },
       };

@@ -61,10 +61,7 @@ export function AuthScreen() {
 
       <div className="relative grid w-full max-w-4xl animate-pop-in overflow-hidden rounded-3xl border border-line bg-surface-2/80 shadow-2xl backdrop-blur-xl md:grid-cols-2">
         <div className="hidden flex-col justify-between bg-gradient-to-br from-accent/20 via-transparent to-accent-2/10 p-10 md:flex">
-          <div className="flex items-center gap-3">
-            <img src="/icon.svg" alt="" className="h-10 w-10" />
-            <span className="text-2xl font-extrabold tracking-tight">Concord</span>
-          </div>
+          <img src="/brand/concord-logo.png" alt="Concord" className="h-11 w-auto self-start" />
           <div className="space-y-6">
             <h1 className="text-4xl leading-tight font-extrabold">
               Transmita sua tela a <span className="text-brand">60 fps</span>, junto com quem importa.

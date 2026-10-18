@@ -7,7 +7,7 @@ export function WelcomeView() {
   return (
     <div className="panel flex flex-1 items-center justify-center p-8">
       <div className="max-w-md animate-slide-up text-center">
-        <img src="/icon.svg" alt="" className="mx-auto mb-6 h-20 w-20" />
+        <img src="/brand/concord-simbolo.svg" alt="" className="mx-auto mb-6 h-24 w-24" />
         <h1 className="text-3xl font-extrabold">Seu espaço começa aqui</h1>
         <p className="mt-3 text-fg-muted">
           Crie um servidor para você e seus amigos, ou entre em um com um convite. Lá dentro você terá salas de voz com

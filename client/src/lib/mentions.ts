@@ -34,7 +34,7 @@ export function receiveDirectMessage(dm: DirectChannel, message: Message) {
     return;
   }
   if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const n = new Notification(title, { body, icon: dm.user.avatarUrl ?? '/icon.svg', tag: `dm-${dm.id}` });
+  const n = new Notification(title, { body, icon: dm.user.avatarUrl ?? '/icon-192.png', tag: `dm-${dm.id}` });
   n.onclick = () => {
     window.focus();
     useApp.getState().openDmById(dm.id);
@@ -67,7 +67,7 @@ export function receiveMention(m: MentionEvent) {
     return;
   }
   if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const n = new Notification(title, { body, icon: m.message.author.avatarUrl ?? '/icon.svg', tag: `mention-${m.message.channelId}` });
+  const n = new Notification(title, { body, icon: m.message.author.avatarUrl ?? '/icon-192.png', tag: `mention-${m.message.channelId}` });
   n.onclick = () => {
     window.focus();
     const st = useApp.getState();

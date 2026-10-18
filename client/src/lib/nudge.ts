@@ -50,7 +50,7 @@ function showSystemNotification(n: NudgeEvent) {
   if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
   const notification = new Notification('Chamar atenção', {
     body,
-    icon: n.from.avatarUrl ?? '/icon.svg',
+    icon: n.from.avatarUrl ?? '/icon-192.png',
     tag: `nudge-${n.from.id}`,
   });
   notification.onclick = () => {

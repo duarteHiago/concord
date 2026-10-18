@@ -22,11 +22,11 @@
     "appId": "com.duartehiago.concord",
     "productName": "Concord",
     "artifactName": "Concord-Setup-${version}.${ext}",
-    "files": ["main.cjs", "preload.cjs", "offline.html", "build/icon.png"],
+    "files": ["main.cjs", "preload.cjs", "offline.html", "build/icon.png", "build/icon.ico"],
     "extraResources": [{ "from": "native/audio-capture.exe", "to": "audio-capture.exe" }],
     "directories": { "output": "release" },
     "publish": [{ "provider": "generic", "url": "https://concord.yaatoro.com/downloads/" }],
-    "win": { "target": ["nsis"], "icon": "build/icon.png" },
+    "win": { "target": ["nsis"], "icon": "build/icon.ico" },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
