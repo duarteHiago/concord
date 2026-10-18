@@ -42,7 +42,8 @@ jobs:
   deploy:
     name: Deploy na VPS
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # só roda depois que deploy/setup-cicd.ps1 configurou as variáveis do repositório
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VPS_HOST != ''
     runs-on: ubuntu-latest
     environment:
       name: production
