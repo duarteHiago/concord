@@ -1,0 +1,24 @@
+# Teste ponta a ponta: dois Chrome reais numa sala (voz + transmissão de tela).
+# Uso: docker build -t concord-app:test . && docker compose -f tests/e2e/docker-compose.yml run --rm pw
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.7
+    command: --dev --bind 0.0.0.0
+
+  app:
+    image: concord-app:test
+    environment:
+      JWT_SECRET: e2e
+      LIVEKIT_API_URL: http://livekit:7880
+      LIVEKIT_PUBLIC_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+      DB_PATH: /tmp/e2e.db
+    depends_on: [livekit]
+
+  pw:
+    image: mcr.microsoft.com/playwright:v1.49.0-noble
+    working_dir: /e2e
+    volumes: ["./:/e2e"]
+    command: sh -c "npm install --no-audit --no-fund --silent && node test.mjs"
+    depends_on: [app]

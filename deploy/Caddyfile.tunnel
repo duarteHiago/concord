@@ -1,0 +1,17 @@
+# Modo túnel (cloudflared): a Cloudflare cuida do HTTPS; o Caddy só roteia localmente.
+{
+	auto_https off
+}
+
+:8090 {
+	bind 127.0.0.1
+
+	# Sinalização do LiveKit no mesmo domínio: wss://DOMINIO/livekit
+	handle_path /livekit/* {
+		reverse_proxy 127.0.0.1:7880
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}

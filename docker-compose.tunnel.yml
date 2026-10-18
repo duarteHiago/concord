@@ -1,0 +1,5 @@
+# Sobrescrita para o modo túnel da Cloudflare (usada pelo setup.sh com MODE=tunnel).
+services:
+  caddy:
+    volumes:
+      - ./deploy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro

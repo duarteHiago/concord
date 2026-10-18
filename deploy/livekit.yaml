@@ -1,0 +1,12 @@
+# Configuração do LiveKit (SFU WebRTC). As chaves vêm da variável LIVEKIT_KEYS (docker-compose.yml).
+port: 7880
+rtc:
+  # Mídia: 1 porta UDP (multiplexada) + fallback TCP para redes que bloqueiam UDP.
+  udp_port: 7882
+  tcp_port: 7881
+  use_external_ip: true
+room:
+  empty_timeout: 300
+  departure_timeout: 20
+logging:
+  level: info

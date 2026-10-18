@@ -1,0 +1,7 @@
+node_modules/
+dist/
+server/data/
+data/
+data-dev/
+.env
+*.tgz

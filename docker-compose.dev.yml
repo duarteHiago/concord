@@ -1,0 +1,29 @@
+# Teste local (Windows/Mac/Linux): docker compose -f docker-compose.dev.yml up --build
+# Depois abra http://localhost:3000 (abra uma aba anônima para simular um segundo usuário).
+# Para testar com outro PC da sua rede, troque 127.0.0.1 pelo IP local da sua máquina em --node-ip
+# e LIVEKIT_PUBLIC_URL (e acesse http://SEU_IP:3000 — obs.: fora de localhost o navegador exige HTTPS para capturar tela).
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.7
+    command: --dev --bind 0.0.0.0 --node-ip 127.0.0.1
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      JWT_SECRET: dev-only-secret
+      LIVEKIT_API_URL: http://livekit:7880
+      LIVEKIT_PUBLIC_URL: ws://localhost:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+    volumes:
+      - ./data-dev:/data
+    depends_on:
+      - livekit

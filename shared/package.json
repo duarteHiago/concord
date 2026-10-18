@@ -1,0 +1,5 @@
+{
+  "name": "concord-shared",
+  "private": true,
+  "type": "module"
+}

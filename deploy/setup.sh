@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Instalação do Concord numa VPS Linux (Ubuntu/Debian). Rode na raiz do projeto:
+#   ./deploy/setup.sh                                   -> modo direto (Caddy + Let's Encrypt)
+#   MODE=tunnel DOMAIN=concord.seudominio.com ./deploy/setup.sh  -> via Cloudflare Tunnel (cloudflared)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+MODE="${MODE:-direct}"
+TUNNEL_NAME="${TUNNEL_NAME:-concord}"
+PROXY_PORT="${PROXY_PORT:-8090}"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo ">> Instalando Docker..."
+  curl -fsSL https://get.docker.com | sh
+fi
+
+if [ ! -f .env ]; then
+  DOMAIN="${DOMAIN:-}"
+  [ -z "$DOMAIN" ] && read -rp "Domínio (ex.: concord.seudominio.com): " DOMAIN
+  cat > .env <<EOF
+DOMAIN=${DOMAIN}
+JWT_SECRET=$(openssl rand -hex 32)
+LIVEKIT_API_KEY=concord
+LIVEKIT_API_SECRET=$(openssl rand -hex 32)
+ALLOW_REGISTRATION=true
+EOF
+  echo ">> .env criado."
+elif [ -n "${DOMAIN:-}" ]; then
+  sed -i "s|^DOMAIN=.*|DOMAIN=${DOMAIN}|" .env
+fi
+DOMAIN="$(grep ^DOMAIN= .env | cut -d= -f2)"
+
+COMPOSE=(docker compose)
+if [ "$MODE" = "tunnel" ]; then
+  COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.tunnel.yml)
+
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    echo ">> Instalando cloudflared..."
+    ARCH="$(dpkg --print-architecture)"
+    curl -fsSL -o /tmp/cloudflared.deb "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${ARCH}.deb"
+    dpkg -i /tmp/cloudflared.deb
+  fi
+
+  if ss -ltnH "sport = :${PROXY_PORT}" | grep -q . && ! docker ps --format '{{.Names}}' | grep -q caddy; then
+    echo "!! A porta ${PROXY_PORT} já está em uso. Rode de novo com PROXY_PORT=<outra porta> e ajuste deploy/Caddyfile.tunnel."
+    exit 1
+  fi
+
+  if [ ! -f "$HOME/.cloudflared/cert.pem" ]; then
+    echo
+    echo ">> Abra o link abaixo no seu navegador, entre na Cloudflare e escolha o domínio:"
+    cloudflared tunnel login
+  fi
+
+  CONFIG=/etc/cloudflared/config.yml
+  RULE="  - hostname: ${DOMAIN}
+    service: http://127.0.0.1:${PROXY_PORT}"
+
+  if [ -f "$CONFIG" ] && grep -q '^tunnel:' "$CONFIG"; then
+    # Já existe um túnel rodando nesta VPS: reaproveita e só acrescenta a regra do Concord.
+    TUNNEL_ID="$(grep '^tunnel:' "$CONFIG" | awk '{print $2}')"
+    echo ">> Reaproveitando o túnel existente ($TUNNEL_ID)"
+    if grep -qE "hostname:[[:space:]]*${DOMAIN}[[:space:]]*$" "$CONFIG"; then
+      echo ">> A regra para ${DOMAIN} já existe no $CONFIG"
+      TUNNEL_UNCHANGED=1
+    else
+      BACKUP="${CONFIG}.bak-$(date +%Y%m%d%H%M%S)"
+      cp "$CONFIG" "$BACKUP"
+      echo ">> Backup do config: $BACKUP"
+      # insere a regra antes da regra final (http_status:404)
+      awk -v rule="$RULE" '/^[[:space:]]*- service: http_status:404/ && !done { print rule; done=1 } { print }' "$BACKUP" > "$CONFIG"
+      if ! cloudflared tunnel --config "$CONFIG" ingress validate; then
+        echo "!! Config inválido, restaurando o backup."
+        cp "$BACKUP" "$CONFIG"
+        exit 1
+      fi
+    fi
+  else
+    if ! cloudflared tunnel info "$TUNNEL_NAME" >/dev/null 2>&1; then
+      cloudflared tunnel create "$TUNNEL_NAME"
+    fi
+    TUNNEL_ID="$(cloudflared tunnel list --name "$TUNNEL_NAME" --output json | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)"
+    mkdir -p /etc/cloudflared
+    cat > "$CONFIG" <<EOF
+tunnel: ${TUNNEL_ID}
+credentials-file: ${HOME}/.cloudflared/${TUNNEL_ID}.json
+ingress:
+${RULE}
+  - service: http_status:404
+EOF
+  fi
+
+  echo ">> Criando o subdomínio $DOMAIN na Cloudflare..."
+  cloudflared tunnel route dns --overwrite-dns "$TUNNEL_ID" "$DOMAIN"
+
+  if [ "${TUNNEL_UNCHANGED:-0}" = 1 ]; then
+    echo ">> Túnel sem alterações, não precisa reiniciar."
+  elif systemctl list-unit-files | grep -q '^cloudflared.service'; then
+    systemctl restart cloudflared
+  else
+    cloudflared service install
+  fi
+fi
+
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -q active; then
+  echo ">> Liberando portas no firewall (ufw)..."
+  ufw allow 7881/tcp
+  ufw allow 7882/udp
+  if [ "$MODE" != "tunnel" ]; then
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+  fi
+fi
+
+if [ -z "$("${COMPOSE[@]}" ps -q 2>/dev/null)" ]; then
+  BUSY=""
+  for p in 3000 7880 7881; do ss -ltnH "sport = :$p" | grep -q . && BUSY="$BUSY $p/tcp"; done
+  ss -lunH "sport = :7882" | grep -q . && BUSY="$BUSY 7882/udp"
+  if [ -n "$BUSY" ]; then
+    echo "!! Portas já em uso por outro serviço:$BUSY"
+    echo "!! Veja quem está usando com: ss -ltnup | grep -E ':(3000|7880|7881|7882)'"
+    exit 1
+  fi
+fi
+
+mkdir -p data
+"${COMPOSE[@]}" up -d --build
+# recarrega o Caddyfile caso ele tenha mudado (o compose não detecta mudança no arquivo montado)
+"${COMPOSE[@]}" restart caddy
+echo
+echo ">> Pronto! Acesse https://${DOMAIN}"
+if [ "$MODE" = "tunnel" ]; then
+  echo ">> Se o provedor tiver firewall no painel, libere: 7881/tcp e 7882/udp (mídia da transmissão)."
+else
+  echo ">> Se o provedor tiver firewall no painel, libere: 80/tcp, 443/tcp, 7881/tcp, 7882/udp."
+fi

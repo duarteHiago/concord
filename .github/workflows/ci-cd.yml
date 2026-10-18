@@ -1,0 +1,77 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Servidor — dependências e checagem de tipos
+        working-directory: server
+        run: npm ci --no-audit --no-fund && npx tsc --noEmit
+
+      - name: Cliente — build
+        working-directory: client
+        run: npm ci --no-audit --no-fund && npm run build
+
+      - name: Imagem Docker
+        run: docker build -t concord-app:test .
+
+      - name: E2E — dois navegadores (voz + transmissão de tela)
+        run: docker compose -f tests/e2e/docker-compose.yml run --rm pw
+
+      - name: Encerrar ambiente de teste
+        if: always()
+        run: docker compose -f tests/e2e/docker-compose.yml down -v
+
+  deploy:
+    name: Deploy na VPS
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_DOMAIN }}
+    env:
+      TARGET: ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Enviar projeto
+        run: |
+          tar -czf /tmp/concord-deploy.tgz \
+            --exclude=.git --exclude=node_modules --exclude=./data --exclude=./data-dev \
+            --exclude=dist --exclude=.env .
+          scp -q /tmp/concord-deploy.tgz "$TARGET:/tmp/concord-deploy.tgz"
+
+      - name: Instalar e reiniciar
+        run: |
+          ssh "$TARGET" "mkdir -p /opt/concord \
+            && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
+            && cd /opt/concord && chmod +x deploy/setup.sh \
+            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} ./deploy/setup.sh"
+
+      - name: Verificar saúde
+        run: curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "https://${{ vars.DEPLOY_DOMAIN }}/health"
