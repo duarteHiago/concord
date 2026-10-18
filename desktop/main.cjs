@@ -1,0 +1,266 @@
+// Concord Desktop — processo principal do Electron.
+// Carrega o Concord do servidor configurado e adiciona o que o navegador não oferece:
+// seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
+const { app, BrowserWindow, desktopCapturer, ipcMain, Menu, session, shell } = require('electron');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const DEFAULT_SERVER = 'https://concord.yaatoro.com';
+
+// ------------------------------------------------------------------ configuração
+
+const configPath = path.join(app.getPath('userData'), 'config.json');
+
+function loadConfig() {
+  try {
+    return { server: DEFAULT_SERVER, ...JSON.parse(fs.readFileSync(configPath, 'utf8')) };
+  } catch {
+    return { server: DEFAULT_SERVER };
+  }
+}
+
+function saveConfig() {
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+}
+
+const config = loadConfig();
+const serverOrigin = () => new URL(config.server).origin;
+
+/** Só a página do servidor configurado (ou a tela offline local) pode usar a ponte do app. */
+function trusted(event) {
+  try {
+    const url = new URL(event.senderFrame.url);
+    return url.origin === serverOrigin() || url.protocol === 'file:';
+  } catch {
+    return false;
+  }
+}
+
+// Process loopback do WASAPI existe a partir do Windows 10 build 20348 (inclui todo Windows 11).
+function processAudioSupported() {
+  if (process.platform !== 'win32') return false;
+  const build = Number(os.release().split('.')[2] ?? 0);
+  return build >= 20348 && fs.existsSync(helperPath());
+}
+
+function helperPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'audio-capture.exe')
+    : path.join(__dirname, 'native', 'audio-capture.exe');
+}
+
+// ------------------------------------------------------------------ janela
+
+if (!app.requestSingleInstanceLock()) app.quit();
+
+let win = null;
+let pendingSourceId = null;
+let capture = null;
+
+function createWindow() {
+  const bounds = config.bounds ?? { width: 1360, height: 860 };
+  win = new BrowserWindow({
+    ...bounds,
+    minWidth: 960,
+    minHeight: 600,
+    title: 'Concord',
+    backgroundColor: '#0a0b0f',
+    autoHideMenuBar: true,
+    icon: path.join(__dirname, 'build', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      // mantém áudio e vídeo fluindo quando a janela está minimizada
+      backgroundThrottling: false,
+    },
+  });
+  if (config.maximized) win.maximize();
+
+  const remember = () => {
+    if (!win || win.isDestroyed()) return;
+    config.maximized = win.isMaximized();
+    if (!config.maximized && !win.isMinimized()) config.bounds = win.getBounds();
+    saveConfig();
+  };
+  win.on('close', remember);
+
+  // links externos abrem no navegador padrão
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    try {
+      if (new URL(url).origin !== serverOrigin()) {
+        event.preventDefault();
+        void shell.openExternal(url);
+      }
+    } catch {
+      event.preventDefault();
+    }
+  });
+  win.webContents.on('did-fail-load', (_e, code, description, url, isMainFrame) => {
+    if (!isMainFrame || code === -3) return; // -3 = navegação cancelada
+    void win.loadFile(path.join(__dirname, 'offline.html'), { query: { server: config.server, error: description } });
+  });
+
+  void win.loadURL(config.server);
+}
+
+app.on('second-instance', () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
+// ------------------------------------------------------------------ permissões e captura de tela
+
+function setupSession() {
+  const allowed = new Set(['media', 'display-capture', 'notifications', 'fullscreen', 'clipboard-sanitized-write']);
+  const fromServer = (origin) => {
+    try {
+      return new URL(origin).origin === serverOrigin();
+    } catch {
+      return false;
+    }
+  };
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    callback(allowed.has(permission) && fromServer(details.requestingUrl || wc.getURL()));
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => allowed.has(permission) && fromServer(origin));
+
+  // A página escolhe a fonte no seletor do próprio Concord (concord:select-source) e
+  // só depois chama getDisplayMedia; aqui entregamos exatamente a fonte escolhida.
+  // O áudio NÃO vai por aqui: ele vem do audio-capture.exe, sem as vozes da sala.
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    const id = pendingSourceId;
+    pendingSourceId = null;
+    desktopCapturer
+      .getSources({ types: ['screen', 'window'] })
+      .then((sources) => {
+        const source = sources.find((s) => s.id === id);
+        if (source) callback({ video: source });
+        else callback({});
+      })
+      .catch(() => callback({}));
+  });
+}
+
+// ------------------------------------------------------------------ áudio sem retorno
+
+function stopCapture() {
+  if (!capture) return;
+  const proc = capture;
+  capture = null;
+  proc.stdin.end();
+  setTimeout(() => proc.exitCode === null && proc.kill(), 1500);
+}
+
+function startCapture(sender, sourceId) {
+  stopCapture();
+  if (!processAudioSupported()) throw new Error('Captura de áudio por processo indisponível neste sistema.');
+
+  // janela: só o áudio do programa dela. tela: tudo, menos o próprio Concord.
+  const windowMatch = /^window:(\d+):/.exec(sourceId ?? '');
+  const args = windowMatch ? ['--include-window', windowMatch[1]] : ['--exclude', String(process.pid)];
+
+  const proc = spawn(helperPath(), args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  capture = proc;
+  let stderr = '';
+  proc.stdout.on('data', (chunk) => {
+    if (capture === proc && !sender.isDestroyed()) sender.send('concord:audio-data', chunk);
+  });
+  proc.stderr.on('data', (d) => {
+    stderr = (stderr + d.toString()).slice(-2000);
+  });
+  proc.on('exit', (code) => {
+    if (capture === proc) capture = null;
+    if (code && !sender.isDestroyed()) sender.send('concord:audio-ended', { code, message: stderr.trim() });
+  });
+  proc.on('error', (err) => {
+    if (!sender.isDestroyed()) sender.send('concord:audio-ended', { code: -1, message: err.message });
+  });
+}
+
+// ------------------------------------------------------------------ IPC
+
+function handle(channel, fn) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!trusted(event)) throw new Error('Origem não autorizada');
+    return fn(event, ...args);
+  });
+}
+
+handle('concord:info', () => ({
+  platform: process.platform,
+  version: app.getVersion(),
+  processAudio: processAudioSupported(),
+  server: config.server,
+}));
+
+handle('concord:sources', async () => {
+  const sources = await desktopCapturer.getSources({
+    types: ['screen', 'window'],
+    thumbnailSize: { width: 400, height: 225 },
+    fetchWindowIcons: true,
+  });
+  const own = win?.getMediaSourceId();
+  return sources
+    .filter((s) => s.id !== own)
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      kind: s.id.startsWith('screen:') ? 'screen' : 'window',
+      thumbnail: s.thumbnail.isEmpty() ? null : s.thumbnail.toDataURL(),
+      icon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null,
+    }));
+});
+
+handle('concord:select-source', (_e, id) => {
+  pendingSourceId = typeof id === 'string' ? id : null;
+});
+
+handle('concord:audio-start', (event, opts) => startCapture(event.sender, opts?.sourceId));
+handle('concord:audio-stop', () => stopCapture());
+
+handle('concord:set-server', (_e, url) => {
+  const parsed = new URL(String(url));
+  if (!/^https?:$/.test(parsed.protocol)) throw new Error('Use um endereço http(s)');
+  config.server = parsed.origin;
+  saveConfig();
+  void win?.loadURL(config.server);
+});
+
+handle('concord:reload', () => void win?.loadURL(config.server));
+
+// ------------------------------------------------------------------ ciclo de vida
+
+app.whenReady().then(() => {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Concord',
+        submenu: [
+          { role: 'reload', label: 'Recarregar' },
+          { role: 'toggleDevTools', label: 'Ferramentas do desenvolvedor' },
+          { type: 'separator' },
+          { role: 'resetZoom', label: 'Zoom normal' },
+          { role: 'zoomIn', label: 'Aumentar zoom' },
+          { role: 'zoomOut', label: 'Diminuir zoom' },
+          { role: 'togglefullscreen', label: 'Tela cheia' },
+          { type: 'separator' },
+          { role: 'quit', label: 'Sair' },
+        ],
+      },
+    ]),
+  );
+  setupSession();
+  createWindow();
+});
+
+app.on('before-quit', stopCapture);
+app.on('window-all-closed', () => app.quit());

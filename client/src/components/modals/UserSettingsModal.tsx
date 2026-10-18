@@ -1,7 +1,10 @@
-import { LogOut } from 'lucide-react';
+import { Check, ImagePlus, LogOut, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import type { User } from '../../lib/types';
+import { desktop, desktopInfo } from '../../lib/desktop';
+import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
+import type { Me, ThemeSettings } from '../../lib/types';
+import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { useVoice } from '../../store/voice';
@@ -9,15 +12,18 @@ import { Avatar, Button, Input, Modal, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
+type Tab = 'profile' | 'appearance' | 'audio' | 'account';
+
 export function UserSettingsModal() {
   const close = useApp((s) => s.closeModal);
-  const [tab, setTab] = useState<'profile' | 'audio' | 'account'>('profile');
+  const [tab, setTab] = useState<Tab>('profile');
   return (
-    <Modal title="Configurações de usuário" onClose={close} width={560}>
+    <Modal title="Configurações de usuário" onClose={close} width={720}>
       <div className="mb-5 flex gap-1 border-b border-line">
         {(
           [
             ['profile', 'Perfil'],
+            ['appearance', 'Aparência'],
             ['audio', 'Voz e áudio'],
             ['account', 'Conta'],
           ] as const
@@ -32,47 +38,103 @@ export function UserSettingsModal() {
         ))}
       </div>
       {tab === 'profile' && <Profile />}
+      {tab === 'appearance' && <Appearance />}
       {tab === 'audio' && <Audio />}
       {tab === 'account' && <Account />}
     </Modal>
   );
 }
 
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <span className="mb-2 block text-xs font-bold tracking-wide text-fg-muted uppercase">{children}</span>;
+}
+
+// ------------------------------------------------------------------ Perfil
+
 function Profile() {
   const me = useApp((s) => s.me)!;
   const setMe = useApp((s) => s.setMe);
   const [name, setName] = useState(me.displayName);
   const [color, setColor] = useState(me.avatarColor);
+  const [banner, setBanner] = useState<string | null>(me.bannerColor);
+  const [bio, setBio] = useState(me.bio);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  async function changeAvatar() {
+    const file = await pickImage();
+    if (!file) return;
+    setUploading(true);
+    try {
+      setMe(await uploadImage<Me>('/me/avatar', await prepareImage(file, 256, true)));
+      toast.success('Foto de perfil atualizada');
+    } catch (err) {
+      toast.error(err);
+    }
+    setUploading(false);
+  }
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-4 rounded-xl bg-surface-0 p-4">
-        <Avatar name={name || me.username} color={color} size={64} />
+      {/* prévia do cartão de perfil */}
+      <div className="overflow-hidden rounded-2xl border border-line bg-surface-0">
+        <div className="h-20" style={{ background: `linear-gradient(135deg, ${banner ?? color}, ${banner ?? color}55)` }} />
+        <div className="flex items-end gap-4 px-4 pb-4">
+          <button onClick={changeAvatar} className="group relative -mt-10 rounded-full" title="Trocar foto">
+            <Avatar name={name || me.username} color={color} src={me.avatarUrl} size={84} className="rounded-full ring-[6px] ring-surface-0" />
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
+              {uploading ? '…' : <ImagePlus size={22} />}
+            </span>
+          </button>
+          <div className="min-w-0 pb-1">
+            <div className="truncate text-lg font-bold">{name || me.username}</div>
+            <div className="text-sm text-fg-muted">@{me.username}</div>
+          </div>
+          <div className="ml-auto flex gap-2 pb-1">
+            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={changeAvatar} loading={uploading}>
+              Trocar foto
+            </Button>
+            {me.avatarUrl && (
+              <Button variant="ghost" className="h-8 px-2" onClick={() => void api.del<Me>('/me/avatar').then(setMe, toast.error)} title="Remover foto">
+                <Trash2 size={15} />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <Input label="Nome de exibição" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} hint="Em cada servidor você também pode usar um apelido diferente." />
+
+      <label className="block">
+        <SectionTitle>Sobre mim</SectionTitle>
+        <textarea
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          maxLength={190}
+          rows={3}
+          placeholder="Conte algo sobre você"
+          className="w-full resize-none rounded-lg border border-line bg-surface-0 p-3 text-sm outline-none focus:border-accent"
+        />
+        <span className="text-xs text-fg-subtle">{bio.length}/190</span>
+      </label>
+
+      <div className="grid gap-5 sm:grid-cols-2">
         <div>
-          <div className="text-lg font-bold">{name || me.username}</div>
-          <div className="text-sm text-fg-muted">@{me.username}</div>
+          <SectionTitle>Cor do avatar (sem foto)</SectionTitle>
+          <Swatches value={color} onChange={(c) => c && setColor(c)} />
+        </div>
+        <div>
+          <SectionTitle>Cor do banner</SectionTitle>
+          <Swatches value={banner} onChange={setBanner} allowNone />
         </div>
       </div>
-      <Input label="Nome de exibição" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
-      <div>
-        <span className="mb-2 block text-xs font-bold tracking-wide text-fg-muted uppercase">Cor do avatar</span>
-        <div className="flex flex-wrap gap-2">
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              onClick={() => setColor(c)}
-              className={cx('h-8 w-8 rounded-full border-2 transition-transform hover:scale-110', color === c ? 'border-white' : 'border-transparent')}
-              style={{ background: c }}
-            />
-          ))}
-        </div>
-      </div>
+
       <Button
         loading={saving}
         onClick={async () => {
           setSaving(true);
           try {
-            setMe(await api.patch<User>('/me', { displayName: name, avatarColor: color }));
+            setMe(await api.patch<Me>('/me', { displayName: name, avatarColor: color, bannerColor: banner, bio }));
             toast.success('Perfil atualizado');
           } catch (err) {
             toast.error(err);
@@ -80,11 +142,195 @@ function Profile() {
           setSaving(false);
         }}
       >
-        Salvar
+        Salvar perfil
       </Button>
     </div>
   );
 }
+
+function Swatches({ value, onChange, allowNone }: { value: string | null; onChange: (c: string | null) => void; allowNone?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {allowNone && (
+        <button
+          title="Automático"
+          onClick={() => onChange(null)}
+          className={cx('flex h-7 w-7 items-center justify-center rounded-full border-2 bg-surface-4 text-[10px] font-bold', value === null ? 'border-fg' : 'border-transparent')}
+        >
+          A
+        </button>
+      )}
+      {COLORS.map((c) => (
+        <button
+          key={c}
+          onClick={() => onChange(c)}
+          className={cx('h-7 w-7 rounded-full border-2 transition-transform hover:scale-110', value === c ? 'border-fg' : 'border-transparent')}
+          style={{ background: c }}
+        />
+      ))}
+      <input type="color" value={value ?? '#7c5cff'} onChange={(e) => onChange(e.target.value)} className="h-7 w-9 cursor-pointer rounded bg-transparent" title="Cor personalizada" />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Aparência
+
+function Appearance() {
+  // o seletor devolve o objeto guardado (estável); normalizar dentro dele criaria um objeto novo a cada render
+  const stored = useApp((s) => s.me?.settings?.theme);
+  const saveTheme = useApp((s) => s.saveTheme);
+  const [theme, setTheme] = useState<ThemeSettings>(() => normalizeTheme(stored));
+  const saved = theme;
+  const [css, setCss] = useState(saved.customCss);
+  const [bgUrl, setBgUrl] = useState(saved.background.url ?? '');
+  const [uploading, setUploading] = useState(false);
+
+  const update = (patch: Partial<ThemeSettings>) => {
+    const next = { ...theme, ...patch };
+    setTheme(next);
+    saveTheme(next);
+  };
+  const updateBg = (patch: Partial<ThemeSettings['background']>) => update({ background: { ...theme.background, ...patch } });
+
+  async function uploadBackground() {
+    const file = await pickImage();
+    if (!file) return;
+    setUploading(true);
+    try {
+      const { url } = await uploadImage<{ url: string }>('/me/background', await prepareImage(file, 2560, false));
+      setBgUrl(url);
+      updateBg({ url });
+    } catch (err) {
+      toast.error(err);
+    }
+    setUploading(false);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <SectionTitle>Tema</SectionTitle>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => update({ preset: p.id })}
+              className={cx(
+                'overflow-hidden rounded-xl border-2 text-left transition-all',
+                theme.preset === p.id ? 'border-accent' : 'border-line hover:border-line-strong',
+              )}
+            >
+              <div className="flex h-14" style={{ background: p.palette['surface-0'] }}>
+                <div className="w-4" style={{ background: p.palette['surface-0'] }} />
+                <div className="w-8" style={{ background: p.palette['surface-1'] }} />
+                <div className="flex flex-1 flex-col justify-end gap-1 p-1.5" style={{ background: p.palette['surface-2'] }}>
+                  <div className="h-1.5 w-3/4 rounded-full" style={{ background: p.palette['fg-subtle'] }} />
+                  <div className="h-2 w-1/2 rounded-full" style={{ background: p.palette.accent }} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between bg-surface-0 px-2 py-1.5 text-xs font-semibold">
+                {p.name}
+                {theme.preset === p.id && <Check size={13} className="text-accent" />}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <SectionTitle>Cor de destaque</SectionTitle>
+        <Swatches value={theme.accent} onChange={(accent) => update({ accent })} allowNone />
+        <p className="mt-1 text-xs text-fg-subtle">"A" usa a cor do tema escolhido.</p>
+      </div>
+
+      <div>
+        <SectionTitle>Imagem de fundo</SectionTitle>
+        <div className="flex gap-2">
+          <Input value={bgUrl} onChange={(e) => setBgUrl(e.target.value)} placeholder="https://… (link de uma imagem)" className="flex-1" />
+          <Button variant="secondary" onClick={() => updateBg({ url: bgUrl.trim() || null })}>
+            Usar link
+          </Button>
+          <Button variant="secondary" onClick={uploadBackground} loading={uploading}>
+            <ImagePlus size={16} /> Enviar
+          </Button>
+          {theme.background.url && (
+            <Button variant="ghost" title="Remover fundo" onClick={() => { setBgUrl(''); updateBg({ url: null }); }}>
+              <Trash2 size={16} />
+            </Button>
+          )}
+        </div>
+        {theme.background.url && (
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <Slider label="Desfoque" value={theme.background.blur} min={0} max={24} step={1} format={(v) => `${v}px`} onChange={(blur) => updateBg({ blur })} />
+            <Slider label="Escurecer" value={theme.background.dim} min={0} max={0.85} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(dim) => updateBg({ dim })} />
+          </div>
+        )}
+      </div>
+
+      <Slider label="Tamanho da interface" value={theme.scale} min={0.8} max={1.25} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(scale) => update({ scale })} />
+
+      <div>
+        <SectionTitle>CSS personalizado</SectionTitle>
+        <textarea
+          value={css}
+          onChange={(e) => setCss(e.target.value)}
+          rows={6}
+          spellCheck={false}
+          placeholder={':root {\n  --color-accent: #ff6b6b;\n}\n.avatar img { border-radius: 30%; }'}
+          className="w-full rounded-lg border border-line bg-surface-0 p-3 font-mono text-xs outline-none focus:border-accent"
+        />
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <p className="text-xs text-fg-subtle">
+            Use as variáveis <code>--color-surface-0…4</code>, <code>--color-fg</code>, <code>--color-accent</code> etc. Vale para todos os seus dispositivos.
+          </p>
+          <Button variant="secondary" className="h-8 shrink-0 px-3 text-xs" onClick={() => update({ customCss: css })}>
+            Aplicar CSS
+          </Button>
+        </div>
+      </div>
+
+      <Button
+        variant="ghost"
+        onClick={() => {
+          setCss('');
+          setBgUrl('');
+          update(DEFAULT_THEME);
+        }}
+      >
+        <RotateCcw size={16} /> Restaurar aparência padrão
+      </Button>
+    </div>
+  );
+}
+
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 flex justify-between text-xs font-bold tracking-wide text-fg-muted uppercase">
+        {label} <span className="font-mono normal-case">{format(value)}</span>
+      </span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full" />
+    </label>
+  );
+}
+
+// ------------------------------------------------------------------ Áudio
 
 function Audio() {
   const settings = useVoice((s) => s.audioSettings);
@@ -112,7 +358,7 @@ function Audio() {
 
   const select = (label: string, value: string, list: MediaDeviceInfo[], onChange: (v: string) => void) => (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-bold tracking-wide text-fg-muted uppercase">{label}</span>
+      <SectionTitle>{label}</SectionTitle>
       <select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full rounded-lg border border-line bg-surface-0 px-2 text-sm outline-none">
         {list.length === 0 && <option value="default">Padrão</option>}
         {list.map((d) => (
@@ -148,6 +394,30 @@ function Audio() {
   );
 }
 
+// ------------------------------------------------------------------ Conta
+
+function DesktopServer() {
+  const [server, setServer] = useState('');
+  const [version, setVersion] = useState('');
+  useEffect(() => {
+    void desktopInfo().then((i) => {
+      setServer(i.server);
+      setVersion(i.version);
+    });
+  }, []);
+  return (
+    <div className="space-y-3 rounded-xl bg-surface-0 p-4">
+      <h3 className="font-semibold">App desktop {version && <span className="text-xs font-normal text-fg-subtle">v{version}</span>}</h3>
+      <div className="flex gap-2">
+        <Input label="Servidor" value={server} onChange={(e) => setServer(e.target.value)} className="flex-1" hint="Endereço do Concord que este app abre." />
+      </div>
+      <Button variant="secondary" onClick={() => void desktop!.setServer(server).catch(toast.error)}>
+        Conectar a este servidor
+      </Button>
+    </div>
+  );
+}
+
 function Account() {
   const logout = useApp((s) => s.logout);
   const [current, setCurrent] = useState('');
@@ -155,6 +425,7 @@ function Account() {
   const [saving, setSaving] = useState(false);
   return (
     <div className="space-y-5">
+      {desktop && <DesktopServer />}
       <div className="space-y-3">
         <h3 className="font-semibold">Alterar senha</h3>
         <Input label="Senha atual" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />

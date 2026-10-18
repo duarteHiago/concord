@@ -1,4 +1,5 @@
-import { Crown, MicOff, MonitorX, PhoneOff, Plus, UserX, Volume2, X } from 'lucide-react';
+import { Crown, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X } from 'lucide-react';
+import { memberName } from '../lib/types';
 import { useEffect, useRef, useState } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
@@ -46,7 +47,16 @@ export function MemberPopover() {
   const roles = detail.roles.filter((r) => member.roleIds.includes(r.id)).sort((a, b) => b.position - a.position);
   const canManageRoles = has(perms, P.MANAGE_ROLES) && (isMe || outranks);
   const assignable = detail.roles.filter((r) => !r.isDefault && r.position < myPos && !member.roleIds.includes(r.id));
-  const topColor = roles.find((r) => r.color)?.color ?? member.avatarColor;
+  const topColor = member.bannerColor ?? roles.find((r) => r.color)?.color ?? member.avatarColor;
+  const name = memberName(member);
+  const canNick = isMe
+    ? has(perms, P.CHANGE_NICKNAME) || has(perms, P.MANAGE_NICKNAMES)
+    : has(perms, P.MANAGE_NICKNAMES) && outranks;
+
+  function editNickname() {
+    close();
+    openModal({ type: 'nickname', serverId: detail!.server.id, userId: member!.id });
+  }
   const sameRoom = voiceState && voiceState.channelId === myChannel;
 
   async function setRoles(roleIds: string[]) {
@@ -71,14 +81,28 @@ export function MemberPopover() {
       <div className="h-16" style={{ background: `linear-gradient(135deg, ${topColor}, ${topColor}55)` }} />
       <div className="px-4 pb-4">
         <div className="-mt-9 mb-2">
-          <Avatar name={member.displayName} color={member.avatarColor} size={72} status={online ? 'online' : 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
+          <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} size={72} status={online ? 'online' : 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
         </div>
         <div className="rounded-xl bg-surface-0 p-3">
           <div className="flex items-center gap-1.5 text-lg font-bold">
-            {member.displayName}
-            {detail.server.ownerId === member.id && <Crown size={16} className="text-warn" />}
+            <span className="truncate">{name}</span>
+            {detail.server.ownerId === member.id && <Crown size={16} className="shrink-0 text-warn" />}
+            {canNick && (
+              <button title="Alterar apelido neste servidor" onClick={editNickname} className="ml-auto text-fg-subtle hover:text-fg">
+                <Pencil size={14} />
+              </button>
+            )}
           </div>
-          <div className="text-sm text-fg-muted">@{member.username}</div>
+          <div className="text-sm text-fg-muted">
+            {member.nickname ? `${member.displayName} · ` : ''}@{member.username}
+          </div>
+          {member.bio && (
+            <>
+              <div className="my-3 h-px bg-line" />
+              <div className="text-[11px] font-bold tracking-wider text-fg-subtle uppercase">Sobre mim</div>
+              <p className="mt-1 text-sm break-words whitespace-pre-wrap">{member.bio}</p>
+            </>
+          )}
           <div className="my-3 h-px bg-line" />
           <div className="text-[11px] font-bold tracking-wider text-fg-subtle uppercase">Membro desde</div>
           <div className="mb-3 text-sm">{new Date(member.joinedAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
@@ -159,14 +183,14 @@ export function MemberPopover() {
               {has(perms, P.KICK_MEMBERS) && (
                 <ModButton
                   icon={<UserX size={15} />}
-                  label={`Expulsar ${member.displayName}`}
+                  label={`Expulsar ${name}`}
                   danger
                   onClick={() => {
                     close();
                     openModal({
                       type: 'confirm',
-                      title: `Expulsar ${member.displayName}`,
-                      message: `${member.displayName} será removido do servidor e só poderá voltar com um novo convite.`,
+                      title: `Expulsar ${name}`,
+                      message: `${name} será removido do servidor e só poderá voltar com um novo convite.`,
                       confirmLabel: 'Expulsar',
                       danger: true,
                       onConfirm: async () => {

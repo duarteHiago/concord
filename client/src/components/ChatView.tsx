@@ -1,3 +1,4 @@
+import { memberName } from '../lib/types';
 import { Hash, Pencil, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
@@ -125,7 +126,8 @@ function MessageItem({ detail, channel, message, grouped }: { detail: ServerDeta
   const mine = message.author.id === me.id;
   const canDelete = mine || has(channel.permissions, P.MANAGE_MESSAGES);
   const member = detail.members.find((x) => x.id === message.author.id);
-  const name = member?.displayName ?? message.author.displayName;
+  const name = member ? memberName(member) : message.author.displayName;
+  const avatarUrl = member?.avatarUrl ?? message.author.avatarUrl;
   const avatarColor = member?.avatarColor ?? message.author.avatarColor;
   const time = new Date(message.createdAt);
 
@@ -145,7 +147,7 @@ function MessageItem({ detail, channel, message, grouped }: { detail: ServerDeta
           </span>
         ) : (
           <button onClick={(e) => openPopover(message.author.id, detail.server.id, e.currentTarget.getBoundingClientRect())}>
-            <Avatar name={name} color={avatarColor} size={40} />
+            <Avatar name={name} color={avatarColor} src={avatarUrl} size={40} />
           </button>
         )}
       </div>
@@ -250,7 +252,8 @@ function Composer({ channel }: { channel: Channel }) {
 
   const typers = Object.entries(typing ?? {})
     .filter(([, until]) => until > Date.now())
-    .map(([id]) => detail.members.find((m) => m.id === id)?.displayName)
+    .map(([id]) => detail.members.find((m) => m.id === id))
+    .map((m) => m && memberName(m))
     .filter(Boolean) as string[];
 
   async function send() {

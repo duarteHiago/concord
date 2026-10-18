@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
-import type { Message, ServerDetail, ServerSummary, User, VoiceState } from '../lib/types';
+import { applyTheme, normalizeTheme } from '../lib/theme';
+import type { Me, Message, ServerDetail, ServerSummary, ThemeSettings, VoiceState } from '../lib/types';
 import { toast } from './toast';
 import { useVoice } from './voice';
 
@@ -13,11 +14,12 @@ export type Modal =
   | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' }
   | { type: 'userSettings' }
   | { type: 'shareScreen' }
+  | { type: 'nickname'; serverId: string; userId: string }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {
   ready: boolean;
-  me: User | null;
+  me: Me | null;
   servers: ServerSummary[];
   details: Record<string, ServerDetail>;
   activeServerId: string | null;
@@ -35,7 +37,8 @@ interface AppState {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string, displayName: string) => Promise<void>;
   logout: () => void;
-  setMe: (me: User) => void;
+  setMe: (me: Me) => void;
+  saveTheme: (theme: ThemeSettings) => void;
   loadServers: () => Promise<void>;
   loadDetail: (serverId: string) => Promise<void>;
   openServer: (serverId: string) => void;
@@ -63,10 +66,12 @@ function loadLast(): { serverId?: string; channels?: Record<string, string> } {
 }
 
 const reloadTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+let themeSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useApp = create<AppState>((set, get) => {
-  function startSession(token: string, me: User) {
+  function startSession(token: string, me: Me) {
     setToken(token);
+    applyTheme(normalizeTheme(me.settings?.theme));
     const code = get().pendingInvite;
     set({ me, pendingInvite: null, ...(code ? { modal: { type: 'addServer', tab: 'join', code } } : {}) });
     const socket = connectSocket(token);
@@ -155,7 +160,7 @@ export const useApp = create<AppState>((set, get) => {
       const token = getToken();
       if (token) {
         try {
-          const me = await api.get<User>('/me');
+          const me = await api.get<Me>('/me');
           startSession(token, me);
         } catch {
           setToken(null);
@@ -165,12 +170,12 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     login: async (username, password) => {
-      const { token, user } = await api.post<{ token: string; user: User }>('/auth/login', { username, password });
+      const { token, user } = await api.post<{ token: string; user: Me }>('/auth/login', { username, password });
       startSession(token, user);
     },
 
     register: async (username, password, displayName) => {
-      const { token, user } = await api.post<{ token: string; user: User }>('/auth/register', { username, password, displayName });
+      const { token, user } = await api.post<{ token: string; user: Me }>('/auth/register', { username, password, displayName });
       startSession(token, user);
     },
 
@@ -182,6 +187,17 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     setMe: (me) => set({ me }),
+
+    saveTheme: (theme) => {
+      applyTheme(theme);
+      const me = get().me;
+      if (!me) return;
+      const settings = { ...me.settings, theme };
+      set({ me: { ...me, settings } });
+      // salva no perfil com atraso, para não mandar uma requisição a cada movimento de slider
+      clearTimeout(themeSaveTimer);
+      themeSaveTimer = setTimeout(() => void api.patch('/me', { settings }).catch(toast.error), 600);
+    },
 
     loadServers: async () => {
       const servers = await api.get<ServerSummary[]>('/servers');

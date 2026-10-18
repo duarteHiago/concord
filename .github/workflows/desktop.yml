@@ -1,0 +1,83 @@
+name: Desktop
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Instalador Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compilar o capturador de áudio (C++)
+        working-directory: desktop/native
+        shell: cmd
+        run: cl /nologo /O2 /EHsc /std:c++17 /W3 /DUNICODE /D_UNICODE audio-capture.cpp /Fe:audio-capture.exe
+
+      # Os runners não têm placa de som, então a ativação pode falhar aqui; serve para ver a mensagem.
+      - name: Testar o capturador
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath desktop/native/audio-capture.exe -ArgumentList '--exclude', $PID `
+            -RedirectStandardError err.txt -RedirectStandardOutput out.bin -PassThru -NoNewWindow
+          $p.WaitForExit(5000) | Out-Null
+          if (-not $p.HasExited) { Stop-Process $p -Force }
+          Get-Content err.txt
+
+      - name: Dependências
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+
+      - name: Gerar instalador
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: concord-desktop
+          path: desktop/release/Concord-Setup-*.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publicar na VPS
+    needs: build
+    if: github.ref == 'refs/heads/main' && vars.VPS_HOST != ''
+    runs-on: ubuntu-latest
+    env:
+      TARGET: ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: concord-desktop
+
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      # o app serve <dados>/downloads em https://DOMINIO/downloads/Concord-Setup.exe
+      - name: Enviar instalador
+        run: |
+          FILE=$(ls Concord-Setup-*.exe | head -1)
+          ssh "$TARGET" "mkdir -p /opt/concord/data/downloads"
+          scp -q "$FILE" "$TARGET:/opt/concord/data/downloads/Concord-Setup.exe.tmp"
+          ssh "$TARGET" "mv /opt/concord/data/downloads/Concord-Setup.exe.tmp /opt/concord/data/downloads/Concord-Setup.exe"

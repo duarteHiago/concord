@@ -14,6 +14,7 @@ export function initials(name: string) {
 export function Avatar({
   name,
   color,
+  src,
   size = 40,
   status,
   speaking,
@@ -21,22 +22,32 @@ export function Avatar({
 }: {
   name: string;
   color: string;
+  src?: string | null;
   size?: number;
   status?: 'online' | 'offline' | null;
   speaking?: boolean;
   className?: string;
 }) {
   return (
-    <div className={cx('relative shrink-0', className)} style={{ width: size, height: size }}>
-      <div
-        className={cx(
-          'flex h-full w-full select-none items-center justify-center rounded-full font-semibold text-white transition-shadow',
-          speaking && 'speaking-ring',
-        )}
-        style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)`, fontSize: size * 0.38 }}
-      >
-        {initials(name)}
-      </div>
+    <div className={cx('avatar relative shrink-0', className)} style={{ width: size, height: size }}>
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          className={cx('h-full w-full rounded-full object-cover transition-shadow', speaking && 'speaking-ring')}
+        />
+      ) : (
+        <div
+          className={cx(
+            'flex h-full w-full select-none items-center justify-center rounded-full font-semibold text-white transition-shadow',
+            speaking && 'speaking-ring',
+          )}
+          style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)`, fontSize: size * 0.38 }}
+        >
+          {initials(name)}
+        </div>
+      )}
       {status && (
         <span
           className={cx(

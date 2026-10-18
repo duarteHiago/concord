@@ -1,3 +1,4 @@
+import { memberName } from '../lib/types';
 import { Track, type LocalTrack, type Participant, type RemoteTrack } from 'livekit-client';
 import {
   Activity,
@@ -89,7 +90,7 @@ function JoinSplash({ detail, channel }: { detail: ServerDetail; channel: Channe
           <div className="mt-5 flex justify-center -space-x-2">
             {inRoom.slice(0, 8).map((v) => {
               const m = detail.members.find((x) => x.id === v.userId);
-              return m ? <Avatar key={v.userId} name={m.displayName} color={m.avatarColor} size={40} className="rounded-full ring-4 ring-surface-0" /> : null;
+              return m ? <Avatar key={v.userId} name={memberName(m)} color={m.avatarColor} src={m.avatarUrl} size={40} className="rounded-full ring-4 ring-surface-0" /> : null;
             })}
           </div>
         )}
@@ -190,7 +191,8 @@ function Tile({
 }) {
   const { participant: p, kind, isLocal } = tile;
   const member = detail.members.find((m) => m.id === p.identity);
-  const name = member?.displayName ?? p.name ?? p.identity;
+  const name = member ? memberName(member) : (p.name ?? p.identity);
+  const avatarUrl = member?.avatarUrl;
   const color = member?.avatarColor ?? '#5865f2';
   const speaking = useVoice((s) => !!s.speaking[p.identity]);
   const watching = useVoice((s) => !!s.watching[p.identity]);
@@ -234,7 +236,7 @@ function Tile({
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-surface-3 to-surface-1 p-3 text-center">
-            {!compact && <Avatar name={name} color={color} size={56} />}
+            {!compact && <Avatar name={name} color={color} src={avatarUrl} size={56} />}
             <p className={cx('font-semibold', compact ? 'text-xs' : 'text-sm')}>{name} está transmitindo</p>
             <Button className={compact ? 'h-7 px-2 text-xs' : ''} onClick={(e) => { e.stopPropagation(); setWatching(p.identity, true); }}>
               <Eye size={16} /> Assistir
@@ -291,7 +293,7 @@ function Tile({
       {camTrack ? (
         <VideoEl track={camTrack} fit={focused ? 'contain' : 'cover'} mirror={isLocal} />
       ) : (
-        <Avatar name={name} color={color} size={compact ? 44 : focused ? 128 : 80} speaking={speaking && !muted} />
+        <Avatar name={name} color={color} src={avatarUrl} size={compact ? 44 : focused ? 128 : 80} speaking={speaking && !muted} />
       )}
       <TileLabel
         name={isLocal ? `${name} (você)` : name}

@@ -1,3 +1,4 @@
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const env = process.env;
@@ -7,7 +8,9 @@ export const config = {
   host: env.HOST ?? '0.0.0.0',
   jwtSecret: env.JWT_SECRET ?? 'dev-secret-troque-isto',
   dbPath: env.DB_PATH ?? fileURLToPath(new URL('../data/concord.db', import.meta.url)),
-  publicDir: env.PUBLIC_DIR ?? fileURLToPath(new URL('../../client/dist', import.meta.url)),
+  uploadsDir: env.UPLOADS_DIR ?? '',
+  downloadsDir: env.DOWNLOADS_DIR ?? '',
+  publicDir:env.PUBLIC_DIR ?? fileURLToPath(new URL('../../client/dist', import.meta.url)),
   allowRegistration: env.ALLOW_REGISTRATION !== 'false',
   livekit: {
     // URL que o navegador usa. Vazio = mesmo domínio do app em /livekit (via proxy reverso).
@@ -18,6 +21,10 @@ export const config = {
     apiSecret: env.LIVEKIT_API_SECRET ?? 'secret',
   },
 };
+
+// por padrão os uploads ficam ao lado do banco (no Docker: /data/uploads)
+if (!config.uploadsDir) config.uploadsDir = join(dirname(config.dbPath), 'uploads');
+if (!config.downloadsDir) config.downloadsDir = join(dirname(config.dbPath), 'downloads');
 
 if (env.NODE_ENV === 'production' && config.jwtSecret === 'dev-secret-troque-isto') {
   console.warn('[aviso] JWT_SECRET não definido — defina um valor aleatório em produção!');

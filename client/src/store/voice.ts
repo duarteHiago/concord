@@ -14,6 +14,7 @@ import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
+import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -77,7 +78,8 @@ interface VoiceStore {
   toggleMic: () => Promise<void>;
   toggleDeafen: () => Promise<void>;
   toggleCamera: () => Promise<void>;
-  startShare: (settings: ShareSettings) => Promise<void>;
+  /** sourceId: fonte escolhida no seletor do app desktop (no navegador, o próprio navegador pergunta). */
+  startShare: (settings: ShareSettings, sourceId?: string) => Promise<void>;
   stopShare: () => Promise<void>;
   setWatching: (identity: string, on: boolean) => void;
   setFocus: (key: string | null) => void;
@@ -121,7 +123,8 @@ export function screenShareSupport(): string | null {
   if (!window.isSecureContext) {
     return 'A captura de tela só funciona em HTTPS ou em http://localhost. Acesse o app por um desses endereços.';
   }
-  if (/Electron|Code\//.test(navigator.userAgent)) {
+  // no Concord Desktop o seletor é o nosso; em outros apps Electron (ex.: VS Code) não há seletor
+  if (!desktop && /Electron|Code\//.test(navigator.userAgent)) {
     return 'Este navegador embutido (ex.: navegador do VS Code) não tem seletor de tela. Abra o app no Chrome ou Edge.';
   }
   if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -171,7 +174,43 @@ export const useVoice = create<VoiceStore>((set, get) => {
     }
   }
 
+  // ---- áudio da transmissão no app desktop (capturador por processo, sem retorno) ----
+  let desktopAudio: DesktopAudio | null = null;
+
+  async function startDesktopShareAudio(sourceId: string) {
+    const room = get().room;
+    if (!room) return;
+    try {
+      desktopAudio = await startDesktopAudio(sourceId, (message) => {
+        toast.error(`O áudio da transmissão parou: ${message}`);
+        void stopDesktopShareAudio();
+      });
+      await room.localParticipant.publishTrack(desktopAudio.track, {
+        source: Track.Source.ScreenShareAudio,
+        name: 'screen-share-audio',
+        audioPreset: AudioPresets.musicHighQualityStereo,
+        forceStereo: true,
+        dtx: false,
+        red: false,
+      });
+    } catch (err) {
+      toast.error(`Não foi possível capturar o áudio: ${(err as Error).message}`);
+      await stopDesktopShareAudio();
+    }
+  }
+
+  async function stopDesktopShareAudio() {
+    const audio = desktopAudio;
+    desktopAudio = null;
+    if (!audio) return;
+    const pub = get().room?.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
+    if (pub?.track) await get().room?.localParticipant.unpublishTrack(pub.track).catch(() => {});
+    audio.track.stop();
+    await audio.stop();
+  }
+
   function cleanup() {
+    void stopDesktopShareAudio();
     audioContainer?.replaceChildren();
     set({
       room: null,
@@ -232,6 +271,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
         bump();
       })
       .on(RoomEvent.LocalTrackUnpublished, (pub) => {
+        // transmissão encerrada por fora (ex.: janela capturada fechou): para o áudio junto
+        if (pub.source === Track.Source.ScreenShare) void stopDesktopShareAudio();
         if (pub.source === Track.Source.ScreenShare && get().focus === `${room.localParticipant.identity}:screen`) set({ focus: null });
         syncLocalFlags();
         bump();
@@ -404,7 +445,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       }
     },
 
-    startShare: async (settings) => {
+    startShare: async (settings, sourceId) => {
       const s = get();
       if (!s.room) return;
       if (!has(s.permissions, P.STREAM)) return toast.info('Você não tem permissão para transmitir nesta sala.');
@@ -415,12 +456,16 @@ export const useVoice = create<VoiceStore>((set, get) => {
       const preset = SHARE_PRESETS.find((p) => p.id === settings.presetId) ?? SHARE_PRESETS[1];
       const lp = s.room.localParticipant;
       const startedAt = performance.now();
+      // No app desktop o áudio vem do capturador por processo (sem as vozes da sala),
+      // então o getDisplayMedia pede só o vídeo da fonte escolhida no seletor do Concord.
+      const desktopShare = !!desktop && !!sourceId;
       try {
-        if (lp.isScreenShareEnabled) await lp.setScreenShareEnabled(false);
+        if (lp.isScreenShareEnabled) await get().stopShare();
+        if (desktopShare) await desktop!.selectSource(sourceId!);
         await lp.setScreenShareEnabled(
           true,
           {
-            audio: settings.audio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
+            audio: settings.audio && !desktopShare ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
             resolution: { width: preset.width, height: preset.height, frameRate: preset.fps },
             contentHint: settings.mode === 'motion' ? 'motion' : 'detail',
             selfBrowserSurface: 'exclude',
@@ -442,6 +487,9 @@ export const useVoice = create<VoiceStore>((set, get) => {
         syncLocalFlags();
         set({ focus: `${lp.identity}:screen` });
         bump();
+        if (desktopShare && settings.audio && (await desktopInfo()).processAudio) {
+          await startDesktopShareAudio(sourceId!);
+        }
       } catch (err) {
         const name = (err as Error).name;
         // recusa instantânea = o navegador nem mostrou o seletor (bloqueado), não foi a pessoa que cancelou
@@ -457,6 +505,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     stopShare: async () => {
       const room = get().room;
       if (!room) return;
+      await stopDesktopShareAudio();
       await room.localParticipant.setScreenShareEnabled(false);
       syncLocalFlags();
     },

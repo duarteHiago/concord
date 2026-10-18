@@ -15,6 +15,8 @@ export const P = {
   MANAGE_ROLES: 1 << 11,
   MANAGE_SERVER: 1 << 12,
   ADMINISTRATOR: 1 << 13,
+  CHANGE_NICKNAME: 1 << 14,
+  MANAGE_NICKNAMES: 1 << 15,
 } as const;
 
 export type PermissionKey = keyof typeof P;
@@ -22,10 +24,10 @@ export type PermissionKey = keyof typeof P;
 export const ALL_PERMISSIONS = Object.values(P).reduce((a, b) => a | b, 0);
 
 export const DEFAULT_EVERYONE =
-  P.VIEW_CHANNEL | P.SEND_MESSAGES | P.CONNECT | P.SPEAK | P.STREAM | P.CREATE_INVITE;
+  P.VIEW_CHANNEL | P.SEND_MESSAGES | P.CONNECT | P.SPEAK | P.STREAM | P.CREATE_INVITE | P.CHANGE_NICKNAME;
 
 export const DEFAULT_MODERATOR =
-  DEFAULT_EVERYONE | P.MANAGE_MESSAGES | P.MUTE_MEMBERS | P.MOVE_MEMBERS | P.KICK_MEMBERS;
+  DEFAULT_EVERYONE | P.MANAGE_MESSAGES | P.MUTE_MEMBERS | P.MOVE_MEMBERS | P.KICK_MEMBERS | P.MANAGE_NICKNAMES;
 
 export interface PermissionInfo {
   key: PermissionKey;
@@ -38,6 +40,7 @@ export interface PermissionInfo {
 export const PERMISSION_INFO: PermissionInfo[] = [
   { key: 'VIEW_CHANNEL', label: 'Ver canais', description: 'Permite ver e acessar os canais.', category: 'Geral', channel: true },
   { key: 'CREATE_INVITE', label: 'Criar convites', description: 'Permite convidar novas pessoas.', category: 'Geral', channel: false },
+  { key: 'CHANGE_NICKNAME', label: 'Alterar o próprio apelido', description: 'Permite usar um apelido diferente neste servidor.', category: 'Geral', channel: false },
   { key: 'SEND_MESSAGES', label: 'Enviar mensagens', description: 'Permite enviar mensagens nos canais de texto.', category: 'Texto', channel: true },
   { key: 'MANAGE_MESSAGES', label: 'Gerenciar mensagens', description: 'Permite apagar mensagens de outras pessoas.', category: 'Texto', channel: true },
   { key: 'CONNECT', label: 'Conectar', description: 'Permite entrar nas salas de voz.', category: 'Voz e transmissão', channel: true },
@@ -46,6 +49,7 @@ export const PERMISSION_INFO: PermissionInfo[] = [
   { key: 'MUTE_MEMBERS', label: 'Silenciar membros', description: 'Permite silenciar o microfone e a transmissão de outros.', category: 'Moderação', channel: true },
   { key: 'MOVE_MEMBERS', label: 'Desconectar membros', description: 'Permite remover pessoas das salas de voz.', category: 'Moderação', channel: true },
   { key: 'KICK_MEMBERS', label: 'Expulsar membros', description: 'Permite expulsar membros do servidor.', category: 'Moderação', channel: false },
+  { key: 'MANAGE_NICKNAMES', label: 'Gerenciar apelidos', description: 'Permite alterar o apelido de membros abaixo do seu cargo.', category: 'Moderação', channel: false },
   { key: 'MANAGE_CHANNELS', label: 'Gerenciar canais', description: 'Criar, editar e apagar canais e salas.', category: 'Administração', channel: true },
   { key: 'MANAGE_ROLES', label: 'Gerenciar cargos', description: 'Criar e editar cargos abaixo do seu e atribuí-los.', category: 'Administração', channel: false },
   { key: 'MANAGE_SERVER', label: 'Gerenciar servidor', description: 'Alterar nome e aparência do servidor.', category: 'Administração', channel: false },

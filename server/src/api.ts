@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import bcrypt from 'bcryptjs';
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { ALL_PERMISSIONS, DEFAULT_EVERYONE, DEFAULT_MODERATOR, P, has } from '../../shared/permissions.ts';
 import {
   channelOverwrites,
@@ -33,6 +35,7 @@ import {
 } from './db.ts';
 import { color, fail, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
+import { removeUpload, saveImage } from './uploads.ts';
 import {
   dropVoice,
   emitToChannel,
@@ -50,18 +53,37 @@ import {
 
 export const api = Router();
 
+/** Nome fixo do instalador publicado pelo CI em <dados>/downloads. */
+const DESKTOP_INSTALLER = 'Concord-Setup.exe';
+
 const PALETTE = ['#5865f2', '#3ba55c', '#faa61a', '#ed4245', '#eb459e', '#9b59b6', '#1abc9c', '#e67e22', '#00b0f4'];
 const pickColor = () => PALETTE[Math.floor(Math.random() * PALETTE.length)];
 const now = () => Date.now();
 
-const userJson = (u: Pick<UserRow, 'id' | 'username' | 'display_name' | 'avatar_color'>) => ({
+type PublicUser = Pick<UserRow, 'id' | 'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio'>;
+
+const userJson = (u: PublicUser) => ({
   id: u.id,
   username: u.username,
   displayName: u.display_name,
   avatarColor: u.avatar_color,
+  avatarUrl: u.avatar_url,
+  bannerColor: u.banner_color,
+  bio: u.bio,
 });
 
-const serverJson = (s: ServerRow) => ({ id: s.id, name: s.name, ownerId: s.owner_id, iconColor: s.icon_color });
+/** Dados do próprio usuário: inclui as preferências (tema etc.), que só ele vê. */
+const meJson = (u: UserRow) => {
+  let settings: unknown = {};
+  try {
+    settings = JSON.parse(u.settings || '{}');
+  } catch {
+    // ignorado
+  }
+  return { ...userJson(u), settings };
+};
+
+const serverJson = (s: ServerRow) => ({ id: s.id, name: s.name, ownerId: s.owner_id, iconColor: s.icon_color, iconUrl: s.icon_url });
 
 const roleJson = (r: RoleRow) => ({
   id: r.id,
@@ -73,23 +95,27 @@ const roleJson = (r: RoleRow) => ({
   hoist: !!r.hoist,
 });
 
-type MessageWithAuthor = MessageRow & Pick<UserRow, 'username' | 'display_name' | 'avatar_color'>;
+type MessageWithAuthor = MessageRow & Omit<PublicUser, 'id'>;
 const messageJson = (m: MessageWithAuthor) => ({
   id: m.id,
   channelId: m.channel_id,
   content: m.content,
   createdAt: m.created_at,
   editedAt: m.edited_at,
-  author: userJson({ id: m.author_id, username: m.username, display_name: m.display_name, avatar_color: m.avatar_color }),
+  author: userJson({ ...m, id: m.author_id }),
 });
 
-const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color
+const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio
   FROM messages m JOIN users u ON u.id = m.author_id`;
 
 // ============================================================ Auth
 
 api.get('/config', (_req, res) => {
-  res.json({ allowRegistration: config.allowRegistration });
+  const installer = join(config.downloadsDir, DESKTOP_INSTALLER);
+  res.json({
+    allowRegistration: config.allowRegistration,
+    desktopDownload: existsSync(installer) ? `/downloads/${DESKTOP_INSTALLER}` : null,
+  });
 });
 
 api.post('/auth/register', async (req, res) => {
@@ -106,6 +132,10 @@ api.post('/auth/register', async (req, res) => {
     display_name: displayName,
     password_hash: await bcrypt.hash(password, 10),
     avatar_color: pickColor(),
+    avatar_url: null,
+    banner_color: null,
+    bio: '',
+    settings: '{}',
     created_at: now(),
   };
   run(
@@ -117,7 +147,7 @@ api.post('/auth/register', async (req, res) => {
     user.avatar_color,
     user.created_at,
   );
-  res.json({ token: signToken(user.id), user: userJson(user) });
+  res.json({ token: signToken(user.id), user: meJson(user) });
 });
 
 api.post('/auth/login', async (req, res) => {
@@ -125,7 +155,7 @@ api.post('/auth/login', async (req, res) => {
   const password = str(req.body?.password, 'senha', 1, 128);
   const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
   if (!user || !(await bcrypt.compare(password, user.password_hash))) fail(401, 'Usuário ou senha incorretos');
-  res.json({ token: signToken(user!.id), user: userJson(user!) });
+  res.json({ token: signToken(user!.id), user: meJson(user!) });
 });
 
 // Prévia do convite é pública: aparece na tela de login de quem recebeu o link.
@@ -143,26 +173,84 @@ api.use(requireAuth);
 
 api.get('/me', (_req, res) => {
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', uid(res)) ?? fail(401, 'Sessão inválida');
-  res.json(userJson(user));
+  res.json(meJson(user));
 });
+
+/** Avisa os servidores do usuário que o perfil dele mudou (nome, foto...). */
+function profileChanged(userId: string) {
+  for (const { server_id } of all<{ server_id: string }>('SELECT server_id FROM members WHERE user_id = ?', userId)) {
+    serverChanged(server_id);
+  }
+}
 
 api.patch('/me', async (req, res) => {
   const me = uid(res);
+  let publicChange = false;
   const displayName = optStr(req.body?.displayName, 'nome', 1, 32);
-  if (displayName) run('UPDATE users SET display_name = ? WHERE id = ?', displayName, me);
+  if (displayName) {
+    run('UPDATE users SET display_name = ? WHERE id = ?', displayName, me);
+    publicChange = true;
+  }
   if (req.body?.avatarColor !== undefined) {
     run('UPDATE users SET avatar_color = ? WHERE id = ?', color(req.body.avatarColor) ?? pickColor(), me);
+    publicChange = true;
+  }
+  if (req.body?.bannerColor !== undefined) {
+    run('UPDATE users SET banner_color = ? WHERE id = ?', color(req.body.bannerColor), me);
+    publicChange = true;
+  }
+  const bio = optStr(req.body?.bio, 'sobre mim', 0, 190);
+  if (bio !== undefined) {
+    run('UPDATE users SET bio = ? WHERE id = ?', bio, me);
+    publicChange = true;
+  }
+  if (req.body?.settings !== undefined) {
+    const json = JSON.stringify(req.body.settings ?? {});
+    if (json.length > 20_000) fail(400, 'Configurações muito grandes');
+    run('UPDATE users SET settings = ? WHERE id = ?', json, me);
   }
   if (req.body?.newPassword !== undefined) {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
     if (!(await bcrypt.compare(String(req.body.currentPassword ?? ''), user.password_hash))) fail(400, 'Senha atual incorreta');
     run('UPDATE users SET password_hash = ? WHERE id = ?', await bcrypt.hash(str(req.body.newPassword, 'nova senha', 6, 128), 10), me);
   }
+  if (publicChange) profileChanged(me);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+const imageBody = express.raw({ type: () => true, limit: '7mb' });
+
+api.post('/me/avatar', imageBody, (req, res) => {
+  const me = uid(res);
+  const old = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url;
+  const url = saveImage('avatars', me, req.body);
+  run('UPDATE users SET avatar_url = ? WHERE id = ?', url, me);
+  removeUpload(old);
+  profileChanged(me);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+api.delete('/me/avatar', (_req, res) => {
+  const me = uid(res);
+  removeUpload(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url);
+  run('UPDATE users SET avatar_url = NULL WHERE id = ?', me);
+  profileChanged(me);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+/** Fundo do tema: guardado no servidor para aparecer igual no navegador e no app desktop. */
+api.post('/me/background', imageBody, (req, res) => {
+  const me = uid(res);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
-  for (const { server_id } of all<{ server_id: string }>('SELECT server_id FROM members WHERE user_id = ?', me)) {
-    serverChanged(server_id);
+  let previous: string | undefined;
+  try {
+    previous = JSON.parse(user.settings || '{}')?.theme?.background?.url;
+  } catch {
+    // ignorado
   }
-  res.json(userJson(user));
+  const url = saveImage('backgrounds', me, req.body);
+  if (previous?.startsWith('/uploads/backgrounds/')) removeUpload(previous);
+  res.json({ url });
 });
 
 // ============================================================ Servidores
@@ -178,7 +266,7 @@ api.get('/servers', (_req, res) => {
 api.post('/servers', (req, res) => {
   const me = uid(res);
   const name = str(req.body?.name, 'nome', 2, 50);
-  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), created_at: now() };
+  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, created_at: now() };
 
   tx(() => {
     run('INSERT INTO servers (id, name, owner_id, icon_color, created_at) VALUES (?, ?, ?, ?, ?)', server.id, name, me, server.icon_color, server.created_at);
@@ -222,13 +310,14 @@ api.get('/servers/:id', (req, res) => {
       permissions: perms,
     }));
 
-  const memberRows = all<UserRow & { joined_at: number }>(
-    `SELECT u.*, m.joined_at FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ? ORDER BY m.joined_at`,
+  const memberRows = all<UserRow & { joined_at: number; nickname: string | null }>(
+    `SELECT u.*, m.joined_at, m.nickname FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ? ORDER BY m.joined_at`,
     server.id,
   );
   const links = all<{ user_id: string; role_id: string }>('SELECT user_id, role_id FROM member_roles WHERE server_id = ?', server.id);
   const members = memberRows.map((u) => ({
     ...userJson(u),
+    nickname: u.nickname,
     joinedAt: u.joined_at,
     roleIds: links.filter((l) => l.user_id === u.id).map((l) => l.role_id),
   }));
@@ -254,6 +343,42 @@ api.patch('/servers/:id', (req, res) => {
   res.json(serverJson(getServer(server.id)));
 });
 
+api.post('/servers/:id/icon', imageBody, (req, res) => {
+  const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
+  const url = saveImage('icons', server.id, req.body);
+  run('UPDATE servers SET icon_url = ? WHERE id = ?', url, server.id);
+  removeUpload(server.icon_url);
+  serverChanged(server.id);
+  res.json(serverJson(getServer(server.id)));
+});
+
+api.delete('/servers/:id/icon', (req, res) => {
+  const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
+  removeUpload(server.icon_url);
+  run('UPDATE servers SET icon_url = NULL WHERE id = ?', server.id);
+  serverChanged(server.id);
+  res.json(serverJson(getServer(server.id)));
+});
+
+/** Apelido por servidor: o próprio (CHANGE_NICKNAME) ou de quem está abaixo (MANAGE_NICKNAMES). */
+api.put('/servers/:id/members/:userId/nickname', (req, res) => {
+  const me = uid(res);
+  const target = req.params.userId === '@me' ? me : req.params.userId;
+  const server = requireMember(req.params.id, me);
+  if (!isMember(server.id, target)) fail(404, 'Membro não encontrado');
+  const perms = serverPermissions(server.id, me);
+  if (target === me) {
+    if (!has(perms, P.CHANGE_NICKNAME) && !has(perms, P.MANAGE_NICKNAMES)) fail(403, 'Você não pode alterar seu apelido aqui');
+  } else if (!has(perms, P.MANAGE_NICKNAMES) || !outranks(server.id, me, target)) {
+    fail(403, 'Você não pode alterar o apelido deste membro');
+  }
+  const raw = req.body?.nickname;
+  const nickname = raw === null || raw === '' ? null : str(raw, 'apelido', 1, 32);
+  run('UPDATE members SET nickname = ? WHERE server_id = ? AND user_id = ?', nickname, server.id, target);
+  serverChanged(server.id);
+  res.json({ ok: true, nickname });
+});
+
 api.delete('/servers/:id', (req, res) => {
   const server = getServer(req.params.id);
   if (server.owner_id !== uid(res)) fail(403, 'Apenas o dono pode apagar o servidor');
@@ -264,6 +389,7 @@ api.delete('/servers/:id', (req, res) => {
   emitToServer(server.id, 'server:removed', { serverId: server.id, reason: 'O servidor foi apagado.' });
   const memberIds = all<{ user_id: string }>('SELECT user_id FROM members WHERE server_id = ?', server.id);
   run('DELETE FROM servers WHERE id = ?', server.id);
+  removeUpload(server.icon_url);
   memberIds.forEach((m) => leaveServerRoom(m.user_id, server.id));
   res.json({ ok: true });
 });

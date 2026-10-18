@@ -94,6 +94,27 @@ db.exec(`
   );
 `);
 
+// ---- Migrações (bancos criados em versões anteriores) ----
+
+function addColumn(table: string, column: string, ddl: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+}
+
+addColumn('users', 'avatar_url', 'TEXT');
+addColumn('users', 'banner_color', 'TEXT');
+addColumn('users', 'bio', "TEXT NOT NULL DEFAULT ''");
+addColumn('users', 'settings', "TEXT NOT NULL DEFAULT '{}'");
+addColumn('servers', 'icon_url', 'TEXT');
+
+db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
+if (version < 2) {
+  // v2: permissão "Alterar o próprio apelido" (1 << 14) passa a vir no @everyone
+  db.exec(`UPDATE roles SET permissions = permissions | ${1 << 14} WHERE is_default = 1`);
+}
+db.prepare("INSERT INTO meta (key, value) VALUES ('schema', '2') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
+
 const cache = new Map<string, StatementSync>();
 function stmt(sql: string): StatementSync {
   let s = cache.get(sql);
@@ -136,6 +157,10 @@ export interface UserRow {
   display_name: string;
   password_hash: string;
   avatar_color: string;
+  avatar_url: string | null;
+  banner_color: string | null;
+  bio: string;
+  settings: string;
   created_at: number;
 }
 
@@ -144,6 +169,7 @@ export interface ServerRow {
   name: string;
   owner_id: string;
   icon_color: string;
+  icon_url: string | null;
   created_at: number;
 }
 

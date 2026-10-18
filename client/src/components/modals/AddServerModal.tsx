@@ -117,7 +117,7 @@ function JoinForm({ initialCode }: { initialCode?: string }) {
       />
       {preview ? (
         <div className="flex items-center gap-3 rounded-xl border border-line bg-surface-0 p-3">
-          <Avatar name={preview.server.name} color={preview.server.iconColor} size={48} className="[&>div]:rounded-2xl" />
+          <Avatar name={preview.server.name} color={preview.server.iconColor} src={preview.server.iconUrl} size={48} className="[&>*]:rounded-2xl" />
           <div>
             <div className="font-bold">{preview.server.name}</div>
             <div className="text-xs text-fg-muted">{preview.memberCount} membro(s)</div>

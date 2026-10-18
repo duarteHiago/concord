@@ -5,6 +5,21 @@ export interface User {
   username: string;
   displayName: string;
   avatarColor: string;
+  avatarUrl: string | null;
+  bannerColor: string | null;
+  bio: string;
+}
+
+export interface Me extends User {
+  settings: { theme?: Partial<ThemeSettings> } & Record<string, unknown>;
+}
+
+export interface ThemeSettings {
+  preset: string;
+  accent: string | null;
+  background: { url: string | null; blur: number; dim: number };
+  scale: number;
+  customCss: string;
 }
 
 export interface ServerSummary {
@@ -12,6 +27,7 @@ export interface ServerSummary {
   name: string;
   ownerId: string;
   iconColor: string;
+  iconUrl: string | null;
 }
 
 export interface Role {
@@ -36,9 +52,13 @@ export interface Channel {
 }
 
 export interface Member extends User {
+  nickname: string | null;
   joinedAt: number;
   roleIds: string[];
 }
+
+/** Nome exibido no servidor: apelido, se houver. */
+export const memberName = (m: { nickname?: string | null; displayName: string }) => m.nickname || m.displayName;
 
 export interface VoiceState {
   userId: string;

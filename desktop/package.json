@@ -1,0 +1,34 @@
+{
+  "name": "concord-desktop",
+  "productName": "Concord",
+  "version": "1.0.0",
+  "description": "Concord para desktop: transmissão de tela a 60 fps com áudio sem retorno",
+  "author": "duarteHiago",
+  "license": "MIT",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "com.duartehiago.concord",
+    "productName": "Concord",
+    "artifactName": "Concord-Setup-${version}.${ext}",
+    "files": ["main.cjs", "preload.cjs", "offline.html", "build/icon.png"],
+    "extraResources": [{ "from": "native/audio-capture.exe", "to": "audio-capture.exe" }],
+    "directories": { "output": "release" },
+    "win": { "target": ["nsis"], "icon": "build/icon.png" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Concord"
+    }
+  }
+}

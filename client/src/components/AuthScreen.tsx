@@ -71,7 +71,7 @@ export function AuthScreen() {
         <form onSubmit={submit} className="space-y-4 p-8 md:p-10">
           {invite && (
             <div className="mb-2 flex items-center gap-3 rounded-xl border border-accent/40 bg-accent/10 p-3">
-              <Avatar name={invite.server.name} color={invite.server.iconColor} size={44} className="[&>div]:rounded-2xl" />
+              <Avatar name={invite.server.name} color={invite.server.iconColor} src={invite.server.iconUrl} size={44} className="[&>*]:rounded-2xl" />
               <div className="min-w-0">
                 <div className="text-xs text-fg-muted">Você foi convidado para</div>
                 <div className="truncate font-bold">{invite.server.name}</div>

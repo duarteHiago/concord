@@ -1,9 +1,10 @@
-import { Gamepad2, Info, MonitorUp, Type } from 'lucide-react';
-import { useState } from 'react';
+import { AppWindow, Gamepad2, Info, Monitor, MonitorUp, RefreshCw, Type } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { VideoCodec } from 'livekit-client';
+import { desktop, desktopInfo, type DesktopSource } from '../../lib/desktop';
 import { useApp } from '../../store/app';
 import { SHARE_PRESETS, screenShareSupport, useVoice, type ShareSettings } from '../../store/voice';
-import { Button, Modal, Toggle, cx } from '../ui';
+import { Button, Modal, Spinner, Toggle, cx } from '../ui';
 
 const CODECS: { id: VideoCodec; label: string; hint: string }[] = [
   { id: 'h264', label: 'H.264', hint: 'Usa aceleração de hardware (GPU). Menor uso de CPU — recomendado para 60 fps.' },
@@ -18,35 +19,44 @@ export function ShareScreenModal() {
   const sharing = useVoice((s) => s.sharing);
   const startShare = useVoice((s) => s.startShare);
   const [settings, setSettings] = useState<ShareSettings>(current);
+  const [source, setSource] = useState<DesktopSource | null>(null);
   const update = (patch: Partial<ShareSettings>) => setSettings({ ...settings, ...patch });
   const preset = SHARE_PRESETS.find((p) => p.id === settings.presetId) ?? SHARE_PRESETS[1];
   const unsupported = screenShareSupport();
+  const canStart = !unsupported && (!desktop || !!source);
 
   return (
     <Modal
       title="Transmitir tela"
-      subtitle="Escolha a qualidade. Em seguida o navegador vai perguntar o que você quer compartilhar: tela inteira, uma janela ou uma aba."
+      subtitle={
+        desktop
+          ? 'Escolha a tela ou janela e a qualidade da transmissão.'
+          : 'Escolha a qualidade. Em seguida o navegador vai perguntar o que você quer compartilhar: tela inteira, uma janela ou uma aba.'
+      }
       onClose={close}
-      width={600}
+      width={desktop ? 760 : 600}
       footer={
         <>
           <Button variant="ghost" onClick={close}>
             Cancelar
           </Button>
           <Button
-            disabled={!!unsupported}
+            disabled={!canStart}
             onClick={() => {
               close();
-              void startShare(settings);
+              void startShare(settings, source?.id);
             }}
           >
-            <MonitorUp size={18} /> {sharing ? 'Trocar transmissão' : 'Escolher tela ou janela'}
+            <MonitorUp size={18} /> {desktop ? (sharing ? 'Trocar transmissão' : 'Transmitir') : sharing ? 'Trocar transmissão' : 'Escolher tela ou janela'}
           </Button>
         </>
       }
     >
       <div className="space-y-6">
         {unsupported && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-300">{unsupported}</p>}
+
+        {desktop && <SourcePicker selected={source} onSelect={setSource} />}
+
         <div>
           <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Resolução e taxa de quadros</h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -97,13 +107,7 @@ export function ShareScreenModal() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-xl bg-surface-0 p-3">
-          <div>
-            <div className="text-sm font-semibold">Transmitir áudio</div>
-            <div className="text-xs text-fg-muted">Som da aba ou do sistema (marque “Compartilhar áudio” na janela do navegador).</div>
-          </div>
-          <Toggle checked={settings.audio} onChange={(audio) => update({ audio })} />
-        </div>
+        <AudioOption settings={settings} update={update} source={source} />
 
         <div>
           <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Codec de vídeo</h3>
@@ -128,5 +132,118 @@ export function ShareScreenModal() {
         </div>
       </div>
     </Modal>
+  );
+}
+
+function AudioOption({
+  settings,
+  update,
+  source,
+}: {
+  settings: ShareSettings;
+  update: (patch: Partial<ShareSettings>) => void;
+  source: DesktopSource | null;
+}) {
+  const [processAudio, setProcessAudio] = useState<boolean | null>(desktop ? null : false);
+  useEffect(() => {
+    if (desktop) void desktopInfo().then((i) => setProcessAudio(i.processAudio));
+  }, []);
+
+  let title = 'Transmitir áudio';
+  let hint = 'Som da aba ou do sistema (marque “Compartilhar áudio” na janela do navegador). Pelo navegador, as vozes da sala podem voltar para quem assiste — use o app desktop para evitar.';
+  if (desktop && processAudio) {
+    if (source?.kind === 'window') {
+      title = 'Transmitir o áudio deste programa';
+      hint = `Só o som de “${source.name}”. Vozes da sala e outros programas ficam de fora.`;
+    } else {
+      title = 'Transmitir o áudio do PC';
+      hint = 'Todo o som do computador, menos as vozes da sala — quem assiste não ouve a própria voz de volta.';
+    }
+  } else if (desktop && processAudio === false) {
+    hint = 'A captura de áudio sem retorno precisa do Windows 11 (ou Windows 10 build 20348+). Neste sistema a transmissão vai sem áudio.';
+  }
+  const disabled = !!desktop && processAudio === false;
+
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl bg-surface-0 p-3">
+      <div>
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-xs text-fg-muted">{hint}</div>
+      </div>
+      <Toggle checked={settings.audio && !disabled} onChange={(audio) => update({ audio })} disabled={disabled} />
+    </div>
+  );
+}
+
+function SourcePicker({ selected, onSelect }: { selected: DesktopSource | null; onSelect: (s: DesktopSource) => void }) {
+  const [sources, setSources] = useState<DesktopSource[] | null>(null);
+  const [kind, setKind] = useState<'screen' | 'window'>('screen');
+
+  const load = () => {
+    setSources(null);
+    void desktop!.getSources().then((list) => {
+      setSources(list);
+      if (!selected) {
+        const first = list.find((s) => s.kind === 'screen');
+        if (first) onSelect(first);
+      }
+    });
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, []);
+
+  const visible = sources?.filter((s) => s.kind === kind) ?? [];
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-1">
+        {(
+          [
+            ['screen', <Monitor size={15} />, 'Telas'],
+            ['window', <AppWindow size={15} />, 'Janelas'],
+          ] as const
+        ).map(([id, icon, label]) => (
+          <button
+            key={id}
+            onClick={() => setKind(id)}
+            className={cx(
+              'flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors',
+              kind === id ? 'bg-surface-4 text-fg' : 'text-fg-muted hover:text-fg',
+            )}
+          >
+            {icon} {label}
+          </button>
+        ))}
+        <button onClick={load} title="Atualizar lista" className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-white/5 hover:text-fg">
+          <RefreshCw size={15} />
+        </button>
+      </div>
+      <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+        {!sources && (
+          <div className="col-span-full flex justify-center py-8">
+            <Spinner />
+          </div>
+        )}
+        {sources && visible.length === 0 && <p className="col-span-full py-6 text-center text-sm text-fg-muted">Nada encontrado.</p>}
+        {visible.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onSelect(s)}
+            className={cx(
+              'overflow-hidden rounded-xl border-2 bg-surface-0 text-left transition-all',
+              selected?.id === s.id ? 'border-accent shadow-lg shadow-accent/15' : 'border-transparent hover:border-line-strong',
+            )}
+          >
+            <div className="flex aspect-video items-center justify-center bg-black">
+              {s.thumbnail ? <img src={s.thumbnail} alt="" className="h-full w-full object-contain" /> : <AppWindow className="text-fg-subtle" />}
+            </div>
+            <div className="flex items-center gap-1.5 px-2 py-1.5">
+              {s.icon && <img src={s.icon} alt="" className="h-4 w-4 shrink-0" />}
+              <span className="truncate text-xs font-medium">{s.name}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

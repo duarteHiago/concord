@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Concord — sem conexão</title>
+    <style>
+      body {
+        margin: 0;
+        height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0a0b0f;
+        color: #e8eaf0;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+      .card {
+        width: min(440px, 90vw);
+        padding: 32px;
+        border-radius: 20px;
+        background: #15171e;
+        border: 1px solid rgb(255 255 255 / 0.07);
+        text-align: center;
+      }
+      h1 { margin: 0 0 8px; font-size: 22px; }
+      p { color: #a1a7b5; font-size: 14px; line-height: 1.5; }
+      code { color: #6b7180; font-size: 12px; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        height: 40px;
+        margin-top: 16px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid rgb(255 255 255 / 0.12);
+        background: #0a0b0f;
+        color: inherit;
+        font-size: 14px;
+      }
+      .row { display: flex; gap: 8px; margin-top: 12px; }
+      button {
+        flex: 1;
+        height: 40px;
+        border: 0;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        color: #fff;
+        background: #252935;
+      }
+      button.primary { background: #7c5cff; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Não foi possível conectar</h1>
+      <p>O servidor do Concord não respondeu. Verifique sua internet ou o endereço do servidor.</p>
+      <code id="error"></code>
+      <input id="server" placeholder="https://concord.seudominio.com" />
+      <div class="row">
+        <button id="retry" class="primary">Tentar de novo</button>
+        <button id="save">Trocar servidor</button>
+      </div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      document.getElementById('server').value = params.get('server') || '';
+      document.getElementById('error').textContent = params.get('error') || '';
+      document.getElementById('retry').onclick = () => window.concordDesktop.reload();
+      document.getElementById('save').onclick = () =>
+        window.concordDesktop.setServer(document.getElementById('server').value).catch((e) => alert(e.message));
+    </script>
+  </body>
+</html>

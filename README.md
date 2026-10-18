@@ -13,6 +13,27 @@ App de transmissão de tela a **60 fps** no estilo Discord: servidores, salas de
 - **Cargos e permissões em bits**: hierarquia, cor, exibição separada e sobrescritas por canal (permitir / herdar / negar). Também dá para criar canais privados.
 - **Moderação**: silenciar na sala, encerrar transmissão, desconectar da sala e expulsar, respeitando a hierarquia de cargos.
 
+## App desktop (Windows)
+
+A pasta [desktop/](desktop/) tem o Concord para Windows, feito em Electron. Ele abre o mesmo servidor do site e acrescenta o que o navegador não consegue fazer:
+
+- **Áudio da transmissão sem retorno de voz.** No navegador, o "áudio do sistema" captura tudo o que sai no PC, inclusive as vozes da sala, e quem assiste ouve a própria voz de volta. O app usa a captura **por processo** do Windows (WASAPI *process loopback*, a mesma técnica do Discord), com o capturador nativo [audio-capture.cpp](desktop/native/audio-capture.cpp):
+  - ao transmitir a **tela**: todo o som do PC, **menos o do próprio Concord**;
+  - ao transmitir uma **janela**: **só o som daquele programa** (por exemplo, só o jogo).
+- **Seletor próprio** de telas e janelas, com miniaturas.
+
+O áudio sem retorno exige **Windows 11**, ou Windows 10 a partir do build 20348.
+
+O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, gera o instalador e o publica em `https://SEU-DOMINIO/downloads/Concord-Setup.exe`. No site aparece um botão de download na barra da esquerda. O instalador não é assinado digitalmente, então o Windows pode exibir o aviso do SmartScreen: clique em "Mais informações" e depois em "Executar assim mesmo".
+
+## Personalização
+
+- **Perfil:** foto, cor do banner, "sobre mim" e **apelido por servidor**.
+- **Aparência:** 7 temas, cor de destaque, **imagem de fundo** (com desfoque e escurecimento), tamanho da interface e **CSS personalizado**. Tudo fica salvo no perfil, então vale no navegador e no app desktop.
+- **Servidor:** ícone com imagem, além dos cargos, cores e permissões.
+
+Um tema é um conjunto de variáveis CSS (`--color-surface-0…4`, `--color-fg`, `--color-accent`…). Os temas prontos ficam em [client/src/lib/theme.ts](client/src/lib/theme.ts). Para criar um novo, basta adicionar outro item ali.
+
 ## Arquitetura
 
 | Parte | Tecnologia |

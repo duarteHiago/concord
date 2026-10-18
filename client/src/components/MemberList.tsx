@@ -1,3 +1,4 @@
+import { memberName } from '../lib/types';
 import { Crown, MonitorUp } from 'lucide-react';
 import type { Member, ServerDetail } from '../lib/types';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
@@ -12,7 +13,7 @@ export function MemberList() {
   const hoisted = detail.roles.filter((r) => r.hoist && !r.isDefault).sort((a, b) => b.position - a.position);
   const groups: { title: string; members: Member[] }[] = [];
   const placed = new Set<string>();
-  const sortByName = (a: Member, b: Member) => a.displayName.localeCompare(b.displayName);
+  const sortByName = (a: Member, b: Member) => memberName(a).localeCompare(memberName(b));
 
   for (const role of hoisted) {
     const ms = detail.members.filter((m) => online[m.id] && !placed.has(m.id) && m.roleIds.includes(role.id)).sort(sortByName);
@@ -48,11 +49,11 @@ function MemberRow({ detail, member, online }: { detail: ServerDetail; member: M
       onClick={(e) => openPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
       className={cx('flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-white/5', !online && 'opacity-40 hover:opacity-100')}
     >
-      <Avatar name={member.displayName} color={member.avatarColor} size={34} status={online ? 'online' : 'offline'} />
+      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} size={34} status={online ? 'online' : 'offline'} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
           <span className="truncate text-sm font-medium" style={{ color: memberColor(detail, member.id) }}>
-            {member.displayName}
+            {memberName(member)}
           </span>
           {detail.server.ownerId === member.id && <Crown size={13} className="shrink-0 text-warn" />}
         </div>

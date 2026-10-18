@@ -1,3 +1,4 @@
+import { memberName } from '../lib/types';
 import {
   ChevronDown,
   Hash,
@@ -8,6 +9,7 @@ import {
   Mic,
   MicOff,
   MonitorUp,
+  Pencil,
   PhoneOff,
   Plus,
   Settings,
@@ -86,6 +88,8 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
       {open && (
         <div className="absolute top-13 right-2 left-2 z-30 animate-pop-in space-y-0.5 rounded-xl border border-line bg-surface-0 p-1.5 shadow-2xl">
           {has(perms, P.CREATE_INVITE) && item('Convidar pessoas', <UserPlus size={16} />, () => openModal({ type: 'invite', serverId: detail.server.id }))}
+          {(has(perms, P.CHANGE_NICKNAME) || has(perms, P.MANAGE_NICKNAMES)) &&
+            item('Meu apelido neste servidor', <Pencil size={16} />, () => openModal({ type: 'nickname', serverId: detail.server.id, userId: me.id }))}
           {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS)) &&
             item('Configurações do servidor', <Settings size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id }))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar canal', <Plus size={16} />, () => openModal({ type: 'createChannel', serverId: detail.server.id, kind: 'text' }))}
@@ -226,9 +230,9 @@ function VoiceParticipant({ detail, state }: { detail: ServerDetail; state: Voic
       onClick={(e) => openPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
       className="flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-left text-sm text-fg-muted hover:bg-white/5 hover:text-fg"
     >
-      <Avatar name={member.displayName} color={member.avatarColor} size={22} speaking={speaking && !state.muted} />
+      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} size={22} speaking={speaking && !state.muted} />
       <span className="flex-1 truncate" style={{ color: memberColor(detail, member.id) }}>
-        {member.displayName}
+        {memberName(member)}
       </span>
       {state.streaming && <span className="rounded bg-live px-1 text-[9px] leading-4 font-bold text-white">AO VIVO</span>}
       {state.camera && <Video size={13} className="text-fg-subtle" />}
@@ -317,7 +321,7 @@ function UserPanel() {
   return (
     <div className="flex h-[60px] items-center gap-2 bg-surface-0 px-2">
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1">
-        <Avatar name={me.displayName} color={me.avatarColor} size={34} status="online" />
+        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={34} status="online" />
         <div className="min-w-0 leading-tight">
           <div className="truncate text-sm font-semibold">{me.displayName}</div>
           <div className="truncate text-xs text-fg-subtle">@{me.username}</div>

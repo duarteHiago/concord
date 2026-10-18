@@ -1,4 +1,6 @@
-import { ArrowDown, ArrowUp, Crown, Link2, Plus, Search, Shield, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
+import { memberName } from '../../lib/types';
+import { ArrowDown, ArrowUp, Crown, ImagePlus, Link2, Plus, Search, Shield, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
+import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useEffect, useState } from 'react';
 import { P, PERMISSION_INFO, has, type PermissionInfo } from '../../../../shared/permissions.ts';
 import { api } from '../../lib/api';
@@ -75,11 +77,37 @@ function Overview({ detail }: { detail: ServerDetail }) {
   const [name, setName] = useState(detail.server.name);
   const [color, setColor] = useState(detail.server.iconColor);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  async function changeIcon() {
+    const file = await pickImage();
+    if (!file) return;
+    setUploading(true);
+    try {
+      await uploadImage(`/servers/${detail.server.id}/icon`, await prepareImage(file, 256, true));
+      toast.success('Ícone atualizado');
+    } catch (err) {
+      toast.error(err);
+    }
+    setUploading(false);
+  }
   return (
     <section className="space-y-5">
       <h2 className="text-xl font-bold">Visão geral do servidor</h2>
       <div className="flex items-center gap-5">
-        <Avatar name={name} color={color} size={88} className="[&>div]:rounded-3xl" />
+        <div className="flex flex-col items-center gap-2">
+          <Avatar name={name} color={color} src={detail.server.iconUrl} size={88} className="[&>*]:rounded-3xl" />
+          <div className="flex gap-1">
+            <Button variant="secondary" className="h-7 px-2 text-xs" loading={uploading} onClick={changeIcon}>
+              <ImagePlus size={14} /> Ícone
+            </Button>
+            {detail.server.iconUrl && (
+              <Button variant="ghost" className="h-7 px-2" title="Remover ícone" onClick={() => void api.del(`/servers/${detail.server.id}/icon`).catch(toast.error)}>
+                <Trash2 size={14} />
+              </Button>
+            )}
+          </div>
+        </div>
         <div className="flex-1">
           <Input label="Nome do servidor" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
         </div>
@@ -306,7 +334,7 @@ function Members({ detail }: { detail: ServerDetail }) {
   const canRoles = has(detail.permissions, P.MANAGE_ROLES);
   const canKick = has(detail.permissions, P.KICK_MEMBERS);
   const assignable = detail.roles.filter((r) => !r.isDefault && r.position < myPos);
-  const list = detail.members.filter((m) => `${m.displayName} ${m.username}`.toLowerCase().includes(query.toLowerCase()));
+  const list = detail.members.filter((m) => `${m.displayName} ${m.nickname ?? ""} ${m.username}`.toLowerCase().includes(query.toLowerCase()));
 
   async function toggleRole(memberId: string, roleIds: string[], roleId: string) {
     const next = roleIds.includes(roleId) ? roleIds.filter((r) => r !== roleId) : [...roleIds, roleId];
@@ -329,10 +357,10 @@ function Members({ detail }: { detail: ServerDetail }) {
           return (
             <div key={m.id} className="px-4 py-3">
               <div className="flex items-center gap-3">
-                <Avatar name={m.displayName} color={m.avatarColor} size={36} />
+                <Avatar name={memberName(m)} color={m.avatarColor} src={m.avatarUrl} size={36} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 font-semibold">
-                    {m.displayName} {owner && <Crown size={14} className="text-warn" />}
+                    {memberName(m)} {m.nickname && <span className="text-xs font-normal text-fg-subtle">({m.displayName})</span>} {owner && <Crown size={14} className="text-warn" />}
                   </div>
                   <div className="text-xs text-fg-muted">@{m.username}</div>
                 </div>
@@ -356,8 +384,8 @@ function Members({ detail }: { detail: ServerDetail }) {
                     onClick={() =>
                       openModal({
                         type: 'confirm',
-                        title: `Expulsar ${m.displayName}`,
-                        message: `${m.displayName} será removido do servidor.`,
+                        title: `Expulsar ${memberName(m)}`,
+                        message: `${memberName(m)} será removido do servidor.`,
                         confirmLabel: 'Expulsar',
                         danger: true,
                         onConfirm: async () => {

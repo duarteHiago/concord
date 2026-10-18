@@ -15,6 +15,19 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
+// arquivos enviados têm nome aleatório, então podem ficar em cache por bastante tempo
+app.use(
+  '/uploads',
+  express.static(config.uploadsDir, {
+    maxAge: '30d',
+    immutable: true,
+    index: false,
+    fallthrough: false,
+    setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+  }),
+);
+// instalador do app desktop (enviado pelo CI)
+app.use('/downloads', express.static(config.downloadsDir, { maxAge: 0, index: false, fallthrough: false }));
 app.use('/api', api);
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' });
@@ -31,6 +44,10 @@ if (existsSync(config.publicDir)) {
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
   if (err instanceof SyntaxError) return res.status(400).json({ error: 'JSON inválido' });
+  const status = (err as { status?: number }).status;
+  if (status && status >= 400 && status < 500) {
+    return res.status(status).json({ error: status === 413 ? 'Arquivo muito grande' : 'Não encontrado' });
+  }
   console.error(err);
   res.status(500).json({ error: 'Erro interno do servidor' });
 });
