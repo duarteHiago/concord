@@ -41,6 +41,7 @@ interface DesktopBridge {
   onUpdateState?(cb: (s: UpdateState) => void): () => void;
   notify?(opts: { title: string; body: string; data?: unknown }): Promise<void>;
   shakeWindow?(): Promise<void>;
+  showClip?(data: { text: string; from: string; autoCopy: boolean }): Promise<boolean>;
   onNotificationClick?(cb: (data: unknown) => void): () => void;
   getActivity?(): Promise<unknown>;
   refreshActivity?(): Promise<unknown>;

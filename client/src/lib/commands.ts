@@ -1,3 +1,4 @@
+import { shareClip } from './clip';
 // Comandos de barra no chat (/kick, /mute, /nudge…). Cada um vira uma chamada que o app já faz pelos menus.
 import { P, has } from '../../../shared/permissions.ts';
 import { useApp } from '../store/app';
@@ -101,6 +102,15 @@ export const COMMANDS: Command[] = [
       const count = Number(m?.[1]) || 1;
       const sides = Number(m?.[2]) || 6;
       await api.post(`/channels/${ctx.channel.id}/games`, { type: 'dice', count, sides });
+    },
+  },
+  {
+    name: 'codigo',
+    usage: '/codigo texto',
+    description: 'Manda um código para a tela de todo mundo da sala de voz (Ctrl+C copia)',
+    run: async (_ctx, args) => {
+      if (!args.trim()) throw new Error('Use /codigo seguido do código. Ex.: /codigo X7K2-PQ9');
+      await shareClip(args);
     },
   },
   {

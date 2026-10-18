@@ -1,7 +1,7 @@
 // Concord Desktop — processo principal do Electron.
 // Carrega o Concord do servidor configurado e adiciona o que o navegador não oferece:
 // seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
-const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, Notification, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, Notification, screen, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -361,8 +361,139 @@ handle('concord:global-shortcuts', (_e, map) => {
       result[action] = false; // combinação inválida ou já usada por outro programa
     }
   }
+  // o unregisterAll acima também soltou o Ctrl+C do código compartilhado que estiver na tela
+  if (clipKeyOn) {
+    clipKeyOn = false;
+    setClipKey(true);
+  }
   return result;
 });
+
+// ------------------------------------------------------------------ código compartilhado
+// Janelinha por cima de tudo (inclusive jogos em tela cheia sem borda) com o código que alguém
+// da sala mandou. Não rouba o foco do jogo: Ctrl+C (atalho global enquanto ela está aberta)
+// ou um clique copia para a área de transferência.
+
+const CLIP_KEY = 'CommandOrControl+C';
+const CLIP_SHOW_MS = 20_000;
+let clipWin = null;
+let clipText = '';
+let clipTimer = null;
+let clipKeyOn = false;
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+function clipHtml(text, from, copied) {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;user-select:none;cursor:pointer}
+  .card{box-sizing:border-box;margin:8px;height:calc(100% - 16px);border-radius:22px;background:#211a28;border:1px solid #ffffff22;
+    box-shadow:0 12px 32px #000a;padding:14px 18px;color:#f3ecf7;display:flex;flex-direction:column;justify-content:center;gap:6px;position:relative;overflow:hidden;
+    animation:pop .35s cubic-bezier(.2,1.5,.4,1)}
+  @keyframes pop{from{transform:translateY(-14px) scale(.96);opacity:0}}
+  .top{font-size:12px;color:#b3a6c2;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top b{color:#f3ecf7}
+  .code{font:700 26px Consolas,"Cascadia Mono",monospace;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ff8a6b}
+  .hint{font-size:13px;color:#b3a6c2}
+  kbd{background:#ffffff1a;border:1px solid #ffffff33;border-bottom-width:2px;border-radius:6px;padding:1px 6px;font:600 12px "Segoe UI",sans-serif;color:#f3ecf7}
+  .ok .code{color:#5cffb0}
+  .bar{position:absolute;left:0;bottom:0;height:3px;background:#ff8a6b;animation:shrink ${CLIP_SHOW_MS}ms linear forwards}
+  .ok .bar{display:none}
+  @keyframes shrink{from{width:100%}to{width:0}}
+  </style></head><body><div class="card ${copied ? 'ok' : ''}" onclick="document.title='copy-'+Date.now()">
+  <div class="top">📋 <b>${escapeHtml(from)}</b> compartilhou um código</div>
+  <div class="code">${escapeHtml(text)}</div>
+  <div class="hint">${copied ? '✔ Copiado! Agora é só <kbd>Ctrl</kbd> + <kbd>V</kbd> no jogo' : 'Aperte <kbd>Ctrl</kbd> + <kbd>C</kbd> para copiar (ou clique aqui)'}</div>
+  <div class="bar"></div></div></body></html>`;
+}
+
+function setClipKey(on) {
+  if (on === clipKeyOn) return;
+  if (on) {
+    try {
+      clipKeyOn = globalShortcut.register(CLIP_KEY, copyClip);
+    } catch {
+      clipKeyOn = false; // outro programa já usa o atalho: o clique continua funcionando
+    }
+  } else {
+    if (globalShortcut.isRegistered(CLIP_KEY)) globalShortcut.unregister(CLIP_KEY);
+    clipKeyOn = false;
+  }
+}
+
+function closeClip() {
+  clearTimeout(clipTimer);
+  setClipKey(false);
+  if (clipWin && !clipWin.isDestroyed()) clipWin.close();
+  clipWin = null;
+}
+
+let clipFrom = '';
+function copyClip() {
+  if (!clipWin || clipWin.isDestroyed()) return closeClip();
+  clipboard.writeText(clipText);
+  setClipKey(false); // devolve o Ctrl+C para o sistema
+  void clipWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(clipHtml(clipText, clipFrom, true))}`);
+  clearTimeout(clipTimer);
+  clipTimer = setTimeout(closeClip, 3500);
+}
+
+function showClip({ text, from, autoCopy }) {
+  text = String(text ?? '').slice(0, 200);
+  if (!text) return false;
+  clipText = text;
+  clipFrom = String(from ?? 'Alguém').slice(0, 40);
+  // aparece na tela onde está o mouse (normalmente a do jogo), no topo e centralizada
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const width = 440;
+  const height = 132;
+  const x = Math.round(display.workArea.x + (display.workArea.width - width) / 2);
+  const y = display.workArea.y + 24;
+  if (!clipWin || clipWin.isDestroyed()) {
+    clipWin = new BrowserWindow({
+      width,
+      height,
+      x,
+      y,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      focusable: false,
+      show: false,
+      alwaysOnTop: true,
+      webPreferences: { sandbox: true, contextIsolation: true },
+    });
+    clipWin.setAlwaysOnTop(true, 'screen-saver');
+    clipWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // o clique na janelinha troca o título da página (ela não tem acesso a nada além disso)
+    clipWin.webContents.on('page-title-updated', (e, title) => {
+      e.preventDefault();
+      if (title.startsWith('copy-')) copyClip();
+    });
+    clipWin.on('closed', () => {
+      clipWin = null;
+      setClipKey(false);
+    });
+  } else {
+    clipWin.setBounds({ x, y, width, height });
+  }
+  void clipWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(clipHtml(text, clipFrom, false))}`);
+  clipWin.showInactive();
+  clearTimeout(clipTimer);
+  if (autoCopy) {
+    copyClip();
+  } else {
+    setClipKey(true);
+    clipTimer = setTimeout(closeClip, CLIP_SHOW_MS);
+  }
+  return true;
+}
+
+handle('concord:show-clip', (_e, data) => showClip(data ?? {}));
 
 // ------------------------------------------------------------------ chamar atenção (estilo MSN)
 

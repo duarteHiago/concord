@@ -13,6 +13,8 @@ const SOUNDS: Record<string, [number, number][]> = {
   nudge: [[880, 0], [660, 0.06], [880, 0.12], [660, 0.18], [880, 0.24], [1175, 0.32]],
   nudgeSent: [[660, 0], [880, 0.06]],
   mention: [[988, 0], [1319, 0.08]],
+  // código compartilhado: "plim" duplo
+  clip: [[1175, 0], [1568, 0.07], [1175, 0.16], [1568, 0.23]],
 };
 
 export function playSound(name: keyof typeof SOUNDS) {

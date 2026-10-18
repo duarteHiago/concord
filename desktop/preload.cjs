@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   onUpdateState: listen('concord:update-state'),
   notify: (opts) => ipcRenderer.invoke('concord:notify', opts),
   shakeWindow: () => ipcRenderer.invoke('concord:shake-window'),
+  showClip: (data) => ipcRenderer.invoke('concord:show-clip', data),
   onNotificationClick: listen('concord:notification-click'),
   getActivity: () => ipcRenderer.invoke('concord:activity').catch(() => null),
   refreshActivity: () => ipcRenderer.invoke('concord:activity-refresh').catch(() => null),

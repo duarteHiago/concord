@@ -1,3 +1,4 @@
+import { ClipCard } from './Clip';
 import { Hash, Pencil, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
@@ -209,6 +210,8 @@ function Bubble({
             />
             <p className="px-1 text-xs text-fg-subtle">Esc cancela · Enter salva</p>
           </div>
+        ) : message.kind === 'clip' ? (
+          <ClipCard text={message.content} author={mine ? 'Você' : name} />
         ) : message.kind === 'game' && message.data ? (
           <GameCard id={message.id} data={message.data} author={mine ? 'Você' : name} />
         ) : (

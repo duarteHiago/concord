@@ -1,5 +1,6 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
+import { clipSettings } from '../../lib/clip';
 import { NOISE_MODES } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
 import { BotsTab } from './BotsTab';
@@ -490,6 +491,7 @@ function Notifications() {
   const prefs = notifySettings(me);
   const status = me.settings.status === 'dnd' ? 'dnd' : 'online';
   const muted = me.settings.mutedNudges ?? [];
+  const clips = clipSettings(me);
   const [permission, setPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
 
   const set = (patch: Partial<typeof prefs>) => void saveSettings({ notifications: { ...prefs, ...patch } });
@@ -575,6 +577,26 @@ function Notifications() {
             )}
           </div>
         )}
+      </div>
+
+      <div>
+        <SectionTitle>Código compartilhado</SectionTitle>
+        <div className="divide-y divide-line rounded-2xl bg-surface-0">
+          {row(
+            'Receber códigos da sala',
+            desktop ? 'Aparece por cima de qualquer tela, até do jogo, para copiar com Ctrl+C. No "Não perturbe" não aparece.' : 'Aparece no topo do Concord para copiar com Ctrl+C. No "Não perturbe" não aparece.',
+            clips.receive,
+            (receive) => void saveSettings({ clips: { ...clips, receive } }),
+          )}
+          {row(
+            'Copiar sozinho ao chegar',
+            'O código já vai para a área de transferência: é só dar Ctrl+V no jogo.',
+            clips.autoCopy,
+            (autoCopy) => void saveSettings({ clips: { ...clips, autoCopy } }),
+            !clips.receive,
+          )}
+        </div>
+        <p className="mt-2 text-xs text-fg-subtle">O código também fica no papo da sala, com botão de copiar.</p>
       </div>
 
       <div>

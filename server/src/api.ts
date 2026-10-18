@@ -301,7 +301,10 @@ api.patch('/me', async (req, res) => {
     run('UPDATE users SET password_hash = ? WHERE id = ?', await bcrypt.hash(str(req.body.newPassword, 'nova senha', 6, 128), 10), me);
   }
   if (publicChange) profileChanged(me);
-  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+  const updated = meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!);
+  // os outros aparelhos da pessoa (app desktop + navegador + celular) ficam iguais
+  if (req.body?.settings !== undefined || publicChange) emitToUser(me, 'me:updated', updated);
+  res.json(updated);
 });
 
 /** Gera um novo código de recuperação (o antigo deixa de valer). Pede a senha atual. */
@@ -1452,6 +1455,45 @@ api.post('/channels/:id/games', async (req, res) => {
   const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
   await emitToChannel(channel, 'message:new', msg);
   res.json(msg);
+});
+
+// ============================================================ Código compartilhado
+// "Clipboard da sala": manda um texto (código de sala do jogo etc.) que aparece por cima da tela de
+// quem está na mesma sala de voz, para copiar sem sair do jogo. Também fica no papo da sala.
+
+const lastClip = new Map<string, number>();
+
+api.post('/voice/clip', humansOnly, async (req, res) => {
+  const me = uid(res);
+  const v = getVoiceState(me) ?? fail(400, 'Entre numa sala de voz para compartilhar um código');
+  const channel = requireChannelPerm(v.channelId, me, P.SEND_MESSAGES);
+  const text = str(req.body?.text, 'código', 1, 200).trim();
+  if (!text) fail(400, 'Digite o código');
+  const wait = (lastClip.get(me) ?? 0) + 2500 - now();
+  if (wait > 0) fail(429, 'Calma, um código de cada vez');
+  lastClip.set(me, now());
+
+  const id = randomUUID();
+  run(
+    "INSERT INTO messages (id, channel_id, author_id, content, kind, data, created_at) VALUES (?, ?, ?, ?, 'clip', ?, ?)",
+    id,
+    channel.id,
+    me,
+    text,
+    JSON.stringify({ text }),
+    now(),
+  );
+  const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
+  await emitToChannel(channel, 'message:new', msg);
+  const detailNick = get<{ nickname: string | null }>('SELECT nickname FROM members WHERE server_id = ? AND user_id = ?', channel.server_id, me)?.nickname;
+  const payload = { messageId: id, text, channelId: channel.id, serverId: channel.server_id, from: { ...msg.author, nickname: detailNick ?? null } };
+  let delivered = 0;
+  for (const other of voiceStatesFor(channel.server_id)) {
+    if (other.channelId !== channel.id || other.userId === me) continue;
+    emitToUser(other.userId, 'clip', payload);
+    delivered++;
+  }
+  res.json({ message: msg, delivered });
 });
 
 // ============================================================ Conversas privadas (DMs)

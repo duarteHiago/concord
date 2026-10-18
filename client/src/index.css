@@ -490,3 +490,33 @@ video::-webkit-media-controls {
 :root[data-motion='reduce'] .sticker-pop {
   animation: none !important;
 }
+
+/* ---------- barra de controles da sala: encolhe quando falta espaço ---------- */
+.control-dock {
+  container: dock / inline-size;
+}
+@container dock (max-width: 860px) {
+  .dock-row {
+    gap: 6px;
+    padding: 6px;
+  }
+  .dock-row > button,
+  .dock-row > div > button {
+    height: 44px;
+    width: 44px;
+  }
+  .dock-row > .dock-share {
+    width: auto;
+    padding-inline: 16px;
+  }
+}
+@container dock (max-width: 700px) {
+  .dock-row > .dock-share {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  .dock-row > .dock-share .dock-label {
+    display: none;
+  }
+}

@@ -1,4 +1,5 @@
 import { useStickers } from './stickers';
+import { receiveClip, type ClipEvent } from '../lib/clip';
 import type { PlacedSticker } from '../lib/types';
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
@@ -109,6 +110,8 @@ function loadLast(): { serverId?: string; channels?: Record<string, string> } {
 
 const reloadTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 let themeSaveTimer: ReturnType<typeof setTimeout> | undefined;
+/** quando este aparelho mexeu nas preferências pela última vez (ignora o eco do servidor logo depois) */
+let localSettingsAt = 0;
 
 export const useApp = create<AppState>((set, get) => {
   /** Insere/atualiza uma conversa e mantém a lista ordenada pela última mensagem. */
@@ -171,6 +174,19 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('mention', (m: MentionEvent) => receiveMention(m));
     socket.on('sounds:changed', ({ serverId }: { serverId: string }) => {
       if (get().sounds[serverId]) void get().loadSounds(serverId);
+    });
+    socket.on('clip', (e: ClipEvent) => receiveClip(e));
+    // mudanças feitas em outro aparelho (preferências, status, perfil)
+    socket.on('me:updated', (next: Me) => {
+      const cur = get().me;
+      if (!cur || cur.id !== next.id) return;
+      const echo = Date.now() - localSettingsAt < 4000; // provavelmente a resposta da mudança feita aqui mesmo
+      if (echo || JSON.stringify(cur.settings) === JSON.stringify(next.settings)) {
+        set({ me: { ...cur, ...next, settings: cur.settings } });
+        return;
+      }
+      set({ me: { ...cur, ...next } });
+      applyTheme(normalizeTheme(next.settings?.theme));
     });
     socket.on('server-patches:changed', (d: { serverId: string }) =>
       window.dispatchEvent(new CustomEvent('concord:server-patches', { detail: d })),
@@ -312,6 +328,7 @@ export const useApp = create<AppState>((set, get) => {
     setMe: (me) => set({ me }),
 
     saveSettings: async (patch) => {
+      localSettingsAt = Date.now();
       const me = get().me;
       if (!me) return;
       const previous = me.settings;
@@ -326,6 +343,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     saveTheme: (theme) => {
+      localSettingsAt = Date.now();
       applyTheme(theme);
       const me = get().me;
       if (!me) return;

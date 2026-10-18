@@ -35,6 +35,7 @@ import { SoundboardButton, SoundToast } from './Soundboard';
 import { ReactionLayer, ReactionsButton } from './Reactions';
 import { VoiceEffectsButton } from './VoiceEffectsButton';
 import { StickerButton, StickerLayer } from './Stickers';
+import { ClipButton } from './Clip';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
@@ -49,6 +50,14 @@ export function VoiceView({ channel }: { channel: Channel }) {
   const canChat = has(channel.permissions, P.VIEW_CHANNEL);
   const [chatOpen, setChatOpen] = useState(() => readFlag('concord.roomChat', true));
   const [panelTab, setPanelTab] = useState<'chat' | 'members'>('chat');
+  const [panelWidth, setPanelWidth] = useState(() => readNumber('concord.roomPanelWidth', PANEL_DEFAULT));
+  const [, setViewport] = useState(0);
+  useEffect(() => {
+    const onResize = () => setViewport(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const shownPanelWidth = Math.min(panelWidth, panelMax());
   const toggleChat = () => {
     setChatOpen(!chatOpen);
     writeFlag('concord.roomChat', !chatOpen);
@@ -103,7 +112,8 @@ export function VoiceView({ channel }: { channel: Channel }) {
       </main>
 
       {canChat && chatOpen && (
-        <aside aria-label="Painel da sala" className="panel hidden w-[320px] shrink-0 flex-col overflow-hidden xl:flex">
+        <aside aria-label="Painel da sala" className="panel relative hidden shrink-0 flex-col overflow-hidden xl:flex" style={{ width: shownPanelWidth }}>
+          <PanelResizer width={shownPanelWidth} onChange={setPanelWidth} />
           <div className="flex items-center gap-1 px-3 pt-3 pb-1">
             <div role="tablist" className="flex flex-1 gap-1 rounded-full bg-surface-0 p-1">
               {(
@@ -141,6 +151,78 @@ export function VoiceView({ channel }: { channel: Channel }) {
         </aside>
       )}
     </>
+  );
+}
+
+const PANEL_DEFAULT = 320;
+const PANEL_MIN = 280;
+const PANEL_MAX = 720;
+/** o palco e a barra de controles precisam de espaço: o papo nunca come mais que isso */
+const panelMax = () => Math.max(PANEL_MIN, Math.min(PANEL_MAX, window.innerWidth - 980));
+
+function readNumber(key: string, fallback: number) {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return Number.isFinite(v) && v > 0 ? Math.min(PANEL_MAX, Math.max(PANEL_MIN, v)) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Alça na borda esquerda do papo da sala: arraste para mudar a largura (duplo clique volta ao padrão). */
+function PanelResizer({ width, onChange }: { width: number; onChange: (w: number) => void }) {
+  const drag = useRef<{ x: number; w: number } | null>(null);
+  const save = (w: number) => {
+    try {
+      localStorage.setItem('concord.roomPanelWidth', String(Math.round(w)));
+    } catch {
+      // ignorado
+    }
+  };
+  const clamp = (w: number) => Math.min(panelMax(), Math.max(PANEL_MIN, w));
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar o papo da sala"
+      aria-valuenow={Math.round(width)}
+      aria-valuemin={PANEL_MIN}
+      aria-valuemax={panelMax()}
+      tabIndex={0}
+      title="Arraste para redimensionar · duplo clique volta ao padrão"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        drag.current = { x: e.clientX, w: width };
+        document.body.style.cursor = 'col-resize';
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return;
+        onChange(clamp(drag.current.w + (drag.current.x - e.clientX)));
+      }}
+      onPointerUp={() => {
+        if (!drag.current) return;
+        drag.current = null;
+        document.body.style.cursor = '';
+        save(width);
+      }}
+      onDoubleClick={() => {
+        onChange(PANEL_DEFAULT);
+        save(PANEL_DEFAULT);
+      }}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 60 : 20;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const next = clamp(width + (e.key === 'ArrowLeft' ? step : -step));
+          onChange(next);
+          save(next);
+        }
+      }}
+      className="group absolute inset-y-0 left-0 z-10 flex w-2.5 cursor-col-resize items-center justify-center outline-none"
+    >
+      <span className="h-14 w-1 rounded-full bg-line-strong opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:bg-accent group-focus-visible:opacity-100" />
+    </div>
   );
 }
 
@@ -598,8 +680,8 @@ function ControlDock({ channel }: { channel: Channel }) {
   );
 
   return (
-    <div className="flex shrink-0 justify-center">
-      <div className="flex items-center gap-2.5 rounded-full bg-surface-2 p-2.5">
+    <div className="control-dock flex shrink-0 justify-center">
+      <div className="dock-row flex items-center gap-2.5 rounded-full bg-surface-2 p-2.5">
         {round(serverMuted ? 'Silenciado por um moderador' : micOn ? 'Silenciar' : 'Ativar microfone', () => void toggleMic(), micOn ? <Mic size={20} /> : <MicOff size={20} />, micOn ? 'default' : 'off')}
         {round(deafened ? 'Ativar áudio' : 'Ensurdecer', () => void toggleDeafen(), deafened ? <HeadphoneOff size={20} /> : <Headphones size={20} />, deafened ? 'off' : 'default')}
         {round(cameraOn ? 'Desligar câmera' : 'Ligar câmera', () => void toggleCamera(), cameraOn ? <Video size={20} /> : <VideoOff size={20} />)}
@@ -607,15 +689,17 @@ function ControlDock({ channel }: { channel: Channel }) {
         <SoundboardButton />
         <ReactionsButton />
         <StickerButton channel={channel} />
+        <ClipButton />
         <button
           onClick={() => (sharing ? void stopShare() : openModal({ type: 'shareScreen' }))}
+          aria-label={sharing ? 'Parar transmissão' : 'Transmitir tela'}
           className={cx(
-            'flex h-[52px] items-center gap-2 rounded-full px-6 font-display text-[15px] font-bold transition-all hover:scale-[1.03]',
+            'dock-share flex h-[52px] shrink-0 items-center gap-2 rounded-full px-6 font-display text-[15px] font-bold whitespace-nowrap transition-all hover:scale-[1.03]',
             sharing ? 'bg-fg text-surface-1' : 'bg-accent text-on-accent',
           )}
         >
           {sharing ? <ScreenShareOff size={19} /> : <MonitorUp size={19} />}
-          {sharing ? 'Parar transmissão' : 'Transmitir tela'}
+          <span className="dock-label">{sharing ? 'Parar transmissão' : 'Transmitir tela'}</span>
         </button>
         {sharing && round('Trocar qualidade ou fonte', () => openModal({ type: 'shareScreen' }), <Settings2 size={20} />)}
         {round('Sair da sala', () => void leave(), <PhoneOff size={20} />, 'danger')}

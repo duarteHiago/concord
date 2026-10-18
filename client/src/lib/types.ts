@@ -107,6 +107,8 @@ export interface UserSettings {
   mutedNudges?: string[];
   /** animações: sempre ligadas (padrão), seguir o sistema ou reduzidas */
   motion?: 'full' | 'system' | 'reduce';
+  /** código compartilhado da sala */
+  clips?: { receive?: boolean; autoCopy?: boolean };
 }
 
 export interface Me extends User {
@@ -200,7 +202,7 @@ export interface Message {
   /** id do canal, ou da conversa privada nas DMs */
   channelId: string;
   content: string;
-  kind?: 'text' | 'game';
+  kind?: 'text' | 'game' | 'clip';
   data?: GameData | null;
   createdAt: number;
   editedAt: number | null;
