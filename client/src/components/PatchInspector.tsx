@@ -2,6 +2,7 @@ import { RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { reduceMotion } from '../lib/motion';
 import type { Patch } from '../lib/types';
+import { onVisibilityChange } from '../lib/visibility';
 import { usePatchInspect } from '../store/patchInspect';
 import { PatchBadge, patchShapePath } from './PatchBadge';
 
@@ -74,7 +75,10 @@ function PatchInspector({ patch, caption }: { patch: Patch; caption?: string }) 
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [close]);
 
-  // laço de animação: inércia depois de soltar e um leve balanço parado
+  // laço de animação: inércia depois de soltar e um leve balanço parado.
+  // Fica pausado com a aba/janela oculta: o app desktop desliga o throttling do Electron
+  // para o áudio/vídeo continuarem em segundo plano, então sem isso esse giro decorativo
+  // rodaria pra sempre em CPU/GPU mesmo com a janela minimizada.
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
@@ -104,8 +108,20 @@ function PatchInspector({ patch, caption }: { patch: Patch; caption?: string }) 
       }
       raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const start = () => {
+      if (raf) return;
+      last = performance.now();
+      raf = requestAnimationFrame(tick);
+    };
+    const stop = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    };
+    const off = onVisibilityChange((hidden) => (hidden ? stop() : start()));
+    return () => {
+      off();
+      stop();
+    };
   }, []);
 
   const reset = () => {

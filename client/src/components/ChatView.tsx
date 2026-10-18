@@ -5,6 +5,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { memberName, type Channel, type Message, type ServerDetail } from '../lib/types';
+import { onVisibilityChange } from '../lib/visibility';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
@@ -295,9 +296,23 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   const [, force] = useState(0);
   const canSend = has(channel.permissions, P.SEND_MESSAGES);
 
+  // reavalia a validade do "digitando…" a cada 2s; pausa com a página oculta, sem motivo pra ficar acordando sem ninguém olhando
   useEffect(() => {
-    const t = setInterval(() => force((x) => x + 1), 2000);
-    return () => clearInterval(t);
+    let t: ReturnType<typeof setInterval> | undefined;
+    const stop = () => {
+      clearInterval(t);
+      t = undefined;
+    };
+    const start = () => {
+      if (t) return;
+      force((x) => x + 1);
+      t = setInterval(() => force((x) => x + 1), 2000);
+    };
+    const off = onVisibilityChange((hidden) => (hidden ? stop() : start()));
+    return () => {
+      off();
+      stop();
+    };
   }, []);
 
   useEffect(() => setText(''), [channel.id]);

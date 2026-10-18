@@ -38,6 +38,7 @@ import { StickerButton, StickerLayer } from './Stickers';
 import { ClipButton } from './Clip';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
+import { onVisibilityChange } from '../lib/visibility';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
 
 export function VoiceView({ channel }: { channel: Channel }) {
@@ -623,7 +624,7 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
     // outra — somar todas misturava a banda de camadas diferentes com a resolução de só uma.
     const prevByLayer = new Map<string, { bytes: number; ts: number }>();
     let last: Stats | null = null;
-    const id = setInterval(async () => {
+    const poll = async () => {
       const report = await track.getRTCStatsReport().catch(() => undefined);
       if (!report) return;
       let best: Record<string, number | string | boolean> | undefined;
@@ -650,8 +651,23 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
           codec,
         }),
       );
-    }, 1000);
-    return () => clearInterval(id);
+    };
+    // pausa o polling com a página oculta: ninguém está vendo o número, não precisa gastar CPU calculando
+    let id: ReturnType<typeof setInterval> | undefined;
+    const stop = () => {
+      clearInterval(id);
+      id = undefined;
+    };
+    const start = () => {
+      if (id) return;
+      void poll();
+      id = setInterval(poll, 1000);
+    };
+    const off = onVisibilityChange((hidden) => (hidden ? stop() : start()));
+    return () => {
+      off();
+      stop();
+    };
   }, [track]);
 
   if (!stats) return null;

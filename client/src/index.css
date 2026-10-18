@@ -208,6 +208,32 @@ video::-webkit-media-controls {
   animation: none;
 }
 
+/* Molduras de avatar e brilho dos stickers giram/cintilam pra sempre enquanto ficam na tela
+   (uma call inteira, ou o tempo todo que o canal tiver stickers colados). Pausa com "reduzir
+   movimento" — como o texto de Configurações já promete — e também com a página oculta (outra
+   aba, ou janela minimizada; o app desktop desliga o throttling do Electron para o áudio/vídeo
+   seguirem em segundo plano, então sem isto essas animações decorativas nunca seriam pausadas). */
+:root[data-motion='reduce'] .avatar-frame::before,
+:root[data-motion='reduce'] .frame-particles,
+:root[data-motion='reduce'] .frame-particles b,
+:root[data-motion='reduce'] .frame-fire,
+:root[data-motion='reduce'] .frame-ice,
+:root[data-motion='reduce'] .frame-galaxy .frame-particles b,
+:root[data-motion='reduce'] .frame-pulse,
+:root[data-motion='reduce'] .frame-glitch,
+:root[data-motion='reduce'] .sticker-shine,
+:root[data-bg-hidden='true'] .avatar-frame::before,
+:root[data-bg-hidden='true'] .frame-particles,
+:root[data-bg-hidden='true'] .frame-particles b,
+:root[data-bg-hidden='true'] .frame-fire,
+:root[data-bg-hidden='true'] .frame-ice,
+:root[data-bg-hidden='true'] .frame-galaxy .frame-particles b,
+:root[data-bg-hidden='true'] .frame-pulse,
+:root[data-bg-hidden='true'] .frame-glitch,
+:root[data-bg-hidden='true'] .sticker-shine {
+  animation-play-state: paused;
+}
+
 /* ---------- molduras animadas da foto de perfil ---------- */
 .avatar-frame {
   position: absolute;

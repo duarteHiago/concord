@@ -321,9 +321,12 @@ async function spotifyTrack() {
 }
 
 let currentActivity = null;
+// a pessoa pode desligar "Mostrar o que estou jogando e ouvindo" nas configurações: enquanto
+// estiver desligado, não vale a pena rodar reg.exe/powershell.exe a cada 15s pra ninguém usar o resultado
+let activitySharingEnabled = true;
 
 async function pollActivity() {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32' || !activitySharingEnabled) return;
   let next = null;
   try {
     const game = await steamGame();
@@ -345,6 +348,15 @@ handle('concord:activity', () => currentActivity);
 handle('concord:activity-refresh', async () => {
   await pollActivity();
   return currentActivity;
+});
+handle('concord:activity-sharing', (_e, enabled) => {
+  activitySharingEnabled = enabled !== false;
+  if (!activitySharingEnabled) {
+    currentActivity = null;
+    win?.webContents.send('concord:activity', null);
+  } else {
+    void pollActivity();
+  }
 });
 
 // ------------------------------------------------------------------ atalhos globais

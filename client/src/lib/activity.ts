@@ -20,6 +20,7 @@ export function startActivityReporter(socket: Socket) {
   socket.on('connect', publish);
   if (started) return;
   started = true;
+  void desktop.setActivitySharing?.(sharing());
   void desktop.getActivity?.().then((a) => {
     current = (a as Activity | null) ?? null;
     publish();
@@ -28,12 +29,13 @@ export function startActivityReporter(socket: Socket) {
     current = (a as Activity | null) ?? null;
     publish();
   });
-  // ligou/desligou "Mostrar o que estou jogando": reenvia na hora
+  // ligou/desligou "Mostrar o que estou jogando": reenvia na hora e liga/desliga a varredura no processo principal
   let lastSharing = sharing();
   useApp.subscribe(() => {
     const now = sharing();
     if (now !== lastSharing) {
       lastSharing = now;
+      void desktop.setActivitySharing?.(now);
       publish();
     }
   });

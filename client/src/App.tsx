@@ -15,6 +15,7 @@ import { WelcomeView } from './components/WelcomeView';
 import { HOME, useActiveDetail, useApp } from './store/app';
 import { DmView } from './components/DirectMessages';
 import { setMotionPref } from './lib/motion';
+import './lib/visibility';
 
 export default function App() {
   const ready = useApp((s) => s.ready);

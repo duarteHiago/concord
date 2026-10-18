@@ -46,6 +46,8 @@ interface DesktopBridge {
   getActivity?(): Promise<unknown>;
   refreshActivity?(): Promise<unknown>;
   onActivity?(cb: (activity: unknown) => void): () => void;
+  /** liga/desliga a varredura de Steam/Spotify no processo principal (ausente em versões antigas do app) */
+  setActivitySharing?(enabled: boolean): Promise<void>;
   setGlobalShortcuts?(map: Record<string, string>): Promise<Record<string, boolean>>;
   onShortcut?(cb: (action: string) => void): () => void;
 }
