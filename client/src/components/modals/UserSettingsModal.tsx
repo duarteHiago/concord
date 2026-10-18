@@ -2,7 +2,7 @@ import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucid
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { desktop, desktopInfo } from '../../lib/desktop';
+import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
 import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
 import { memberName, type Me, type ThemeSettings } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
@@ -537,6 +537,48 @@ function DesktopServer() {
       <Button variant="secondary" onClick={() => void desktop!.setServer(server).catch(toast.error)}>
         Conectar a este servidor
       </Button>
+      <UpdateRow />
+    </div>
+  );
+}
+
+function UpdateRow() {
+  const [s, setS] = useState<UpdateState | null>(null);
+  useEffect(() => {
+    if (!desktop?.updateState) return;
+    void desktop.updateState().then(setS);
+    return desktop.onUpdateState?.(setS);
+  }, []);
+  if (!desktop?.checkForUpdates) {
+    return <p className="text-xs text-fg-subtle">Esta versão do app não tem atualização automática. Baixe a mais recente no site.</p>;
+  }
+  const text: Record<UpdateState['state'], string> = {
+    idle: 'Atualização automática ativada.',
+    dev: 'Modo desenvolvimento: sem atualização automática.',
+    checking: 'Procurando…',
+    latest: 'Você está na versão mais recente.',
+    downloading: `Baixando a versão ${s?.version ?? ''}… ${s?.progress ?? 0}%`,
+    ready: `Versão ${s?.version ?? ''} pronta. Reinicie para instalar.`,
+    error: `Não foi possível verificar: ${s?.error ?? ''}`,
+  };
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+      <span className={cx('text-sm', s?.state === 'error' ? 'text-danger' : 'text-fg-muted')}>{text[s?.state ?? 'idle']}</span>
+      {s?.state === 'ready' ? (
+        <Button className="h-9 shrink-0 px-4 text-xs" onClick={() => void desktop!.installUpdate?.()}>
+          Reiniciar agora
+        </Button>
+      ) : (
+        <Button
+          variant="secondary"
+          className="h-9 shrink-0 px-4 text-xs"
+          loading={s?.state === 'checking'}
+          disabled={s?.state === 'downloading'}
+          onClick={() => void desktop!.checkForUpdates!().then(setS)}
+        >
+          Procurar atualizações
+        </Button>
+      )}
     </div>
   );
 }

@@ -292,9 +292,17 @@ handle('concord:shake-window', () => {
 // <servidor>/downloads/, o app baixa em segundo plano e instala ao reiniciar ou fechar.
 
 let updateReady = null;
+// estado mostrado no botão "Procurar atualizações"
+let updateState = { state: 'idle', version: null, progress: 0, error: null };
 
 function setupAutoUpdate() {
-  if (!app.isPackaged) return;
+  handle('concord:update-status', () => updateReady);
+  handle('concord:update-state', () => updateState);
+  if (!app.isPackaged) {
+    updateState = { ...updateState, state: 'dev' };
+    handle('concord:update-check', () => updateState);
+    return;
+  }
   let autoUpdater;
   try {
     ({ autoUpdater } = require('electron-updater'));
@@ -306,17 +314,40 @@ function setupAutoUpdate() {
   // as atualizações vêm do mesmo servidor que o app abre
   autoUpdater.setFeedURL({ provider: 'generic', url: `${serverOrigin()}/downloads/` });
 
+  const setState = (patch) => {
+    updateState = { ...updateState, ...patch };
+    win?.webContents.send('concord:update-state', updateState);
+  };
+  autoUpdater.on('checking-for-update', () => setState({ state: 'checking', error: null }));
+  autoUpdater.on('update-not-available', () => setState({ state: 'latest' }));
+  autoUpdater.on('update-available', (info) => setState({ state: 'downloading', version: info.version, progress: 0 }));
+  autoUpdater.on('download-progress', (p) => setState({ state: 'downloading', progress: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => {
     updateReady = { version: info.version };
+    setState({ state: 'ready', version: info.version, progress: 100 });
     win?.webContents.send('concord:update-ready', updateReady);
   });
-  autoUpdater.on('error', (err) => console.warn('[atualização]', err?.message ?? err));
+  autoUpdater.on('error', (err) => {
+    console.warn('[atualização]', err?.message ?? err);
+    setState({ state: 'error', error: String(err?.message ?? err).slice(0, 200) });
+  });
 
-  const check = () => autoUpdater.checkForUpdates().catch(() => {});
-  setTimeout(check, 5_000);
-  setInterval(check, 30 * 60_000);
+  let lastCheck = 0;
+  const check = (minGapMs = 0) => {
+    if (updateReady || updateState.state === 'checking' || updateState.state === 'downloading') return;
+    if (Date.now() - lastCheck < minGapMs) return;
+    lastCheck = Date.now();
+    autoUpdater.checkForUpdates().catch(() => {});
+  };
+  setTimeout(() => check(), 5_000);
+  setInterval(() => check(), 10 * 60_000);
+  // ao voltar para a janela, verifica de novo (no máximo a cada 5 min)
+  app.on('browser-window-focus', () => check(5 * 60_000));
 
-  handle('concord:update-status', () => updateReady);
+  handle('concord:update-check', () => {
+    check();
+    return updateState;
+  });
   handle('concord:update-install', () => {
     stopCapture();
     // isSilent=true: sem telas do instalador; isForceRunAfter=true: abre o app de novo
@@ -339,6 +370,8 @@ app.whenReady().then(() => {
           { role: 'zoomIn', label: 'Aumentar zoom' },
           { role: 'zoomOut', label: 'Diminuir zoom' },
           { role: 'togglefullscreen', label: 'Tela cheia' },
+          { type: 'separator' },
+          { label: `Versão ${app.getVersion()}`, enabled: false },
           { type: 'separator' },
           { role: 'quit', label: 'Sair' },
         ],

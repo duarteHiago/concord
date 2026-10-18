@@ -8,6 +8,13 @@ export interface DesktopSource {
   icon: string | null;
 }
 
+export interface UpdateState {
+  state: 'idle' | 'dev' | 'checking' | 'latest' | 'downloading' | 'ready' | 'error';
+  version: string | null;
+  progress: number;
+  error: string | null;
+}
+
 export interface DesktopInfo {
   platform: string;
   version: string;
@@ -29,6 +36,9 @@ interface DesktopBridge {
   updateStatus?(): Promise<{ version: string } | null>;
   onUpdateReady?(cb: (info: { version: string }) => void): () => void;
   installUpdate?(): Promise<void>;
+  checkForUpdates?(): Promise<UpdateState>;
+  updateState?(): Promise<UpdateState | null>;
+  onUpdateState?(cb: (s: UpdateState) => void): () => void;
   notify?(opts: { title: string; body: string; data?: unknown }): Promise<void>;
   shakeWindow?(): Promise<void>;
   onNotificationClick?(cb: (data: unknown) => void): () => void;
