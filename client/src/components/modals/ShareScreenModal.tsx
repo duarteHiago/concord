@@ -78,7 +78,7 @@ export function ShareScreenModal() {
 
         <div>
           <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Taxa de quadros</h3>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {FPS_OPTIONS.map((fps) => (
               <button
                 key={fps}
@@ -95,7 +95,8 @@ export function ShareScreenModal() {
           <p className="mt-2 text-xs text-fg-subtle">
             Upload estimado: até <b className="text-fg-muted">{(estimateBitrate(preset, settings.fps) / 1_000_000).toFixed(1)} Mbps</b>. Cada
             espectador recebe o vídeo pelo servidor, então o seu upload não aumenta com mais pessoas assistindo.
-            {settings.fps > 60 && ' Acima de 60 fps, a taxa final depende do seu monitor, GPU e do jogo/app transmitido — o Concord só envia o que conseguir capturar.'}
+            {settings.fps > 60 &&
+              ' Acima de 60 fps, a taxa final depende do seu monitor, GPU e do jogo/app transmitido — o Concord só envia o que conseguir capturar. Em 120 fps não há uma camada de reserva para quem assiste com conexão fraca, pra sobrar CPU pra manter a sua transmissão estável.'}
           </p>
         </div>
 

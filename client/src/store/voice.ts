@@ -39,8 +39,11 @@ export const SHARE_PRESETS: SharePreset[] = [
   { id: 'source', label: 'Nativa', hint: 'Resolução da tela/janela, até 4K', width: 3840, height: 2160, bitrate: 22_000_000 },
 ];
 
-/** Taxas de quadro disponíveis; acima de 60 só faz sentido com monitor e GPU compatíveis. */
-export const FPS_OPTIONS = [30, 60, 120, 144, 240] as const;
+// 144/240 fps chegaram a ser oferecidos, mas na prática deixavam a transmissão instável: o
+// codificador não sustenta uma taxa tão alta e passa a variar resolução/fps sem previsibilidade.
+// 120 fps já cobre quem tem monitor e GPU compatíveis, com bem mais margem pra manter a
+// qualidade (resolução e bitrate) estável.
+export const FPS_OPTIONS = [30, 60, 120] as const;
 export type FpsOption = (typeof FPS_OPTIONS)[number];
 
 /** Estima o bitrate necessário para uma taxa de quadros diferente da referência (60 fps), com retorno decrescente. */
@@ -585,7 +588,11 @@ export const useVoice = create<VoiceStore>((set, get) => {
           {
             videoCodec: settings.codec,
             screenShareEncoding: { maxBitrate: bitrate, maxFramerate: fps, priority: 'high' },
-            screenShareSimulcastLayers: preset.height > 720 ? [new VideoPreset(1280, 720, 2_000_000, 30)] : [],
+            // a camada de reserva em 720p roda um segundo encode em paralelo: em 120 fps isso é
+            // CPU demais e rouba justamente o que falta pra manter a camada principal estável,
+            // então abre mão da reserva pra quem assiste com conexão fraca e prioriza manter a
+            // resolução/fps escolhidos por quem está transmitindo.
+            screenShareSimulcastLayers: preset.height > 720 && fps <= 60 ? [new VideoPreset(1280, 720, 2_000_000, 30)] : [],
             simulcast: true,
             degradationPreference: settings.mode === 'motion' ? 'maintain-framerate' : 'maintain-resolution',
             audioPreset: AudioPresets.musicHighQualityStereo,
