@@ -109,9 +109,30 @@ h3,
   animation: nudge-shake 0.75s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
+/* reações flutuantes da sala (estilo TikTok) */
+@keyframes reaction-float {
+  0% { transform: translate(-50%, 0) scale(0.4); opacity: 0; }
+  12% { transform: translate(-50%, -24px) scale(1.15); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx, 0px)), -280px) scale(0.9) rotate(12deg); opacity: 0; }
+}
+
+.reaction-particle {
+  animation-name: reaction-float;
+  animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation-fill-mode: both;
+  line-height: 1;
+  user-select: none;
+  will-change: transform, opacity;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .nudge-shake {
     animation: none;
+  }
+  .reaction-particle {
+    animation-duration: 1.2s !important;
+    animation-name: fade-in;
   }
 }
 
@@ -121,4 +142,15 @@ input[type='range'] {
 
 video::-webkit-media-controls {
   display: none !important;
+}
+
+/* cara ou coroa girando */
+@keyframes coin-flip {
+  0% { transform: rotateY(0) translateY(0); }
+  50% { transform: rotateY(900deg) translateY(-24px); }
+  100% { transform: rotateY(1800deg) translateY(0); }
+}
+
+.coin-flip {
+  animation: coin-flip 1.3s cubic-bezier(0.3, 0.7, 0.4, 1) both;
 }

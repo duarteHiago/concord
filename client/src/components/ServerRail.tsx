@@ -1,8 +1,8 @@
-import { Download, Plus } from 'lucide-react';
+import { Download, MessageCircle, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
-import { useApp } from '../store/app';
+import { HOME, useApp } from '../store/app';
 import { useVoice } from '../store/voice';
 import { cx, initials } from './ui';
 
@@ -13,6 +13,7 @@ export function ServerStrip() {
   const openServer = useApp((s) => s.openServer);
   const openModal = useApp((s) => s.openModal);
   const voiceServer = useVoice((s) => s.serverId);
+  const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0));
   const [download, setDownload] = useState<string | null>(null);
 
   useEffect(() => {
@@ -22,8 +23,23 @@ export function ServerStrip() {
 
   const tile = 'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] font-display text-base font-bold transition-all';
 
+  const home = activeId === HOME;
   return (
     <nav aria-label="Servidores" className="flex flex-wrap gap-2 border-b border-line p-4">
+      <button
+        title="Mensagens privadas"
+        aria-label={`Mensagens privadas${unread ? ` (${unread} não lidas)` : ''}`}
+        aria-current={home ? 'true' : undefined}
+        onClick={() => openServer(HOME)}
+        className={cx(tile, home ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-fg')}
+      >
+        <MessageCircle size={21} />
+        {unread > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-surface-2 bg-danger px-1 text-[10px] font-bold text-white">
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </button>
       {servers.map((s) => {
         const active = s.id === activeId;
         return (

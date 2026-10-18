@@ -1,6 +1,8 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
+import { NOISE_MODES } from '../../lib/voiceEffects';
 import { BotsTab } from './BotsTab';
+import { ShortcutsTab } from './ShortcutsTab';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
@@ -14,7 +16,7 @@ import { Avatar, Button, Input, Modal, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
-type Tab = 'profile' | 'appearance' | 'notifications' | 'audio' | 'bots' | 'account';
+type Tab = 'profile' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'account';
 
 export function UserSettingsModal() {
   const close = useApp((s) => s.closeModal);
@@ -28,6 +30,7 @@ export function UserSettingsModal() {
             ['appearance', 'Aparência'],
             ['notifications', 'Notificações'],
             ['audio', 'Voz e vídeo'],
+            ['shortcuts', 'Atalhos'],
             ['bots', 'Bots'],
             ['account', 'Conta'],
           ] as const
@@ -44,6 +47,7 @@ export function UserSettingsModal() {
       {tab === 'profile' && <Profile />}
       {tab === 'appearance' && <Appearance />}
       {tab === 'notifications' && <Notifications />}
+      {tab === 'shortcuts' && <ShortcutsTab />}
       {tab === 'bots' && <BotsTab />}
       {tab === 'audio' && <Audio />}
       {tab === 'account' && <Account />}
@@ -682,14 +686,26 @@ function Audio() {
       {select('Microfone', settings.inputId, inputs, (inputId) => void setAudioSettings({ inputId }))}
       {outputs.length > 0 && select('Saída de áudio', settings.outputId, outputs, (outputId) => void setAudioSettings({ outputId }))}
       <CameraSettings cameras={cameras} />
-      <div className="divide-y divide-line rounded-xl bg-surface-0">
-        <div className="flex items-center justify-between p-3">
-          <div>
-            <div className="text-sm font-semibold">Supressão de ruído</div>
-            <div className="text-xs text-fg-muted">Reduz ruídos de fundo como teclado e ventilador.</div>
-          </div>
-          <Toggle checked={settings.noiseSuppression} onChange={(v) => void setAudioSettings({ noiseSuppression: v })} />
+      <div>
+        <SectionTitle>Supressão de ruído</SectionTitle>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {NOISE_MODES.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => void setAudioSettings({ noiseMode: m.id })}
+              aria-pressed={settings.noiseMode === m.id}
+              className={cx(
+                'rounded-2xl border-2 p-3 text-left transition-colors',
+                settings.noiseMode === m.id ? 'border-accent bg-accent/10' : 'border-transparent bg-surface-0 hover:bg-surface-3',
+              )}
+            >
+              <span className="block text-sm font-bold">{m.label}</span>
+              <span className="block text-xs text-fg-muted">{m.hint}</span>
+            </button>
+          ))}
         </div>
+      </div>
+      <div className="divide-y divide-line rounded-xl bg-surface-0">
         <div className="flex items-center justify-between p-3">
           <div>
             <div className="text-sm font-semibold">Cancelamento de eco</div>

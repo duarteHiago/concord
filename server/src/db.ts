@@ -111,6 +111,8 @@ addColumn('users', 'banner_url', 'TEXT');
 addColumn('users', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'bot_owner_id', 'TEXT');
 addColumn('users', 'bot_token_hash', 'TEXT');
+addColumn('messages', 'kind', "TEXT NOT NULL DEFAULT 'text'");
+addColumn('messages', 'data', 'TEXT');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sounds (
@@ -122,6 +124,33 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_sounds_server ON sounds(server_id);
+
+  -- conversas privadas (DMs): uma por par de usuários, user_a < user_b
+  CREATE TABLE IF NOT EXISTS dm_channels (
+    id TEXT PRIMARY KEY,
+    user_a TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_b TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    last_message_at INTEGER NOT NULL,
+    UNIQUE (user_a, user_b)
+  );
+  CREATE TABLE IF NOT EXISTS dm_messages (
+    id TEXT PRIMARY KEY,
+    dm_id TEXT NOT NULL REFERENCES dm_channels(id) ON DELETE CASCADE,
+    author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'text',
+    data TEXT,
+    created_at INTEGER NOT NULL,
+    edited_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_dm_messages ON dm_messages(dm_id, created_at);
+  CREATE TABLE IF NOT EXISTS dm_reads (
+    dm_id TEXT NOT NULL REFERENCES dm_channels(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    last_read_at INTEGER NOT NULL,
+    PRIMARY KEY (dm_id, user_id)
+  );
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_bot_token ON users(bot_token_hash) WHERE bot_token_hash IS NOT NULL;
 `);
 
@@ -243,8 +272,18 @@ export interface MessageRow {
   channel_id: string;
   author_id: string;
   content: string;
+  kind: string;
+  data: string | null;
   created_at: number;
   edited_at: number | null;
+}
+
+export interface DmChannelRow {
+  id: string;
+  user_a: string;
+  user_b: string;
+  created_at: number;
+  last_message_at: number;
 }
 
 export interface InviteRow {

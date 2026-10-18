@@ -27,6 +27,7 @@ import {
   run,
   tx,
   type ChannelRow,
+  type DmChannelRow,
   type InviteRow,
   type MessageRow,
   type RoleRow,
@@ -38,6 +39,7 @@ import { color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signTo
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { removeUpload, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, normalize as normalizeCode, rotateRecoveryCode } from './recovery.ts';
+import { playGame } from './games.ts';
 import {
   dropVoice,
   emitToChannel,
@@ -105,10 +107,21 @@ const roleJson = (r: RoleRow) => ({
 });
 
 type MessageWithAuthor = MessageRow & Omit<PublicUser, 'id'>;
+const parseData = (raw: string | null) => {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+};
+
 const messageJson = (m: MessageWithAuthor) => ({
   id: m.id,
   channelId: m.channel_id,
   content: m.content,
+  kind: m.kind ?? 'text',
+  data: parseData(m.data),
   createdAt: m.created_at,
   editedAt: m.edited_at,
   author: userJson({ ...m, id: m.author_id }),
@@ -876,6 +889,7 @@ api.patch('/messages/:id', async (req, res) => {
   const me = uid(res);
   const msg = get<MessageRow>('SELECT * FROM messages WHERE id = ?', req.params.id) ?? fail(404, 'Mensagem não encontrada');
   if (msg.author_id !== me) fail(403, 'Você só pode editar suas mensagens');
+  if (msg.kind !== 'text') fail(400, 'Mensagens de jogo não podem ser editadas');
   const channel = requireChannelPerm(msg.channel_id, me, P.SEND_MESSAGES);
   run('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?', str(req.body?.content, 'mensagem', 1, 2000), now(), msg.id);
   const updated = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, msg.id)!);
@@ -1085,4 +1099,163 @@ api.delete('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
   leaveServerRoom(bot.id, req.params.serverId);
   serverChanged(req.params.serverId);
   res.json(botById(bot.id));
+});
+
+// ============================================================ Minigames (roleta, dado, cara ou coroa)
+
+api.post('/channels/:id/games', async (req, res) => {
+  const me = uid(res);
+  const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
+  const { content, data } = playGame(req.body);
+  const id = randomUUID();
+  run(
+    "INSERT INTO messages (id, channel_id, author_id, content, kind, data, created_at) VALUES (?, ?, ?, ?, 'game', ?, ?)",
+    id,
+    channel.id,
+    me,
+    content,
+    JSON.stringify(data),
+    now(),
+  );
+  const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
+  await emitToChannel(channel, 'message:new', msg);
+  res.json(msg);
+});
+
+// ============================================================ Conversas privadas (DMs)
+
+const DM_SELECT = `SELECT m.id, m.dm_id AS channel_id, m.author_id, m.content, m.kind, m.data, m.created_at, m.edited_at,
+  u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot
+  FROM dm_messages m JOIN users u ON u.id = m.author_id`;
+
+const otherOf = (dm: DmChannelRow, me: string) => (dm.user_a === me ? dm.user_b : dm.user_a);
+
+function dmJson(dm: DmChannelRow, me: string) {
+  const other = get<UserRow>('SELECT * FROM users WHERE id = ?', otherOf(dm, me))!;
+  const last = get<MessageWithAuthor>(`${DM_SELECT} WHERE m.dm_id = ? ORDER BY m.created_at DESC LIMIT 1`, dm.id);
+  const readAt = get<{ last_read_at: number }>('SELECT last_read_at FROM dm_reads WHERE dm_id = ? AND user_id = ?', dm.id, me)?.last_read_at ?? 0;
+  const unread = get<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM dm_messages WHERE dm_id = ? AND author_id != ? AND created_at > ?',
+    dm.id,
+    me,
+    readAt,
+  )!.n;
+  return { id: dm.id, user: userJson(other), lastMessage: last ? messageJson(last) : null, lastMessageAt: dm.last_message_at, unread };
+}
+
+function requireDm(dmId: string, me: string): DmChannelRow {
+  const dm = get<DmChannelRow>('SELECT * FROM dm_channels WHERE id = ?', dmId);
+  if (!dm || (dm.user_a !== me && dm.user_b !== me)) fail(404, 'Conversa não encontrada');
+  return dm!;
+}
+
+const sharesServer = (a: string, b: string) =>
+  !!get('SELECT 1 FROM members x JOIN members y ON x.server_id = y.server_id WHERE x.user_id = ? AND y.user_id = ? LIMIT 1', a, b);
+
+/** Envia a mensagem para os dois lados, cada um com o resumo da conversa do seu ponto de vista. */
+function deliverDm(dm: DmChannelRow, event: string, message: unknown) {
+  for (const userId of [dm.user_a, dm.user_b]) emitToUser(userId, event, { dm: dmJson(dm, userId), message });
+}
+
+api.get('/dms', (_req, res) => {
+  const me = uid(res);
+  const dms = all<DmChannelRow>('SELECT * FROM dm_channels WHERE user_a = ? OR user_b = ? ORDER BY last_message_at DESC', me, me);
+  res.json(dms.map((dm) => dmJson(dm, me)));
+});
+
+/** Abre (ou reabre) a conversa com alguém de um servidor em comum. */
+api.post('/dms', (req, res) => {
+  const me = uid(res);
+  const other = str(req.body?.userId, 'usuário', 1, 64);
+  if (other === me) fail(400, 'Você não pode conversar consigo mesmo');
+  if (!get('SELECT 1 FROM users WHERE id = ?', other)) fail(404, 'Usuário não encontrado');
+  const [a, b] = me < other ? [me, other] : [other, me];
+  let dm = get<DmChannelRow>('SELECT * FROM dm_channels WHERE user_a = ? AND user_b = ?', a, b);
+  if (!dm) {
+    if (!sharesServer(me, other)) fail(403, 'Vocês precisam estar em algum servidor em comum');
+    dm = { id: randomUUID(), user_a: a, user_b: b, created_at: now(), last_message_at: now() };
+    run('INSERT INTO dm_channels (id, user_a, user_b, created_at, last_message_at) VALUES (?, ?, ?, ?, ?)', dm.id, a, b, dm.created_at, dm.last_message_at);
+  }
+  res.json(dmJson(dm, me));
+});
+
+api.get('/dms/:id/messages', (req, res) => {
+  const dm = requireDm(req.params.id, uid(res));
+  const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
+  const limit = Math.min(100, Number(req.query.limit) || 50);
+  const rows = all<MessageWithAuthor>(`${DM_SELECT} WHERE m.dm_id = ? AND m.created_at < ? ORDER BY m.created_at DESC LIMIT ?`, dm.id, before, limit);
+  res.json(rows.reverse().map(messageJson));
+});
+
+function insertDmMessage(dm: DmChannelRow, me: string, content: string, kind = 'text', data: unknown = null) {
+  const id = randomUUID();
+  const at = now();
+  run(
+    'INSERT INTO dm_messages (id, dm_id, author_id, content, kind, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    id,
+    dm.id,
+    me,
+    content,
+    kind,
+    data ? JSON.stringify(data) : null,
+    at,
+  );
+  run('UPDATE dm_channels SET last_message_at = ? WHERE id = ?', at, dm.id);
+  // quem envia já leu a própria mensagem
+  run(
+    'INSERT INTO dm_reads (dm_id, user_id, last_read_at) VALUES (?, ?, ?) ON CONFLICT (dm_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at',
+    dm.id,
+    me,
+    at,
+  );
+  const fresh = get<DmChannelRow>('SELECT * FROM dm_channels WHERE id = ?', dm.id)!;
+  const msg = messageJson(get<MessageWithAuthor>(`${DM_SELECT} WHERE m.id = ?`, id)!);
+  deliverDm(fresh, 'dm:message', msg);
+  return msg;
+}
+
+api.post('/dms/:id/messages', (req, res) => {
+  const me = uid(res);
+  const dm = requireDm(req.params.id, me);
+  res.json(insertDmMessage(dm, me, str(req.body?.content, 'mensagem', 1, 2000)));
+});
+
+api.post('/dms/:id/games', (req, res) => {
+  const me = uid(res);
+  const dm = requireDm(req.params.id, me);
+  const { content, data } = playGame(req.body);
+  res.json(insertDmMessage(dm, me, content, 'game', data));
+});
+
+api.post('/dms/:id/read', (req, res) => {
+  const me = uid(res);
+  const dm = requireDm(req.params.id, me);
+  run(
+    'INSERT INTO dm_reads (dm_id, user_id, last_read_at) VALUES (?, ?, ?) ON CONFLICT (dm_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at',
+    dm.id,
+    me,
+    now(),
+  );
+  res.json(dmJson(dm, me));
+});
+
+api.patch('/dm-messages/:id', (req, res) => {
+  const me = uid(res);
+  const row = get<{ dm_id: string; author_id: string; kind: string }>('SELECT dm_id, author_id, kind FROM dm_messages WHERE id = ?', req.params.id);
+  if (!row || row.author_id !== me || row.kind !== 'text') fail(404, 'Mensagem não encontrada');
+  const dm = requireDm(row!.dm_id, me);
+  run('UPDATE dm_messages SET content = ?, edited_at = ? WHERE id = ?', str(req.body?.content, 'mensagem', 1, 2000), now(), req.params.id);
+  const msg = messageJson(get<MessageWithAuthor>(`${DM_SELECT} WHERE m.id = ?`, req.params.id)!);
+  deliverDm(dm, 'dm:update', msg);
+  res.json(msg);
+});
+
+api.delete('/dm-messages/:id', (req, res) => {
+  const me = uid(res);
+  const row = get<{ dm_id: string; author_id: string }>('SELECT dm_id, author_id FROM dm_messages WHERE id = ?', req.params.id);
+  if (!row || row.author_id !== me) fail(404, 'Mensagem não encontrada');
+  const dm = requireDm(row!.dm_id, me);
+  run('DELETE FROM dm_messages WHERE id = ?', req.params.id);
+  deliverDm(dm, 'dm:delete', { id: req.params.id, channelId: dm.id });
+  res.json({ ok: true });
 });

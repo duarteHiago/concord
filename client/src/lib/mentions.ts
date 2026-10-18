@@ -3,7 +3,7 @@ import { useApp } from '../store/app';
 import { desktop } from './desktop';
 import { notifySettings } from './nudge';
 import { playSound } from './sounds';
-import type { Message } from './types';
+import type { DirectChannel, Message } from './types';
 
 export interface MentionEvent {
   message: Message;
@@ -17,6 +17,29 @@ export interface MentionEvent {
 export function mentionsMe(content: string, username: string): boolean {
   if (/(^|\s)@(todos|everyone|all)\b/i.test(content)) return true;
   return new RegExp(`(^|\\s)@${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(content);
+}
+
+/** Nova mensagem privada: som e notificação (o clique abre a conversa). */
+export function receiveDirectMessage(dm: DirectChannel, message: Message) {
+  const me = useApp.getState().me;
+  if (!me || me.settings.status === 'dnd') return;
+  const prefs = notifySettings(me);
+  if (!prefs.mentions) return;
+  if (prefs.sound) playSound('mention');
+  if (!prefs.desktop) return;
+  const title = `${dm.user.displayName} (mensagem privada)`;
+  const body = message.kind === 'game' ? message.content : message.content.length > 140 ? `${message.content.slice(0, 140)}…` : message.content;
+  if (desktop?.notify) {
+    void desktop.notify({ title, body, data: { dmId: dm.id } });
+    return;
+  }
+  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const n = new Notification(title, { body, icon: dm.user.avatarUrl ?? '/icon.svg', tag: `dm-${dm.id}` });
+  n.onclick = () => {
+    window.focus();
+    useApp.getState().openDmById(dm.id);
+    n.close();
+  };
 }
 
 export function receiveMention(m: MentionEvent) {

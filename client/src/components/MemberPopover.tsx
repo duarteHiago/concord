@@ -1,4 +1,4 @@
-import { Bell, BellOff, Crown, Gamepad2, Headphones, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
+import { Bell, BellOff, Crown, Gamepad2, Headphones, MessageCircle, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useRef, useState } from 'react';
@@ -27,6 +27,7 @@ export function MemberPopover() {
   const localMuted = useVoice((s) => (userId ? !!s.localMuted[userId] : false));
   const openModal = useApp((s) => s.openModal);
   const saveSettings = useApp((s) => s.saveSettings);
+  const openDm = useApp((s) => s.openDm);
 
   useEffect(() => {
     if (!userId) return;
@@ -201,6 +202,17 @@ export function MemberPopover() {
 
           {!isMe && (
             <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  close();
+                  void openDm(member.id);
+                }}
+                title={`Conversa privada com ${name}`}
+                aria-label={`Mensagem para ${name}`}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-3 text-fg-muted transition-colors hover:text-fg"
+              >
+                <MessageCircle size={16} />
+              </button>
               <button
                 disabled={!online || presence === 'dnd'}
                 onClick={() => void sendNudge(detail.server.id, member.id, name)}

@@ -60,6 +60,10 @@ export interface UserSettings {
   customStatus?: string;
   /** mostrar o jogo/música detectados pelo app desktop */
   shareActivity?: boolean;
+  /** atalhos personalizados (ação → "Ctrl+Shift+M") */
+  shortcuts?: Record<string, string>;
+  /** no app desktop, silenciar/ensurdecer funcionam com o app em segundo plano */
+  globalShortcuts?: boolean;
   notifications?: Partial<NotifySettings>;
   mutedNudges?: string[];
 }
@@ -145,13 +149,30 @@ export interface ServerDetail {
   online: string[];
 }
 
+export type GameData =
+  | { type: 'roulette'; items: string[]; result: number; turns: number }
+  | { type: 'dice'; sides: number; count: number; rolls: number[] }
+  | { type: 'coin'; result: 'cara' | 'coroa' };
+
 export interface Message {
   id: string;
+  /** id do canal, ou da conversa privada nas DMs */
   channelId: string;
   content: string;
+  kind?: 'text' | 'game';
+  data?: GameData | null;
   createdAt: number;
   editedAt: number | null;
   author: User;
+}
+
+/** Conversa privada (DM). */
+export interface DirectChannel {
+  id: string;
+  user: User;
+  lastMessage: Message | null;
+  lastMessageAt: number;
+  unread: number;
 }
 
 export interface Invite {

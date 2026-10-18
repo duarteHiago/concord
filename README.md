@@ -34,6 +34,15 @@ O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, ge
 - **Janela separada:** a live abre em outra janela, para levar a outro monitor e pôr em tela cheia.
 - **Painel lateral** com o chat da sala e a lista de membros.
 
+## Mais na sala e no chat
+
+- **Reações flutuantes:** escolha um emoji no botão de coração e clique na tela. Uma rajada sobe a partir do ponto clicado, para todos da sala.
+- **Minigames:** roleta, dado e cara ou coroa, pelo botão **+** do chat ou por `/roleta a, b, c`, `/dado 2d6` e `/moeda`. O servidor sorteia o resultado, então todo mundo vê a mesma roleta parar no mesmo lugar.
+- **Mensagens privadas:** pelo botão de balão no topo da barra de servidores, ou por "Mensagem" no perfil de alguém de um servidor em comum.
+- **Supressão de ruído por IA:** GTCRN (avançada) ou RNNoise (leve), as duas rodando no seu PC, via [web-noise-suppressor](https://github.com/sapphi-red/web-noise-suppressor).
+- **Trocar microfone, saída e câmera** pela setinha ao lado de cada ícone, na barra de baixo.
+- **Atalhos de teclado** configuráveis em Configurações → Atalhos. Ctrl+K abre a busca rápida. No app desktop, silenciar e ensurdecer funcionam com o app em segundo plano.
+
 ## Comandos no chat
 
 Digite `/` no campo de mensagem para ver a lista. Os comandos são `/nudge`, `/all`, `/me`, `/shrug`, `/sound`, `/nick`, `/status`, `/dnd`, `/online`, `/leave` e, para moderação, `/mute`, `/unmute`, `/disconnect` e `/kick`. Menções funcionam com `@usuario`, e `@todos` exige a permissão "Mencionar todos". Quem é mencionado recebe som e notificação.

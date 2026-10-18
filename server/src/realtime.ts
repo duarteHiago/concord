@@ -18,6 +18,9 @@ export interface VoiceState {
 }
 
 let io: Server;
+
+/** Emojis aceitos nas reações da sala (o cliente mostra os mesmos). */
+export const REACTIONS = ['❤️', '😂', '🔥', '👏', '😮', '🎉', '💀', '👀', '💯', '😍', '🤣', '😭'];
 const online = new Map<string, number>(); // userId -> nº de sockets
 const voice = new Map<string, VoiceState>(); // userId -> estado
 const serverMutes = new Set<string>(); // `${serverId}:${userId}`
@@ -240,6 +243,24 @@ export function setupRealtime(httpServer: HttpServer) {
       if (!v || v.socketId !== socket.id) return;
       voice.delete(userId);
       broadcastVoice(v.serverId);
+    });
+
+    // reações flutuantes (estilo TikTok): só para quem está na mesma sala de voz
+    const reactionTimes: number[] = [];
+    socket.on('reaction', (raw: { emoji?: unknown; x?: unknown; y?: unknown }) => {
+      const v = voice.get(userId);
+      if (!v || v.socketId !== socket.id) return;
+      const emoji = typeof raw?.emoji === 'string' ? raw.emoji : '';
+      if (!REACTIONS.includes(emoji)) return;
+      const nowMs = Date.now();
+      while (reactionTimes.length && nowMs - reactionTimes[0] > 2000) reactionTimes.shift();
+      if (reactionTimes.length >= 10) return; // no máximo 10 a cada 2 s
+      reactionTimes.push(nowMs);
+      const clamp = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : Math.random());
+      const payload = { userId, emoji, x: clamp(raw.x), y: clamp(raw.y), at: nowMs };
+      for (const other of voice.values()) {
+        if (other.channelId === v.channelId) io.to(other.socketId).emit('reaction', payload);
+      }
     });
 
     socket.on('activity:set', (raw: unknown) => {

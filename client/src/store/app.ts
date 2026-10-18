@@ -2,11 +2,28 @@ import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { applyTheme, normalizeTheme } from '../lib/theme';
-import { receiveMention, type MentionEvent } from '../lib/mentions';
+import { receiveDirectMessage, receiveMention, type MentionEvent } from '../lib/mentions';
 import { receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
+import { installShortcuts, syncGlobalShortcuts } from '../lib/shortcuts';
+import { desktop } from '../lib/desktop';
 import { playSoundboard } from '../lib/soundboard';
-import type { Me, Message, NudgeEvent, Presence, ServerDetail, ServerSummary, Sound, ThemeSettings, UserSettings, VoiceState } from '../lib/types';
+import type {
+  DirectChannel,
+  Me,
+  Message,
+  NudgeEvent,
+  Presence,
+  ServerDetail,
+  ServerSummary,
+  Sound,
+  ThemeSettings,
+  UserSettings,
+  VoiceState,
+} from '../lib/types';
+
+/** activeServerId especial: a tela de conversas privadas. */
+export const HOME = '@me';
 import { toast } from './toast';
 import { useVoice } from './voice';
 
@@ -21,6 +38,8 @@ export type Modal =
   | { type: 'nickname'; serverId: string; userId: string }
   | { type: 'recoveryCode'; code: string; next?: Modal; afterReset?: boolean }
   | { type: 'image'; src: string; alt: string }
+  | { type: 'roulette'; target: { kind: 'channel' | 'dm'; id: string } }
+  | { type: 'quickSwitch' }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {
@@ -54,6 +73,14 @@ interface AppState {
   loadServers: () => Promise<void>;
   loadDetail: (serverId: string) => Promise<void>;
   openServer: (serverId: string) => void;
+  /** conversas privadas (null = ainda não carregou) */
+  dms: DirectChannel[] | null;
+  activeDmId: string | null;
+  loadDms: () => Promise<void>;
+  openDm: (userId: string) => Promise<void>;
+  openDmById: (dmId: string) => void;
+  loadDmMessages: (dmId: string, older?: boolean) => Promise<void>;
+  markDmRead: (dmId: string) => void;
   openChannel: (serverId: string, channelId: string) => void;
   loadMessages: (channelId: string, older?: boolean) => Promise<void>;
   openModal: (modal: Modal) => void;
@@ -81,6 +108,12 @@ const reloadTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 let themeSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useApp = create<AppState>((set, get) => {
+  /** Insere/atualiza uma conversa e mantém a lista ordenada pela última mensagem. */
+  function upsertDm(dm: DirectChannel) {
+    const list = (get().dms ?? []).filter((d) => d.id !== dm.id);
+    set({ dms: [dm, ...list].sort((a, b) => b.lastMessageAt - a.lastMessageAt) });
+  }
+
   function startSession(token: string, me: Me) {
     setToken(token);
     applyTheme(normalizeTheme(me.settings?.theme));
@@ -96,9 +129,12 @@ export const useApp = create<AppState>((set, get) => {
       if (err.message === 'unauthorized') get().logout();
     });
     socket.on('server:changed', ({ serverId }: { serverId: string }) => {
-      if (!get().details[serverId]) return;
       clearTimeout(reloadTimers[serverId]);
-      reloadTimers[serverId] = setTimeout(() => void get().loadDetail(serverId), 120);
+      reloadTimers[serverId] = setTimeout(() => {
+        if (get().details[serverId]) void get().loadDetail(serverId);
+        // servidores ainda não abertos: só atualiza nome/ícone na barra
+        else void api.get<ServerSummary[]>('/servers').then((servers) => set({ servers }), () => {});
+      }, 120);
     });
     socket.on('server:removed', ({ serverId, reason }: { serverId: string; reason: string }) => {
       if (useVoice.getState().serverId === serverId) void useVoice.getState().leave();
@@ -128,6 +164,7 @@ export const useApp = create<AppState>((set, get) => {
       set({ online: next });
     });
     socket.on('nudge', (n: NudgeEvent) => receiveNudge(n));
+    socket.on('reaction', (r: unknown) => window.dispatchEvent(new CustomEvent('concord:reaction', { detail: r })));
     socket.on('mention', (m: MentionEvent) => receiveMention(m));
     socket.on('sounds:changed', ({ serverId }: { serverId: string }) => {
       if (get().sounds[serverId]) void get().loadSounds(serverId);
@@ -150,12 +187,32 @@ export const useApp = create<AppState>((set, get) => {
       const list = get().messages[channelId];
       if (list) set({ messages: { ...get().messages, [channelId]: list.filter((m) => m.id !== id) } });
     });
+    socket.on('dm:message', ({ dm, message }: { dm: DirectChannel; message: Message }) => {
+      const list = get().messages[dm.id];
+      if (list && !list.some((m) => m.id === message.id)) set({ messages: { ...get().messages, [dm.id]: [...list, message] } });
+      const viewing = get().activeServerId === HOME && get().activeDmId === dm.id && document.hasFocus();
+      upsertDm(viewing ? { ...dm, unread: 0 } : dm);
+      if (message.author.id === get().me?.id) return;
+      if (viewing) void api.post(`/dms/${dm.id}/read`).catch(() => {});
+      else receiveDirectMessage(dm, message);
+    });
+    socket.on('dm:update', ({ message }: { message: Message }) => {
+      const list = get().messages[message.channelId];
+      if (list) set({ messages: { ...get().messages, [message.channelId]: list.map((m) => (m.id === message.id ? message : m)) } });
+    });
+    socket.on('dm:delete', ({ dm, message }: { dm: DirectChannel; message: { id: string; channelId: string } }) => {
+      const list = get().messages[message.channelId];
+      if (list) set({ messages: { ...get().messages, [message.channelId]: list.filter((m) => m.id !== message.id) } });
+      upsertDm(dm);
+    });
     socket.on('typing', ({ channelId, userId }: { channelId: string; userId: string }) => {
       if (userId === get().me?.id) return;
       set({ typing: { ...get().typing, [channelId]: { ...get().typing[channelId], [userId]: Date.now() + 6000 } } });
     });
     useVoice.getState().bindSocket(socket);
     startActivityReporter(socket);
+    installShortcuts();
+    syncGlobalShortcuts();
   }
 
   return {
@@ -232,6 +289,7 @@ export const useApp = create<AppState>((set, get) => {
 
     logout: () => {
       void useVoice.getState().leave();
+      void desktop?.setGlobalShortcuts?.({});
       disconnectSocket();
       setToken(null);
       set({ me: null, servers: [], details: {}, activeServerId: null, messages: {}, voiceStates: {}, modal: null });
@@ -267,9 +325,13 @@ export const useApp = create<AppState>((set, get) => {
     loadServers: async () => {
       const servers = await api.get<ServerSummary[]>('/servers');
       set({ servers });
+      void get().loadDms();
       const current = get().activeServerId;
       const last = loadLast().serverId;
-      const target = servers.find((s) => s.id === current)?.id ?? servers.find((s) => s.id === last)?.id ?? servers[0]?.id;
+      const target =
+        current === HOME || (!current && last === HOME)
+          ? HOME
+          : (servers.find((s) => s.id === current)?.id ?? servers.find((s) => s.id === last)?.id ?? servers[0]?.id);
       if (target) get().openServer(target);
       else set({ activeServerId: null });
       // recarrega os servidores já abertos (reconexão)
@@ -281,6 +343,8 @@ export const useApp = create<AppState>((set, get) => {
         const detail = await api.get<ServerDetail>(`/servers/${serverId}`);
         set({
           details: { ...get().details, [serverId]: detail },
+          // mantém a barra de servidores em dia (nome e ícone mudam sem precisar recarregar)
+          servers: get().servers.map((s) => (s.id === serverId ? detail.server : s)),
           voiceStates: { ...get().voiceStates, [serverId]: detail.voiceStates },
         });
         // canal ativo sumiu (apagado ou sem permissão)? escolhe outro
@@ -300,7 +364,61 @@ export const useApp = create<AppState>((set, get) => {
     openServer: (serverId) => {
       set({ activeServerId: serverId });
       saveLast(serverId, get().activeChannels);
+      if (serverId === HOME) {
+        void get().loadDms();
+        return;
+      }
       void get().loadDetail(serverId);
+    },
+
+    // ---- conversas privadas ----
+    dms: null,
+    activeDmId: null,
+
+    loadDms: async () => {
+      try {
+        set({ dms: await api.get<DirectChannel[]>('/dms') });
+      } catch {
+        // tenta de novo na próxima vez
+      }
+    },
+
+    openDm: async (userId) => {
+      try {
+        const dm = await api.post<DirectChannel>('/dms', { userId });
+        upsertDm(dm);
+        get().openDmById(dm.id);
+      } catch (err) {
+        toast.error(err);
+      }
+    },
+
+    openDmById: (dmId) => {
+      set({ activeServerId: HOME, activeDmId: dmId });
+      saveLast(HOME, get().activeChannels);
+      if (!get().messages[dmId]) void get().loadDmMessages(dmId);
+      get().markDmRead(dmId);
+    },
+
+    loadDmMessages: async (dmId, older = false) => {
+      const current = get().messages[dmId] ?? [];
+      const before = older && current.length ? `&before=${current[0].createdAt}` : '';
+      try {
+        const batch = await api.get<Message[]>(`/dms/${dmId}/messages?limit=50${before}`);
+        set({
+          messages: { ...get().messages, [dmId]: older ? [...batch, ...current] : batch },
+          hasMore: { ...get().hasMore, [dmId]: batch.length === 50 },
+        });
+      } catch (err) {
+        toast.error(err);
+      }
+    },
+
+    markDmRead: (dmId) => {
+      const dm = get().dms?.find((d) => d.id === dmId);
+      if (!dm || dm.unread === 0) return;
+      upsertDm({ ...dm, unread: 0 });
+      void api.post(`/dms/${dmId}/read`).catch(() => {});
     },
 
     openChannel: (serverId, channelId) => {

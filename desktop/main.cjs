@@ -1,7 +1,7 @@
 // Concord Desktop — processo principal do Electron.
 // Carrega o Concord do servidor configurado e adiciona o que o navegador não oferece:
 // seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
-const { app, BrowserWindow, desktopCapturer, ipcMain, Menu, Notification, session, shell } = require('electron');
+const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, Notification, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -347,6 +347,23 @@ handle('concord:activity-refresh', async () => {
   return currentActivity;
 });
 
+// ------------------------------------------------------------------ atalhos globais
+// Funcionam com o app em segundo plano (ex.: silenciar o mic no meio de um jogo).
+
+handle('concord:global-shortcuts', (_e, map) => {
+  globalShortcut.unregisterAll();
+  const result = {};
+  for (const [action, accelerator] of Object.entries(map ?? {})) {
+    if (typeof accelerator !== 'string' || !accelerator) continue;
+    try {
+      result[action] = globalShortcut.register(accelerator, () => win?.webContents.send('concord:shortcut', action));
+    } catch {
+      result[action] = false; // combinação inválida ou já usada por outro programa
+    }
+  }
+  return result;
+});
+
 // ------------------------------------------------------------------ chamar atenção (estilo MSN)
 
 const activeNotifications = new Set(); // evita que o coletor de lixo descarte a notificação antes do clique
@@ -492,4 +509,5 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', stopCapture);
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());

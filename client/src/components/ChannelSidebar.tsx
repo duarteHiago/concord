@@ -22,19 +22,24 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { memberName, type Channel, type ServerDetail, type VoiceState } from '../lib/types';
-import { memberColor, useActiveDetail, useApp } from '../store/app';
+import { HOME, memberColor, useActiveDetail, useApp } from '../store/app';
+import { DmSidebar } from './DirectMessages';
 import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { ServerStrip } from './ServerRail';
+import { DeviceSplitButton } from './DeviceMenu';
 import { Avatar, AvatarStack, IconButton, LivePill, cx } from './ui';
 
 export function ChannelSidebar() {
   const detail = useActiveDetail();
+  const home = useApp((s) => s.activeServerId === HOME);
   return (
     <aside className="panel flex w-[290px] shrink-0 flex-col overflow-hidden">
       <ServerStrip />
-      {detail ? (
+      {home ? (
+        <DmSidebar />
+      ) : detail ? (
         <>
           <ServerHeader detail={detail} />
           <div className="flex-1 space-y-5 overflow-y-auto px-3 pb-3">
@@ -343,9 +348,9 @@ function VoicePanel() {
             {channel?.name ?? 'Sala'} · {detail?.server.name}
           </div>
         </button>
-        <button title={cameraOn ? 'Desligar câmera' : 'Ligar câmera'} onClick={() => void toggleCamera()} className={cx(round, cameraOn ? 'bg-fg text-surface-1' : 'bg-surface-4 text-fg-muted hover:text-fg')}>
-          {cameraOn ? <VideoOff size={16} /> : <Video size={16} />}
-        </button>
+        <DeviceSplitButton kind="videoinput" label={cameraOn ? 'Desligar câmera' : 'Ligar câmera'} onClick={() => void toggleCamera()}>
+          {cameraOn ? <VideoOff size={16} className="text-accent" /> : <Video size={16} />}
+        </DeviceSplitButton>
         <button
           title={sharing ? 'Parar transmissão' : 'Transmitir tela'}
           onClick={() => (sharing ? void stopShare() : openModal({ type: 'shareScreen' }))}
@@ -396,7 +401,7 @@ function UserCard() {
   );
 
   return (
-    <div ref={menuRef} className="relative mx-3 mb-3 flex items-center gap-2.5 rounded-[20px] bg-surface-3 p-2.5">
+    <div ref={menuRef} className="relative mx-3 mb-3 flex items-center gap-1 rounded-[20px] bg-surface-3 p-2.5">
       {menu && (
         <div className="absolute right-0 bottom-full left-0 z-30 mb-2 animate-pop-in space-y-0.5 rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line">
           {option('online', 'Online', 'Recebe chamadas de atenção e avisos')}
@@ -422,17 +427,18 @@ function UserCard() {
           </div>
         </div>
       </button>
-      <IconButton
+      <DeviceSplitButton
+        kind="audioinput"
         label={serverMuted ? 'Silenciado por um moderador' : micOn ? 'Silenciar' : 'Ativar microfone'}
-        className={cx('h-9 w-9', micOff && 'text-danger')}
+        danger={micOff}
         onClick={() => (inCall ? void toggleMic() : toast.info('Entre em uma sala para usar o microfone.'))}
       >
         {micOff ? <MicOff size={18} /> : <Mic size={18} />}
-      </IconButton>
-      <IconButton label={deafened ? 'Ativar áudio' : 'Ensurdecer'} className={cx('h-9 w-9', deafened && 'text-danger')} onClick={() => void toggleDeafen()}>
+      </DeviceSplitButton>
+      <DeviceSplitButton kind="audiooutput" label={deafened ? 'Ativar áudio' : 'Ensurdecer'} danger={deafened} onClick={() => void toggleDeafen()}>
         {deafened ? <HeadphoneOff size={18} /> : <Headphones size={18} />}
-      </IconButton>
-      <IconButton label="Configurações" className="h-9 w-9" onClick={() => openModal({ type: 'userSettings' })}>
+      </DeviceSplitButton>
+      <IconButton label="Configurações" className="h-9 w-8 shrink-0" onClick={() => openModal({ type: 'userSettings' })}>
         <Settings size={18} />
       </IconButton>
     </div>

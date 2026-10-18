@@ -10,6 +10,7 @@ import { toast } from '../store/toast';
 import { Avatar, IconButton, Spinner, cx } from './ui';
 import { mentionsMe } from '../lib/mentions';
 import { availableCommands, runCommand } from '../lib/commands';
+import { GameCard, GameMenuButton } from './Games';
 
 const EMPTY: Message[] = [];
 
@@ -207,6 +208,8 @@ function Bubble({
             />
             <p className="px-1 text-xs text-fg-subtle">Esc cancela · Enter salva</p>
           </div>
+        ) : message.kind === 'game' && message.data ? (
+          <GameCard data={message.data} fresh={Date.now() - message.createdAt < 8000} author={mine ? 'Você' : name} />
         ) : (
           <div
             className={cx(
@@ -236,7 +239,7 @@ const URL_RE = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g;
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i;
 const MENTION_RE = /(@[a-zA-Z0-9_.]{3,32})/g;
 
-function RichText({ text, mine }: { text: string; mine: boolean }) {
+export function RichText({ text, mine }: { text: string; mine: boolean }) {
   const parts = text.split(URL_RE);
   const images = parts.filter((p, i) => i % 2 === 1 && IMG_RE.test(p));
   return (
@@ -397,7 +400,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   const placeholder = !canSend
     ? 'Você não pode enviar mensagens aqui'
     : channel.type === 'voice'
-      ? 'Fala com a galera… (/ para comandos)'
+      ? 'Fala com a galera…'
       : `Mensagem em #${channel.name} (/ para comandos)`;
 
   return (
@@ -426,24 +429,27 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
           ))}
         </div>
       )}
-      <label className="sr-only" htmlFor={`composer-${channel.id}`}>
-        Mensagem
-      </label>
-      <textarea
-        id={`composer-${channel.id}`}
-        value={text}
-        disabled={!canSend}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        rows={Math.min(6, text.split('\n').length)}
-        placeholder={placeholder}
-        aria-autocomplete="list"
-        aria-expanded={open}
-        className={cx(
-          'block max-h-48 w-full resize-none bg-surface-3 px-5 py-3.5 text-[15px] outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed',
-          text.includes('\n') ? 'rounded-3xl' : 'rounded-full',
-        )}
-      />
+      <div className="flex items-end gap-2">
+        {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} />}
+        <label className="sr-only" htmlFor={`composer-${channel.id}`}>
+          Mensagem
+        </label>
+        <textarea
+          id={`composer-${channel.id}`}
+          value={text}
+          disabled={!canSend}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          rows={Math.min(6, text.split('\n').length)}
+          placeholder={placeholder}
+          aria-autocomplete="list"
+          aria-expanded={open}
+          className={cx(
+            'block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 px-5 py-3.5 text-[15px] outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed',
+            text.includes('\n') ? 'rounded-3xl' : 'rounded-full',
+          )}
+        />
+      </div>
       <div className="h-5 px-4 pt-1 text-xs text-fg-muted">
         {typers.length > 0 && (
           <span className="animate-fade-in">

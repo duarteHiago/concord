@@ -28,5 +28,7 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   getActivity: () => ipcRenderer.invoke('concord:activity').catch(() => null),
   refreshActivity: () => ipcRenderer.invoke('concord:activity-refresh').catch(() => null),
   onActivity: listen('concord:activity'),
+  setGlobalShortcuts: (map) => ipcRenderer.invoke('concord:global-shortcuts', map),
+  onShortcut: listen('concord:shortcut'),
   reload: () => ipcRenderer.invoke('concord:reload'),
 });

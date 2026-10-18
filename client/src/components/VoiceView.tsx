@@ -30,6 +30,7 @@ import { useVoice } from '../store/voice';
 import { Composer, MessageFeed } from './ChatView';
 import { MemberListBody } from './MemberList';
 import { SoundboardButton, SoundToast } from './Soundboard';
+import { ReactionLayer, ReactionsButton } from './Reactions';
 import { VoiceEffectsButton } from './VoiceEffectsButton';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
@@ -89,6 +90,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
             <>
               <Stage detail={detail} />
               <SoundToast />
+              <ReactionLayer />
             </>
           )}
         </section>
@@ -573,6 +575,7 @@ function ControlDock() {
         {round(cameraOn ? 'Desligar câmera' : 'Ligar câmera', () => void toggleCamera(), cameraOn ? <Video size={20} /> : <VideoOff size={20} />)}
         <VoiceEffectsButton />
         <SoundboardButton />
+        <ReactionsButton />
         <button
           onClick={() => (sharing ? void stopShare() : openModal({ type: 'shareScreen' }))}
           className={cx(

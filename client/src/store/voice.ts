@@ -17,7 +17,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { closePopout } from '../lib/popout';
-import { applyVoiceEffect, EFFECTS, type EffectId } from '../lib/voiceEffects';
+import { applyVoiceProcessing, EFFECTS, type EffectId, type NoiseMode } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -50,7 +50,7 @@ export interface ShareSettings {
 export interface AudioSettings {
   inputId: string;
   outputId: string;
-  noiseSuppression: boolean;
+  noiseMode: NoiseMode;
   echoCancellation: boolean;
   videoInputId: string;
   cameraQuality: '720p' | '1080p';
@@ -119,7 +119,7 @@ const DEFAULT_SHARE: ShareSettings = { presetId: '1080p60', audio: true, mode: '
 const DEFAULT_AUDIO: AudioSettings = {
   inputId: 'default',
   outputId: 'default',
-  noiseSuppression: true,
+  noiseMode: 'rnnoise',
   echoCancellation: true,
   videoInputId: '',
   cameraQuality: '720p',
@@ -320,7 +320,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     const track = pub?.track as LocalAudioTrack | undefined;
     if (!track) return;
     try {
-      await applyVoiceEffect(track, get().effect);
+      await applyVoiceProcessing(track, get().audioSettings.noiseMode, get().effect);
     } catch (err) {
       toast.error(`Não foi possível aplicar o efeito: ${(err as Error).message}`);
     }
@@ -329,10 +329,11 @@ export const useVoice = create<VoiceStore>((set, get) => {
   async function enableMic(on: boolean) {
     const room = get().room;
     if (!room) return;
-    const { inputId, noiseSuppression, echoCancellation } = get().audioSettings;
+    const { inputId, noiseMode, echoCancellation } = get().audioSettings;
     await room.localParticipant.setMicrophoneEnabled(on, {
       deviceId: inputId,
-      noiseSuppression,
+      // com a IA ligada, o filtro do navegador fica desligado (senão a voz é processada duas vezes)
+      noiseSuppression: noiseMode === 'browser',
       echoCancellation,
       autoGainControl: true,
     });
@@ -369,7 +370,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     },
     streamVolumes: load('concord.streamVolumes', {} as Record<string, number>),
     shareSettings: load('concord.share', DEFAULT_SHARE),
-    audioSettings: load('concord.audio', DEFAULT_AUDIO),
+    audioSettings: loadAudioSettings(),
     tick: 0,
 
     join: async (serverId, channelId) => {
@@ -602,7 +603,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
         if (patch.outputId) await room.switchActiveDevice('audiooutput', patch.outputId);
         if (patch.inputId && get().micOn) await room.switchActiveDevice('audioinput', patch.inputId);
         if (patch.videoInputId && get().cameraOn) await room.switchActiveDevice('videoinput', patch.videoInputId);
-        if ((patch.noiseSuppression !== undefined || patch.echoCancellation !== undefined) && get().micOn) {
+        if ((patch.noiseMode !== undefined || patch.echoCancellation !== undefined) && get().micOn) {
           await enableMic(false);
           await enableMic(true);
         }
@@ -653,4 +654,18 @@ function loadEffect(): EffectId {
   } catch {
     return 'none';
   }
+}
+
+/** Preferências de áudio salvas; converte o antigo "noiseSuppression" (liga/desliga) no modo novo. */
+function loadAudioSettings(): AudioSettings {
+  const saved = load('concord.audio', DEFAULT_AUDIO) as AudioSettings & { noiseSuppression?: boolean };
+  let hadMode = false;
+  try {
+    hadMode = 'noiseMode' in JSON.parse(localStorage.getItem('concord.audio') ?? '{}');
+  } catch {
+    // ignorado
+  }
+  if (!hadMode && saved.noiseSuppression === false) saved.noiseMode = 'off';
+  delete saved.noiseSuppression;
+  return saved;
 }

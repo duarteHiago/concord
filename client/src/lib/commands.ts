@@ -80,6 +80,38 @@ export const COMMANDS: Command[] = [
     run: (ctx, args) => ctx.send(`${args} ¯\\_(ツ)_/¯`.trim()),
   },
   {
+    name: 'roleta',
+    usage: '/roleta opção 1, opção 2, …',
+    description: 'Gira uma roleta com as opções (separe com vírgula)',
+    run: async (ctx, args) => {
+      const items = args.split(',').map((s) => s.trim()).filter(Boolean);
+      if (items.length < 2) {
+        useApp.getState().openModal({ type: 'roulette', target: { kind: 'channel', id: ctx.channel.id } });
+        return;
+      }
+      await api.post(`/channels/${ctx.channel.id}/games`, { type: 'roulette', items });
+    },
+  },
+  {
+    name: 'dado',
+    usage: '/dado [quantidade]d[lados]',
+    description: 'Rola dados (ex.: /dado, /dado 20, /dado 2d6)',
+    run: async (ctx, args) => {
+      const m = /^(?:(\d+)\s*d)?\s*(\d+)?$/i.exec(args.trim());
+      const count = Number(m?.[1]) || 1;
+      const sides = Number(m?.[2]) || 6;
+      await api.post(`/channels/${ctx.channel.id}/games`, { type: 'dice', count, sides });
+    },
+  },
+  {
+    name: 'moeda',
+    usage: '/moeda',
+    description: 'Cara ou coroa',
+    run: async (ctx) => {
+      await api.post(`/channels/${ctx.channel.id}/games`, { type: 'coin' });
+    },
+  },
+  {
     name: 'sound',
     usage: '/sound nome',
     description: 'Toca um som da mesa de sons na sala em que você está',

@@ -80,5 +80,9 @@ export async function sendNudge(serverId: string, userId: string, name: string) 
 }
 
 if (typeof window !== 'undefined' && desktop?.onNotificationClick) {
-  desktop.onNotificationClick((data) => goToNudge(data as NudgeEvent));
+  desktop.onNotificationClick((data) => {
+    const d = data as { dmId?: string } & NudgeEvent;
+    if (d?.dmId) useApp.getState().openDmById(d.dmId);
+    else goToNudge(d);
+  });
 }

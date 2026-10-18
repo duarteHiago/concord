@@ -29,7 +29,8 @@ export function Avatar({
   className?: string;
 }) {
   return (
-    <div className={cx('avatar relative shrink-0', className)} style={{ width: size, height: size }}>
+    // decorativo: o nome da pessoa sempre aparece ao lado (o leitor de tela não precisa ler a inicial)
+    <div aria-hidden="true" className={cx('avatar relative shrink-0', className)} style={{ width: size, height: size }}>
       {src ? (
         <img
           src={src}

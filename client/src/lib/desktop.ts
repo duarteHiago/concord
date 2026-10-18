@@ -45,6 +45,8 @@ interface DesktopBridge {
   getActivity?(): Promise<unknown>;
   refreshActivity?(): Promise<unknown>;
   onActivity?(cb: (activity: unknown) => void): () => void;
+  setGlobalShortcuts?(map: Record<string, string>): Promise<Record<string, boolean>>;
+  onShortcut?(cb: (action: string) => void): () => void;
 }
 
 export const desktop: DesktopBridge | undefined = (window as unknown as { concordDesktop?: DesktopBridge }).concordDesktop;

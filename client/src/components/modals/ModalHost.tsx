@@ -3,6 +3,8 @@ import { useApp, type Modal as ModalState } from '../../store/app';
 import { toast } from '../../store/toast';
 import { MemberPopover } from '../MemberPopover';
 import { api } from '../../lib/api';
+import { RouletteModal } from '../Games';
+import { QuickSwitch } from './QuickSwitch';
 import { Button, Input, Modal } from '../ui';
 import { AddServerModal } from './AddServerModal';
 import { ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
@@ -44,6 +46,10 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <NicknameModal serverId={modal.serverId} userId={modal.userId} />;
     case 'recoveryCode':
       return <RecoveryCodeModal {...modal} />;
+    case 'quickSwitch':
+      return <QuickSwitch />;
+    case 'roulette':
+      return <RouletteModal target={modal.target} />;
     case 'image':
       return <ImageViewer src={modal.src} alt={modal.alt} />;
   }

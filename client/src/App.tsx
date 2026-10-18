@@ -9,7 +9,8 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard } from './components/NudgeCard';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
-import { useActiveDetail, useApp } from './store/app';
+import { HOME, useActiveDetail, useApp } from './store/app';
+import { DmView } from './components/DirectMessages';
 
 export default function App() {
   const ready = useApp((s) => s.ready);
@@ -49,7 +50,9 @@ function Shell() {
   return (
     <div className="flex h-full gap-4 bg-surface-1 p-4">
       <ChannelSidebar />
-      {activeServerId ? (
+      {activeServerId === HOME ? (
+        <DmView />
+      ) : activeServerId ? (
         channel?.type === 'voice' ? (
           <VoiceView channel={channel} />
         ) : (

@@ -1,6 +1,63 @@
-// Efeitos de voz no microfone, como um processador do LiveKit (WebAudio).
+// Processamento do microfone como um processador do LiveKit (WebAudio):
+// supressão de ruído por IA (GTCRN ou RNNoise) → efeito de voz.
 // O processador sobrevive a trocas de microfone: o LiveKit chama restart() quando a faixa reinicia.
+import { GtcrnWorkletNode, RnnoiseWorkletNode, loadGtcrn, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
+import gtcrnWasmUrl from '@sapphi-red/web-noise-suppressor/gtcrn.wasm?url';
+import gtcrnWorkletUrl from '@sapphi-red/web-noise-suppressor/gtcrnWorklet.js?url';
+import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
+import rnnoiseSimdWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
+import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
 import type { AudioProcessorOptions, LocalAudioTrack, Track, TrackProcessor } from 'livekit-client';
+
+/** off: nenhum; browser: filtro do navegador; rnnoise / gtcrn: redes neurais (rodam no seu PC). */
+export type NoiseMode = 'off' | 'browser' | 'rnnoise' | 'gtcrn';
+
+export const NOISE_MODES: { id: NoiseMode; label: string; hint: string }[] = [
+  { id: 'gtcrn', label: 'IA avançada (GTCRN)', hint: 'Remove até barulhos fortes (teclado mecânico, ventilador, rua). Usa um pouco mais de CPU.' },
+  { id: 'rnnoise', label: 'IA leve (RNNoise)', hint: 'A mesma do Jitsi e do OBS. Boa e muito leve.' },
+  { id: 'browser', label: 'Do navegador', hint: 'O filtro básico do Chrome.' },
+  { id: 'off', label: 'Desligada', hint: 'Som cru do microfone (bom para música).' },
+];
+
+const binaries = new Map<string, Promise<ArrayBuffer>>();
+const wasm = (key: string, load: () => Promise<ArrayBuffer>) => {
+  let p = binaries.get(key);
+  if (!p) {
+    p = load();
+    binaries.set(key, p);
+  }
+  return p;
+};
+
+const modulesLoaded = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
+function addModule(ctx: AudioContext, url: string) {
+  let map = modulesLoaded.get(ctx);
+  if (!map) {
+    map = new Map();
+    modulesLoaded.set(ctx, map);
+  }
+  let p = map.get(url);
+  if (!p) {
+    p = ctx.audioWorklet.addModule(url);
+    map.set(url, p);
+  }
+  return p;
+}
+
+async function noiseNode(ctx: AudioContext, mode: NoiseMode): Promise<AudioWorkletNode | null> {
+  if (mode === 'gtcrn') {
+    const [wasmBinary] = await Promise.all([wasm('gtcrn', () => loadGtcrn({ url: gtcrnWasmUrl })), addModule(ctx, gtcrnWorkletUrl)]);
+    return new GtcrnWorkletNode(ctx, { maxChannels: 1, wasmBinary });
+  }
+  if (mode === 'rnnoise') {
+    const [wasmBinary] = await Promise.all([
+      wasm('rnnoise', () => loadRnnoise({ url: rnnoiseWasmUrl, simdUrl: rnnoiseSimdWasmUrl })),
+      addModule(ctx, rnnoiseWorkletUrl),
+    ]);
+    return new RnnoiseWorkletNode(ctx, { maxChannels: 1, wasmBinary });
+  }
+  return null;
+}
 
 export type EffectId = 'none' | 'robot' | 'radio' | 'echo' | 'cave' | 'megaphone' | 'deep' | 'chipmunk';
 
@@ -150,15 +207,17 @@ async function build(ctx: AudioContext, effect: EffectId, src: AudioNode, dest: 
   return nodes;
 }
 
-class EffectProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
-  name = 'concord-voice-effect';
+class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
+  name = 'concord-voice';
   processedTrack?: MediaStreamTrack;
   private effect: EffectId;
+  private noise: NoiseMode;
   private nodes: AudioNode[] = [];
   private source?: MediaStreamAudioSourceNode;
   private dest?: MediaStreamAudioDestinationNode;
 
-  constructor(effect: EffectId) {
+  constructor(noise: NoiseMode, effect: EffectId) {
+    this.noise = noise;
     this.effect = effect;
   }
 
@@ -167,7 +226,14 @@ class EffectProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessor
     if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
     this.source = ctx.createMediaStreamSource(new MediaStream([opts.track]));
     this.dest = ctx.createMediaStreamDestination();
-    this.nodes = await build(ctx, this.effect, this.source, this.dest);
+    let input: AudioNode = this.source;
+    const denoise = await noiseNode(ctx, this.noise);
+    if (denoise) {
+      this.source.connect(denoise);
+      input = denoise;
+      this.nodes.push(denoise);
+    }
+    this.nodes.push(...(await build(ctx, this.effect, input, this.dest)));
     this.processedTrack = this.dest.stream.getAudioTracks()[0];
   }
 
@@ -180,6 +246,7 @@ class EffectProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessor
     for (const n of this.nodes) {
       try {
         if (n instanceof OscillatorNode) n.stop();
+        if (n instanceof GtcrnWorkletNode) n.destroy();
         n.disconnect();
       } catch {
         // já desligado
@@ -192,13 +259,15 @@ class EffectProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessor
 
 let sharedContext: AudioContext | null = null;
 
-/** Aplica (ou remove) o efeito na faixa do microfone. */
-export async function applyVoiceEffect(track: LocalAudioTrack, effect: EffectId) {
-  if (effect === 'none') {
+/** Aplica (ou remove) a supressão de ruído por IA e o efeito na faixa do microfone. */
+export async function applyVoiceProcessing(track: LocalAudioTrack, noise: NoiseMode, effect: EffectId) {
+  const usesAi = noise === 'rnnoise' || noise === 'gtcrn';
+  if (!usesAi && effect === 'none') {
     if (track.getProcessor()) await track.stopProcessor();
     return;
   }
-  sharedContext ??= new AudioContext({ latencyHint: 'interactive' });
+  // RNNoise e GTCRN trabalham em 48 kHz
+  sharedContext ??= new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
   track.setAudioContext(sharedContext);
-  await track.setProcessor(new EffectProcessor(effect));
+  await track.setProcessor(new VoiceProcessor(noise, effect));
 }
