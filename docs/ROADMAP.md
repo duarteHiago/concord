@@ -38,7 +38,7 @@ Uma transmissão "nativa" no app desktop, por fora do Chromium:
 
 - **Latência:** sem recodificar, deve ficar próxima da atual. Precisa ser medida.
 - **Simulcast:** com uma camada só via WHIP, quem tem internet fraca perde a versão 720p. Avaliar se vale mandar duas camadas pelo FFmpeg ou deixar o Ingress gerar a camada baixa (o que significa recodificar).
-- **Tela cheia exclusiva:** alguns jogos nessa modo não podem ser capturados por nenhum método. A orientação continua sendo usar janela sem borda.
+- **Tela cheia exclusiva:** alguns jogos nesse modo não podem ser capturados por nenhum método. A orientação continua sendo usar janela sem borda.
 - **Antivírus:** podem implicar com o executável do FFmpeg, então distribuir assinado ou com hash conhecido.
 
 ### Critério de pronto
