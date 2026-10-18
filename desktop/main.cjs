@@ -7,6 +7,15 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+// `backgroundThrottling: false` (lá embaixo, na BrowserWindow) só evita o Chromium reduzir
+// timers/JS da página. Minimizada ou atrás de outra janela, o Chromium também rebaixa a
+// prioridade de CPU/agendamento do processo de renderização inteiro — isso é o que trava a
+// transmissão de tela e deixa fps/bitrate inconsistentes, porque o codificador de vídeo passa
+// a competir por menos CPU. Precisa ser setado antes da janela (e do processo de GPU) existir.
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+
 const DEFAULT_SERVER = 'https://concord.yaatoro.com';
 
 // ------------------------------------------------------------------ configuração
