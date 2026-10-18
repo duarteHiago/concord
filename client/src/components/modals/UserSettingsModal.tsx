@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
 import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
-import { memberName, type Me, type ThemeSettings } from '../../lib/types';
+import { memberName, type Activity, type Me, type ThemeSettings } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
@@ -159,12 +159,15 @@ function Profile() {
         </Button>
       </div>
       {desktop && (
-        <div className="flex items-center justify-between gap-4 rounded-2xl bg-surface-0 p-4">
-          <div>
-            <div className="text-sm font-semibold">Mostrar o que estou jogando e ouvindo</div>
-            <div className="text-xs text-fg-muted">O app detecta o jogo aberto na Steam e a música tocando no Spotify.</div>
+        <div className="space-y-3 rounded-2xl bg-surface-0 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold">Mostrar o que estou jogando e ouvindo</div>
+              <div className="text-xs text-fg-muted">O app detecta o jogo aberto na Steam e a música tocando no Spotify.</div>
+            </div>
+            <Toggle checked={me.settings.shareActivity !== false} onChange={(v) => void saveSettings({ shareActivity: v })} />
           </div>
-          <Toggle checked={me.settings.shareActivity !== false} onChange={(v) => void saveSettings({ shareActivity: v })} />
+          <DetectedActivity />
         </div>
       )}
 
@@ -206,6 +209,44 @@ function Profile() {
         }}
       >
         Salvar perfil
+      </Button>
+    </div>
+  );
+}
+
+/** Diagnóstico: o que o app desktop está detectando agora. */
+function DetectedActivity() {
+  const [activity, setActivity] = useState<Activity | null | undefined>(undefined);
+  const [checking, setChecking] = useState(false);
+  const supported = !!desktop?.refreshActivity;
+
+  useEffect(() => {
+    if (!desktop?.getActivity) return;
+    void desktop.getActivity().then((a) => setActivity((a as Activity | null) ?? null));
+    return desktop.onActivity?.((a) => setActivity((a as Activity | null) ?? null));
+  }, []);
+
+  if (!supported) return <p className="text-xs text-fg-subtle">Atualize o app desktop para ver o que está sendo detectado.</p>;
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-line pt-3 text-sm">
+      <span className="min-w-0 truncate text-fg-muted">
+        Detectado agora:{' '}
+        <b className="text-fg">
+          {activity === undefined ? '…' : activity ? (activity.type === 'playing' ? `Jogando ${activity.name}` : `Ouvindo ${activity.details}`) : 'nada'}
+        </b>
+      </span>
+      <Button
+        variant="secondary"
+        className="h-8 shrink-0 px-3 text-xs"
+        loading={checking}
+        onClick={async () => {
+          setChecking(true);
+          setActivity(((await desktop!.refreshActivity!()) as Activity | null) ?? null);
+          setChecking(false);
+        }}
+      >
+        Verificar agora
       </Button>
     </div>
   );

@@ -8,7 +8,9 @@
 //   audio-capture --include <pid>          só o áudio da árvore de processos <pid>
 //   audio-capture --include-window <hwnd>  só o áudio do programa dono da janela <hwnd>
 //
-// Saída: PCM 16 bits, 48 kHz, estéreo intercalado, em stdout.
+//   audio-capture --window-titles <programa.exe>  lista os títulos das janelas do programa (UTF-8)
+//
+// Saída da captura: PCM 16 bits, 48 kHz, estéreo intercalado, em stdout.
 // Encerra quando o stdin é fechado (ou seja, quando o app que o iniciou sai).
 // Requer Windows 10 build 20348+ ou Windows 11.
 
@@ -75,7 +77,48 @@ static int Fail(const char* step, HRESULT hr) {
   return 1;
 }
 
+// ---- Modo auxiliar: títulos das janelas de um programa (inclusive ocultas/na bandeja) ----
+// Usado para ler "Artista - Música" do Spotify mesmo quando ele está minimizado na bandeja.
+
+struct TitleSearch {
+  const wchar_t* exe;
+};
+
+static BOOL CALLBACK CollectTitle(HWND hwnd, LPARAM param) {
+  auto* search = reinterpret_cast<TitleSearch*>(param);
+  wchar_t title[512];
+  if (GetWindowTextW(hwnd, title, 512) <= 0) return TRUE;
+
+  DWORD pid = 0;
+  GetWindowThreadProcessId(hwnd, &pid);
+  HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+  if (!proc) return TRUE;
+  wchar_t path[MAX_PATH];
+  DWORD size = MAX_PATH;
+  BOOL ok = QueryFullProcessImageNameW(proc, 0, path, &size);
+  CloseHandle(proc);
+  if (!ok) return TRUE;
+
+  const wchar_t* name = wcsrchr(path, L'\\');
+  name = name ? name + 1 : path;
+  if (_wcsicmp(name, search->exe) != 0) return TRUE;
+
+  char utf8[2048];
+  int len = WideCharToMultiByte(CP_UTF8, 0, title, -1, utf8, sizeof(utf8), nullptr, nullptr);
+  if (len > 1) printf("%s\n", utf8);
+  return TRUE;
+}
+
+static int ListWindowTitles(const wchar_t* exe) {
+  TitleSearch search{exe};
+  EnumWindows(CollectTitle, reinterpret_cast<LPARAM>(&search));
+  fflush(stdout);
+  return 0;
+}
+
 int wmain(int argc, wchar_t** argv) {
+  if (argc >= 3 && wcscmp(argv[1], L"--window-titles") == 0) return ListWindowTitles(argv[2]);
+
   if (argc < 3) {
     fprintf(stderr, "uso: audio-capture --exclude <pid> | --include <pid> | --include-window <hwnd>\n");
     return 2;

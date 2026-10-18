@@ -301,14 +301,23 @@ async function steamGame() {
   return name;
 }
 
+// pausado o título é "Spotify"/"Spotify Premium"; tocando é "Artista - Música"
+const isTrackTitle = (t) => !!t && t.includes(' - ') && !/^Spotify( Free| Premium)?$/i.test(t);
+
 async function spotifyTrack() {
+  // 1º: o capturador nativo lista também janelas ocultas (Spotify minimizado na bandeja)
+  if (fs.existsSync(helperPath())) {
+    const titles = (await runCmd(helperPath(), ['--window-titles', 'Spotify.exe'])).split(/\r?\n/).map((t) => t.trim());
+    const track = titles.find(isTrackTitle);
+    if (track) return track.slice(0, 120);
+    if (titles.some(Boolean)) return null; // Spotify aberto, mas pausado
+  }
+  // reserva: só enxerga a janela visível
   const script =
     '[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Process Spotify -ErrorAction SilentlyContinue | ' +
     'Where-Object { $_.MainWindowTitle } | Select-Object -First 1 -ExpandProperty MainWindowTitle';
   const title = (await runCmd('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script])).trim();
-  // pausado o título é só "Spotify"/"Spotify Premium"; tocando é "Artista - Música"
-  if (!title || /^Spotify( Free| Premium)?$/i.test(title) || !title.includes(' - ')) return null;
-  return title.slice(0, 120);
+  return isTrackTitle(title) ? title.slice(0, 120) : null;
 }
 
 let currentActivity = null;
@@ -333,6 +342,10 @@ async function pollActivity() {
 }
 
 handle('concord:activity', () => currentActivity);
+handle('concord:activity-refresh', async () => {
+  await pollActivity();
+  return currentActivity;
+});
 
 // ------------------------------------------------------------------ chamar atenção (estilo MSN)
 

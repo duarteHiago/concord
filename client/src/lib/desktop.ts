@@ -43,6 +43,7 @@ interface DesktopBridge {
   shakeWindow?(): Promise<void>;
   onNotificationClick?(cb: (data: unknown) => void): () => void;
   getActivity?(): Promise<unknown>;
+  refreshActivity?(): Promise<unknown>;
   onActivity?(cb: (activity: unknown) => void): () => void;
 }
 

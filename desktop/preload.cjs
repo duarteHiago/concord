@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   shakeWindow: () => ipcRenderer.invoke('concord:shake-window'),
   onNotificationClick: listen('concord:notification-click'),
   getActivity: () => ipcRenderer.invoke('concord:activity').catch(() => null),
+  refreshActivity: () => ipcRenderer.invoke('concord:activity-refresh').catch(() => null),
   onActivity: listen('concord:activity'),
   reload: () => ipcRenderer.invoke('concord:reload'),
 });
