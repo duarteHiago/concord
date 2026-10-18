@@ -42,6 +42,16 @@ export function StickerLayer({ channel }: { channel: Channel }) {
   const meId = useApp((s) => s.me?.id);
   const box = useRef<HTMLDivElement>(null);
   const known = useRef<Set<string> | null>(null);
+  const [area, setArea] = useState({ w: 0, h: 0 });
+
+  // tamanho do palco: os stickers ficam sempre inteiros dentro dele
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setArea({ w: e.contentRect.width, h: e.contentRect.height }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [list?.length, hidden]);
 
   useEffect(() => {
     known.current = null;
@@ -62,7 +72,12 @@ export function StickerLayer({ channel }: { channel: Channel }) {
   const canModerate = has(channel.permissions, P.MANAGE_MESSAGES);
 
   return (
-    <div ref={box} aria-label="Stickers da sala" className="pointer-events-none absolute inset-0 z-[5] overflow-hidden">
+    <div
+      ref={box}
+      aria-label="Stickers da sala"
+      className="pointer-events-none absolute inset-0 z-[5] overflow-hidden"
+      style={{ clipPath: 'inset(0 round 32px)', contain: 'paint' }}
+    >
       {list.map((s) => {
         const src = stickerSrc(s.sticker, custom);
         if (!src) return null;
@@ -75,6 +90,7 @@ export function StickerLayer({ channel }: { channel: Channel }) {
             src={src}
             fresh={fresh.has(s.id)}
             box={box}
+            area={area}
             editable={s.authorId === meId || canModerate}
             label={`${s.sticker.startsWith('preset:') ? (STICKER_NAMES[s.sticker.slice(7) as keyof typeof STICKER_NAMES] ?? 'Sticker') : (custom?.find((c) => `custom:${c.id}` === s.sticker)?.name ?? 'Sticker')}${author ? ` · colado por ${memberName(author)}` : ''}`}
           />
@@ -90,6 +106,7 @@ function PlacedStickerEl({
   src,
   fresh,
   box,
+  area,
   editable,
   label,
 }: {
@@ -98,6 +115,7 @@ function PlacedStickerEl({
   src: string;
   fresh: boolean;
   box: React.RefObject<HTMLDivElement | null>;
+  area: { w: number; h: number };
   editable: boolean;
   label: string;
 }) {
@@ -155,11 +173,16 @@ function PlacedStickerEl({
     void save({ finish });
   };
 
-  const size = BASE * s.scale;
+  // nunca maior que o palco e sempre inteiro dentro dele (a rotação pode pedir um pouco mais de folga)
+  const room = Math.min(area.w, area.h) || BASE * 3;
+  const size = Math.min(BASE * s.scale, room * 0.5);
+  const half = (size / 2) * (Math.abs(Math.sin((s.rot * Math.PI) / 90)) * 0.2 + 1) + 4;
+  const fit = (v: number, total: number) => (total ? Math.min(Math.max(v * total, half), Math.max(half, total - half)) : 0);
+  if (!area.w) return null;
   return (
     <div
       className="group pointer-events-auto absolute"
-      style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: size, height: size, transform: `translate(-50%, -50%) rotate(${s.rot}deg)` }}
+      style={{ left: fit(s.x, area.w), top: fit(s.y, area.h), width: size, height: size, transform: `translate(-50%, -50%) rotate(${s.rot}deg)` }}
       title={label}
       onWheel={onWheel}
     >
