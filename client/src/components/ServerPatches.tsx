@@ -8,6 +8,7 @@ import { useApp } from '../store/app';
 import { toast } from '../store/toast';
 import { PatchBadge } from './PatchBadge';
 import { PatchForm } from './PatchForm';
+import { usePatchInspect } from '../store/patchInspect';
 import { Button, Spinner } from './ui';
 
 /** Patches compartilhados num servidor (atualiza sozinho quando alguém cria ou apaga). */
@@ -120,7 +121,7 @@ export function ServerPatchesPanel({ serverId, compact }: { serverId: string; co
                 <button
                   aria-label={`Ver o patch ${sp.patch.text || ''} de perto`}
                   title="Clique para ver de perto"
-                  onClick={() => useApp.getState().openModal({ type: 'patch', patch: sp.patch, caption: creator ? `criado por ${memberName(creator)}` : undefined })}
+                  onClick={() => usePatchInspect.getState().open(sp.patch, creator ? `criado por ${memberName(creator)}` : undefined)}
                   className="cursor-zoom-in"
                 >
                   <PatchBadge patch={sp.patch} size={compact ? 52 : 68} />

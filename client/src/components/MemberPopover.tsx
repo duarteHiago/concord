@@ -10,6 +10,7 @@ import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { Avatar, RoleDot, cx } from './ui';
 import { PATCH_TILTS, PatchBadge } from './PatchBadge';
+import { usePatchInspect } from '../store/patchInspect';
 
 export function MemberPopover() {
   const { userId, serverId, x, y, close } = usePopover();
@@ -128,7 +129,7 @@ export function MemberPopover() {
                   title="Clique para ver de perto"
                   onClick={() => {
                     close();
-                    openModal({ type: 'patch', patch: p, caption: `no perfil de ${name}` });
+                    usePatchInspect.getState().open(p, `no perfil de ${name}`);
                   }}
                   className="-ml-1.5 cursor-zoom-in rounded-full"
                 >

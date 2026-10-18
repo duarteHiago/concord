@@ -2,7 +2,7 @@ import { RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { reduceMotion } from '../lib/motion';
 import type { Patch } from '../lib/types';
-import { useApp } from '../store/app';
+import { usePatchInspect } from '../store/patchInspect';
 import { PatchBadge, patchShapePath } from './PatchBadge';
 
 const SIZE = 340;
@@ -46,8 +46,15 @@ function Back({ patch, d }: { patch: Patch; d: string }) {
 }
 
 /** Patch grande no meio da tela: arraste para girar em 3D (como inspecionar item em jogo). */
-export function PatchInspector({ patch, caption }: { patch: Patch; caption?: string }) {
-  const close = useApp((s) => s.closeModal);
+/** Camada da inspeção (montada uma vez no App, por cima de tudo). */
+export function PatchInspectorHost() {
+  const patch = usePatchInspect((s) => s.patch);
+  const caption = usePatchInspect((s) => s.caption);
+  return patch ? <PatchInspector key={patch.id} patch={patch} caption={caption} /> : null;
+}
+
+function PatchInspector({ patch, caption }: { patch: Patch; caption?: string }) {
+  const close = usePatchInspect((s) => s.close);
   const d = patchShapePath(patch.shape);
   const item = useRef<HTMLDivElement>(null);
   const glare = useRef<HTMLDivElement>(null);
@@ -55,10 +62,16 @@ export function PatchInspector({ patch, caption }: { patch: Patch; caption?: str
   const [zoom, setZoom] = useState(1);
   const mask = `url("data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="${d}"/></svg>`)}")`;
 
+  // Esc fecha só a inspeção: captura antes e não deixa chegar no modal de baixo (configurações etc.)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      close();
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [close]);
 
   // laço de animação: inércia depois de soltar e um leve balanço parado

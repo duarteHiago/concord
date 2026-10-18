@@ -9,6 +9,7 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard } from './components/NudgeCard';
 import { GameOverlay } from './components/GameOverlay';
 import { ClipToast } from './components/Clip';
+import { PatchInspectorHost } from './components/PatchInspector';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
 import { HOME, useActiveDetail, useApp } from './store/app';
@@ -43,6 +44,7 @@ export default function App() {
       {me && <NudgeCard />}
       {me && <GameOverlay />}
       {me && <ClipToast />}
+      {me && <PatchInspectorHost />}
     </>
   );
 }
