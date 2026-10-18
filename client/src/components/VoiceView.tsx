@@ -1,6 +1,8 @@
 import { Track, type LocalTrack, type Participant, type RemoteTrack } from 'livekit-client';
 import {
   Activity,
+  ChevronDown,
+  Users,
   Eye,
   EyeOff,
   HeadphoneOff,
@@ -237,6 +239,11 @@ function Stage({ detail }: { detail: ServerDetail }) {
   useVoice((s) => s.tick);
   const focus = useVoice((s) => s.focus);
   const setFocus = useVoice((s) => s.setFocus);
+  const [bubblesHidden, setBubblesHidden] = useState(() => readFlag('concord.hideStageBubbles', false));
+  const toggleBubbles = () => {
+    writeFlag('concord.hideStageBubbles', !bubblesHidden);
+    setBubblesHidden(!bubblesHidden);
+  };
   if (!room) return null;
 
   const participants: Participant[] = [room.localParticipant, ...room.remoteParticipants.values()];
@@ -248,7 +255,18 @@ function Stage({ detail }: { detail: ServerDetail }) {
     return (
       <div className="absolute inset-0">
         <Tile detail={detail} tile={focused} focused onClick={() => {}} />
-        {/* bolhas dos participantes sobre a transmissão */}
+        {bubblesHidden ? (
+          // barra escondida: só um botão discreto no canto para trazer de volta
+          <button
+            onClick={toggleBubbles}
+            title="Mostrar a barra de participantes"
+            aria-label="Mostrar a barra de participantes"
+            className="absolute right-4 bottom-4 flex h-9 items-center gap-1.5 rounded-full bg-surface-2/70 px-3 text-xs font-bold text-fg-muted opacity-40 backdrop-blur transition-opacity hover:text-fg hover:opacity-100 focus-visible:opacity-100"
+          >
+            <Users size={15} /> {participants.length}
+          </button>
+        ) : (
+        /* bolhas dos participantes sobre a transmissão */
         <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
           <div className="pointer-events-auto flex max-w-[90%] items-end gap-3.5 overflow-x-auto px-2 pt-2 pb-1">
             {others.map((t) => (t.kind === 'screen' ? <ScreenChip key={t.key} detail={detail} tile={t} onClick={() => setFocus(t.key)} /> : <Bubble key={t.key} detail={detail} tile={t} />))}
@@ -260,8 +278,17 @@ function Stage({ detail }: { detail: ServerDetail }) {
             >
               <LayoutGrid size={18} />
             </button>
+            <button
+              title="Esconder a barra de participantes"
+              aria-label="Esconder a barra de participantes"
+              onClick={toggleBubbles}
+              className="mb-6 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-2/90 text-fg-muted backdrop-blur hover:text-fg"
+            >
+              <ChevronDown size={18} />
+            </button>
           </div>
         </div>
+        )}
       </div>
     );
   }
