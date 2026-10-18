@@ -7,7 +7,7 @@ import { estimateBitrate, FPS_OPTIONS, SHARE_PRESETS, screenShareSupport, useVoi
 import { Button, Modal, Spinner, Toggle, cx } from '../ui';
 
 const CODECS: { id: VideoCodec; label: string; hint: string }[] = [
-  { id: 'h264', label: 'H.264', hint: 'Usa aceleração de hardware (GPU). Menor uso de CPU — recomendado para taxas altas (120 fps ou mais).' },
+  { id: 'h264', label: 'H.264', hint: 'Usa aceleração de hardware (GPU). Menor uso de CPU — recomendado para manter 60 fps estáveis.' },
   { id: 'vp9', label: 'VP9', hint: 'Mais qualidade por bit, usa mais CPU.' },
   { id: 'av1', label: 'AV1', hint: 'Máxima eficiência; requer GPU recente para codificar em tempo real.' },
   { id: 'vp8', label: 'VP8', hint: 'Compatibilidade máxima.' },
@@ -78,7 +78,7 @@ export function ShareScreenModal() {
 
         <div>
           <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Taxa de quadros</h3>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {FPS_OPTIONS.map((fps) => (
               <button
                 key={fps}
@@ -95,8 +95,6 @@ export function ShareScreenModal() {
           <p className="mt-2 text-xs text-fg-subtle">
             Upload estimado: até <b className="text-fg-muted">{(estimateBitrate(preset, settings.fps) / 1_000_000).toFixed(1)} Mbps</b>. Cada
             espectador recebe o vídeo pelo servidor, então o seu upload não aumenta com mais pessoas assistindo.
-            {settings.fps > 60 &&
-              ' Acima de 60 fps, a taxa final depende do seu monitor, GPU e do jogo/app transmitido — o Concord só envia o que conseguir capturar. Em 120 fps não há uma camada de reserva para quem assiste com conexão fraca, pra sobrar CPU pra manter a sua transmissão estável.'}
           </p>
         </div>
 
