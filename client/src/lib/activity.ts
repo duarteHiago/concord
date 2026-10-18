@@ -35,7 +35,7 @@ export function startActivityReporter(socket: Socket) {
     const now = sharing();
     if (now !== lastSharing) {
       lastSharing = now;
-      void desktop.setActivitySharing?.(now);
+      void desktop?.setActivitySharing?.(now);
       publish();
     }
   });
