@@ -15,9 +15,9 @@ jobs:
     name: Testes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
 
@@ -51,7 +51,7 @@ jobs:
     env:
       TARGET: ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configurar SSH
         run: |
