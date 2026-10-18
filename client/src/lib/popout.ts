@@ -1,6 +1,28 @@
 // Abre uma transmissão numa janela separada (para levar a outro monitor e pôr em tela cheia).
 // A janela é do mesmo site (about:blank), então recebe o vídeo direto, sem passar pelo servidor de novo.
-import type { Track } from 'livekit-client';
+import { RemoteVideoTrack, type Track } from 'livekit-client';
+
+/**
+ * Avisa o LiveKit que a janela separada está exibindo a faixa. Sem isso, o "adaptive stream" só enxerga
+ * os vídeos da janela principal: se lá a transmissão vira só um botãozinho (ex.: você começou a transmitir
+ * e sua tela foi para o destaque), ele pede ao servidor para parar de mandar o vídeo e a janela congela.
+ */
+function keepStreaming(track: Track, win: Window, video: HTMLVideoElement): () => void {
+  if (!(track instanceof RemoteVideoTrack)) return () => {};
+  const onResize = () => info.handleResize?.();
+  const info: Parameters<RemoteVideoTrack['observeElementInfo']>[0] = {
+    element: video,
+    width: () => video.clientWidth || win.innerWidth,
+    height: () => video.clientHeight || win.innerHeight,
+    visible: true, // como na janela principal: continua recebendo mesmo com a janela atrás de outra
+    pictureInPicture: false,
+    visibilityChangedAt: Date.now(),
+    observe: () => win.addEventListener('resize', onResize),
+    stopObserving: () => win.removeEventListener('resize', onResize),
+  };
+  track.observeElementInfo(info);
+  return () => track.stopObservingElementInfo(info);
+}
 
 const windows = new Map<string, Window>(); // sid da faixa -> janela
 
@@ -61,13 +83,17 @@ export function popOutVideo(track: Track, title: string): boolean {
   doc.body.replaceChildren(video, bar, ended);
   void video.play().catch(() => {});
 
+  const release = keepStreaming(track, w, video);
+
   const onEnded = () => {
     ended.style.display = 'flex';
     video.remove();
+    release();
   };
   track.mediaStreamTrack.addEventListener('ended', onEnded, { once: true });
   w.addEventListener('beforeunload', () => {
     windows.delete(key);
+    release();
     track.mediaStreamTrack.removeEventListener('ended', onEnded);
   });
   return true;

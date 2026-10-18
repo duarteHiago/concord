@@ -105,6 +105,19 @@ try {
       ? await popup.evaluate(() => [...document.querySelectorAll('video')].some((v) => v.videoWidth > 0 && !v.paused))
       : false;
     check(popupPlaying, 'B abre a transmissão em outra janela');
+
+    // B começa a transmitir também: a própria tela vai para o destaque e a janela separada
+    // não pode congelar (o LiveKit precisa saber que ela está exibindo o vídeo)
+    if (popup) {
+      const frames = () => popup.evaluate(() => document.querySelector('video')?.getVideoPlaybackQuality().totalVideoFrames ?? -1);
+      await b.page.getByTitle('Transmitir tela').click();
+      await b.page.getByRole('button', { name: /Escolher tela ou janela/ }).click();
+      await b.page.waitForTimeout(8000);
+      const f0 = await frames();
+      await popup.waitForTimeout(4000);
+      check((await frames()) > f0, 'janela separada não congela quando B também transmite');
+      await b.page.getByRole('button', { name: 'Parar transmissão' }).click().catch(() => {});
+    }
     await popup?.close();
   }
 
