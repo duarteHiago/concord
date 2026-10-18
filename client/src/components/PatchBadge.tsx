@@ -21,10 +21,26 @@ const SHAPES: Record<Patch['shape'], string> = {
   banner: 'M2 26 H98 L88 50 L98 74 H2 L12 50 Z',
 };
 
+/** Contorno do patch (quadro 100×100), para o modo de inspeção 3D. */
+export const patchShapePath = (shape: Patch['shape']) => SHAPES[shape] ?? SHAPES.circle;
+
 const grow = (k: number) => `translate(50 50) scale(${k}) translate(-50 -50)`;
 
 /** Patch bordado: borda "overlock", ponto corrido por dentro e textura de tecido. */
-export function PatchBadge({ patch, size = 40, tilt = 0, title }: { patch: Patch; size?: number; tilt?: number; title?: string }) {
+export function PatchBadge({
+  patch,
+  size = 40,
+  tilt = 0,
+  title,
+  plain,
+}: {
+  patch: Patch;
+  size?: number;
+  tilt?: number;
+  title?: string;
+  /** sem sombra e sem aumentar ao passar o mouse (inspeção 3D) */
+  plain?: boolean;
+}) {
   const uid = useId().replace(/:/g, '');
   const d = SHAPES[patch.shape] ?? SHAPES.circle;
   const wide = patch.shape === 'banner' || patch.shape === 'rect';
@@ -33,6 +49,10 @@ export function PatchBadge({ patch, size = 40, tilt = 0, title }: { patch: Patch
   // cabe na largura útil do patch (letras pesadas ≈ 0,7 da altura)
   const usable = wide ? 74 : hasIcon ? 66 : 60;
   const textSize = Math.min(hasIcon ? (wide ? 17 : 15) : wide ? 24 : 22, usable / (Math.max(3, text.length) * 0.72));
+  // desenho: centro padrão + ajuste do editor (tamanho e posição), sempre recortado dentro do tecido
+  const artCy = patch.image ? (wide ? (text ? 39 : 50) : text ? 41 : 50) : text ? (wide ? 46 : 50) : 52;
+  const artScale = patch.artScale ?? 1;
+  const artTransform = `translate(${50 + (patch.artX ?? 0)} ${artCy + (patch.artY ?? 0)}) scale(${artScale}) translate(-50 -${artCy})`;
 
   return (
     <svg
@@ -41,7 +61,7 @@ export function PatchBadge({ patch, size = 40, tilt = 0, title }: { patch: Patch
       height={size}
       role="img"
       aria-label={title ?? (patch.text || 'Patch')}
-      className="patch shrink-0"
+      className={plain ? 'shrink-0' : 'patch shrink-0'}
       style={{ transform: `rotate(${tilt}deg)` }}
     >
       <title>{title ?? patch.text}</title>
@@ -79,28 +99,33 @@ export function PatchBadge({ patch, size = 40, tilt = 0, title }: { patch: Patch
         transform={grow(0.75)}
       />
 
-      {patch.image ? (
-        <image
-          href={patch.image}
-          x={wide ? 30 : 22}
-          y={wide ? (text ? 24 : 26) : text ? 18 : 22}
-          width={wide ? 40 : 56}
-          height={wide ? (text ? 30 : 48) : text ? 46 : 56}
-          preserveAspectRatio="xMidYMid meet"
-          clipPath={`url(#c${uid})`}
-        />
-      ) : patch.icon ? (
-        <text
-          x="50"
-          y={text ? (wide ? 46 : 50) : 52}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={text ? (wide ? 26 : 36) : 50}
-          style={{ filter: 'drop-shadow(0 1.5px 0 rgba(0,0,0,.45))' }}
-        >
-          {patch.icon}
-        </text>
-      ) : null}
+      {hasIcon && (
+        <g clipPath={`url(#c${uid})`}>
+          <g transform={artTransform}>
+            {patch.image ? (
+              <image
+                href={patch.image}
+                x={wide ? 30 : 22}
+                y={wide ? (text ? 24 : 26) : text ? 18 : 22}
+                width={wide ? 40 : 56}
+                height={wide ? (text ? 30 : 48) : text ? 46 : 56}
+                preserveAspectRatio="xMidYMid meet"
+              />
+            ) : (
+              <text
+                x="50"
+                y={artCy}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={text ? (wide ? 26 : 36) : 50}
+                style={{ filter: 'drop-shadow(0 1.5px 0 rgba(0,0,0,.45))' }}
+              >
+                {patch.icon}
+              </text>
+            )}
+          </g>
+        </g>
+      )}
 
       {text && (
         <text

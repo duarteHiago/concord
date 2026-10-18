@@ -1,3 +1,4 @@
+import { PatchInspector } from '../PatchInspector';
 import { useEffect, useState } from 'react';
 import { useApp, type Modal as ModalState } from '../../store/app';
 import { toast } from '../../store/toast';
@@ -52,6 +53,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <RouletteModal target={modal.target} />;
     case 'image':
       return <ImageViewer src={modal.src} alt={modal.alt} />;
+    case 'patch':
+      return <PatchInspector patch={modal.patch} caption={modal.caption} />;
   }
 }
 

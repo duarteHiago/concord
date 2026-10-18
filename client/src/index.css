@@ -389,6 +389,13 @@ video::-webkit-media-controls {
   transform: rotate(0deg) scale(1.12) !important;
 }
 
+@keyframes patch-enter {
+  from {
+    transform: scale(0.4) rotateY(-160deg) rotateX(20deg);
+    opacity: 0;
+  }
+}
+
 /* ---------- stickers do palco ---------- */
 .sticker {
   filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff)

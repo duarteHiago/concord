@@ -117,7 +117,14 @@ export function ServerPatchesPanel({ serverId, compact }: { serverId: string; co
             const canDelete = sp.creatorId === me.id || canManage;
             return (
               <div key={sp.id} className="group relative flex flex-col items-center gap-1.5 rounded-2xl bg-surface-0 p-3">
-                <PatchBadge patch={sp.patch} size={compact ? 52 : 68} />
+                <button
+                  aria-label={`Ver o patch ${sp.patch.text || ''} de perto`}
+                  title="Clique para ver de perto"
+                  onClick={() => useApp.getState().openModal({ type: 'patch', patch: sp.patch, caption: creator ? `criado por ${memberName(creator)}` : undefined })}
+                  className="cursor-zoom-in"
+                >
+                  <PatchBadge patch={sp.patch} size={compact ? 52 : 68} />
+                </button>
                 {!compact && <span className="max-w-full truncate text-[11px] text-fg-subtle">por {creator ? memberName(creator) : 'alguém'}</span>}
                 <button
                   disabled={wearing}

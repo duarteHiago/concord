@@ -31,7 +31,14 @@ export interface Patch {
   icon: string; // emoji
   text: string;
   image?: string; // imagem enviada (logo do time etc.)
+  /** tamanho e posição do desenho (imagem ou emoji) dentro do patch */
+  artScale?: number; // 0.4 a 3
+  artX?: number; // -40 a 40 (unidades do quadro 100×100)
+  artY?: number;
 }
+
+export const ART_SCALE = { min: 0.4, max: 3 } as const;
+export const ART_OFFSET = 40;
 
 /** Stickers prontos (a arte fica no cliente). */
 export const PRESET_STICKERS = [

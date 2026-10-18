@@ -1,6 +1,6 @@
 import { useStickers } from './stickers';
 import { receiveClip, type ClipEvent } from '../lib/clip';
-import type { PlacedSticker } from '../lib/types';
+import type { Patch, PlacedSticker } from '../lib/types';
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
@@ -42,6 +42,7 @@ export type Modal =
   | { type: 'nickname'; serverId: string; userId: string }
   | { type: 'recoveryCode'; code: string; next?: Modal; afterReset?: boolean }
   | { type: 'image'; src: string; alt: string }
+  | { type: 'patch'; patch: Patch; caption?: string }
   | { type: 'roulette'; target: { kind: 'channel' | 'dm'; id: string } }
   | { type: 'quickSwitch' }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };

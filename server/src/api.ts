@@ -44,6 +44,8 @@ import { removeUpload, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, normalize as normalizeCode, rotateRecoveryCode } from './recovery.ts';
 import { playGame } from './games.ts';
 import {
+  ART_OFFSET,
+  ART_SCALE,
   FRAMES,
   MAX_CUSTOM_STICKERS,
   MAX_PATCHES,
@@ -383,6 +385,19 @@ function dropPatchImage(url: string | undefined) {
   removeUpload(url);
 }
 
+/** Tamanho e posição do desenho dentro do patch (só guarda o que foi mexido). */
+function artFields(p: Record<string, unknown>) {
+  const num = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : undefined);
+  const out: Pick<Patch, 'artScale' | 'artX' | 'artY'> = {};
+  const scale = num(p?.artScale, ART_SCALE.min, ART_SCALE.max);
+  const x = num(p?.artX, -ART_OFFSET, ART_OFFSET);
+  const y = num(p?.artY, -ART_OFFSET, ART_OFFSET);
+  if (scale !== undefined && Math.abs(scale - 1) > 0.001) out.artScale = Math.round(scale * 100) / 100;
+  if (x) out.artX = Math.round(x * 10) / 10;
+  if (y) out.artY = Math.round(y * 10) / 10;
+  return out;
+}
+
 function cleanPatch(p: Record<string, unknown>, me: string): Patch {
   const pick = (v: unknown, fallback: string) => (typeof v === 'string' && HEX.test(v) ? v : fallback);
   return {
@@ -394,6 +409,7 @@ function cleanPatch(p: Record<string, unknown>, me: string): Patch {
     icon: typeof p?.icon === 'string' ? [...p.icon].slice(0, 4).join('') : '',
     text: typeof p?.text === 'string' ? p.text.trim().slice(0, 14) : '',
     ...(patchImageAllowed(p?.image, me) ? { image: p.image as string } : {}),
+    ...artFields(p),
   };
 }
 

@@ -1,6 +1,6 @@
-import { Check, ImagePlus } from 'lucide-react';
-import { useState } from 'react';
-import { PATCH_SHAPES } from '../../../shared/cosmetics.ts';
+import { Check, ImagePlus, Move, RotateCcw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ART_OFFSET, ART_SCALE, PATCH_SHAPES } from '../../../shared/cosmetics.ts';
 import type { Patch } from '../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import { toast } from '../store/toast';
@@ -33,15 +33,17 @@ export function PatchForm({
 }) {
   const [p, setP] = useState<Patch>(initial);
   const [busy, setBusy] = useState(false);
-  const set = (part: Partial<Patch>) => setP((cur) => ({ ...cur, ...part }));
+  // aceita um pedaço do patch ou uma função (para eventos rápidos, como a rolagem do mouse)
+  const set = (part: Partial<Patch> | ((cur: Patch) => Partial<Patch>)) => setP((cur) => ({ ...cur, ...(typeof part === 'function' ? part(cur) : part) }));
 
   async function uploadLogo() {
     const file = await pickImage();
     if (!file) return;
     setBusy(true);
     try {
-      const { url } = await uploadImage<{ url: string }>('/me/patch-image', await prepareImage(file, 256, false));
-      set({ image: url });
+      // 512 px para continuar nítida mesmo ampliada dentro do patch
+      const { url } = await uploadImage<{ url: string }>('/me/patch-image', await prepareImage(file, 512, false));
+      set({ image: url, artScale: undefined, artX: undefined, artY: undefined });
     } catch (err) {
       toast.error(err);
     }
@@ -49,10 +51,10 @@ export function PatchForm({
   }
 
   return (
-    <div className="mt-3 flex animate-pop-in flex-col gap-4 rounded-2xl bg-surface-0 p-4 sm:flex-row">
-      <div className="flex shrink-0 items-center justify-center rounded-2xl bg-surface-2 p-4 sm:w-36">
-        <PatchBadge patch={p} size={104} tilt={-4} />
-      </div>
+    // empilha quando o espaço é estreito (aba Estilo) e fica lado a lado quando cabe
+    <div className="@container mt-3">
+    <div className="flex animate-pop-in flex-col gap-4 rounded-2xl bg-surface-0 p-4 @xl:flex-row">
+      <ArtPreview patch={p} onChange={set} />
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex flex-wrap gap-1.5">
           {PATCH_SHAPES.map((shape) => (
@@ -107,6 +109,89 @@ export function PatchForm({
           </div>
         </div>
       </div>
+    </div>
+    </div>
+  );
+}
+
+const PREVIEW = 150;
+const clampNum = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+/** Prévia grande: arraste o desenho para mover, role o mouse (ou use o controle) para mudar o tamanho. */
+function ArtPreview({ patch, onChange }: { patch: Patch; onChange: (part: Partial<Patch> | ((cur: Patch) => Partial<Patch>)) => void }) {
+  const hasArt = !!patch.image || !!patch.icon;
+  const drag = useRef<{ x: number; y: number; ax: number; ay: number } | null>(null);
+  const scale = patch.artScale ?? 1;
+  const unit = 100 / PREVIEW; // px da prévia → unidades do patch
+  const moved = (patch.artX ?? 0) !== 0 || (patch.artY ?? 0) !== 0 || scale !== 1;
+  const box = useRef<HTMLDivElement>(null);
+  const change = useRef(onChange);
+  change.current = onChange;
+
+  // a rolagem sobre a prévia muda o tamanho e não rola a janela de configurações
+  // (listener nativo porque o do React é passivo e não deixa cancelar a rolagem)
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !hasArt) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      change.current((cur) => ({ artScale: clampNum((cur.artScale ?? 1) * (e.deltaY < 0 ? 1.08 : 0.92), ART_SCALE.min, ART_SCALE.max) }));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [hasArt]);
+
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-2 self-center @xl:w-48 @xl:self-start">
+      <div
+        ref={box}
+        aria-label={hasArt ? 'Prévia do patch: arraste o desenho para mover e role o mouse para mudar o tamanho' : 'Prévia do patch'}
+        title={hasArt ? 'Arraste para mover · role o mouse para mudar o tamanho' : undefined}
+        className={cx('relative flex touch-none items-center justify-center rounded-2xl bg-surface-2 p-3', hasArt && 'cursor-grab active:cursor-grabbing')}
+        onPointerDown={(e) => {
+          if (!hasArt) return;
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          drag.current = { x: e.clientX, y: e.clientY, ax: patch.artX ?? 0, ay: patch.artY ?? 0 };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          onChange({
+            artX: clampNum(d.ax + (e.clientX - d.x) * unit, -ART_OFFSET, ART_OFFSET),
+            artY: clampNum(d.ay + (e.clientY - d.y) * unit, -ART_OFFSET, ART_OFFSET),
+          });
+        }}
+        onPointerUp={() => (drag.current = null)}
+        onPointerCancel={() => (drag.current = null)}
+      >
+        <PatchBadge patch={patch} size={PREVIEW} />
+        {hasArt && <Move size={14} className="pointer-events-none absolute right-2 bottom-2 text-fg-subtle" />}
+      </div>
+      {hasArt && (
+        <div className="flex w-full items-center gap-2">
+          <input
+            type="range"
+            min={ART_SCALE.min}
+            max={ART_SCALE.max}
+            step={0.05}
+            value={scale}
+            aria-label="Tamanho do desenho"
+            onChange={(e) => onChange({ artScale: Number(e.target.value) })}
+            className="min-w-0 flex-1"
+          />
+          <span className="w-9 text-right text-[11px] text-fg-muted">{Math.round(scale * 100)}%</span>
+          <button
+            title="Centralizar e voltar ao tamanho original"
+            aria-label="Centralizar o desenho"
+            disabled={!moved}
+            onClick={() => onChange({ artScale: undefined, artX: undefined, artY: undefined })}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-30"
+          >
+            <RotateCcw size={13} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

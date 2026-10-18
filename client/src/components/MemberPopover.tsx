@@ -122,9 +122,18 @@ export function MemberPopover() {
           {!!member.patches?.length && (
             <div aria-label="Patches" className="flex flex-wrap justify-end pb-0.5 pl-2">
               {member.patches.map((p, i) => (
-                <div key={p.id} className="-ml-1.5">
+                <button
+                  key={p.id}
+                  aria-label={`Ver o patch ${p.text || ''} de perto`}
+                  title="Clique para ver de perto"
+                  onClick={() => {
+                    close();
+                    openModal({ type: 'patch', patch: p, caption: `no perfil de ${name}` });
+                  }}
+                  className="-ml-1.5 cursor-zoom-in rounded-full"
+                >
                   <PatchBadge patch={p} size={member.patches!.length > 4 ? 34 : 40} tilt={PATCH_TILTS[i % PATCH_TILTS.length]} />
-                </div>
+                </button>
               ))}
             </div>
           )}
