@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import type { GameData } from '../lib/types';
 import { useApp } from '../store/app';
+import { markPlayed, shouldAnimate } from '../lib/liveGames';
+import { Coin3D, DiceSet, Wheel, WHEEL_COLORS } from './GameVisuals';
 import { toast } from '../store/toast';
 import { Button, Modal, cx } from './ui';
 
@@ -19,140 +21,74 @@ export async function playGame(target: GameTarget, body: Record<string, unknown>
   }
 }
 
-const COLORS = ['#ff8a6b', '#c4a5ff', '#5eead4', '#f5c451', '#7c9cff', '#ff6b9a', '#8fd4b8', '#ffb547'];
 
-/** Cartão do jogo dentro do chat. "fresh" = acabou de acontecer, então anima. */
-export function GameCard({ data, fresh, author }: { data: GameData; fresh: boolean; author: string }) {
-  if (data.type === 'roulette') return <Roulette data={data} fresh={fresh} author={author} />;
-  if (data.type === 'dice') return <Dice data={data} fresh={fresh} author={author} />;
-  return <Coin data={data} fresh={fresh} author={author} />;
-}
+/** Cartão do jogo dentro do chat. Anima se o jogo acabou de chegar e o palco não mostrou. */
+export function GameCard({ id, data, author }: { id: string; data: GameData; author: string }) {
+  const [animate] = useState(() => {
+    const yes = shouldAnimate(id);
+    if (yes) markPlayed(id);
+    return yes;
+  });
+  const [done, setDone] = useState(!animate);
 
-function Roulette({ data, fresh, author }: { data: Extract<GameData, { type: 'roulette' }>; fresh: boolean; author: string }) {
-  const n = data.items.length;
-  const seg = 360 / n;
-  // gira algumas voltas e para com o meio da fatia sorteada embaixo do ponteiro (no topo)
-  const final = data.turns * 360 + (360 - (data.result + 0.5) * seg);
-  const [angle, setAngle] = useState(fresh ? 0 : final);
-  const [done, setDone] = useState(!fresh);
-
-  useEffect(() => {
-    if (!fresh) return;
-    const t1 = requestAnimationFrame(() => setAngle(final));
-    const t2 = setTimeout(() => setDone(true), 4600);
-    return () => {
-      cancelAnimationFrame(t1);
-      clearTimeout(t2);
-    };
-  }, [fresh, final]);
-
-  const r = 90;
-  const slice = (i: number) => {
-    const a0 = ((i * seg - 90) * Math.PI) / 180;
-    const a1 = (((i + 1) * seg - 90) * Math.PI) / 180;
-    const large = seg > 180 ? 1 : 0;
-    return `M100 100 L${100 + r * Math.cos(a0)} ${100 + r * Math.sin(a0)} A${r} ${r} 0 ${large} 1 ${100 + r * Math.cos(a1)} ${100 + r * Math.sin(a1)} Z`;
-  };
+  const title =
+    data.type === 'roulette'
+      ? `${author} girou a roleta`
+      : data.type === 'dice'
+        ? `${author} rolou ${data.count}d${data.sides}`
+        : `${author} jogou cara ou coroa`;
+  const icon = data.type === 'roulette' ? <Disc3 size={14} /> : data.type === 'dice' ? <Dices size={14} /> : <Coins size={14} />;
 
   return (
-    <div className="w-[260px] rounded-[22px] bg-surface-2 p-4 text-fg">
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-fg-muted">
-        <Disc3 size={14} className="text-accent" /> {author} girou a roleta
-      </div>
-      <div className="relative mx-auto h-[200px] w-[200px]">
-        <svg viewBox="0 0 200 200" className="h-full w-full" role="img" aria-label={`Roleta com ${n} opções`}>
-          <g
-            style={{
-              transform: `rotate(${angle}deg)`,
-              transformOrigin: '100px 100px',
-              transition: fresh ? 'transform 4.5s cubic-bezier(0.15, 0.7, 0.1, 1)' : 'none',
-            }}
-          >
-            {data.items.map((item, i) => {
-              const mid = (((i + 0.5) * seg - 90) * Math.PI) / 180;
-              return (
-                <g key={i}>
-                  <path d={slice(i)} fill={COLORS[i % COLORS.length]} stroke="#17121c" strokeWidth="1.5" />
-                  <text
-                    x={100 + 58 * Math.cos(mid)}
-                    y={100 + 58 * Math.sin(mid)}
-                    fill="#1a1014"
-                    fontSize={n > 10 ? 8 : 11}
-                    fontWeight="700"
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    transform={`rotate(${(i + 0.5) * seg} ${100 + 58 * Math.cos(mid)} ${100 + 58 * Math.sin(mid)})`}
-                  >
-                    {item.length > 12 ? `${item.slice(0, 11)}…` : item}
-                  </text>
-                </g>
-              );
-            })}
-          </g>
-          <circle cx="100" cy="100" r="14" fill="#17121c" stroke="#f3ecf7" strokeWidth="3" />
-          <path d="M100 4 L92 22 L108 22 Z" fill="#f3ecf7" stroke="#17121c" strokeWidth="1.5" />
-        </svg>
-      </div>
-      <div className={cx('mt-3 text-center transition-opacity duration-300', done ? 'opacity-100' : 'opacity-0')}>
-        <div className="text-xs text-fg-muted">Resultado</div>
-        <div className="font-display text-lg font-bold text-accent">{data.items[data.result]}</div>
-      </div>
-    </div>
-  );
-}
-
-function Dice({ data, fresh, author }: { data: Extract<GameData, { type: 'dice' }>; fresh: boolean; author: string }) {
-  const [shown, setShown] = useState(fresh ? data.rolls.map(() => 1) : data.rolls);
-  const [done, setDone] = useState(!fresh);
-  useEffect(() => {
-    if (!fresh) return;
-    const id = setInterval(() => setShown(data.rolls.map(() => 1 + Math.floor(Math.random() * data.sides))), 70);
-    const stop = setTimeout(() => {
-      clearInterval(id);
-      setShown(data.rolls);
-      setDone(true);
-    }, 1200);
-    return () => {
-      clearInterval(id);
-      clearTimeout(stop);
-    };
-  }, [fresh, data]);
-  const total = data.rolls.reduce((a, b) => a + b, 0);
-  return (
-    <div className="min-w-[200px] rounded-[22px] bg-surface-2 p-4 text-fg">
+    <div className="relative w-[260px] overflow-hidden rounded-[22px] bg-surface-2 p-4 text-fg">
       <div className="mb-3 flex items-center gap-1.5 text-xs font-bold text-fg-muted">
-        <Dices size={14} className="text-accent" /> {author} rolou {data.count}d{data.sides}
+        <span className="text-accent">{icon}</span> {title}
       </div>
-      <div className="flex flex-wrap gap-2">
-        {shown.map((v, i) => (
-          <span key={i} className={cx('flex h-12 min-w-12 items-center justify-center rounded-2xl bg-accent px-2 font-display text-xl font-bold text-on-accent', !done && 'animate-pulse')}>
-            {v}
-          </span>
-        ))}
+      <div className="flex justify-center">
+        {data.type === 'roulette' ? (
+          <Wheel data={data} size={200} animate={animate} sound={animate} onDone={() => setDone(true)} />
+        ) : data.type === 'dice' ? (
+          <div className="py-2">
+            <DiceSet data={data} size={data.count > 4 ? 40 : 54} animate={animate} sound={animate} onDone={() => setDone(true)} />
+          </div>
+        ) : (
+          <div className="py-2">
+            <Coin3D data={data} size={96} animate={animate} sound={animate} onDone={() => setDone(true)} />
+          </div>
+        )}
       </div>
-      {data.count > 1 && done && <div className="mt-2 text-sm text-fg-muted">Total: <b className="text-fg">{total}</b></div>}
+      <div className={cx('mt-3 text-center transition-all duration-300', done ? 'opacity-100' : 'translate-y-1 opacity-0')}>
+        <GameResult data={data} />
+      </div>
     </div>
   );
 }
 
-function Coin({ data, fresh, author }: { data: Extract<GameData, { type: 'coin' }>; fresh: boolean; author: string }) {
-  const [done, setDone] = useState(!fresh);
-  useEffect(() => {
-    if (!fresh) return;
-    const t = setTimeout(() => setDone(true), 1300);
-    return () => clearTimeout(t);
-  }, [fresh]);
+/** Texto do resultado (cartão do chat e palco da tela principal). */
+export function GameResult({ data, big }: { data: GameData; big?: boolean }) {
+  const size = big ? 'text-3xl' : 'text-lg';
+  if (data.type === 'roulette') {
+    return (
+      <>
+        <div className="text-xs text-fg-muted">Resultado</div>
+        <div className={cx('font-display font-bold text-accent', size)}>{data.items[data.result]}</div>
+      </>
+    );
+  }
+  if (data.type === 'dice') {
+    const total = data.rolls.reduce((a, b) => a + b, 0);
+    return (
+      <>
+        <div className="text-xs text-fg-muted">{data.count > 1 ? `${data.rolls.join(' + ')} =` : 'Resultado'}</div>
+        <div className={cx('font-display font-bold text-accent', size)}>{total}</div>
+      </>
+    );
+  }
   return (
-    <div className="min-w-[200px] rounded-[22px] bg-surface-2 p-4 text-center text-fg">
-      <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-bold text-fg-muted">
-        <Coins size={14} className="text-accent" /> {author} jogou cara ou coroa
-      </div>
-      <div
-        className={cx('mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-warn font-display text-lg font-bold text-surface-1 shadow-lg', !done && 'coin-flip')}
-      >
-        {done ? (data.result === 'cara' ? 'Cara' : 'Coroa') : ''}
-      </div>
-    </div>
+    <>
+      <div className="text-xs text-fg-muted">Resultado</div>
+      <div className={cx('font-display font-bold text-accent', size)}>{data.result === 'cara' ? 'Cara' : 'Coroa'}</div>
+    </>
   );
 }
 
@@ -197,7 +133,7 @@ export function GameMenuButton({ target }: { target: GameTarget }) {
         <Plus size={20} className={cx('transition-transform', open && 'rotate-45')} />
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 w-64 animate-pop-in rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line">
+        <div className="absolute bottom-full left-0 z-30 mb-2 w-64 animate-pop-in rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
           <div className="px-3 pt-1 pb-1.5 text-xs font-bold text-fg-subtle">Minigames</div>
           {item(<Disc3 size={18} />, 'Roleta', 'Monte as opções e gire', () => openModal({ type: 'roulette', target }))}
           {item(<Dices size={18} />, 'Rolar dado', '1d6 (ou /dado 2d20)', () => void playGame(target, { type: 'dice', sides: 6, count: 1 }))}
@@ -264,7 +200,7 @@ export function RouletteModal({ target }: { target: GameTarget }) {
       <div className="space-y-2">
         {items.map((it, i) => (
           <div key={i} className="flex items-center gap-2">
-            <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+            <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: WHEEL_COLORS[i % WHEEL_COLORS.length] }} />
             <label className="sr-only" htmlFor={`opt-${i}`}>
               Opção {i + 1}
             </label>

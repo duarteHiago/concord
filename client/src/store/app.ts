@@ -6,6 +6,7 @@ import { receiveDirectMessage, receiveMention, type MentionEvent } from '../lib/
 import { receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
 import { installShortcuts, syncGlobalShortcuts } from '../lib/shortcuts';
+import { announceGame } from '../lib/liveGames';
 import { desktop } from '../lib/desktop';
 import { playSoundboard } from '../lib/soundboard';
 import type {
@@ -171,6 +172,7 @@ export const useApp = create<AppState>((set, get) => {
     });
     socket.on('sound:play', (e: { url: string; userId: string; channelId: string; name: string }) => playSoundboard(e));
     socket.on('message:new', (msg: Message) => {
+      if (msg.kind === 'game') announceGame(msg, { kind: 'channel', id: msg.channelId });
       const list = get().messages[msg.channelId];
       const typing = { ...get().typing[msg.channelId] };
       delete typing[msg.author.id];
@@ -188,6 +190,7 @@ export const useApp = create<AppState>((set, get) => {
       if (list) set({ messages: { ...get().messages, [channelId]: list.filter((m) => m.id !== id) } });
     });
     socket.on('dm:message', ({ dm, message }: { dm: DirectChannel; message: Message }) => {
+      if (message.kind === 'game') announceGame(message, { kind: 'dm', id: dm.id });
       const list = get().messages[dm.id];
       if (list && !list.some((m) => m.id === message.id)) set({ messages: { ...get().messages, [dm.id]: [...list, message] } });
       const viewing = get().activeServerId === HOME && get().activeDmId === dm.id && document.hasFocus();

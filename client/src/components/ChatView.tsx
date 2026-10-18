@@ -209,7 +209,7 @@ function Bubble({
             <p className="px-1 text-xs text-fg-subtle">Esc cancela · Enter salva</p>
           </div>
         ) : message.kind === 'game' && message.data ? (
-          <GameCard data={message.data} fresh={Date.now() - message.createdAt < 8000} author={mine ? 'Você' : name} />
+          <GameCard id={message.id} data={message.data} author={mine ? 'Você' : name} />
         ) : (
           <div
             className={cx(
@@ -409,7 +409,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
         <div
           role="listbox"
           aria-label={commandMatch ? 'Comandos' : 'Pessoas'}
-          className={cx('absolute bottom-full z-20 mb-2 max-h-72 animate-pop-in overflow-y-auto rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line', compact ? 'inset-x-3' : 'inset-x-6')}
+          className={cx('absolute bottom-full z-20 mb-2 max-h-72 animate-pop-in overflow-y-auto rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line', compact ? 'inset-x-3' : 'inset-x-6')}
         >
           <div className="px-3 pt-1 pb-1.5 text-xs font-bold text-fg-subtle">{commandMatch ? 'Comandos' : 'Mencionar'}</div>
           {suggestions.map((s, i) => (

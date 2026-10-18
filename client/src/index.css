@@ -19,6 +19,8 @@
   --color-accent-hover: #ff7350;
   --color-accent-2: #c4a5ff;
   --color-on-accent: #2a1410;
+  /* menus e janelinhas flutuantes: sempre opacos, mesmo com imagem de fundo */
+  --color-popover: #2b2234;
   --color-ok: #22c55e;
   --color-danger: #e5484d;
   --color-warn: #f5c451;
@@ -153,4 +155,59 @@ video::-webkit-media-controls {
 
 .coin-flip {
   animation: coin-flip 1.3s cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+
+/* ---- minigames ---- */
+
+/* ponteiro da roleta dá um tranco a cada pino que passa */
+@keyframes wheel-pointer-kick {
+  0% { transform: rotate(-18deg); }
+  100% { transform: rotate(0); }
+}
+.wheel-pointer {
+  transform-origin: 50% 10%;
+  animation: wheel-pointer-kick 0.12s ease-out;
+}
+
+/* dados caindo e quicando na mesa */
+@keyframes dice-bounce {
+  0% { transform: translateY(-120px); }
+  45% { transform: translateY(0); }
+  60% { transform: translateY(-26px); }
+  75% { transform: translateY(0); }
+  85% { transform: translateY(-8px); }
+  100% { transform: translateY(0); }
+}
+.dice-bounce {
+  animation: dice-bounce 1.3s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+/* moeda subindo e caindo enquanto gira */
+@keyframes coin-jump {
+  0% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-130px) scale(1.12); }
+  85% { transform: translateY(0) scale(1); }
+  92% { transform: translateY(-10px); }
+  100% { transform: translateY(0); }
+}
+.coin-jump {
+  animation: coin-jump 1.7s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+/* confete do resultado */
+@keyframes confetti-fly {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  100% { transform: translate(var(--x), calc(var(--y) + 420px)) rotate(var(--r)); opacity: 0; }
+}
+.confetti-piece {
+  animation: confetti-fly 1.8s cubic-bezier(0.15, 0.55, 0.4, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wheel-pointer,
+  .dice-bounce,
+  .coin-jump,
+  .confetti-piece {
+    animation: none;
+  }
 }

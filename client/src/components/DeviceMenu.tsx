@@ -1,5 +1,6 @@
 import { Check, ChevronUp } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { NOISE_MODES } from '../lib/voiceEffects';
 import { useVoice } from '../store/voice';
 import { cx } from './ui';
@@ -42,11 +43,16 @@ export function DeviceSplitButton({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onKey);
@@ -70,17 +76,23 @@ export function DeviceSplitButton({
         title={`Escolher ${TITLES[kind].toLowerCase()}`}
         aria-label={`Escolher ${TITLES[kind].toLowerCase()}`}
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setAnchor(ref.current?.getBoundingClientRect() ?? null);
+          setOpen(!open);
+        }}
         className="flex h-9 w-4 items-center justify-center rounded-r-full text-fg-subtle hover:text-fg"
       >
         <ChevronUp size={13} className={cx('transition-transform', !open && 'rotate-180')} />
       </button>
-      {open && <DeviceList kind={kind} onDone={() => setOpen(false)} />}
+      {/* fora da barra lateral (que corta o que passa da borda), preso à tela */}
+      {open && anchor && createPortal(<DeviceList ref={menuRef} kind={kind} anchor={anchor} onDone={() => setOpen(false)} />, document.body)}
     </div>
   );
 }
 
-function DeviceList({ kind, onDone }: { kind: Kind; onDone: () => void }) {
+const MENU_WIDTH = 300;
+
+function DeviceList({ kind, anchor, onDone, ref }: { kind: Kind; anchor: DOMRect; onDone: () => void; ref: React.Ref<HTMLDivElement> }) {
   const settings = useVoice((s) => s.audioSettings);
   const setAudioSettings = useVoice((s) => s.setAudioSettings);
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
@@ -98,8 +110,17 @@ function DeviceList({ kind, onDone }: { kind: Kind; onDone: () => void }) {
   };
   const isCurrent = (d: MediaDeviceInfo, i: number) => d.deviceId === current || (!current && i === 0) || (current === 'default' && d.deviceId === 'default');
 
+  // abre acima do botão, alinhado a ele, sem sair da tela
+  const left = Math.min(Math.max(8, anchor.left - 12), window.innerWidth - MENU_WIDTH - 8);
+  const bottom = window.innerHeight - anchor.top + 8;
+
   return (
-    <div role="menu" className="absolute right-0 bottom-full z-40 mb-2 w-72 animate-pop-in rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line">
+    <div
+      ref={ref}
+      role="menu"
+      className="fixed z-[80] max-h-[70vh] animate-pop-in overflow-y-auto rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line-strong"
+      style={{ left, bottom, width: MENU_WIDTH }}
+    >
       <div className="px-3 pt-1 pb-1.5 text-xs font-bold text-fg-subtle">{TITLES[kind]}</div>
       {!devices && <div className="px-3 py-2 text-sm text-fg-muted">Procurando…</div>}
       {devices?.length === 0 && <div className="px-3 py-2 text-sm text-fg-muted">Nenhum dispositivo encontrado.</div>}

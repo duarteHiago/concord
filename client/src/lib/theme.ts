@@ -168,6 +168,7 @@ export function applyTheme(theme: ThemeSettings) {
     root.style.setProperty(`--color-${key}`, translucent ? `color-mix(in srgb, ${value} ${alpha}%, transparent)` : value);
   }
   root.style.setProperty('--color-accent-hover', `color-mix(in srgb, ${palette.accent} 82%, black)`);
+  root.style.setProperty('--color-popover', palette['surface-3']);
   root.style.colorScheme = preset.id === 'light' ? 'light' : 'dark';
   root.style.fontSize = `${Math.round(16 * Math.min(1.3, Math.max(0.75, theme.scale)))}px`;
 

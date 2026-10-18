@@ -103,7 +103,7 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
         <ChevronDown size={20} className={cx('shrink-0 text-fg-muted transition-transform group-hover:text-fg', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute top-full right-3 left-3 z-30 animate-pop-in space-y-0.5 rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line">
+        <div className="absolute top-full right-3 left-3 z-30 animate-pop-in space-y-0.5 rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
           {has(perms, P.CREATE_INVITE) && item('Convidar amigos', <UserPlus size={16} />, () => openModal({ type: 'invite', serverId: detail.server.id }))}
           {(has(perms, P.CHANGE_NICKNAME) || has(perms, P.MANAGE_NICKNAMES)) &&
             item('Meu apelido aqui', <Pencil size={16} />, () => openModal({ type: 'nickname', serverId: detail.server.id, userId: me.id }))}
@@ -403,7 +403,7 @@ function UserCard() {
   return (
     <div ref={menuRef} className="relative mx-3 mb-3 flex items-center gap-1 rounded-[20px] bg-surface-3 p-2.5">
       {menu && (
-        <div className="absolute right-0 bottom-full left-0 z-30 mb-2 animate-pop-in space-y-0.5 rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line">
+        <div className="absolute right-0 bottom-full left-0 z-30 mb-2 animate-pop-in space-y-0.5 rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
           {option('online', 'Online', 'Recebe chamadas de atenção e avisos')}
           {option('dnd', 'Não perturbe', 'Ninguém consegue chamar sua atenção')}
           <div className="mx-2 my-1 h-px bg-line" />

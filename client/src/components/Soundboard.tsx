@@ -73,7 +73,7 @@ function SoundboardPanel() {
   }
 
   return (
-    <div className="absolute bottom-full left-1/2 z-30 mb-3 w-[min(420px,90vw)] -translate-x-1/2 animate-pop-in rounded-[24px] bg-surface-2 p-4 shadow-2xl ring-1 ring-line">
+    <div className="absolute bottom-full left-1/2 z-30 mb-3 w-[min(420px,90vw)] -translate-x-1/2 animate-pop-in rounded-[24px] bg-popover p-4 shadow-2xl ring-1 ring-line">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-base font-bold">Mesa de sons</h3>
         <label className="flex items-center gap-2 text-xs text-fg-muted" title="Volume dos sons para você">

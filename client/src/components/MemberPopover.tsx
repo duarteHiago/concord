@@ -84,7 +84,7 @@ export function MemberPopover() {
   return (
     <div
       ref={ref}
-      className="fixed z-40 max-h-[calc(100vh-16px)] w-80 animate-pop-in overflow-y-auto rounded-[24px] bg-surface-1 shadow-2xl ring-1 ring-line"
+      className="fixed z-40 max-h-[calc(100vh-16px)] w-80 animate-pop-in overflow-y-auto rounded-[24px] bg-popover shadow-2xl ring-1 ring-line"
       style={{ left: x, top: Math.max(8, y) }}
     >
       {member.bannerUrl ? (

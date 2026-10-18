@@ -279,7 +279,7 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
             className="w-[min(520px,60vw)] resize-none rounded-2xl bg-surface-3 p-3 text-[15px] outline-none ring-2 ring-accent"
           />
         ) : message.kind === 'game' && message.data ? (
-          <GameCard data={message.data} fresh={Date.now() - message.createdAt < 8000} author={mine ? 'Você' : message.author.displayName} />
+          <GameCard id={message.id} data={message.data} author={mine ? 'Você' : message.author.displayName} />
         ) : (
           <div
             className={cx(

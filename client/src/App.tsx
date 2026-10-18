@@ -7,6 +7,7 @@ import { ModalHost } from './components/modals/ModalHost';
 import { Spinner, Toasts } from './components/ui';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard } from './components/NudgeCard';
+import { GameOverlay } from './components/GameOverlay';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
 import { HOME, useActiveDetail, useApp } from './store/app';
@@ -36,6 +37,7 @@ export default function App() {
       <Toasts />
       <UpdateBanner />
       {me && <NudgeCard />}
+      {me && <GameOverlay />}
     </>
   );
 }

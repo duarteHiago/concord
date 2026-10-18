@@ -40,7 +40,7 @@ export function VoiceEffectsButton() {
         <Wand2 size={20} />
       </button>
       {open && (
-        <div role="menu" className="absolute bottom-full left-1/2 z-30 mb-3 w-64 -translate-x-1/2 animate-pop-in rounded-[24px] bg-surface-2 p-2 shadow-2xl ring-1 ring-line">
+        <div role="menu" className="absolute bottom-full left-1/2 z-30 mb-3 w-64 -translate-x-1/2 animate-pop-in rounded-[24px] bg-popover p-2 shadow-2xl ring-1 ring-line">
           <div className="px-3 pt-2 pb-1 text-sm font-bold">Efeitos de voz</div>
           <p className="px-3 pb-2 text-xs text-fg-muted">Todo mundo na sala ouve sua voz com o efeito.</p>
           {EFFECTS.map((e) => (
