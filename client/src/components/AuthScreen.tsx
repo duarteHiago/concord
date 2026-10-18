@@ -5,14 +5,29 @@ import type { InvitePreview } from '../lib/types';
 import { useApp } from '../store/app';
 import { Avatar, Button, Input } from './ui';
 
+type Mode = 'login' | 'register' | 'reset';
+
+const TITLES: Record<Mode, [string, string]> = {
+  login: ['Bem-vindo de volta!', 'Que bom te ver de novo.'],
+  register: ['Criar uma conta', 'Leva menos de um minuto.'],
+  reset: ['Esqueci minha senha', 'Use o código de recuperação que você guardou ao criar a conta.'],
+};
+
 export function AuthScreen() {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<Mode>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, register } = useApp();
+  const { login, register, resetPassword } = useApp();
+
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    setError('');
+    setPassword('');
+  };
   const pendingInvite = useApp((s) => s.pendingInvite);
   const [invite, setInvite] = useState<InvitePreview | null>(null);
 
@@ -30,7 +45,8 @@ export function AuthScreen() {
     setLoading(true);
     try {
       if (mode === 'login') await login(username, password);
-      else await register(username, password, displayName);
+      else if (mode === 'register') await register(username, password, displayName);
+      else await resetPassword(username, code, password);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -80,37 +96,50 @@ export function AuthScreen() {
             </div>
           )}
           <div className="mb-6">
-            <h2 className="text-2xl font-bold">{mode === 'login' ? 'Bem-vindo de volta!' : 'Criar uma conta'}</h2>
-            <p className="mt-1 text-sm text-fg-muted">
-              {mode === 'login' ? 'Que bom te ver de novo.' : 'Leva menos de um minuto.'}
-            </p>
+            <h2 className="text-2xl font-bold">{TITLES[mode][0]}</h2>
+            <p className="mt-1 text-sm text-fg-muted">{TITLES[mode][1]}</p>
           </div>
           <Input label="Usuário" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" required />
           {mode === 'register' && (
             <Input label="Nome de exibição" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como os outros vão te ver" />
           )}
+          {mode === 'reset' && (
+            <Input
+              label="Código de recuperação"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+              autoComplete="one-time-code"
+              className="font-mono tracking-wider uppercase"
+              required
+            />
+          )}
           <Input
-            label="Senha"
+            label={mode === 'reset' ? 'Nova senha' : 'Senha'}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            hint={mode === 'login' ? undefined : 'Mínimo de 6 caracteres'}
             required
           />
-          {error && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-red-300">{error}</p>}
+          {mode === 'login' && (
+            <button type="button" onClick={() => switchMode('reset')} className="-mt-2 text-sm font-semibold text-fg-muted hover:text-accent">
+              Esqueci minha senha
+            </button>
+          )}
+          {error && <p className="rounded-2xl bg-danger/10 px-4 py-2.5 text-sm text-red-300">{error}</p>}
           <Button type="submit" loading={loading} className="h-11 w-full">
-            {mode === 'login' ? 'Entrar' : 'Criar conta'}
+            {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar conta' : 'Redefinir senha'}
           </Button>
+          {mode === 'reset' && (
+            <p className="text-xs text-fg-subtle">
+              Sem o código? Peça para quem administra o Concord rodar <code>node src/cli.ts reset-password {username || 'seu-usuario'}</code> no servidor.
+            </p>
+          )}
           <p className="text-sm text-fg-muted">
-            {mode === 'login' ? 'Precisa de uma conta? ' : 'Já tem uma conta? '}
-            <button
-              type="button"
-              className="font-semibold text-accent-2 hover:underline"
-              onClick={() => {
-                setMode(mode === 'login' ? 'register' : 'login');
-                setError('');
-              }}
-            >
+            {mode === 'login' ? 'Precisa de uma conta? ' : mode === 'register' ? 'Já tem uma conta? ' : 'Lembrou a senha? '}
+            <button type="button" className="font-semibold text-accent hover:underline" onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}>
               {mode === 'login' ? 'Cadastre-se' : 'Entrar'}
             </button>
           </p>

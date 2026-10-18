@@ -31,6 +31,7 @@ export interface UserSettings {
 
 export interface Me extends User {
   settings: UserSettings & Record<string, unknown>;
+  hasRecoveryCode?: boolean;
 }
 
 export interface NudgeEvent {

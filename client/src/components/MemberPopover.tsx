@@ -22,6 +22,8 @@ export function MemberPopover() {
   const myChannel = useVoice((s) => s.channelId);
   const volume = useVoice((s) => (userId ? (s.volumes[userId] ?? 1) : 1));
   const setVolume = useVoice((s) => s.setVolume);
+  const toggleLocalMute = useVoice((s) => s.toggleLocalMute);
+  const localMuted = useVoice((s) => (userId ? !!s.localMuted[userId] : false));
   const openModal = useApp((s) => s.openModal);
   const saveSettings = useApp((s) => s.saveSettings);
 
@@ -192,9 +194,29 @@ export function MemberPopover() {
               <div className="mt-3 mb-1 text-[11px] font-bold tracking-wider text-fg-subtle uppercase">Volume do usuário</div>
               <div className="flex items-center gap-2">
                 <Volume2 size={16} className="text-fg-muted" />
-                <input type="range" min={0} max={1} step={0.05} value={volume} onChange={(e) => setVolume(member.id, Number(e.target.value))} className="flex-1" />
-                <span className="w-9 text-right text-xs text-fg-muted">{Math.round(volume * 100)}%</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  disabled={localMuted}
+                  aria-label="Volume do usuário"
+                  onChange={(e) => setVolume(member.id, Number(e.target.value))}
+                  className="flex-1 disabled:opacity-40"
+                />
+                <span className="w-9 text-right text-xs text-fg-muted">{localMuted ? '0%' : `${Math.round(volume * 100)}%`}</span>
               </div>
+              <button
+                onClick={() => toggleLocalMute(member.id)}
+                className={cx(
+                  'mt-2 flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm font-medium transition-colors',
+                  localMuted ? 'bg-danger/15 text-danger' : 'text-fg-muted hover:bg-white/10 hover:text-fg',
+                )}
+              >
+                <MicOff size={15} />
+                {localMuted ? 'Silenciado para mim (toque para ouvir)' : 'Silenciar para mim'}
+              </button>
             </>
           )}
 

@@ -26,6 +26,15 @@ O áudio sem retorno exige **Windows 11**, ou Windows 10 a partir do build 20348
 
 O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, gera o instalador e o publica em `https://SEU-DOMINIO/downloads/Concord-Setup.exe`. No site aparece um botão de download na barra da esquerda. O instalador não é assinado digitalmente, então o Windows pode exibir o aviso do SmartScreen: clique em "Mais informações" e depois em "Executar assim mesmo".
 
+## Esqueci minha senha
+
+As contas não usam e-mail. Ao criar a conta, a pessoa recebe um **código de recuperação**, que aparece uma única vez. Com ele, dá para criar uma senha nova pela tela de login, em "Esqueci minha senha". Depois de usado, o código é trocado por outro. Também dá para gerar um código novo em Configurações → Conta. Se o código se perder, quem hospeda o Concord pode gerar uma senha temporária:
+
+```bash
+docker compose exec app node src/cli.ts reset-password <usuário>
+docker compose exec app node src/cli.ts users   # lista as contas
+```
+
 ## Chamar atenção
 
 Inspirado no MSN. No perfil de alguém, o botão **Chamar atenção** faz a tela da pessoa tremer (no app desktop, a janela chacoalha), toca um som e mostra uma notificação do Windows. Para quem recebe, aparece um cartão com **"Ir até lá"** e **"Chamar de volta"**.

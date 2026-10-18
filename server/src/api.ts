@@ -36,6 +36,7 @@ import {
 import { color, fail, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { removeUpload, saveImage } from './uploads.ts';
+import { allowAttempt, normalize as normalizeCode, rotateRecoveryCode } from './recovery.ts';
 import {
   dropVoice,
   emitToChannel,
@@ -82,7 +83,7 @@ const meJson = (u: UserRow) => {
   } catch {
     // ignorado
   }
-  return { ...userJson(u), settings };
+  return { ...userJson(u), settings, hasRecoveryCode: !!u.recovery_hash };
 };
 
 const serverJson = (s: ServerRow) => ({ id: s.id, name: s.name, ownerId: s.owner_id, iconColor: s.icon_color, iconUrl: s.icon_url });
@@ -138,6 +139,7 @@ api.post('/auth/register', async (req, res) => {
     banner_color: null,
     bio: '',
     settings: '{}',
+    recovery_hash: null,
     created_at: now(),
   };
   run(
@@ -149,7 +151,22 @@ api.post('/auth/register', async (req, res) => {
     user.avatar_color,
     user.created_at,
   );
-  res.json({ token: signToken(user.id), user: meJson(user) });
+  const recoveryCode = await rotateRecoveryCode(user.id);
+  res.json({ token: signToken(user.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!), recoveryCode });
+});
+
+/** Esqueci a senha: usuário + código de recuperação + nova senha. O código é trocado após o uso. */
+api.post('/auth/reset', async (req, res) => {
+  const username = str(req.body?.username, 'usuário', 1, 32);
+  const code = str(req.body?.code, 'código de recuperação', 8, 40);
+  const password = str(req.body?.newPassword, 'nova senha', 6, 128);
+  if (!allowAttempt(username)) fail(429, 'Muitas tentativas. Espere 15 minutos e tente de novo.');
+  const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
+  const ok = !!user?.recovery_hash && (await bcrypt.compare(normalizeCode(code), user.recovery_hash));
+  if (!ok) fail(400, 'Usuário ou código de recuperação incorretos');
+  run('UPDATE users SET password_hash = ? WHERE id = ?', await bcrypt.hash(password, 10), user!.id);
+  const recoveryCode = await rotateRecoveryCode(user!.id);
+  res.json({ token: signToken(user!.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user!.id)!), recoveryCode });
 });
 
 api.post('/auth/login', async (req, res) => {
@@ -219,6 +236,14 @@ api.patch('/me', async (req, res) => {
   }
   if (publicChange) profileChanged(me);
   res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+/** Gera um novo código de recuperação (o antigo deixa de valer). Pede a senha atual. */
+api.post('/me/recovery-code', async (req, res) => {
+  const me = uid(res);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+  if (!(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  res.json({ code: await rotateRecoveryCode(me) });
 });
 
 const imageBody = express.raw({ type: () => true, limit: '7mb' });

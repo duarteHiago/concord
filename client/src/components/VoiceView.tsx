@@ -17,6 +17,9 @@ import {
   Video,
   VideoOff,
   Volume2,
+  MessageSquare,
+  PictureInPicture2,
+  X,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
@@ -25,6 +28,8 @@ import { useActiveDetail, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { useVoice } from '../store/voice';
 import { Composer, MessageFeed } from './ChatView';
+import { isPoppedOut, popOutVideo } from '../lib/popout';
+import { toast } from '../store/toast';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
 
 export function VoiceView({ channel }: { channel: Channel }) {
@@ -35,16 +40,37 @@ export function VoiceView({ channel }: { channel: Channel }) {
   const streamer = inRoom.find((v) => v.streaming);
   const streamerMember = streamer && detail.members.find((m) => m.id === streamer.userId);
   const canChat = has(channel.permissions, P.VIEW_CHANNEL);
+  const [chatOpen, setChatOpen] = useState(() => readFlag('concord.roomChat', true));
+  const toggleChat = () => {
+    setChatOpen(!chatOpen);
+    writeFlag('concord.roomChat', !chatOpen);
+  };
 
   return (
     <>
       <main className="flex min-w-0 flex-1 flex-col gap-3.5">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-1.5 pt-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1.5 pt-2">
           <h1 className="text-[30px] leading-tight font-bold">{channel.name}</h1>
           <span className="text-sm text-fg-muted">
             {streamerMember ? `${memberName(streamerMember)} está transmitindo` : inRoom.length ? `${inRoom.length} na sala` : 'Sala vazia'}
           </span>
-          {status === 'connected' && <ConnectionQuality />}
+          <div className="ml-auto flex items-center gap-2">
+            {status === 'connected' && <ConnectionQuality />}
+            {canChat && (
+              <button
+                onClick={toggleChat}
+                title={chatOpen ? 'Fechar o papo da sala' : 'Abrir o papo da sala'}
+                aria-label={chatOpen ? 'Fechar o papo da sala' : 'Abrir o papo da sala'}
+                aria-pressed={chatOpen}
+                className={cx(
+                  'hidden h-10 w-10 items-center justify-center rounded-full transition-colors xl:flex',
+                  chatOpen ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:bg-surface-3 hover:text-fg',
+                )}
+              >
+                <MessageSquare size={18} />
+              </button>
+            )}
+          </div>
         </div>
 
         <section aria-label="Palco da sala" className="relative min-h-0 flex-1 overflow-hidden rounded-[32px] bg-surface-0">
@@ -63,15 +89,37 @@ export function VoiceView({ channel }: { channel: Channel }) {
         {status !== 'idle' && <ControlDock />}
       </main>
 
-      {canChat && (
+      {canChat && chatOpen && (
         <aside aria-label="Papo da sala" className="panel hidden w-[320px] shrink-0 flex-col overflow-hidden xl:flex">
-          <h2 className="px-5 pt-5 pb-2 text-lg font-bold">Papo da sala</h2>
+          <div className="flex items-center justify-between px-5 pt-4 pb-1">
+            <h2 className="text-lg font-bold">Papo da sala</h2>
+            <button onClick={toggleChat} aria-label="Fechar o papo da sala" title="Fechar" className="flex h-8 w-8 items-center justify-center rounded-full text-fg-muted hover:bg-surface-3 hover:text-fg">
+              <X size={16} />
+            </button>
+          </div>
           <MessageFeed channel={channel} compact />
           <Composer channel={channel} compact />
         </aside>
       )}
     </>
   );
+}
+
+function readFlag(key: string, fallback: boolean) {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v === '1';
+  } catch {
+    return fallback;
+  }
+}
+
+function writeFlag(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // ignorado
+  }
 }
 
 function ConnectionQuality() {
@@ -82,7 +130,7 @@ function ConnectionQuality() {
   const label = { excellent: 'excelente', good: 'boa', poor: 'instável', lost: 'perdida', unknown: '—' }[q] ?? '—';
   const bad = status === 'reconnecting' || q === 'poor' || q === 'lost';
   return (
-    <span className={cx('ml-auto rounded-full px-3 py-1 text-xs font-bold', bad ? 'bg-warn/15 text-warn' : 'bg-surface-3 text-fg-muted')}>
+    <span className={cx('rounded-full px-3 py-1 text-xs font-bold', bad ? 'bg-warn/15 text-warn' : 'bg-surface-3 text-fg-muted')}>
       {status === 'reconnecting' ? 'reconectando…' : `conexão ${label}`}
     </span>
   );
@@ -310,6 +358,19 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
         {canView && (
           <div className="absolute top-4 right-4 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
             {!isLocal && <StreamVolume identity={p.identity} />}
+            {track && (
+              <OverlayButton
+                label="Abrir em outra janela (para outro monitor ou tela cheia)"
+                active={isPoppedOut(track)}
+                onClick={() => {
+                  if (!popOutVideo(track, `${isLocal ? 'Sua tela' : `Tela de ${name}`} · Concord`)) {
+                    toast.error('A janela foi bloqueada. Permita pop-ups para este site e tente de novo.');
+                  }
+                }}
+              >
+                <PictureInPicture2 size={16} />
+              </OverlayButton>
+            )}
             <OverlayButton label="Estatísticas" active={showStats} onClick={() => setShowStats(!showStats)}>
               <Activity size={16} />
             </OverlayButton>
@@ -335,11 +396,14 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
   return (
     <div
       ref={ref}
-      onClick={onClick}
+      // clique abre o perfil (com as opções da pessoa); duplo clique destaca o quadro
+      onClick={(e) => openPopover(p.identity, detail.server.id, { left: e.clientX, right: e.clientX, top: e.clientY })}
+      onDoubleClick={onClick}
       onContextMenu={(e) => {
         e.preventDefault();
         openPopover(p.identity, detail.server.id, { left: e.clientX, right: e.clientX, top: e.clientY });
       }}
+      title="Clique para ver o perfil · duplo clique para destacar"
       className={cx('relative flex cursor-pointer items-center justify-center overflow-hidden bg-surface-2 transition-shadow', shape, speaking && !muted && 'ring-4 ring-accent')}
     >
       {camTrack ? (

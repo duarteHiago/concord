@@ -15,6 +15,7 @@ import { create } from 'zustand';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
+import { closePopout } from '../lib/popout';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -49,6 +50,8 @@ export interface AudioSettings {
   outputId: string;
   noiseSuppression: boolean;
   echoCancellation: boolean;
+  videoInputId: string;
+  cameraQuality: '720p' | '1080p';
 }
 
 type Status = 'idle' | 'connecting' | 'connected' | 'reconnecting';
@@ -68,6 +71,8 @@ interface VoiceStore {
   watching: Record<string, true>;
   focus: string | null;
   volumes: Record<string, number>;
+  /** pessoas silenciadas só para mim (o áudio delas não toca aqui) */
+  localMuted: Record<string, true>;
   streamVolumes: Record<string, number>;
   shareSettings: ShareSettings;
   audioSettings: AudioSettings;
@@ -84,6 +89,7 @@ interface VoiceStore {
   setWatching: (identity: string, on: boolean) => void;
   setFocus: (key: string | null) => void;
   setVolume: (identity: string, volume: number, stream?: boolean) => void;
+  toggleLocalMute: (identity: string) => void;
   setAudioSettings: (patch: Partial<AudioSettings>) => Promise<void>;
   bindSocket: (socket: Socket) => void;
   resync: () => void;
@@ -106,7 +112,14 @@ function save(key: string, value: unknown) {
 }
 
 const DEFAULT_SHARE: ShareSettings = { presetId: '1080p60', audio: true, mode: 'motion', codec: 'h264' };
-const DEFAULT_AUDIO: AudioSettings = { inputId: 'default', outputId: 'default', noiseSuppression: true, echoCancellation: true };
+const DEFAULT_AUDIO: AudioSettings = {
+  inputId: 'default',
+  outputId: 'default',
+  noiseSuppression: true,
+  echoCancellation: true,
+  videoInputId: '',
+  cameraQuality: '720p',
+};
 
 let audioContainer: HTMLDivElement | null = null;
 function audioHost() {
@@ -153,10 +166,10 @@ export const useVoice = create<VoiceStore>((set, get) => {
   }
 
   function applyVolumes() {
-    const { room, deafened, volumes, streamVolumes } = get();
+    const { room, deafened, volumes, streamVolumes, localMuted } = get();
     if (!room) return;
     for (const p of room.remoteParticipants.values()) {
-      p.setVolume(deafened ? 0 : (volumes[p.identity] ?? 1), Track.Source.Microphone);
+      p.setVolume(deafened || localMuted[p.identity] ? 0 : (volumes[p.identity] ?? 1), Track.Source.Microphone);
       p.setVolume(deafened ? 0 : (streamVolumes[p.identity] ?? 1), Track.Source.ScreenShareAudio);
     }
   }
@@ -261,6 +274,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
         bump();
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        if (track.kind === Track.Kind.Video) closePopout(track.sid);
         if (track.kind === Track.Kind.Audio) track.detach().forEach((el) => el.remove());
         bump();
       })
@@ -271,6 +285,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
         bump();
       })
       .on(RoomEvent.LocalTrackUnpublished, (pub) => {
+        closePopout(pub.trackSid);
         // transmissão encerrada por fora (ex.: janela capturada fechou): para o áudio junto
         if (pub.source === Track.Source.ScreenShare) void stopDesktopShareAudio();
         if (pub.source === Track.Source.ScreenShare && get().focus === `${room.localParticipant.identity}:screen`) set({ focus: null });
@@ -324,6 +339,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     watching: {},
     focus: null,
     volumes: load('concord.volumes', {} as Record<string, number>),
+    localMuted: load('concord.localMuted', {} as Record<string, true>),
     streamVolumes: load('concord.streamVolumes', {} as Record<string, number>),
     shareSettings: load('concord.share', DEFAULT_SHARE),
     audioSettings: load('concord.audio', DEFAULT_AUDIO),
@@ -341,7 +357,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
         if (get().channelId !== channelId) return; // trocou de sala durante a conexão
 
         const room = new Room({
-          adaptiveStream: true,
+          // não pausa o vídeo com a janela minimizada: a live pode estar aberta em outra janela
+          adaptiveStream: { pauseVideoInBackground: false },
           dynacast: true,
           audioOutput: { deviceId: get().audioSettings.outputId },
           videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
@@ -435,8 +452,13 @@ export const useVoice = create<VoiceStore>((set, get) => {
       if (!s.room) return;
       if (!has(s.permissions, P.STREAM)) return toast.info('Você não tem permissão para transmitir nesta sala.');
       try {
-        await s.room.localParticipant.setCameraEnabled(!s.cameraOn, undefined, {
-          videoEncoding: { maxBitrate: 2_000_000, maxFramerate: 30 },
+        const { videoInputId, cameraQuality } = s.audioSettings;
+        const hd = cameraQuality === '1080p';
+        await s.room.localParticipant.setCameraEnabled(!s.cameraOn, {
+          deviceId: videoInputId || undefined,
+          resolution: hd ? VideoPresets.h1080.resolution : VideoPresets.h720.resolution,
+        }, {
+          videoEncoding: { maxBitrate: hd ? 3_500_000 : 1_800_000, maxFramerate: 30 },
           simulcast: true,
         });
         syncLocalFlags();
@@ -521,6 +543,15 @@ export const useVoice = create<VoiceStore>((set, get) => {
 
     setFocus: (focus) => set({ focus }),
 
+    toggleLocalMute: (identity) => {
+      const localMuted = { ...get().localMuted };
+      if (localMuted[identity]) delete localMuted[identity];
+      else localMuted[identity] = true;
+      set({ localMuted });
+      save('concord.localMuted', localMuted);
+      applyVolumes();
+    },
+
     setVolume: (identity, volume, stream = false) => {
       if (stream) {
         const streamVolumes = { ...get().streamVolumes, [identity]: volume };
@@ -543,6 +574,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       try {
         if (patch.outputId) await room.switchActiveDevice('audiooutput', patch.outputId);
         if (patch.inputId && get().micOn) await room.switchActiveDevice('audioinput', patch.inputId);
+        if (patch.videoInputId && get().cameraOn) await room.switchActiveDevice('videoinput', patch.videoInputId);
         if ((patch.noiseSuppression !== undefined || patch.echoCancellation !== undefined) && get().micOn) {
           await enableMic(false);
           await enableMic(true);

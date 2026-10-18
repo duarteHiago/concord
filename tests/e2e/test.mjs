@@ -95,7 +95,23 @@ try {
       () => [...document.querySelectorAll('video')].filter((v) => v.videoWidth > 0 && !v.paused).length,
     );
     check(playing >= 1, 'B recebe o vídeo da tela de A');
+
+    // transmissão desacoplada em outra janela
+    const popupPromise = b.page.waitForEvent('popup', { timeout: 10000 }).catch(() => null);
+    await b.page.locator('[aria-label^="Abrir em outra janela"]').first().click();
+    const popup = await popupPromise;
+    if (popup) await popup.waitForTimeout(2500);
+    const popupPlaying = popup
+      ? await popup.evaluate(() => [...document.querySelectorAll('video')].some((v) => v.videoWidth > 0 && !v.paused))
+      : false;
+    check(popupPlaying, 'B abre a transmissão em outra janela');
+    await popup?.close();
   }
+
+  // clicar num participante da sala abre o perfil dele
+  await b.page.getByRole('button', { name: 'Ver todos em grade' }).click().catch(() => {});
+  await b.page.locator('[title^="Clique para ver o perfil"]').first().click();
+  check(await b.page.getByText('Membro desde').isVisible().catch(() => false), 'clicar no participante abre o perfil');
   exitCode = failures.length ? 1 : 0;
 } catch (err) {
   console.log('✘ erro:', err.message);

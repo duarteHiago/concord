@@ -16,6 +16,7 @@ export type Modal =
   | { type: 'userSettings' }
   | { type: 'shareScreen' }
   | { type: 'nickname'; serverId: string; userId: string }
+  | { type: 'recoveryCode'; code: string; next?: Modal; afterReset?: boolean }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {
@@ -39,6 +40,7 @@ interface AppState {
   bootstrap: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string, displayName: string) => Promise<void>;
+  resetPassword: (username: string, code: string, newPassword: string) => Promise<void>;
   logout: () => void;
   setMe: (me: Me) => void;
   saveTheme: (theme: ThemeSettings) => void;
@@ -181,8 +183,24 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     register: async (username, password, displayName) => {
-      const { token, user } = await api.post<{ token: string; user: Me }>('/auth/register', { username, password, displayName });
+      const { token, user, recoveryCode } = await api.post<{ token: string; user: Me; recoveryCode: string }>('/auth/register', {
+        username,
+        password,
+        displayName,
+      });
       startSession(token, user);
+      // mostra o código de recuperação primeiro; um convite pendente abre depois
+      set({ modal: { type: 'recoveryCode', code: recoveryCode, next: get().modal ?? undefined } });
+    },
+
+    resetPassword: async (username, code, newPassword) => {
+      const { token, user, recoveryCode } = await api.post<{ token: string; user: Me; recoveryCode: string }>('/auth/reset', {
+        username,
+        code,
+        newPassword,
+      });
+      startSession(token, user);
+      set({ modal: { type: 'recoveryCode', code: recoveryCode, next: get().modal ?? undefined, afterReset: true } });
     },
 
     logout: () => {

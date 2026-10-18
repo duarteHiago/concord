@@ -1,6 +1,6 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
 import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
@@ -26,7 +26,7 @@ export function UserSettingsModal() {
             ['profile', 'Perfil'],
             ['appearance', 'Aparência'],
             ['notifications', 'Notificações'],
-            ['audio', 'Voz e áudio'],
+            ['audio', 'Voz e vídeo'],
             ['account', 'Conta'],
           ] as const
         ).map(([id, label]) => (
@@ -455,11 +455,93 @@ function Notifications() {
 
 // ------------------------------------------------------------------ Áudio
 
+function CameraSettings({ cameras }: { cameras: MediaDeviceInfo[] }) {
+  const settings = useVoice((s) => s.audioSettings);
+  const setAudioSettings = useVoice((s) => s.setAudioSettings);
+  const [preview, setPreview] = useState(false);
+  const [error, setError] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const deviceId = settings.videoInputId || cameras[0]?.deviceId || '';
+
+  // prévia: abre a câmera só enquanto o botão estiver ligado, e fecha ao sair da aba
+  useEffect(() => {
+    if (!preview) return;
+    let stream: MediaStream | null = null;
+    let cancelled = false;
+    setError('');
+    navigator.mediaDevices
+      .getUserMedia({ video: deviceId ? { deviceId: { exact: deviceId }, width: 1280, height: 720 } : true })
+      .then((s) => {
+        if (cancelled) return s.getTracks().forEach((t) => t.stop());
+        stream = s;
+        if (videoRef.current) videoRef.current.srcObject = s;
+      })
+      .catch((e: Error) => setError(e.name === 'NotAllowedError' ? 'Permissão da câmera negada.' : `Não foi possível abrir a câmera: ${e.message}`));
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, [preview, deviceId]);
+
+  return (
+    <div className="space-y-3">
+      <label className="block">
+        <SectionTitle>Câmera</SectionTitle>
+        <select
+          value={deviceId}
+          onChange={(e) => void setAudioSettings({ videoInputId: e.target.value })}
+          className="h-11 w-full rounded-2xl bg-surface-3 px-3 text-sm outline-none"
+        >
+          {cameras.length === 0 && <option value="">Nenhuma câmera encontrada</option>}
+          {cameras.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || 'Câmera sem nome'}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex items-center gap-2">
+        {(['720p', '1080p'] as const).map((q) => (
+          <button
+            key={q}
+            onClick={() => void setAudioSettings({ cameraQuality: q })}
+            className={cx(
+              'h-9 rounded-full px-4 text-sm font-bold transition-colors',
+              settings.cameraQuality === q ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg',
+            )}
+          >
+            {q}
+          </button>
+        ))}
+        <span className="text-xs text-fg-subtle">1080p usa mais internet de quem envia.</span>
+      </div>
+      <div className="overflow-hidden rounded-2xl bg-surface-0">
+        {preview ? (
+          <video ref={videoRef} autoPlay playsInline muted className="aspect-video w-full -scale-x-100 bg-black object-cover" />
+        ) : (
+          <div className="flex aspect-video items-center justify-center">
+            <Button variant="secondary" disabled={cameras.length === 0} onClick={() => setPreview(true)}>
+              Testar câmera
+            </Button>
+          </div>
+        )}
+      </div>
+      {preview && (
+        <Button variant="ghost" onClick={() => setPreview(false)}>
+          Desligar prévia
+        </Button>
+      )}
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </div>
+  );
+}
+
 function Audio() {
   const settings = useVoice((s) => s.audioSettings);
   const setAudioSettings = useVoice((s) => s.setAudioSettings);
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
   const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -473,6 +555,7 @@ function Audio() {
         }
         setInputs(devices.filter((d) => d.kind === 'audioinput'));
         setOutputs(devices.filter((d) => d.kind === 'audiooutput'));
+        setCameras(devices.filter((d) => d.kind === 'videoinput'));
       } catch {
         toast.error('Não foi possível listar os dispositivos de áudio.');
       }
@@ -497,6 +580,7 @@ function Audio() {
     <div className="space-y-4">
       {select('Microfone', settings.inputId, inputs, (inputId) => void setAudioSettings({ inputId }))}
       {outputs.length > 0 && select('Saída de áudio', settings.outputId, outputs, (outputId) => void setAudioSettings({ outputId }))}
+      <CameraSettings cameras={cameras} />
       <div className="divide-y divide-line rounded-xl bg-surface-0">
         <div className="flex items-center justify-between p-3">
           <div>
@@ -518,6 +602,42 @@ function Audio() {
 }
 
 // ------------------------------------------------------------------ Conta
+
+function RecoverySection() {
+  const hasCode = useApp((s) => !!s.me?.hasRecoveryCode);
+  const openModal = useApp((s) => s.openModal);
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function generate() {
+    setLoading(true);
+    try {
+      const { code } = await api.post<{ code: string }>('/me/recovery-code', { password });
+      setPassword('');
+      openModal({ type: 'recoveryCode', code, next: { type: 'userSettings' } });
+    } catch (err) {
+      toast.error(err);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className={cx('space-y-3 rounded-2xl p-4', hasCode ? 'bg-surface-0' : 'bg-warn/10 ring-1 ring-warn/40')}>
+      <h3 className="font-semibold">Código de recuperação</h3>
+      <p className="text-sm text-fg-muted">
+        {hasCode
+          ? 'Você já tem um código. Gerar outro invalida o anterior.'
+          : 'Você ainda não tem um código. Sem ele, se esquecer a senha, só quem administra o servidor consegue redefini-la.'}
+      </p>
+      <div className="flex items-end gap-2">
+        <Input label="Senha atual" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="flex-1" />
+        <Button variant={hasCode ? 'secondary' : 'primary'} disabled={!password} loading={loading} onClick={generate} className="h-11 shrink-0">
+          {hasCode ? 'Gerar novo código' : 'Gerar código'}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function DesktopServer() {
   const [server, setServer] = useState('');
@@ -591,6 +711,7 @@ function Account() {
   return (
     <div className="space-y-5">
       {desktop && <DesktopServer />}
+      <RecoverySection />
       <div className="space-y-3">
         <h3 className="font-semibold">Alterar senha</h3>
         <Input label="Senha atual" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />

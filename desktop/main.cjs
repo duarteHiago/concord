@@ -92,8 +92,23 @@ function createWindow() {
   win.on('close', remember);
   win.on('focus', () => win?.flashFrame(false));
 
-  // links externos abrem no navegador padrão
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  // links externos abrem no navegador padrão; janelas em branco (about:blank) são a
+  // transmissão aberta em outra janela, montada pela própria página do Concord
+  win.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    if (url === 'about:blank' && frameName.startsWith('concord-live-')) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 1280,
+          height: 760,
+          backgroundColor: '#000000',
+          autoHideMenuBar: true,
+          title: 'Transmissão · Concord',
+          icon: path.join(__dirname, 'build', 'icon.png'),
+          webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
+        },
+      };
+    }
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });

@@ -42,7 +42,72 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <ConfirmModal {...modal} />;
     case 'nickname':
       return <NicknameModal serverId={modal.serverId} userId={modal.userId} />;
+    case 'recoveryCode':
+      return <RecoveryCodeModal {...modal} />;
   }
+}
+
+function RecoveryCodeModal({ code, next, afterReset }: Extract<ModalState, { type: 'recoveryCode' }>) {
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const me = useApp((s) => s.me);
+  const finish = () => {
+    useApp.setState({ modal: next ?? null, me: me ? { ...me, hasRecoveryCode: true } : me });
+  };
+
+  function download() {
+    const text = `Código de recuperação do Concord\nConta: @${me?.username}\nSite: ${location.origin}\n\n${code}\n\nUse em "Esqueci minha senha" na tela de login. Depois de usado, um novo código é gerado.\n`;
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `concord-recuperacao-${me?.username ?? 'conta'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setSaved(true);
+  }
+
+  return (
+    <Modal
+      title={afterReset ? 'Senha redefinida!' : 'Guarde seu código de recuperação'}
+      subtitle={
+        afterReset
+          ? 'O código antigo deixou de valer. Este é o seu novo código de recuperação:'
+          : 'Se você esquecer a senha, é com ele que você entra de novo. Ele só aparece agora.'
+      }
+      onClose={() => saved && finish()}
+      footer={
+        <Button disabled={!saved} onClick={finish}>
+          Já guardei, continuar
+        </Button>
+      }
+    >
+      <div className="rounded-2xl bg-surface-0 p-5 text-center font-mono text-2xl font-bold tracking-widest select-all">{code}</div>
+      <div className="mt-3 flex gap-2">
+        <Button
+          variant="secondary"
+          className="flex-1"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(code);
+              setCopied(true);
+              setSaved(true);
+            } catch {
+              toast.error('Não foi possível copiar. Selecione o código e copie manualmente.');
+            }
+          }}
+        >
+          {copied ? 'Copiado!' : 'Copiar'}
+        </Button>
+        <Button variant="secondary" className="flex-1" onClick={download}>
+          Baixar .txt
+        </Button>
+      </div>
+      <label className="mt-4 flex items-center gap-2 text-sm text-fg-muted">
+        <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
+        Guardei o código num lugar seguro
+      </label>
+    </Modal>
+  );
 }
 
 function NicknameModal({ serverId, userId }: { serverId: string; userId: string }) {

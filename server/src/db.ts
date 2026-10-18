@@ -106,6 +106,7 @@ addColumn('users', 'banner_color', 'TEXT');
 addColumn('users', 'bio', "TEXT NOT NULL DEFAULT ''");
 addColumn('users', 'settings', "TEXT NOT NULL DEFAULT '{}'");
 addColumn('servers', 'icon_url', 'TEXT');
+addColumn('users', 'recovery_hash', 'TEXT');
 
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
@@ -161,6 +162,7 @@ export interface UserRow {
   banner_color: string | null;
   bio: string;
   settings: string;
+  recovery_hash: string | null;
   created_at: number;
 }
 
