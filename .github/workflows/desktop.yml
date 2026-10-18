@@ -58,7 +58,9 @@ jobs:
         working-directory: desktop
         shell: bash
         run: |
-          npx --yes @electron/asar@3.4.1 list release/win-unpacked/resources/app.asar | grep -q "node_modules/electron-updater/package.json"
+          # no Windows o asar lista os caminhos com "\"
+          npx --yes @electron/asar@3.4.1 list release/win-unpacked/resources/app.asar > asar.txt
+          grep -E 'node_modules[\\/]electron-updater[\\/]package\.json' asar.txt
           ls release
           cat release/latest.yml
 
