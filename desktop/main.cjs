@@ -256,6 +256,84 @@ handle('concord:set-server', (_e, url) => {
 
 handle('concord:reload', () => void win?.loadURL(config.server));
 
+// ------------------------------------------------------------------ atividade ("Jogando…", "Ouvindo…")
+//
+// Só lê informações locais do Windows, sem login: o jogo aberto pela Steam (registro
+// RunningAppID + manifesto do jogo) e a música no título da janela do Spotify.
+
+const { execFile } = require('node:child_process');
+
+const runCmd = (cmd, args) =>
+  new Promise((resolve) =>
+    execFile(cmd, args, { windowsHide: true, timeout: 8000, encoding: 'utf8' }, (err, stdout) => resolve(err ? '' : String(stdout))),
+  );
+
+const steamNames = new Map();
+
+async function steamGame() {
+  const out = await runCmd('reg', ['query', 'HKCU\\Software\\Valve\\Steam', '/v', 'RunningAppID']);
+  const id = parseInt(/RunningAppID\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(out)?.[1] ?? '0', 16);
+  if (!id) return null;
+  if (steamNames.has(id)) return steamNames.get(id);
+
+  let name = null;
+  const steamPath = /SteamPath\s+REG_SZ\s+(.+)/i.exec(await runCmd('reg', ['query', 'HKCU\\Software\\Valve\\Steam', '/v', 'SteamPath']))?.[1]?.trim();
+  if (steamPath) {
+    const libraries = [steamPath];
+    try {
+      const vdf = fs.readFileSync(path.join(steamPath, 'steamapps', 'libraryfolders.vdf'), 'utf8');
+      for (const m of vdf.matchAll(/"path"\s+"([^"]+)"/g)) libraries.push(m[1].replace(/\\\\/g, '\\'));
+    } catch {
+      // sem bibliotecas extras
+    }
+    for (const lib of libraries) {
+      try {
+        const acf = fs.readFileSync(path.join(lib, 'steamapps', `appmanifest_${id}.acf`), 'utf8');
+        name = /"name"\s+"([^"]+)"/.exec(acf)?.[1] ?? null;
+        if (name) break;
+      } catch {
+        // não está nesta biblioteca
+      }
+    }
+  }
+  name ??= 'um jogo da Steam';
+  steamNames.set(id, name);
+  return name;
+}
+
+async function spotifyTrack() {
+  const script =
+    '[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Process Spotify -ErrorAction SilentlyContinue | ' +
+    'Where-Object { $_.MainWindowTitle } | Select-Object -First 1 -ExpandProperty MainWindowTitle';
+  const title = (await runCmd('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script])).trim();
+  // pausado o título é só "Spotify"/"Spotify Premium"; tocando é "Artista - Música"
+  if (!title || /^Spotify( Free| Premium)?$/i.test(title) || !title.includes(' - ')) return null;
+  return title.slice(0, 120);
+}
+
+let currentActivity = null;
+
+async function pollActivity() {
+  if (process.platform !== 'win32') return;
+  let next = null;
+  try {
+    const game = await steamGame();
+    if (game) next = { type: 'playing', name: game };
+    else {
+      const track = await spotifyTrack();
+      if (track) next = { type: 'listening', name: 'Spotify', details: track };
+    }
+  } catch {
+    next = null;
+  }
+  const changed = JSON.stringify(next) !== JSON.stringify(currentActivity && { ...currentActivity, since: undefined });
+  if (!changed) return;
+  currentActivity = next && { ...next, since: currentActivity?.name === next.name ? currentActivity.since : Date.now() };
+  win?.webContents.send('concord:activity', currentActivity);
+}
+
+handle('concord:activity', () => currentActivity);
+
 // ------------------------------------------------------------------ chamar atenção (estilo MSN)
 
 const activeNotifications = new Set(); // evita que o coletor de lixo descarte a notificação antes do clique
@@ -396,6 +474,8 @@ app.whenReady().then(() => {
   setupSession();
   createWindow();
   setupAutoUpdate();
+  setTimeout(() => void pollActivity(), 4_000);
+  setInterval(() => void pollActivity(), 15_000);
 });
 
 app.on('before-quit', stopCapture);

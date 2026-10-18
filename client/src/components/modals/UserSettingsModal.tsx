@@ -1,5 +1,6 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
+import { BotsTab } from './BotsTab';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
@@ -13,7 +14,7 @@ import { Avatar, Button, Input, Modal, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
-type Tab = 'profile' | 'appearance' | 'notifications' | 'audio' | 'account';
+type Tab = 'profile' | 'appearance' | 'notifications' | 'audio' | 'bots' | 'account';
 
 export function UserSettingsModal() {
   const close = useApp((s) => s.closeModal);
@@ -27,6 +28,7 @@ export function UserSettingsModal() {
             ['appearance', 'Aparência'],
             ['notifications', 'Notificações'],
             ['audio', 'Voz e vídeo'],
+            ['bots', 'Bots'],
             ['account', 'Conta'],
           ] as const
         ).map(([id, label]) => (
@@ -42,6 +44,7 @@ export function UserSettingsModal() {
       {tab === 'profile' && <Profile />}
       {tab === 'appearance' && <Appearance />}
       {tab === 'notifications' && <Notifications />}
+      {tab === 'bots' && <BotsTab />}
       {tab === 'audio' && <Audio />}
       {tab === 'account' && <Account />}
     </Modal>
@@ -63,13 +66,29 @@ function Profile() {
   const [bio, setBio] = useState(me.bio);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const saveSettings = useApp((s) => s.saveSettings);
+  const [customStatus, setCustomStatus] = useState(me.settings.customStatus ?? '');
+
+  async function changeBanner() {
+    const file = await pickImage();
+    if (!file) return;
+    setUploadingBanner(true);
+    try {
+      setMe(await uploadImage<Me>('/me/banner', await prepareImage(file, 1500, false)));
+      toast.success('Capa atualizada');
+    } catch (err) {
+      toast.error(err);
+    }
+    setUploadingBanner(false);
+  }
 
   async function changeAvatar() {
     const file = await pickImage();
     if (!file) return;
     setUploading(true);
     try {
-      setMe(await uploadImage<Me>('/me/avatar', await prepareImage(file, 256, true)));
+      setMe(await uploadImage<Me>('/me/avatar', await prepareImage(file, 512, true)));
       toast.success('Foto de perfil atualizada');
     } catch (err) {
       toast.error(err);
@@ -81,7 +100,23 @@ function Profile() {
     <div className="space-y-5">
       {/* prévia do cartão de perfil */}
       <div className="overflow-hidden rounded-2xl border border-line bg-surface-0">
-        <div className="h-20" style={{ background: `linear-gradient(135deg, ${banner ?? color}, ${banner ?? color}55)` }} />
+        <div className="group relative h-28">
+          {me.bannerUrl ? (
+            <img src={me.bannerUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full" style={{ background: `linear-gradient(135deg, ${banner ?? color}, ${banner ?? color}55)` }} />
+          )}
+          <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            <Button variant="secondary" className="h-8 px-3 text-xs" loading={uploadingBanner} onClick={changeBanner}>
+              <ImagePlus size={14} /> {me.bannerUrl ? 'Trocar capa' : 'Adicionar capa'}
+            </Button>
+            {me.bannerUrl && (
+              <Button variant="secondary" className="h-8 px-2" title="Remover capa" onClick={() => void api.del<Me>('/me/banner').then(setMe, toast.error)}>
+                <Trash2 size={14} />
+              </Button>
+            )}
+          </div>
+        </div>
         <div className="flex items-end gap-4 px-4 pb-4">
           <button onClick={changeAvatar} className="group relative -mt-10 rounded-full" title="Trocar foto">
             <Avatar name={name || me.username} color={color} src={me.avatarUrl} size={84} className="rounded-full ring-[6px] ring-surface-0" />
@@ -106,7 +141,32 @@ function Profile() {
         </div>
       </div>
 
+      <p className="-mt-2 text-xs text-fg-subtle">Foto e capa aceitam GIF animado (até 8 MB).</p>
+
       <Input label="Nome de exibição" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} hint="Em cada servidor você também pode usar um apelido diferente." />
+
+      <div className="flex items-end gap-2">
+        <Input
+          label="Status personalizado"
+          value={customStatus}
+          maxLength={80}
+          placeholder="Ex.: estudando para a prova, volto às 22h"
+          onChange={(e) => setCustomStatus(e.target.value)}
+          className="flex-1"
+        />
+        <Button variant="secondary" className="h-11 shrink-0" onClick={() => void saveSettings({ customStatus: customStatus.trim() }).then(() => toast.success('Status atualizado'))}>
+          Salvar status
+        </Button>
+      </div>
+      {desktop && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl bg-surface-0 p-4">
+          <div>
+            <div className="text-sm font-semibold">Mostrar o que estou jogando e ouvindo</div>
+            <div className="text-xs text-fg-muted">O app detecta o jogo aberto na Steam e a música tocando no Spotify.</div>
+          </div>
+          <Toggle checked={me.settings.shareActivity !== false} onChange={(v) => void saveSettings({ shareActivity: v })} />
+        </div>
+      )}
 
       <label className="block">
         <SectionTitle>Sobre mim</SectionTitle>

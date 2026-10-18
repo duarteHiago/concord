@@ -31,11 +31,12 @@ import {
   type MessageRow,
   type RoleRow,
   type ServerRow,
+  type SoundRow,
   type UserRow,
 } from './db.ts';
-import { color, fail, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
+import { color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
-import { removeUpload, saveImage } from './uploads.ts';
+import { removeUpload, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, normalize as normalizeCode, rotateRecoveryCode } from './recovery.ts';
 import {
   dropVoice,
@@ -63,7 +64,10 @@ const PALETTE = ['#5865f2', '#3ba55c', '#faa61a', '#ed4245', '#eb459e', '#9b59b6
 const pickColor = () => PALETTE[Math.floor(Math.random() * PALETTE.length)];
 const now = () => Date.now();
 
-type PublicUser = Pick<UserRow, 'id' | 'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio'>;
+type PublicUser = Pick<
+  UserRow,
+  'id' | 'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio' | 'banner_url' | 'is_bot'
+>;
 
 const userJson = (u: PublicUser) => ({
   id: u.id,
@@ -73,6 +77,8 @@ const userJson = (u: PublicUser) => ({
   avatarUrl: u.avatar_url,
   bannerColor: u.banner_color,
   bio: u.bio,
+  bannerUrl: u.banner_url,
+  bot: !!u.is_bot,
 });
 
 /** Dados do próprio usuário: inclui as preferências (tema etc.), que só ele vê. */
@@ -108,7 +114,7 @@ const messageJson = (m: MessageWithAuthor) => ({
   author: userJson({ ...m, id: m.author_id }),
 });
 
-const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio
+const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot
   FROM messages m JOIN users u ON u.id = m.author_id`;
 
 // ============================================================ Auth
@@ -136,6 +142,10 @@ api.post('/auth/register', async (req, res) => {
     password_hash: await bcrypt.hash(password, 10),
     avatar_color: pickColor(),
     avatar_url: null,
+    banner_url: null,
+    is_bot: 0,
+    bot_owner_id: null,
+    bot_token_hash: null,
     banner_color: null,
     bio: '',
     settings: '{}',
@@ -239,14 +249,14 @@ api.patch('/me', async (req, res) => {
 });
 
 /** Gera um novo código de recuperação (o antigo deixa de valer). Pede a senha atual. */
-api.post('/me/recovery-code', async (req, res) => {
+api.post('/me/recovery-code', humansOnly, async (req, res) => {
   const me = uid(res);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
   if (!(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
   res.json({ code: await rotateRecoveryCode(me) });
 });
 
-const imageBody = express.raw({ type: () => true, limit: '7mb' });
+const imageBody = express.raw({ type: () => true, limit: '9mb' });
 
 api.post('/me/avatar', imageBody, (req, res) => {
   const me = uid(res);
@@ -262,6 +272,25 @@ api.delete('/me/avatar', (_req, res) => {
   const me = uid(res);
   removeUpload(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url);
   run('UPDATE users SET avatar_url = NULL WHERE id = ?', me);
+  profileChanged(me);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+/** Capa do perfil (aceita GIF animado). */
+api.post('/me/banner', imageBody, (req, res) => {
+  const me = uid(res);
+  const old = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.banner_url;
+  const url = saveImage('banners', me, req.body);
+  run('UPDATE users SET banner_url = ? WHERE id = ?', url, me);
+  removeUpload(old);
+  profileChanged(me);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+api.delete('/me/banner', (_req, res) => {
+  const me = uid(res);
+  removeUpload(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.banner_url);
+  run('UPDATE users SET banner_url = NULL WHERE id = ?', me);
   profileChanged(me);
   res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
 });
@@ -291,7 +320,7 @@ api.get('/servers', (_req, res) => {
   res.json(rows.map(serverJson));
 });
 
-api.post('/servers', (req, res) => {
+api.post('/servers', humansOnly, (req, res) => {
   const me = uid(res);
   const name = str(req.body?.name, 'nome', 2, 50);
   const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, created_at: now() };
@@ -781,7 +810,7 @@ api.delete('/invites/:code', (req, res) => {
   res.json({ ok: true });
 });
 
-api.post('/invites/:code', (req, res) => {
+api.post('/invites/:code', humansOnly, (req, res) => {
   const me = uid(res);
   const invite = get<InviteRow>('SELECT * FROM invites WHERE code = ?', req.params.code);
   if (!invite || !inviteValid(invite)) fail(404, 'Convite inválido ou expirado');
@@ -820,8 +849,28 @@ api.post('/channels/:id/messages', async (req, res) => {
   run('INSERT INTO messages (id, channel_id, author_id, content, created_at) VALUES (?, ?, ?, ?, ?)', id, channel.id, me, content, now());
   const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
   await emitToChannel(channel, 'message:new', msg);
+  notifyMentions(channel, me, content, msg);
   res.json(msg);
 });
+
+/** @usuario avisa a pessoa; @todos avisa todo mundo que vê o canal (precisa de "Mencionar todos"). */
+function notifyMentions(channel: ChannelRow, authorId: string, content: string, msg: ReturnType<typeof messageJson>) {
+  const everyone = /(^|\s)@(todos|everyone|all)\b/i.test(content) && has(channelPermissions(channel, authorId), P.MENTION_EVERYONE);
+  const names = [...content.matchAll(/(^|\s)@([a-zA-Z0-9_.]{3,32})/g)].map((m) => m[2].toLowerCase());
+  if (!everyone && names.length === 0) return;
+
+  const members = all<{ id: string; username: string }>(
+    'SELECT u.id, u.username FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ?',
+    channel.server_id,
+  );
+  const targets = members.filter(
+    (m) => m.id !== authorId && (everyone || names.includes(m.username.toLowerCase())) && has(channelPermissions(channel, m.id), P.VIEW_CHANNEL),
+  );
+  const server = getServer(channel.server_id);
+  for (const t of targets) {
+    emitToUser(t.id, 'mention', { message: msg, serverId: server.id, serverName: server.name, channelName: channel.name, everyone });
+  }
+}
 
 api.patch('/messages/:id', async (req, res) => {
   const me = uid(res);
@@ -847,7 +896,7 @@ api.delete('/messages/:id', async (req, res) => {
 
 // ============================================================ Voz (LiveKit)
 
-api.post('/channels/:id/voice-token', async (req, res) => {
+api.post('/channels/:id/voice-token', humansOnly, async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.CONNECT);
   if (channel.type !== 'voice') fail(400, 'Este canal não é uma sala de voz');
@@ -866,4 +915,174 @@ api.post('/channels/:id/voice-token', async (req, res) => {
     serverMuted: isServerMuted(channel.server_id, me),
   });
   res.json({ token, url: config.livekit.publicUrl || null, permissions: perms });
+});
+
+// ============================================================ Mesa de sons
+
+const soundJson = (s: SoundRow) => ({
+  id: s.id,
+  serverId: s.server_id,
+  name: s.name,
+  url: s.url,
+  uploaderId: s.uploader_id,
+  createdAt: s.created_at,
+});
+
+const MAX_SOUNDS = 50;
+const lastSoundPlay = new Map<string, number>();
+
+api.get('/servers/:id/sounds', (req, res) => {
+  const server = requireMember(req.params.id, uid(res));
+  res.json(all<SoundRow>('SELECT * FROM sounds WHERE server_id = ? ORDER BY name COLLATE NOCASE', server.id).map(soundJson));
+});
+
+api.post('/servers/:id/sounds', humansOnly, express.raw({ type: () => true, limit: '1200kb' }), (req, res) => {
+  const me = uid(res);
+  const server = requireServerPerm(req.params.id, me, P.USE_SOUNDBOARD);
+  const name = str(req.query.name, 'nome do som', 1, 32);
+  const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM sounds WHERE server_id = ?', server.id)!.n;
+  if (count >= MAX_SOUNDS) fail(400, `A mesa de sons já tem ${MAX_SOUNDS} sons. Apague algum antes.`);
+  const sound: SoundRow = { id: randomUUID(), server_id: server.id, name, url: saveSound(server.id, req.body), uploader_id: me, created_at: now() };
+  run(
+    'INSERT INTO sounds (id, server_id, name, url, uploader_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    sound.id,
+    sound.server_id,
+    name,
+    sound.url,
+    me,
+    sound.created_at,
+  );
+  emitToServer(server.id, 'sounds:changed', { serverId: server.id });
+  res.json(soundJson(sound));
+});
+
+api.delete('/sounds/:id', (req, res) => {
+  const me = uid(res);
+  const sound = get<SoundRow>('SELECT * FROM sounds WHERE id = ?', req.params.id) ?? fail(404, 'Som não encontrado');
+  if (sound.uploader_id !== me) requireServerPerm(sound.server_id, me, P.MANAGE_SERVER);
+  run('DELETE FROM sounds WHERE id = ?', sound.id);
+  removeUpload(sound.url);
+  emitToServer(sound.server_id, 'sounds:changed', { serverId: sound.server_id });
+  res.json({ ok: true });
+});
+
+/** Toca um som para todos que estão na mesma sala de voz de quem tocou. */
+api.post('/sounds/:id/play', (req, res) => {
+  const me = uid(res);
+  const sound = get<SoundRow>('SELECT * FROM sounds WHERE id = ?', req.params.id) ?? fail(404, 'Som não encontrado');
+  const v = getVoiceState(me);
+  if (!v || v.serverId !== sound.server_id) fail(400, 'Entre numa sala deste servidor para tocar sons');
+  if (!has(channelPermissions(getChannel(v!.channelId), me), P.USE_SOUNDBOARD)) fail(403, 'Você não pode usar a mesa de sons nesta sala');
+  const wait = (lastSoundPlay.get(me) ?? 0) + 1500 - now();
+  if (wait > 0) fail(429, 'Calma, um som de cada vez');
+  lastSoundPlay.set(me, now());
+  for (const s of voiceStatesFor(sound.server_id).filter((x) => x.channelId === v!.channelId)) {
+    emitToUser(s.userId, 'sound:play', { soundId: sound.id, url: sound.url, name: sound.name, userId: me, channelId: v!.channelId });
+  }
+  res.json({ ok: true });
+});
+
+// ============================================================ Bots
+
+const newBotToken = () => `cb_${randomBytes(32).toString('base64url')}`;
+
+function botJson(u: UserRow) {
+  const servers = all<{ id: string; name: string }>(
+    'SELECT s.id, s.name FROM members m JOIN servers s ON s.id = m.server_id WHERE m.user_id = ? ORDER BY s.name',
+    u.id,
+  );
+  return { ...userJson(u), ownerId: u.bot_owner_id, createdAt: u.created_at, servers };
+}
+
+function requireOwnBot(botId: string, me: string): UserRow {
+  const bot = get<UserRow>('SELECT * FROM users WHERE id = ? AND is_bot = 1', botId);
+  if (!bot || bot.bot_owner_id !== me) fail(404, 'Bot não encontrado');
+  return bot!;
+}
+
+const botById = (id: string) => botJson(get<UserRow>('SELECT * FROM users WHERE id = ?', id)!);
+
+api.get('/bots', humansOnly, (_req, res) => {
+  res.json(all<UserRow>('SELECT * FROM users WHERE is_bot = 1 AND bot_owner_id = ? ORDER BY created_at', uid(res)).map(botJson));
+});
+
+api.post('/bots', humansOnly, async (req, res) => {
+  const me = uid(res);
+  const name = str(req.body?.name, 'nome do bot', 2, 32);
+  const owned = get<{ n: number }>('SELECT COUNT(*) AS n FROM users WHERE is_bot = 1 AND bot_owner_id = ?', me)!.n;
+  if (owned >= 10) fail(400, 'Limite de 10 bots por conta');
+  const base = name.normalize('NFD').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().slice(0, 20) || 'bot';
+  let username = `${base}_bot`;
+  while (get('SELECT 1 FROM users WHERE username = ?', username)) username = `${base}_${randomBytes(2).toString('hex')}_bot`;
+  const token = newBotToken();
+  const id = randomUUID();
+  run(
+    `INSERT INTO users (id, username, display_name, password_hash, avatar_color, created_at, is_bot, bot_owner_id, bot_token_hash)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    id,
+    username,
+    name,
+    await bcrypt.hash(randomBytes(32).toString('hex'), 10), // bots não entram com senha
+    pickColor(),
+    now(),
+    me,
+    hashBotToken(token),
+  );
+  res.json({ bot: botById(id), token });
+});
+
+api.patch('/bots/:id', humansOnly, (req, res) => {
+  const bot = requireOwnBot(req.params.id, uid(res));
+  const name = optStr(req.body?.name, 'nome', 2, 32);
+  if (name) run('UPDATE users SET display_name = ? WHERE id = ?', name, bot.id);
+  const bio = optStr(req.body?.bio, 'descrição', 0, 190);
+  if (bio !== undefined) run('UPDATE users SET bio = ? WHERE id = ?', bio, bot.id);
+  profileChanged(bot.id);
+  res.json(botById(bot.id));
+});
+
+api.post('/bots/:id/avatar', humansOnly, imageBody, (req, res) => {
+  const bot = requireOwnBot(req.params.id, uid(res));
+  const url = saveImage('avatars', bot.id, req.body);
+  run('UPDATE users SET avatar_url = ? WHERE id = ?', url, bot.id);
+  removeUpload(bot.avatar_url);
+  profileChanged(bot.id);
+  res.json(botById(bot.id));
+});
+
+api.post('/bots/:id/token', humansOnly, (req, res) => {
+  const bot = requireOwnBot(req.params.id, uid(res));
+  const token = newBotToken();
+  run('UPDATE users SET bot_token_hash = ? WHERE id = ?', hashBotToken(token), bot.id);
+  res.json({ token });
+});
+
+api.delete('/bots/:id', humansOnly, (req, res) => {
+  const bot = requireOwnBot(req.params.id, uid(res));
+  const servers = all<{ server_id: string }>('SELECT server_id FROM members WHERE user_id = ?', bot.id);
+  removeUpload(bot.avatar_url);
+  run('DELETE FROM users WHERE id = ?', bot.id);
+  servers.forEach((s) => serverChanged(s.server_id));
+  res.json({ ok: true });
+});
+
+/** Adiciona o bot a um servidor onde você pode gerenciar o servidor. */
+api.post('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
+  const me = uid(res);
+  const bot = requireOwnBot(req.params.id, me);
+  const server = requireServerPerm(req.params.serverId, me, P.MANAGE_SERVER);
+  if (!isMember(server.id, bot.id)) {
+    run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', server.id, bot.id, now());
+    joinServerRoom(bot.id, server.id);
+    serverChanged(server.id);
+  }
+  res.json(botById(bot.id));
+});
+
+api.delete('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
+  const bot = requireOwnBot(req.params.id, uid(res));
+  run('DELETE FROM members WHERE server_id = ? AND user_id = ?', req.params.serverId, bot.id);
+  leaveServerRoom(bot.id, req.params.serverId);
+  serverChanged(req.params.serverId);
+  res.json(botById(bot.id));
 });

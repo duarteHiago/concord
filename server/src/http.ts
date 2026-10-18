@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
+import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { config } from './config.ts';
+import { get } from './db.ts';
 
 export class HttpError extends Error {
   status: number;
@@ -28,11 +30,32 @@ export function verifyToken(token: string | undefined): string | null {
   }
 }
 
+export const hashBotToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+/** Bots se autenticam com "Bot <token>" (na API) ou com o token puro (no socket). */
+export function botUserId(token: unknown): string | null {
+  if (typeof token !== 'string') return null;
+  const raw = token.startsWith('Bot ') ? token.slice(4) : token;
+  if (!raw.startsWith('cb_')) return null;
+  return get<{ id: string }>('SELECT id FROM users WHERE is_bot = 1 AND bot_token_hash = ?', hashBotToken(raw))?.id ?? null;
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
-  const userId = verifyToken(header?.startsWith('Bearer ') ? header.slice(7) : undefined);
+  let userId: string | null = null;
+  if (header?.startsWith('Bearer ')) userId = verifyToken(header.slice(7));
+  else if (header?.startsWith('Bot ')) {
+    userId = botUserId(header);
+    res.locals.isBot = !!userId;
+  }
   if (!userId) return res.status(401).json({ error: 'Não autenticado' });
   res.locals.userId = userId;
+  next();
+}
+
+/** Rotas que só fazem sentido para pessoas (conta, bots, voz). */
+export function humansOnly<P>(_req: Request<P>, res: Response, next: NextFunction) {
+  if (res.locals.isBot) return res.status(403).json({ error: 'Bots não podem usar esta rota' });
   next();
 }
 

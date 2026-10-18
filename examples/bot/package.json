@@ -1,0 +1,12 @@
+{
+  "name": "concord-bot-exemplo",
+  "private": true,
+  "type": "module",
+  "description": "Bot de exemplo para o Concord",
+  "scripts": {
+    "start": "node bot.mjs"
+  },
+  "dependencies": {
+    "socket.io-client": "4.8.1"
+  }
+}

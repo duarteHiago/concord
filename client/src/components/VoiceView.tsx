@@ -28,6 +28,9 @@ import { useActiveDetail, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { useVoice } from '../store/voice';
 import { Composer, MessageFeed } from './ChatView';
+import { MemberListBody } from './MemberList';
+import { SoundboardButton, SoundToast } from './Soundboard';
+import { VoiceEffectsButton } from './VoiceEffectsButton';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
@@ -41,6 +44,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
   const streamerMember = streamer && detail.members.find((m) => m.id === streamer.userId);
   const canChat = has(channel.permissions, P.VIEW_CHANNEL);
   const [chatOpen, setChatOpen] = useState(() => readFlag('concord.roomChat', true));
+  const [panelTab, setPanelTab] = useState<'chat' | 'members'>('chat');
   const toggleChat = () => {
     setChatOpen(!chatOpen);
     writeFlag('concord.roomChat', !chatOpen);
@@ -82,7 +86,10 @@ export function VoiceView({ channel }: { channel: Channel }) {
               Entrando na sala…
             </div>
           ) : (
-            <Stage detail={detail} />
+            <>
+              <Stage detail={detail} />
+              <SoundToast />
+            </>
           )}
         </section>
 
@@ -90,15 +97,41 @@ export function VoiceView({ channel }: { channel: Channel }) {
       </main>
 
       {canChat && chatOpen && (
-        <aside aria-label="Papo da sala" className="panel hidden w-[320px] shrink-0 flex-col overflow-hidden xl:flex">
-          <div className="flex items-center justify-between px-5 pt-4 pb-1">
-            <h2 className="text-lg font-bold">Papo da sala</h2>
-            <button onClick={toggleChat} aria-label="Fechar o papo da sala" title="Fechar" className="flex h-8 w-8 items-center justify-center rounded-full text-fg-muted hover:bg-surface-3 hover:text-fg">
+        <aside aria-label="Painel da sala" className="panel hidden w-[320px] shrink-0 flex-col overflow-hidden xl:flex">
+          <div className="flex items-center gap-1 px-3 pt-3 pb-1">
+            <div role="tablist" className="flex flex-1 gap-1 rounded-full bg-surface-0 p-1">
+              {(
+                [
+                  ['chat', 'Papo'],
+                  ['members', `Membros · ${detail.members.length}`],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={panelTab === id}
+                  onClick={() => setPanelTab(id)}
+                  className={cx(
+                    'h-8 flex-1 rounded-full font-display text-sm font-bold transition-colors',
+                    panelTab === id ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:text-fg',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={toggleChat} aria-label="Fechar o painel" title="Fechar" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-surface-3 hover:text-fg">
               <X size={16} />
             </button>
           </div>
-          <MessageFeed channel={channel} compact />
-          <Composer channel={channel} compact />
+          {panelTab === 'chat' ? (
+            <>
+              <MessageFeed channel={channel} compact />
+              <Composer channel={channel} compact />
+            </>
+          ) : (
+            <MemberListBody />
+          )}
         </aside>
       )}
     </>
@@ -324,7 +357,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
         className={cx('group relative overflow-hidden bg-black', shape, !focused && canView && 'cursor-pointer')}
       >
         {canView && track ? (
-          <VideoEl track={track} fit="contain" />
+          <ZoomableVideo track={track} />
         ) : canView ? (
           <div className="flex h-full items-center justify-center">
             <Spinner />
@@ -538,6 +571,8 @@ function ControlDock() {
         {round(serverMuted ? 'Silenciado por um moderador' : micOn ? 'Silenciar' : 'Ativar microfone', () => void toggleMic(), micOn ? <Mic size={20} /> : <MicOff size={20} />, micOn ? 'default' : 'off')}
         {round(deafened ? 'Ativar áudio' : 'Ensurdecer', () => void toggleDeafen(), deafened ? <HeadphoneOff size={20} /> : <Headphones size={20} />, deafened ? 'off' : 'default')}
         {round(cameraOn ? 'Desligar câmera' : 'Ligar câmera', () => void toggleCamera(), cameraOn ? <Video size={20} /> : <VideoOff size={20} />)}
+        <VoiceEffectsButton />
+        <SoundboardButton />
         <button
           onClick={() => (sharing ? void stopShare() : openModal({ type: 'shareScreen' }))}
           className={cx(
@@ -551,6 +586,83 @@ function ControlDock() {
         {sharing && round('Trocar qualidade ou fonte', () => openModal({ type: 'shareScreen' }), <Settings2 size={20} />)}
         {round('Sair da sala', () => void leave(), <PhoneOff size={20} />, 'danger')}
       </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ zoom na transmissão
+
+/** Vídeo da transmissão com zoom pela rolagem do mouse (no ponto do cursor) e arraste para mover. */
+function ZoomableVideo({ track }: { track: LocalTrack | RemoteTrack }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+
+  const clampOffset = (scale: number, x: number, y: number) => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!rect) return { x, y };
+    const maxX = (rect.width * (scale - 1)) / 2;
+    const maxY = (rect.height * (scale - 1)) / 2;
+    return { x: Math.max(-maxX, Math.min(maxX, x)), y: Math.max(-maxY, Math.min(maxY, y)) };
+  };
+
+  // o listener de wheel precisa ser não-passivo para impedir a rolagem da página
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      setView((prev) => {
+        const scale = Math.min(6, Math.max(1, prev.scale * Math.exp(-e.deltaY * 0.0015)));
+        if (scale === 1) return { scale: 1, x: 0, y: 0 };
+        // mantém parado o ponto que está sob o cursor
+        const cx = e.clientX - rect.left - rect.width / 2;
+        const cy = e.clientY - rect.top - rect.height / 2;
+        const k = scale / prev.scale;
+        return { scale, ...clampOffset(scale, cx - (cx - prev.x) * k, cy - (cy - prev.y) * k) };
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const zoomed = view.scale > 1.01;
+
+  return (
+    <div
+      ref={box}
+      className={cx('relative h-full w-full overflow-hidden', zoomed && (drag.current ? 'cursor-grabbing' : 'cursor-grab'))}
+      onPointerDown={(e) => {
+        if (!zoomed || e.button !== 0) return;
+        e.stopPropagation();
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        drag.current = { x: e.clientX, y: e.clientY, ox: view.x, oy: view.y };
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        setView((prev) => ({ ...prev, ...clampOffset(prev.scale, d.ox + e.clientX - d.x, d.oy + e.clientY - d.y) }));
+      }}
+      onPointerUp={() => {
+        drag.current = null;
+      }}
+      onClick={(e) => zoomed && e.stopPropagation()}
+    >
+      <div className="h-full w-full" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: 'center' }}>
+        <VideoEl track={track} fit="contain" />
+      </div>
+      {zoomed && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setView({ scale: 1, x: 0, y: 0 });
+          }}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-surface-1/85 px-4 py-1.5 text-xs font-bold backdrop-blur hover:bg-surface-1"
+        >
+          {Math.round(view.scale * 100)}% · voltar ao normal
+        </button>
+      )}
     </div>
   );
 }

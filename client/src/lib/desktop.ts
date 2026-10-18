@@ -42,6 +42,8 @@ interface DesktopBridge {
   notify?(opts: { title: string; body: string; data?: unknown }): Promise<void>;
   shakeWindow?(): Promise<void>;
   onNotificationClick?(cb: (data: unknown) => void): () => void;
+  getActivity?(): Promise<unknown>;
+  onActivity?(cb: (activity: unknown) => void): () => void;
 }
 
 export const desktop: DesktopBridge | undefined = (window as unknown as { concordDesktop?: DesktopBridge }).concordDesktop;

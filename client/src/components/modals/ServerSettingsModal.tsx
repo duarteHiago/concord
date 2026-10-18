@@ -84,7 +84,7 @@ function Overview({ detail }: { detail: ServerDetail }) {
     if (!file) return;
     setUploading(true);
     try {
-      await uploadImage(`/servers/${detail.server.id}/icon`, await prepareImage(file, 256, true));
+      await uploadImage(`/servers/${detail.server.id}/icon`, await prepareImage(file, 512, true));
       toast.success('Ícone atualizado');
     } catch (err) {
       toast.error(err);

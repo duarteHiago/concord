@@ -17,6 +17,8 @@ export const P = {
   ADMINISTRATOR: 1 << 13,
   CHANGE_NICKNAME: 1 << 14,
   MANAGE_NICKNAMES: 1 << 15,
+  USE_SOUNDBOARD: 1 << 16,
+  MENTION_EVERYONE: 1 << 17,
 } as const;
 
 export type PermissionKey = keyof typeof P;
@@ -24,10 +26,16 @@ export type PermissionKey = keyof typeof P;
 export const ALL_PERMISSIONS = Object.values(P).reduce((a, b) => a | b, 0);
 
 export const DEFAULT_EVERYONE =
-  P.VIEW_CHANNEL | P.SEND_MESSAGES | P.CONNECT | P.SPEAK | P.STREAM | P.CREATE_INVITE | P.CHANGE_NICKNAME;
+  P.VIEW_CHANNEL | P.SEND_MESSAGES | P.CONNECT | P.SPEAK | P.STREAM | P.CREATE_INVITE | P.CHANGE_NICKNAME | P.USE_SOUNDBOARD;
 
 export const DEFAULT_MODERATOR =
-  DEFAULT_EVERYONE | P.MANAGE_MESSAGES | P.MUTE_MEMBERS | P.MOVE_MEMBERS | P.KICK_MEMBERS | P.MANAGE_NICKNAMES;
+  DEFAULT_EVERYONE |
+  P.MANAGE_MESSAGES |
+  P.MUTE_MEMBERS |
+  P.MOVE_MEMBERS |
+  P.KICK_MEMBERS |
+  P.MANAGE_NICKNAMES |
+  P.MENTION_EVERYONE;
 
 export interface PermissionInfo {
   key: PermissionKey;
@@ -43,9 +51,11 @@ export const PERMISSION_INFO: PermissionInfo[] = [
   { key: 'CHANGE_NICKNAME', label: 'Alterar o próprio apelido', description: 'Permite usar um apelido diferente neste servidor.', category: 'Geral', channel: false },
   { key: 'SEND_MESSAGES', label: 'Enviar mensagens', description: 'Permite enviar mensagens nos canais de texto.', category: 'Texto', channel: true },
   { key: 'MANAGE_MESSAGES', label: 'Gerenciar mensagens', description: 'Permite apagar mensagens de outras pessoas.', category: 'Texto', channel: true },
+  { key: 'MENTION_EVERYONE', label: 'Mencionar todos', description: 'Permite usar @todos (ou /all), que notifica todo mundo do canal.', category: 'Texto', channel: true },
   { key: 'CONNECT', label: 'Conectar', description: 'Permite entrar nas salas de voz.', category: 'Voz e transmissão', channel: true },
   { key: 'SPEAK', label: 'Falar', description: 'Permite usar o microfone nas salas.', category: 'Voz e transmissão', channel: true },
   { key: 'STREAM', label: 'Transmitir', description: 'Permite transmitir tela, janela ou câmera.', category: 'Voz e transmissão', channel: true },
+  { key: 'USE_SOUNDBOARD', label: 'Usar a mesa de sons', description: 'Permite tocar e enviar sons da mesa de sons nas salas.', category: 'Voz e transmissão', channel: true },
   { key: 'MUTE_MEMBERS', label: 'Silenciar membros', description: 'Permite silenciar o microfone e a transmissão de outros.', category: 'Moderação', channel: true },
   { key: 'MOVE_MEMBERS', label: 'Desconectar membros', description: 'Permite remover pessoas das salas de voz.', category: 'Moderação', channel: true },
   { key: 'KICK_MEMBERS', label: 'Expulsar membros', description: 'Permite expulsar membros do servidor.', category: 'Moderação', channel: false },

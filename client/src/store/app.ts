@@ -2,8 +2,11 @@ import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { applyTheme, normalizeTheme } from '../lib/theme';
+import { receiveMention, type MentionEvent } from '../lib/mentions';
 import { receiveNudge } from '../lib/nudge';
-import type { Me, Message, NudgeEvent, PresenceStatus, ServerDetail, ServerSummary, ThemeSettings, UserSettings, VoiceState } from '../lib/types';
+import { startActivityReporter } from '../lib/activity';
+import { playSoundboard } from '../lib/soundboard';
+import type { Me, Message, NudgeEvent, Presence, ServerDetail, ServerSummary, Sound, ThemeSettings, UserSettings, VoiceState } from '../lib/types';
 import { toast } from './toast';
 import { useVoice } from './voice';
 
@@ -17,6 +20,7 @@ export type Modal =
   | { type: 'shareScreen' }
   | { type: 'nickname'; serverId: string; userId: string }
   | { type: 'recoveryCode'; code: string; next?: Modal; afterReset?: boolean }
+  | { type: 'image'; src: string; alt: string }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {
@@ -29,7 +33,9 @@ interface AppState {
   messages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
   voiceStates: Record<string, VoiceState[]>;
-  online: Record<string, PresenceStatus>;
+  online: Record<string, Presence>;
+  sounds: Record<string, Sound[]>;
+  loadSounds: (serverId: string) => Promise<void>;
   /** chamada de atenção recebida, mostrada no cartão do app */
   nudge: NudgeEvent | null;
   typing: Record<string, Record<string, number>>;
@@ -106,16 +112,27 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('voice:states', ({ serverId, states }: { serverId: string; states: VoiceState[] }) => {
       set({ voiceStates: { ...get().voiceStates, [serverId]: states } });
     });
-    socket.on('presence:list', (list: { userId: string; status: PresenceStatus }[]) => {
-      set({ online: Object.fromEntries(list.map((p) => [p.userId, p.status])) });
+    type PresencePayload = Partial<Presence> & { userId: string; online?: boolean };
+    const toPresence = (p: PresencePayload): Presence => ({
+      status: p.status === 'dnd' ? 'dnd' : 'online',
+      customStatus: p.customStatus ?? '',
+      activity: p.activity ?? null,
     });
-    socket.on('presence', ({ userId, online, status }: { userId: string; online: boolean; status?: PresenceStatus }) => {
+    socket.on('presence:list', (list: PresencePayload[]) => {
+      set({ online: Object.fromEntries(list.map((p) => [p.userId, toPresence(p)])) });
+    });
+    socket.on('presence', (p: PresencePayload) => {
       const next = { ...get().online };
-      if (online) next[userId] = status ?? 'online';
-      else delete next[userId];
+      if (p.online) next[p.userId] = toPresence(p);
+      else delete next[p.userId];
       set({ online: next });
     });
     socket.on('nudge', (n: NudgeEvent) => receiveNudge(n));
+    socket.on('mention', (m: MentionEvent) => receiveMention(m));
+    socket.on('sounds:changed', ({ serverId }: { serverId: string }) => {
+      if (get().sounds[serverId]) void get().loadSounds(serverId);
+    });
+    socket.on('sound:play', (e: { url: string; userId: string; channelId: string; name: string }) => playSoundboard(e));
     socket.on('message:new', (msg: Message) => {
       const list = get().messages[msg.channelId];
       const typing = { ...get().typing[msg.channelId] };
@@ -138,6 +155,7 @@ export const useApp = create<AppState>((set, get) => {
       set({ typing: { ...get().typing, [channelId]: { ...get().typing[channelId], [userId]: Date.now() + 6000 } } });
     });
     useVoice.getState().bindSocket(socket);
+    startActivityReporter(socket);
   }
 
   return {
@@ -152,6 +170,15 @@ export const useApp = create<AppState>((set, get) => {
     voiceStates: {},
     online: {},
     nudge: null,
+    sounds: {},
+    loadSounds: async (serverId) => {
+      try {
+        const list = await api.get<Sound[]>(`/servers/${serverId}/sounds`);
+        set({ sounds: { ...get().sounds, [serverId]: list } });
+      } catch (err) {
+        toast.error(err);
+      }
+    },
     typing: {},
     modal: null,
     memberListOpen: true,

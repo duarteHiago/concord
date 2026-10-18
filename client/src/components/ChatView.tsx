@@ -8,6 +8,8 @@ import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { Avatar, IconButton, Spinner, cx } from './ui';
+import { mentionsMe } from '../lib/mentions';
+import { availableCommands, runCommand } from '../lib/commands';
 
 const EMPTY: Message[] = [];
 
@@ -140,6 +142,7 @@ function Bubble({
   const avatarColor = member?.avatarColor ?? message.author.avatarColor;
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const size = compact ? 32 : 36;
+  const isAction = message.content.startsWith('/me ');
 
   async function saveEdit() {
     setEditing(false);
@@ -209,9 +212,17 @@ function Bubble({
             className={cx(
               'px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap',
               mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
+              !mine && mentionsMe(message.content, me.username) && 'ring-2 ring-accent',
+              isAction && 'italic',
             )}
           >
-            <RichText text={message.content} mine={mine} />
+            {isAction ? (
+              <>
+                <b className="not-italic">{name}</b> <RichText text={message.content.slice(4)} mine={mine} />
+              </>
+            ) : (
+              <RichText text={message.content} mine={mine} />
+            )}
             {message.editedAt && <span className="ml-1.5 text-[10px] opacity-60">(editada)</span>}
           </div>
         )}
@@ -223,6 +234,7 @@ function Bubble({
 
 const URL_RE = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g;
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i;
+const MENTION_RE = /(@[a-zA-Z0-9_.]{3,32})/g;
 
 function RichText({ text, mine }: { text: string; mine: boolean }) {
   const parts = text.split(URL_RE);
@@ -235,7 +247,17 @@ function RichText({ text, mine }: { text: string; mine: boolean }) {
             {p}
           </a>
         ) : (
-          <Fragment key={i}>{p}</Fragment>
+          <Fragment key={i}>
+            {p.split(MENTION_RE).map((piece, j) =>
+              j % 2 === 1 ? (
+                <span key={j} className={cx('rounded-md px-1 font-semibold', mine ? 'bg-on-accent/15' : 'bg-accent/20 text-accent')}>
+                  {piece}
+                </span>
+              ) : (
+                <Fragment key={j}>{piece}</Fragment>
+              ),
+            )}
+          </Fragment>
         ),
       )}
       {images.map((src) => (
@@ -247,9 +269,19 @@ function RichText({ text, mine }: { text: string; mine: boolean }) {
   );
 }
 
-/** Campo de mensagem em pílula, com aviso de quem está digitando. */
+interface Suggestion {
+  key: string;
+  label: string;
+  hint: string;
+  insert: string;
+  avatar?: { name: string; color: string; src: string | null };
+}
+
+/** Campo de mensagem em pílula, com comandos (/), menções (@) e aviso de quem está digitando. */
 export function Composer({ channel, compact = false }: { channel: Channel; compact?: boolean }) {
   const [text, setText] = useState('');
+  const [selected, setSelected] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
   const lastTyping = useRef(0);
   const detail = useActiveDetail()!;
   const typing = useApp((s) => s.typing[channel.id]);
@@ -269,12 +301,58 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
     .map((m) => m && memberName(m))
     .filter(Boolean) as string[];
 
+  // ---- sugestões: "/comando" no começo, ou "@pessoa" na última palavra ----
+  let suggestions: Suggestion[] = [];
+  const commandMatch = /^\/(\w*)$/.exec(text);
+  const mentionMatch = /(^|\s)@([\w.]*)$/.exec(text);
+  if (commandMatch) {
+    const q = commandMatch[1].toLowerCase();
+    suggestions = availableCommands(channel)
+      .filter((c) => c.name.startsWith(q))
+      .map((c) => ({ key: c.name, label: c.usage, hint: c.description, insert: `/${c.name} ` }));
+  } else if (mentionMatch) {
+    const q = mentionMatch[2].toLowerCase();
+    const people: Suggestion[] = detail.members
+      .filter((m) => `${m.username} ${memberName(m)}`.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((m) => ({
+        key: m.id,
+        label: memberName(m),
+        hint: `@${m.username}`,
+        insert: `@${m.username} `,
+        avatar: { name: memberName(m), color: m.avatarColor, src: m.avatarUrl },
+      }));
+    if (has(channel.permissions, P.MENTION_EVERYONE) && 'todos'.startsWith(q)) {
+      people.unshift({ key: '@todos', label: '@todos', hint: 'notifica todo mundo do canal', insert: '@todos ' });
+    }
+    suggestions = people;
+  }
+  const open = !dismissed && suggestions.length > 0;
+  const active = Math.min(selected, suggestions.length - 1);
+
+  function accept(s: Suggestion) {
+    if (s.insert.startsWith('/')) setText(s.insert);
+    else setText(text.replace(/@[\w.]*$/, s.insert));
+    setSelected(0);
+  }
+
   async function send() {
     const content = text.trim();
     if (!content) return;
+    const post = async (c: string) => {
+      await api.post(`/channels/${channel.id}/messages`, { content: c });
+    };
     setText('');
     try {
-      await api.post(`/channels/${channel.id}/messages`, { content });
+      if (content.startsWith('/')) {
+        const handled = await runCommand(content, { detail, channel, send: post });
+        if (!handled) {
+          setText(content);
+          toast.info('Comando desconhecido. Digite / para ver a lista.');
+        }
+        return;
+      }
+      await post(content);
     } catch (err) {
       setText(content);
       toast.error(err);
@@ -282,6 +360,24 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const d = e.key === 'ArrowDown' ? 1 : -1;
+        setSelected((active + d + suggestions.length) % suggestions.length);
+        return;
+      }
+      // Tab sempre completa; Enter completa enquanto ainda está escolhendo o comando/pessoa
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && suggestions[active] && text.trim() !== suggestions[active].insert.trim())) {
+        e.preventDefault();
+        accept(suggestions[active]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setDismissed(true);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -290,7 +386,9 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
 
   function onChange(v: string) {
     setText(v);
-    if (Date.now() - lastTyping.current > 3000 && v) {
+    setDismissed(false);
+    setSelected(0);
+    if (Date.now() - lastTyping.current > 3000 && v && !v.startsWith('/')) {
       lastTyping.current = Date.now();
       getSocket()?.emit('typing', { channelId: channel.id });
     }
@@ -299,11 +397,35 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   const placeholder = !canSend
     ? 'Você não pode enviar mensagens aqui'
     : channel.type === 'voice'
-      ? 'Fala com a galera…'
-      : `Mensagem em #${channel.name}`;
+      ? 'Fala com a galera… (/ para comandos)'
+      : `Mensagem em #${channel.name} (/ para comandos)`;
 
   return (
-    <div className={cx('shrink-0', compact ? 'px-3 pb-3' : 'px-6 pb-5')}>
+    <div className={cx('relative shrink-0', compact ? 'px-3 pb-3' : 'px-6 pb-5')}>
+      {open && (
+        <div
+          role="listbox"
+          aria-label={commandMatch ? 'Comandos' : 'Pessoas'}
+          className={cx('absolute bottom-full z-20 mb-2 max-h-72 animate-pop-in overflow-y-auto rounded-3xl bg-surface-3 p-2 shadow-2xl ring-1 ring-line', compact ? 'inset-x-3' : 'inset-x-6')}
+        >
+          <div className="px-3 pt-1 pb-1.5 text-xs font-bold text-fg-subtle">{commandMatch ? 'Comandos' : 'Mencionar'}</div>
+          {suggestions.map((s, i) => (
+            <button
+              key={s.key}
+              role="option"
+              aria-selected={i === active}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setSelected(i)}
+              onClick={() => accept(s)}
+              className={cx('flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left', i === active ? 'bg-surface-4' : '')}
+            >
+              {s.avatar && <Avatar name={s.avatar.name} color={s.avatar.color} src={s.avatar.src} size={26} />}
+              <span className="shrink-0 text-sm font-bold">{s.label}</span>
+              <span className="truncate text-xs text-fg-muted">{s.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <label className="sr-only" htmlFor={`composer-${channel.id}`}>
         Mensagem
       </label>
@@ -315,6 +437,8 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
         onKeyDown={onKeyDown}
         rows={Math.min(6, text.split('\n').length)}
         placeholder={placeholder}
+        aria-autocomplete="list"
+        aria-expanded={open}
         className={cx(
           'block max-h-48 w-full resize-none bg-surface-3 px-5 py-3.5 text-[15px] outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed',
           text.includes('\n') ? 'rounded-3xl' : 'rounded-full',

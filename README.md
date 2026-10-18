@@ -26,6 +26,26 @@ O áudio sem retorno exige **Windows 11**, ou Windows 10 a partir do build 20348
 
 O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, gera o instalador e o publica em `https://SEU-DOMINIO/downloads/Concord-Setup.exe`. No site aparece um botão de download na barra da esquerda. O instalador não é assinado digitalmente, então o Windows pode exibir o aviso do SmartScreen: clique em "Mais informações" e depois em "Executar assim mesmo".
 
+## Na sala de voz
+
+- **Mesa de sons:** cada servidor tem até 50 sons (MP3, OGG, WAV ou WEBM, até 15 segundos). Quem está na sala toca para todos ouvirem. Também dá para usar `/sound nome` no chat.
+- **Efeitos de voz:** voz grossa, esquilo, robô, rádio, megafone, eco e caverna, aplicados no seu microfone.
+- **Zoom na transmissão:** a rolagem do mouse aproxima onde está o cursor, e arrastar move a imagem.
+- **Janela separada:** a live abre em outra janela, para levar a outro monitor e pôr em tela cheia.
+- **Painel lateral** com o chat da sala e a lista de membros.
+
+## Comandos no chat
+
+Digite `/` no campo de mensagem para ver a lista. Os comandos são `/nudge`, `/all`, `/me`, `/shrug`, `/sound`, `/nick`, `/status`, `/dnd`, `/online`, `/leave` e, para moderação, `/mute`, `/unmute`, `/disconnect` e `/kick`. Menções funcionam com `@usuario`, e `@todos` exige a permissão "Mencionar todos". Quem é mencionado recebe som e notificação.
+
+## Atividades
+
+O app desktop mostra para os outros **o jogo que você está jogando pela Steam** e **a música tocando no Spotify**, sem precisar de login: ele lê o registro da Steam e o título da janela do Spotify. Isso pode ser desligado em Configurações → Perfil. No site, dá para definir um **status personalizado**.
+
+## Bots
+
+Crie bots em **Configurações → Bots** e controle-os pela API com um token. Veja o guia em [docs/bots.md](docs/bots.md) e o exemplo pronto em [examples/bot](examples/bot).
+
 ## Esqueci minha senha
 
 As contas não usam e-mail. Ao criar a conta, a pessoa recebe um **código de recuperação**, que aparece uma única vez. Com ele, dá para criar uma senha nova pela tela de login, em "Esqueci minha senha". Depois de usado, o código é trocado por outro. Também dá para gerar um código novo em Configurações → Conta. Se o código se perder, quem hospeda o Concord pode gerar uma senha temporária:

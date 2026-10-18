@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp, type Modal as ModalState } from '../../store/app';
 import { toast } from '../../store/toast';
 import { MemberPopover } from '../MemberPopover';
@@ -44,7 +44,32 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <NicknameModal serverId={modal.serverId} userId={modal.userId} />;
     case 'recoveryCode':
       return <RecoveryCodeModal {...modal} />;
+    case 'image':
+      return <ImageViewer src={modal.src} alt={modal.alt} />;
   }
+}
+
+/** Foto ou capa em tamanho grande (clique fora ou Esc fecha). */
+function ImageViewer({ src, alt }: { src: string; alt: string }) {
+  const close = useApp((s) => s.closeModal);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [close]);
+  return (
+    <div role="dialog" aria-label={alt} onClick={close} className="fixed inset-0 z-[60] flex animate-fade-in flex-col items-center justify-center gap-4 bg-black/85 p-8 backdrop-blur-sm">
+      <img src={src} alt={alt} className="max-h-[80vh] max-w-[90vw] animate-pop-in rounded-[24px] object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+        <a href={src} target="_blank" rel="noreferrer noopener" className="flex h-10 items-center rounded-full bg-surface-3 px-5 font-display text-sm font-bold hover:bg-surface-4">
+          Abrir original
+        </a>
+        <button onClick={close} className="h-10 rounded-full bg-surface-3 px-5 font-display text-sm font-bold hover:bg-surface-4">
+          Fechar
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function RecoveryCodeModal({ code, next, afterReset }: Extract<ModalState, { type: 'recoveryCode' }>) {

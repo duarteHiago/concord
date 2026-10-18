@@ -7,6 +7,7 @@ import {
   Track,
   VideoPreset,
   VideoPresets,
+  type LocalAudioTrack,
   type RemoteTrack,
   type VideoCodec,
 } from 'livekit-client';
@@ -16,6 +17,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { closePopout } from '../lib/popout';
+import { applyVoiceEffect, EFFECTS, type EffectId } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -90,6 +92,8 @@ interface VoiceStore {
   setFocus: (key: string | null) => void;
   setVolume: (identity: string, volume: number, stream?: boolean) => void;
   toggleLocalMute: (identity: string) => void;
+  effect: EffectId;
+  setEffect: (effect: EffectId) => Promise<void>;
   setAudioSettings: (patch: Partial<AudioSettings>) => Promise<void>;
   bindSocket: (socket: Socket) => void;
   resync: () => void;
@@ -311,6 +315,17 @@ export const useVoice = create<VoiceStore>((set, get) => {
       });
   }
 
+  async function applyCurrentEffect() {
+    const pub = get().room?.localParticipant.getTrackPublication(Track.Source.Microphone);
+    const track = pub?.track as LocalAudioTrack | undefined;
+    if (!track) return;
+    try {
+      await applyVoiceEffect(track, get().effect);
+    } catch (err) {
+      toast.error(`Não foi possível aplicar o efeito: ${(err as Error).message}`);
+    }
+  }
+
   async function enableMic(on: boolean) {
     const room = get().room;
     if (!room) return;
@@ -322,6 +337,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       autoGainControl: true,
     });
     syncLocalFlags();
+    if (on) await applyCurrentEffect();
   }
 
   return {
@@ -340,6 +356,17 @@ export const useVoice = create<VoiceStore>((set, get) => {
     focus: null,
     volumes: load('concord.volumes', {} as Record<string, number>),
     localMuted: load('concord.localMuted', {} as Record<string, true>),
+    effect: loadEffect(),
+
+    setEffect: async (effect) => {
+      set({ effect });
+      try {
+        localStorage.setItem('concord.effect', effect);
+      } catch {
+        // ignorado
+      }
+      if (get().micOn) await applyCurrentEffect();
+    },
     streamVolumes: load('concord.streamVolumes', {} as Record<string, number>),
     shareSettings: load('concord.share', DEFAULT_SHARE),
     audioSettings: load('concord.audio', DEFAULT_AUDIO),
@@ -617,4 +644,13 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     void useVoice.getState().room?.disconnect();
   });
+}
+
+function loadEffect(): EffectId {
+  try {
+    const v = localStorage.getItem('concord.effect');
+    return EFFECTS.some((e) => e.id === v) ? (v as EffectId) : 'none';
+  } catch {
+    return 'none';
+  }
 }

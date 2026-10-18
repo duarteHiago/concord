@@ -107,6 +107,23 @@ addColumn('users', 'bio', "TEXT NOT NULL DEFAULT ''");
 addColumn('users', 'settings', "TEXT NOT NULL DEFAULT '{}'");
 addColumn('servers', 'icon_url', 'TEXT');
 addColumn('users', 'recovery_hash', 'TEXT');
+addColumn('users', 'banner_url', 'TEXT');
+addColumn('users', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'bot_owner_id', 'TEXT');
+addColumn('users', 'bot_token_hash', 'TEXT');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sounds (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_sounds_server ON sounds(server_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_users_bot_token ON users(bot_token_hash) WHERE bot_token_hash IS NOT NULL;
+`);
 
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
@@ -114,7 +131,12 @@ if (version < 2) {
   // v2: permissão "Alterar o próprio apelido" (1 << 14) passa a vir no @everyone
   db.exec(`UPDATE roles SET permissions = permissions | ${1 << 14} WHERE is_default = 1`);
 }
-db.prepare("INSERT INTO meta (key, value) VALUES ('schema', '2') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
+if (version < 3) {
+  // v3: mesa de sons liberada para todos; "mencionar todos" para quem já modera mensagens
+  db.exec(`UPDATE roles SET permissions = permissions | ${1 << 16} WHERE is_default = 1`);
+  db.exec(`UPDATE roles SET permissions = permissions | ${1 << 17} WHERE permissions & ${1 << 6}`);
+}
+db.prepare("INSERT INTO meta (key, value) VALUES ('schema', '3') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
 
 const cache = new Map<string, StatementSync>();
 function stmt(sql: string): StatementSync {
@@ -163,6 +185,19 @@ export interface UserRow {
   bio: string;
   settings: string;
   recovery_hash: string | null;
+  banner_url: string | null;
+  is_bot: number;
+  bot_owner_id: string | null;
+  bot_token_hash: string | null;
+  created_at: number;
+}
+
+export interface SoundRow {
+  id: string;
+  server_id: string;
+  name: string;
+  url: string;
+  uploader_id: string | null;
   created_at: number;
 }
 

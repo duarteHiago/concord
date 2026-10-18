@@ -7,7 +7,38 @@ export interface User {
   avatarColor: string;
   avatarUrl: string | null;
   bannerColor: string | null;
+  bannerUrl?: string | null;
   bio: string;
+  bot?: boolean;
+}
+
+export interface Activity {
+  type: 'playing' | 'listening';
+  name: string;
+  details?: string;
+  since: number;
+}
+
+/** Presença de quem está online. */
+export interface Presence {
+  status: 'online' | 'dnd';
+  customStatus: string;
+  activity: Activity | null;
+}
+
+export interface Sound {
+  id: string;
+  serverId: string;
+  name: string;
+  url: string;
+  uploaderId: string | null;
+  createdAt: number;
+}
+
+export interface Bot extends User {
+  ownerId: string;
+  createdAt: number;
+  servers: { id: string; name: string }[];
 }
 
 export type PresenceStatus = 'online' | 'dnd';
@@ -18,13 +49,17 @@ export interface NotifySettings {
   shake: boolean; // tremer a tela/janela
   sound: boolean;
   desktop: boolean; // notificação do sistema
+  mentions: boolean; // avisar quando alguém mencionar você
 }
 
-export const DEFAULT_NOTIFY: NotifySettings = { nudges: true, shake: true, sound: true, desktop: true };
+export const DEFAULT_NOTIFY: NotifySettings = { nudges: true, shake: true, sound: true, desktop: true, mentions: true };
 
 export interface UserSettings {
   theme?: Partial<ThemeSettings>;
   status?: PresenceStatus;
+  customStatus?: string;
+  /** mostrar o jogo/música detectados pelo app desktop */
+  shareActivity?: boolean;
   notifications?: Partial<NotifySettings>;
   mutedNudges?: string[];
 }

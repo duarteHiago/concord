@@ -3,7 +3,7 @@ import { Server, type Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
 import { channelPermissions, getChannel } from './access.ts';
 import { all, get, type ChannelRow } from './db.ts';
-import { verifyToken } from './http.ts';
+import { botUserId, verifyToken } from './http.ts';
 
 export interface VoiceState {
   userId: string;
@@ -115,13 +115,53 @@ export function statusOf(userId: string): PresenceStatus {
   }
 }
 
+// ---- atividades ("Jogando…", "Ouvindo…"): só em memória, enviadas pelo app desktop ----
+
+export interface Activity {
+  type: 'playing' | 'listening';
+  name: string;
+  details?: string;
+  since: number;
+}
+
+const activities = new Map<string, Activity>();
+
+function sanitizeActivity(raw: unknown): Activity | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a = raw as Record<string, unknown>;
+  if (a.type !== 'playing' && a.type !== 'listening') return null;
+  const name = typeof a.name === 'string' ? a.name.trim().slice(0, 80) : '';
+  if (!name) return null;
+  const details = typeof a.details === 'string' ? a.details.trim().slice(0, 120) : undefined;
+  const since = typeof a.since === 'number' && a.since <= Date.now() ? a.since : Date.now();
+  return { type: a.type, name, details: details || undefined, since };
+}
+
+/** Status, frase personalizada e atividade de um usuário online. */
+export function presenceOf(userId: string) {
+  const row = get<{ settings: string }>('SELECT settings FROM users WHERE id = ?', userId);
+  let settings: { status?: string; customStatus?: unknown } = {};
+  try {
+    settings = JSON.parse(row?.settings || '{}');
+  } catch {
+    // ignorado
+  }
+  return {
+    userId,
+    online: true,
+    status: (settings.status === 'dnd' ? 'dnd' : 'online') as PresenceStatus,
+    customStatus: typeof settings.customStatus === 'string' ? settings.customStatus.slice(0, 80) : '',
+    activity: activities.get(userId) ?? null,
+  };
+}
+
 export function isOnline(userId: string) {
   return online.has(userId);
 }
 
 /** Reenvia a presença quando o usuário troca de status (online / não perturbe). */
 export function broadcastStatus(userId: string) {
-  if (online.has(userId)) io.emit('presence', { userId, online: true, status: statusOf(userId) });
+  if (online.has(userId)) io.emit('presence', presenceOf(userId));
 }
 
 export function onlineUserIds() {
@@ -132,7 +172,7 @@ export function setupRealtime(httpServer: HttpServer) {
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
 
   io.use((socket, next) => {
-    const userId = verifyToken(socket.handshake.auth?.token);
+    const userId = verifyToken(socket.handshake.auth?.token) ?? botUserId(socket.handshake.auth?.token);
     if (!userId || !get('SELECT 1 FROM users WHERE id = ?', userId)) return next(new Error('unauthorized'));
     socket.data.userId = userId;
     next();
@@ -152,9 +192,9 @@ export function setupRealtime(httpServer: HttpServer) {
     online.set(userId, count);
     socket.emit(
       'presence:list',
-      onlineUserIds().map((id) => ({ userId: id, status: statusOf(id) })),
+      onlineUserIds().map((id) => presenceOf(id)),
     );
-    if (count === 1) io.emit('presence', { userId, online: true, status: statusOf(userId) });
+    if (count === 1) io.emit('presence', presenceOf(userId));
 
     socket.on('voice:join', (data: { channelId: string }, ack?: (r: unknown) => void) => {
       try {
@@ -202,6 +242,16 @@ export function setupRealtime(httpServer: HttpServer) {
       broadcastVoice(v.serverId);
     });
 
+    socket.on('activity:set', (raw: unknown) => {
+      const activity = sanitizeActivity(raw);
+      const current = activities.get(userId);
+      if (!activity && !current) return;
+      if (activity && current && activity.type === current.type && activity.name === current.name && activity.details === current.details) return;
+      if (activity) activities.set(userId, current?.name === activity.name ? { ...activity, since: current.since } : activity);
+      else activities.delete(userId);
+      io.emit('presence', presenceOf(userId));
+    });
+
     socket.on('typing', (data: { channelId: string }) => {
       try {
         const channel = getChannel(data.channelId);
@@ -221,6 +271,7 @@ export function setupRealtime(httpServer: HttpServer) {
       const left = (online.get(userId) ?? 1) - 1;
       if (left <= 0) {
         online.delete(userId);
+        activities.delete(userId);
         io.emit('presence', { userId, online: false });
       } else {
         online.set(userId, left);

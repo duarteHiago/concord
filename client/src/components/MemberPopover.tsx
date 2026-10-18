@@ -1,4 +1,4 @@
-import { Bell, BellOff, Crown, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
+import { Bell, BellOff, Crown, Gamepad2, Headphones, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useRef, useState } from 'react';
@@ -16,7 +16,8 @@ export function MemberPopover() {
   const [addingRole, setAddingRole] = useState(false);
   const detail = useApp((s) => (serverId ? s.details[serverId] : undefined));
   const me = useApp((s) => s.me);
-  const presence = useApp((s) => (userId ? s.online[userId] : undefined));
+  const presenceInfo = useApp((s) => (userId ? s.online[userId] : undefined));
+  const presence = presenceInfo?.status;
   const online = !!presence;
   const voiceState = useApp((s) => (serverId && userId ? s.voiceStates[serverId]?.find((v) => v.userId === userId) : undefined));
   const myChannel = useVoice((s) => s.channelId);
@@ -82,17 +83,41 @@ export function MemberPopover() {
   return (
     <div
       ref={ref}
-      className="fixed z-40 w-80 animate-pop-in overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-2xl"
+      className="fixed z-40 max-h-[calc(100vh-16px)] w-80 animate-pop-in overflow-y-auto rounded-[24px] bg-surface-1 shadow-2xl ring-1 ring-line"
       style={{ left: x, top: Math.max(8, y) }}
     >
-      <div className="h-16" style={{ background: `linear-gradient(135deg, ${topColor}, ${topColor}55)` }} />
+      {member.bannerUrl ? (
+        <button
+          aria-label="Ver capa em tamanho grande"
+          onClick={() => {
+            close();
+            openModal({ type: 'image', src: member.bannerUrl!, alt: `Capa de ${name}` });
+          }}
+          className="block h-28 w-full"
+        >
+          <img src={member.bannerUrl} alt="" className="h-full w-full object-cover" />
+        </button>
+      ) : (
+        <div className="h-16" style={{ background: `linear-gradient(135deg, ${topColor}, ${topColor}55)` }} />
+      )}
       <div className="px-4 pb-4">
         <div className="-mt-9 mb-2">
-          <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} size={72} status={presence ?? 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
+          <button
+            aria-label={member.avatarUrl ? 'Ver foto em tamanho grande' : undefined}
+            disabled={!member.avatarUrl}
+            onClick={() => {
+              close();
+              openModal({ type: 'image', src: member.avatarUrl!, alt: `Foto de ${name}` });
+            }}
+            className="rounded-full enabled:cursor-zoom-in"
+          >
+            <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} size={72} status={presence ?? 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
+          </button>
         </div>
-        <div className="rounded-xl bg-surface-0 p-3">
+        <div className="rounded-2xl bg-surface-0 p-3">
           <div className="flex items-center gap-1.5 text-lg font-bold">
             <span className="truncate">{name}</span>
+            {member.bot && <span className="shrink-0 rounded bg-accent-2/20 px-1.5 text-[10px] leading-5 font-bold text-accent-2">BOT</span>}
             {detail.server.ownerId === member.id && <Crown size={16} className="shrink-0 text-warn" />}
             {canNick && (
               <button title="Alterar apelido neste servidor" onClick={editNickname} className="ml-auto text-fg-subtle hover:text-fg">
@@ -103,6 +128,19 @@ export function MemberPopover() {
           <div className="text-sm text-fg-muted">
             {member.nickname ? `${member.displayName} · ` : ''}@{member.username}
           </div>
+          {presenceInfo?.customStatus && <p className="mt-2 text-sm break-words">{presenceInfo.customStatus}</p>}
+          {presenceInfo?.activity && (
+            <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+                {presenceInfo.activity.type === 'playing' ? <Gamepad2 size={18} /> : <Headphones size={18} />}
+              </span>
+              <div className="min-w-0 text-sm leading-tight">
+                <div className="text-[11px] font-bold text-fg-subtle">{presenceInfo.activity.type === 'playing' ? 'Jogando' : 'Ouvindo no Spotify'}</div>
+                <div className="truncate font-semibold">{presenceInfo.activity.type === 'playing' ? presenceInfo.activity.name : presenceInfo.activity.details}</div>
+                <div className="text-xs text-fg-muted">há {elapsed(presenceInfo.activity.since)}</div>
+              </div>
+            </div>
+          )}
           {member.bio && (
             <>
               <div className="my-3 h-px bg-line" />
@@ -276,4 +314,11 @@ function ModButton({ icon, label, onClick, danger }: { icon: React.ReactNode; la
       {label}
     </button>
   );
+}
+
+function elapsed(since: number) {
+  const min = Math.max(1, Math.round((Date.now() - since) / 60_000));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  return `${h} h${min % 60 ? ` ${min % 60} min` : ''}`;
 }
