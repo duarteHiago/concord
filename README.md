@@ -130,6 +130,10 @@ O deploy sobe junto um monitoramento ao vivo em `https://SEU_DOMINIO/grafana` (u
 
 Coleta: Prometheus (a cada 10 s, guarda 15 dias), node-exporter, um coletor próprio do `docker stats` (`deploy/monitoring/docker-exporter.mjs`), blackbox (latência) e as métricas do próprio app (`127.0.0.1:9464`). Tudo escuta só em `127.0.0.1`; o único acesso de fora é o Grafana, com login. Para desligar: `MONITORING=off ./deploy/setup.sh`. Os painéis são gerados por `python deploy/monitoring/dashboards.py`.
 
+## Roadmap
+
+Projetos planejados (com o contexto e as medições que levaram a eles) ficam em [docs/ROADMAP.md](docs/ROADMAP.md). O próximo grande: captura de tela nativa com NVENC, para transmitir jogos pesados a 60 fps.
+
 ## Observações
 
 - Use Chrome ou Edge no PC para transmitir. Áudio do sistema funciona no Windows ao compartilhar a **tela inteira** ou uma **aba**; ao compartilhar uma janela só, o navegador não captura o áudio dela.
