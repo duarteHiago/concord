@@ -109,6 +109,8 @@ export interface UserSettings {
   motion?: 'full' | 'system' | 'reduce';
   /** código compartilhado da sala */
   clips?: { receive?: boolean; autoCopy?: boolean };
+  /** já viu o tutorial de boas-vindas (ele reaparece em "Configurações → Conta" a qualquer momento) */
+  onboarded?: boolean;
 }
 
 export interface Me extends User {

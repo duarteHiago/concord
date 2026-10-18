@@ -45,6 +45,7 @@ export type Modal =
   | { type: 'patch'; patch: Patch; caption?: string }
   | { type: 'roulette'; target: { kind: 'channel' | 'dm'; id: string } }
   | { type: 'quickSwitch' }
+  | { type: 'onboarding' }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {
@@ -125,7 +126,15 @@ export const useApp = create<AppState>((set, get) => {
     setToken(token);
     applyTheme(normalizeTheme(me.settings?.theme));
     const code = get().pendingInvite;
-    set({ me, pendingInvite: null, ...(code ? { modal: { type: 'addServer', tab: 'join', code } } : {}) });
+    set({
+      me,
+      pendingInvite: null,
+      ...(code
+        ? { modal: { type: 'addServer', tab: 'join', code } }
+        : !me.settings?.onboarded
+          ? { modal: { type: 'onboarding' } }
+          : {}),
+    });
     const socket = connectSocket(token);
 
     socket.on('connect', () => {

@@ -3,6 +3,7 @@ import {
   Hash,
   HeadphoneOff,
   Headphones,
+  HelpCircle,
   Lock,
   LogOut,
   Mic,
@@ -440,6 +441,9 @@ function UserCard() {
       <DeviceSplitButton kind="audiooutput" label={deafened ? 'Ativar áudio' : 'Ensurdecer'} danger={deafened} onClick={() => void toggleDeafen()}>
         {deafened ? <HeadphoneOff size={18} /> : <Headphones size={18} />}
       </DeviceSplitButton>
+      <IconButton label="Como o Concord funciona" className="h-9 w-8 shrink-0" onClick={() => openModal({ type: 'onboarding' })}>
+        <HelpCircle size={18} />
+      </IconButton>
       <IconButton label="Configurações" className="h-9 w-8 shrink-0" onClick={() => openModal({ type: 'userSettings' })}>
         <Settings size={18} />
       </IconButton>

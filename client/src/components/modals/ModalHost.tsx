@@ -10,6 +10,7 @@ import { Button, Input, Modal } from '../ui';
 import { AddServerModal } from './AddServerModal';
 import { ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
 import { InviteModal } from './InviteModal';
+import { OnboardingModal } from './OnboardingModal';
 import { ServerSettingsModal } from './ServerSettingsModal';
 import { ShareScreenModal } from './ShareScreenModal';
 import { UserSettingsModal } from './UserSettingsModal';
@@ -55,6 +56,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <ImageViewer src={modal.src} alt={modal.alt} />;
     case 'patch':
       return <PatchInspector patch={modal.patch} caption={modal.caption} />;
+    case 'onboarding':
+      return <OnboardingModal />;
   }
 }
 

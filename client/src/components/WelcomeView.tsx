@@ -1,4 +1,4 @@
-import { Link2, Plus } from 'lucide-react';
+import { HelpCircle, Link2, Plus } from 'lucide-react';
 import { useApp } from '../store/app';
 import { Button } from './ui';
 
@@ -21,6 +21,12 @@ export function WelcomeView() {
             <Link2 size={18} /> Usar convite
           </Button>
         </div>
+        <button
+          onClick={() => openModal({ type: 'onboarding' })}
+          className="mx-auto mt-6 flex items-center gap-1.5 text-sm font-semibold text-fg-muted hover:text-fg"
+        >
+          <HelpCircle size={15} /> Como o Concord funciona?
+        </button>
       </div>
     </div>
   );
