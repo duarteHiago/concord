@@ -113,6 +113,7 @@ addColumn('users', 'bot_owner_id', 'TEXT');
 addColumn('users', 'bot_token_hash', 'TEXT');
 addColumn('messages', 'kind', "TEXT NOT NULL DEFAULT 'text'");
 addColumn('messages', 'data', 'TEXT');
+addColumn('users', 'profile_style', "TEXT NOT NULL DEFAULT '{}'");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sounds (
@@ -151,6 +152,30 @@ db.exec(`
     last_read_at INTEGER NOT NULL,
     PRIMARY KEY (dm_id, user_id)
   );
+  -- stickers enviados pela galera do servidor
+  CREATE TABLE IF NOT EXISTS custom_stickers (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_custom_stickers ON custom_stickers(server_id);
+  -- stickers colados no palco das salas de voz (todo mundo vê)
+  CREATE TABLE IF NOT EXISTS placed_stickers (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    sticker TEXT NOT NULL,
+    finish TEXT NOT NULL DEFAULT 'gloss',
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    rot REAL NOT NULL DEFAULT 0,
+    scale REAL NOT NULL DEFAULT 1,
+    author_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_placed_stickers ON placed_stickers(channel_id, created_at);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_bot_token ON users(bot_token_hash) WHERE bot_token_hash IS NOT NULL;
 `);
 
@@ -218,6 +243,29 @@ export interface UserRow {
   is_bot: number;
   bot_owner_id: string | null;
   bot_token_hash: string | null;
+  profile_style: string;
+  created_at: number;
+}
+
+export interface CustomStickerRow {
+  id: string;
+  server_id: string;
+  name: string;
+  url: string;
+  uploader_id: string | null;
+  created_at: number;
+}
+
+export interface PlacedStickerRow {
+  id: string;
+  channel_id: string;
+  sticker: string;
+  finish: string;
+  x: number;
+  y: number;
+  rot: number;
+  scale: number;
+  author_id: string | null;
   created_at: number;
 }
 

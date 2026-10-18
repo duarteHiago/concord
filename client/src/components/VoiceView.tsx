@@ -32,6 +32,7 @@ import { MemberListBody } from './MemberList';
 import { SoundboardButton, SoundToast } from './Soundboard';
 import { ReactionLayer, ReactionsButton } from './Reactions';
 import { VoiceEffectsButton } from './VoiceEffectsButton';
+import { StickerButton, StickerLayer } from './Stickers';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
@@ -89,13 +90,14 @@ export function VoiceView({ channel }: { channel: Channel }) {
           ) : (
             <>
               <Stage detail={detail} />
+              <StickerLayer channel={channel} />
               <SoundToast />
               <ReactionLayer />
             </>
           )}
         </section>
 
-        {status !== 'idle' && <ControlDock />}
+        {status !== 'idle' && <ControlDock channel={channel} />}
       </main>
 
       {canChat && chatOpen && (
@@ -178,7 +180,7 @@ function JoinSplash({ detail, channel }: { detail: ServerDetail; channel: Channe
   const canConnect = has(channel.permissions, P.CONNECT);
   const people = inRoom.flatMap((v) => {
     const m = detail.members.find((x) => x.id === v.userId);
-    return m ? [{ id: m.id, name: memberName(m), color: m.avatarColor, src: m.avatarUrl }] : [];
+    return m ? [{ id: m.id, name: memberName(m), color: m.avatarColor, src: m.avatarUrl, frame: m.frame }] : [];
   });
 
   return (
@@ -283,13 +285,14 @@ function useMemberInfo(detail: ServerDetail, p: Participant) {
     name: member ? memberName(member) : (p.name ?? p.identity),
     color: member?.avatarColor ?? '#7c5cff',
     avatarUrl: member?.avatarUrl ?? null,
+    frame: member?.frame ?? null,
   };
 }
 
 /** Participante em bolha (sobre a transmissão em foco). */
 function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
   const p = tile.participant;
-  const { name, color, avatarUrl } = useMemberInfo(detail, p);
+  const { name, color, avatarUrl, frame } = useMemberInfo(detail, p);
   const speaking = useVoice((s) => !!s.speaking[p.identity]);
   const openPopover = usePopover((s) => s.open);
   const micPub = p.getTrackPublication(Track.Source.Microphone);
@@ -303,7 +306,7 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
       className="flex shrink-0 flex-col items-center gap-1.5"
     >
       <span className={cx('relative block h-16 w-16 overflow-hidden rounded-full ring-4 transition-shadow', speaking && !muted ? 'ring-accent' : 'ring-surface-1')}>
-        {camTrack ? <VideoEl track={camTrack} fit="cover" mirror={tile.isLocal} /> : <Avatar name={name} color={color} src={avatarUrl} size={64} />}
+        {camTrack ? <VideoEl track={camTrack} fit="cover" mirror={tile.isLocal} /> : <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={64} />}
       </span>
       <span className="flex max-w-24 items-center gap-1 rounded-full bg-surface-1/85 px-2.5 py-0.5 text-xs font-bold backdrop-blur">
         {muted && <MicOff size={11} className="shrink-0 text-danger" />}
@@ -324,7 +327,7 @@ function ScreenChip({ detail, tile, onClick }: { detail: ServerDetail; tile: Til
 
 function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: TileInfo; focused?: boolean; onClick: () => void }) {
   const { participant: p, kind, isLocal } = tile;
-  const { name, color, avatarUrl } = useMemberInfo(detail, p);
+  const { name, color, avatarUrl, frame } = useMemberInfo(detail, p);
   const speaking = useVoice((s) => !!s.speaking[p.identity]);
   const watching = useVoice((s) => !!s.watching[p.identity]);
   const setWatching = useVoice((s) => s.setWatching);
@@ -366,7 +369,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 bg-surface-2 p-4 text-center">
-            <Avatar name={name} color={color} src={avatarUrl} size={focused ? 88 : 56} speaking />
+            <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={focused ? 88 : 56} speaking />
             <p className="font-display text-lg font-bold">{name} está transmitindo</p>
             <Button
               onClick={(e) => {
@@ -444,7 +447,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
       {camTrack ? (
         <VideoEl track={camTrack} fit={focused ? 'contain' : 'cover'} mirror={isLocal} />
       ) : (
-        <Avatar name={name} color={color} src={avatarUrl} size={focused ? 128 : 84} speaking={speaking && !muted} />
+        <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={focused ? 128 : 84} speaking={speaking && !muted} />
       )}
       <span className="pointer-events-none absolute bottom-3 left-3 flex max-w-[85%] items-center gap-1.5 rounded-full bg-surface-1/85 px-3 py-1 text-xs font-bold backdrop-blur">
         {muted ? <MicOff size={12} className="shrink-0 text-danger" /> : <Mic size={12} className="shrink-0" />}
@@ -547,7 +550,7 @@ function StatsBadge({ track }: { track: LocalTrack | RemoteTrack }) {
 
 // ------------------------------------------------------------------ controles
 
-function ControlDock() {
+function ControlDock({ channel }: { channel: Channel }) {
   const { micOn, deafened, cameraOn, sharing, serverMuted, toggleMic, toggleDeafen, toggleCamera, stopShare, leave } = useVoice();
   const openModal = useApp((s) => s.openModal);
 
@@ -576,6 +579,7 @@ function ControlDock() {
         <VoiceEffectsButton />
         <SoundboardButton />
         <ReactionsButton />
+        <StickerButton channel={channel} />
         <button
           onClick={() => (sharing ? void stopShare() : openModal({ type: 'shareScreen' }))}
           className={cx(

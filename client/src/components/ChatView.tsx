@@ -140,6 +140,7 @@ function Bubble({
   const member = detail.members.find((x) => x.id === message.author.id);
   const name = member ? memberName(member) : message.author.displayName;
   const avatarUrl = member?.avatarUrl ?? message.author.avatarUrl;
+  const frame = member ? member.frame : message.author.frame;
   const avatarColor = member?.avatarColor ?? message.author.avatarColor;
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const size = compact ? 32 : 36;
@@ -175,7 +176,7 @@ function Bubble({
             aria-label={`Perfil de ${name}`}
             onClick={(e) => openPopover(message.author.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
           >
-            <Avatar name={name} color={avatarColor} src={avatarUrl} size={size} />
+            <Avatar name={name} color={avatarColor} src={avatarUrl} frame={frame} size={size} />
           </button>
         )}
       </div>

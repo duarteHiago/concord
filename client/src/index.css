@@ -211,3 +211,288 @@ video::-webkit-media-controls {
     animation: none;
   }
 }
+
+/* ---------- molduras animadas da foto de perfil ---------- */
+.avatar-frame {
+  position: absolute;
+  inset: calc(var(--fw) * -1.4);
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 0 calc(var(--fw) * 1.3) var(--frame-glow, transparent));
+}
+.avatar-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--fw);
+  background: var(--frame-bg);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: frame-spin var(--frame-speed, 3s) linear infinite;
+}
+.frame-particles {
+  position: absolute;
+  inset: calc(var(--fw) * -0.6);
+  animation: frame-spin var(--orbit-speed, 6s) linear infinite;
+}
+.frame-particles i {
+  position: absolute;
+  inset: 0;
+}
+.frame-particles b {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -45%);
+  font-size: var(--ps);
+  font-style: normal;
+  line-height: 1;
+  animation: frame-bob 1.6s ease-in-out infinite;
+}
+.frame-neon {
+  --frame-bg: conic-gradient(#ff2bd6, #00e5ff, #7c5cff, #ff2bd6);
+  --frame-glow: #ff2bd6aa;
+  --frame-speed: 2.4s;
+}
+.frame-fire {
+  --frame-bg: conic-gradient(#ff3d00, #ffb300, #ff6d00, #ffea00, #ff3d00);
+  --frame-glow: #ff6d00cc;
+  --frame-speed: 1.4s;
+  --orbit-speed: 3.5s;
+  animation: frame-flicker 0.35s steps(2) infinite alternate;
+}
+.frame-rainbow {
+  --frame-bg: conic-gradient(#ff004c, #ff9500, #ffee00, #2bff88, #00c3ff, #8a2bff, #ff004c);
+  --frame-glow: #ffffff55;
+}
+.frame-gold {
+  --frame-bg: conic-gradient(#8a6a1f, #ffe08a, #c9971c, #fff6c9, #a87c1e, #ffe08a, #8a6a1f);
+  --frame-glow: #ffc94dbb;
+  --frame-speed: 4s;
+}
+.frame-ice {
+  --frame-bg: conic-gradient(#c9f6ff, #5ad1ff, #ffffff, #2a8cff, #c9f6ff);
+  --frame-glow: #5ad1ffcc;
+  --frame-speed: 5s;
+  animation: frame-breathe 2.4s ease-in-out infinite;
+}
+.frame-toxic {
+  --frame-bg: conic-gradient(#39ff14, #0b3d0b, #a6ff00, #0b3d0b, #39ff14);
+  --frame-glow: #39ff14cc;
+  --frame-speed: 1.8s;
+}
+.frame-galaxy {
+  --frame-bg: conic-gradient(#1b0a3c, #7c3aed, #ec4899, #1e3a8a, #22d3ee, #1b0a3c);
+  --frame-glow: #a855f7bb;
+  --frame-speed: 6s;
+  --orbit-speed: 9s;
+}
+.frame-galaxy .frame-particles b {
+  color: #fff;
+  text-shadow: 0 0 6px #fff;
+  animation: frame-twinkle 1.2s ease-in-out infinite alternate;
+}
+.frame-pulse {
+  --frame-bg: var(--color-accent);
+  --frame-glow: var(--color-accent);
+  animation: frame-breathe 1.1s ease-in-out infinite;
+}
+.frame-orbit .frame-particles b:empty {
+  width: calc(var(--fw) * 2.2);
+  height: calc(var(--fw) * 2.2);
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow:
+    0 0 6px #fff,
+    0 0 12px var(--color-accent);
+}
+.avatar-frame.frame-orbit {
+  --frame-bg: linear-gradient(#ffffff40, #ffffff40);
+  --orbit-speed: 2.2s;
+  --frame-glow: var(--color-accent);
+}
+.frame-glitch {
+  --frame-bg: conic-gradient(#00fff0, #ff0059, #00fff0, #ff0059, #00fff0);
+  --frame-speed: 0.9s;
+  animation: frame-glitch 1.8s steps(1) infinite;
+}
+.frame-hearts {
+  --frame-bg: conic-gradient(#ff4fa3, #ffb3d9, #ff4fa3, #ff8cc6, #ff4fa3);
+  --frame-glow: #ff4fa3aa;
+  --orbit-speed: 7s;
+}
+.frame-sakura {
+  --frame-bg: conic-gradient(#ffd1e3, #ff9ec4, #fff0f6, #ff9ec4, #ffd1e3);
+  --frame-glow: #ff9ec4aa;
+  --frame-speed: 6s;
+  --orbit-speed: 10s;
+}
+@keyframes frame-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes frame-bob {
+  50% {
+    transform: translate(-50%, -65%) scale(1.15);
+  }
+}
+@keyframes frame-twinkle {
+  from {
+    opacity: 0.35;
+  }
+}
+@keyframes frame-flicker {
+  to {
+    filter: drop-shadow(0 0 calc(var(--fw) * 2.2) #ff3d00);
+  }
+}
+@keyframes frame-breathe {
+  50% {
+    transform: scale(1.06);
+    filter: drop-shadow(0 0 calc(var(--fw) * 2.4) var(--frame-glow));
+  }
+}
+@keyframes frame-glitch {
+  0%,
+  100% {
+    transform: none;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  8% {
+    transform: translate(1px, -1px);
+    filter: drop-shadow(-2px 0 0 #ff0059) drop-shadow(2px 0 0 #00fff0);
+  }
+  12% {
+    transform: translate(-1px, 1px);
+  }
+  16% {
+    transform: none;
+  }
+  60% {
+    transform: translate(-1px, 0);
+    filter: drop-shadow(2px 0 0 #ff0059) drop-shadow(-2px 0 0 #00fff0);
+  }
+  64% {
+    transform: none;
+    filter: none;
+  }
+}
+
+/* ---------- patches costurados ---------- */
+.patch {
+  filter: drop-shadow(0 2px 0 rgb(0 0 0 / 0.35)) drop-shadow(0 4px 6px rgb(0 0 0 / 0.35));
+  transition: transform 0.2s;
+}
+.patch:hover {
+  transform: rotate(0deg) scale(1.12) !important;
+}
+
+/* ---------- stickers do palco ---------- */
+.sticker {
+  filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff)
+    drop-shadow(0 7px 10px rgb(0 0 0 / 0.5));
+}
+.sticker-art {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.sticker-gold .sticker-art {
+  filter: grayscale(1) sepia(1) saturate(5) hue-rotate(-8deg) brightness(1.05) contrast(1.15);
+}
+.sticker-shine {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  background: linear-gradient(115deg, transparent 35%, rgb(255 255 255 / 0.75) 47%, rgb(255 255 255 / 0.15) 53%, transparent 60%);
+  background-size: 300% 100%;
+  mix-blend-mode: soft-light;
+  animation: sticker-sweep 3.6s ease-in-out infinite;
+}
+.sticker-gloss .sticker-shine {
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+.sticker-holo .sticker-shine {
+  background:
+    linear-gradient(115deg, transparent 35%, rgb(255 255 255 / 0.7) 47%, transparent 58%),
+    linear-gradient(125deg, #ff004c, #ff9500, #ffee00, #2bff88, #00c3ff, #8a2bff, #ff004c, #ff9500, #ffee00);
+  background-size:
+    300% 100%,
+    400% 400%;
+  mix-blend-mode: color-dodge;
+  opacity: 0.7;
+  animation:
+    sticker-sweep 3.6s ease-in-out infinite,
+    sticker-holo 6s linear infinite;
+}
+.sticker-gold .sticker-shine {
+  background: linear-gradient(115deg, transparent 35%, rgb(255 246 201 / 0.95) 47%, rgb(255 224 138 / 0.3) 53%, transparent 60%);
+  background-size: 300% 100%;
+  mix-blend-mode: screen;
+}
+.sticker-glitter .sticker-shine {
+  background:
+    radial-gradient(circle, #fff 0 1px, transparent 1.6px) 0 0 / 9px 9px,
+    radial-gradient(circle, #fff6 0 1px, transparent 1.6px) 4px 5px / 11px 11px,
+    linear-gradient(115deg, transparent 35%, rgb(255 255 255 / 0.7) 47%, transparent 58%) 0 0 / 300% 100%;
+  mix-blend-mode: screen;
+  animation:
+    sticker-glitter 1.4s steps(4) infinite,
+    sticker-sweep 3.6s ease-in-out infinite;
+}
+.sticker-pop {
+  animation: sticker-pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes sticker-sweep {
+  0% {
+    background-position: 120% 0;
+  }
+  60%,
+  100% {
+    background-position: -20% 0;
+  }
+}
+@keyframes sticker-holo {
+  to {
+    background-position:
+      -20% 0,
+      400% 400%;
+  }
+}
+@keyframes sticker-glitter {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes sticker-pop {
+  from {
+    transform: scale(1.8) rotate(-12deg);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-frame,
+  .avatar-frame::before,
+  .frame-particles,
+  .frame-particles b,
+  .sticker-shine,
+  .sticker-pop {
+    animation: none !important;
+  }
+}

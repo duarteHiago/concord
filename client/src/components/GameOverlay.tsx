@@ -64,7 +64,7 @@ export function GameOverlay() {
     >
       <div className="relative flex w-[min(460px,92vw)] animate-pop-in flex-col items-center rounded-[32px] bg-popover px-8 pt-7 pb-8 shadow-2xl ring-1 ring-line-strong">
         <div className="mb-6 flex items-center gap-2.5">
-          <Avatar name={message.author.displayName} color={message.author.avatarColor} src={message.author.avatarUrl} size={32} />
+          <Avatar name={message.author.displayName} color={message.author.avatarColor} src={message.author.avatarUrl} frame={message.author.frame} size={32} />
           <span className="font-display text-lg font-bold">
             {who} <span className="font-normal text-fg-muted">{action}</span>
           </span>

@@ -9,6 +9,7 @@ import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { Avatar, RoleDot, cx } from './ui';
+import { PATCH_TILTS, PatchBadge } from './PatchBadge';
 
 export function MemberPopover() {
   const { userId, serverId, x, y, close } = usePopover();
@@ -84,8 +85,12 @@ export function MemberPopover() {
   return (
     <div
       ref={ref}
-      className="fixed z-40 max-h-[calc(100vh-16px)] w-80 animate-pop-in overflow-y-auto rounded-[24px] bg-popover shadow-2xl ring-1 ring-line"
-      style={{ left: x, top: Math.max(8, y) }}
+      className="fixed z-40 max-h-[calc(100vh-16px)] w-80 animate-pop-in overflow-y-auto rounded-[24px] bg-popover bg-cover bg-center shadow-2xl ring-1 ring-line"
+      style={{
+        left: x,
+        top: Math.max(8, y),
+        ...(member.cardBgUrl ? { backgroundImage: `linear-gradient(rgb(0 0 0 / 0.15), rgb(0 0 0 / 0.45)), url("${member.cardBgUrl}")` } : {}),
+      }}
     >
       {member.bannerUrl ? (
         <button
@@ -99,10 +104,10 @@ export function MemberPopover() {
           <img src={member.bannerUrl} alt="" className="h-full w-full object-cover" />
         </button>
       ) : (
-        <div className="h-16" style={{ background: `linear-gradient(135deg, ${topColor}, ${topColor}55)` }} />
+        <div className="h-16" style={member.cardBgUrl ? undefined : { background: `linear-gradient(135deg, ${topColor}, ${topColor}55)` }} />
       )}
       <div className="px-4 pb-4">
-        <div className="-mt-9 mb-2">
+        <div className="-mt-9 mb-2 flex items-end justify-between gap-2">
           <button
             aria-label={member.avatarUrl ? 'Ver foto em tamanho grande' : undefined}
             disabled={!member.avatarUrl}
@@ -112,10 +117,19 @@ export function MemberPopover() {
             }}
             className="rounded-full enabled:cursor-zoom-in"
           >
-            <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} size={72} status={presence ?? 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
+            <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} frame={member.frame} size={72} status={presence ?? 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
           </button>
+          {!!member.patches?.length && (
+            <div aria-label="Patches" className="flex flex-wrap justify-end pb-0.5 pl-2">
+              {member.patches.map((p, i) => (
+                <div key={p.id} className="-ml-1.5">
+                  <PatchBadge patch={p} size={member.patches!.length > 4 ? 34 : 40} tilt={PATCH_TILTS[i % PATCH_TILTS.length]} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="rounded-2xl bg-surface-0 p-3">
+        <div className={cx('rounded-2xl p-3', member.cardBgUrl ? 'bg-surface-0/80 backdrop-blur-md' : 'bg-surface-0')}>
           <div className="flex items-center gap-1.5 text-lg font-bold">
             <span className="truncate">{name}</span>
             {member.bot && <span className="shrink-0 rounded bg-accent-2/20 px-1.5 text-[10px] leading-5 font-bold text-accent-2">BOT</span>}

@@ -106,7 +106,7 @@ function MemberRow({ detail, member, presence }: { detail: ServerDetail; member:
       onClick={(e) => openPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
       className={cx('flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-surface-3', !online && 'opacity-40 hover:opacity-100')}
     >
-      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} size={34} status={presence?.status ?? 'offline'} />
+      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} frame={member.frame} size={34} status={presence?.status ?? 'offline'} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
           <span className="truncate text-sm font-semibold" style={{ color: memberColor(detail, member.id) }}>

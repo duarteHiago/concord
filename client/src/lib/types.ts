@@ -1,4 +1,7 @@
 import type { Overwrite } from '../../../shared/permissions.ts';
+import type { Patch, StickerFinish } from '../../../shared/cosmetics.ts';
+
+export type { Patch, StickerFinish };
 
 export interface User {
   id: string;
@@ -10,6 +13,33 @@ export interface User {
   bannerUrl?: string | null;
   bio: string;
   bot?: boolean;
+  /** moldura animada da foto */
+  frame?: string | null;
+  /** fundo do mini perfil (imagem/GIF) */
+  cardBgUrl?: string | null;
+  /** patches costurados no cartão (não vêm junto das mensagens) */
+  patches?: Patch[];
+}
+
+/** Sticker enviado pela galera do servidor. */
+export interface CustomSticker {
+  id: string;
+  serverId: string;
+  name: string;
+  url: string;
+  uploaderId: string | null;
+}
+
+/** Sticker colado no palco de uma sala de voz. x/y vão de 0 a 1. */
+export interface PlacedSticker {
+  id: string;
+  sticker: string; // "preset:<id>" ou "custom:<id>"
+  finish: StickerFinish;
+  x: number;
+  y: number;
+  rot: number;
+  scale: number;
+  authorId: string | null;
 }
 
 export interface Activity {

@@ -67,7 +67,7 @@ export function DmSidebar() {
               onClick={() => openDmById(d.id)}
               className={cx('flex w-full items-center gap-3 rounded-2xl px-2.5 py-2 text-left transition-colors', active ? 'bg-surface-3' : 'hover:bg-surface-3/60')}
             >
-              <Avatar name={d.user.displayName} color={d.user.avatarColor} src={d.user.avatarUrl} size={40} status={online[d.user.id]?.status ?? 'offline'} />
+              <Avatar name={d.user.displayName} color={d.user.avatarColor} src={d.user.avatarUrl} frame={d.user.frame} size={40} status={online[d.user.id]?.status ?? 'offline'} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className={cx('truncate text-sm', d.unread ? 'font-bold text-fg' : 'font-semibold')}>{d.user.displayName}</span>
@@ -137,7 +137,7 @@ function DmHeader({ dm }: { dm: DirectChannel }) {
 
   return (
     <header className="flex shrink-0 items-center gap-3 px-6 pt-5 pb-3">
-      <Avatar name={dm.user.displayName} color={dm.user.avatarColor} src={dm.user.avatarUrl} size={42} status={presence?.status ?? 'offline'} />
+      <Avatar name={dm.user.displayName} color={dm.user.avatarColor} src={dm.user.avatarUrl} frame={dm.user.frame} size={42} status={presence?.status ?? 'offline'} />
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-xl font-bold">{dm.user.displayName}</h1>
         <p className="flex items-center gap-1 truncate text-sm text-fg-muted">
@@ -204,7 +204,7 @@ function DmFeed({ dm }: { dm: DirectChannel }) {
         <div className="flex min-h-full flex-col justify-end px-6 pb-3">
           {!hasMore && (
             <div className="pt-6 pb-4">
-              <Avatar name={dm.user.displayName} color={dm.user.avatarColor} src={dm.user.avatarUrl} size={72} />
+              <Avatar name={dm.user.displayName} color={dm.user.avatarColor} src={dm.user.avatarUrl} frame={dm.user.frame} size={72} />
               <h2 className="mt-3 text-2xl font-bold">{dm.user.displayName}</h2>
               <p className="text-fg-muted">Este é o começo da sua conversa privada com @{dm.user.username}.</p>
             </div>
@@ -257,7 +257,7 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
               if (shared) openPopover(message.author.id, shared.server.id, e.currentTarget.getBoundingClientRect());
             }}
           >
-            <Avatar name={message.author.displayName} color={message.author.avatarColor} src={message.author.avatarUrl} size={36} />
+            <Avatar name={message.author.displayName} color={message.author.avatarColor} src={message.author.avatarUrl} frame={message.author.frame} size={36} />
           </button>
         )}
       </div>

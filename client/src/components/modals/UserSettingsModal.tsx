@@ -3,6 +3,7 @@ import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { NOISE_MODES } from '../../lib/voiceEffects';
 import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
+import { StyleTab } from './StyleTab';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
@@ -16,7 +17,7 @@ import { Avatar, Button, Input, Modal, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
-type Tab = 'profile' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'account';
+type Tab = 'profile' | 'style' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'account';
 
 export function UserSettingsModal() {
   const close = useApp((s) => s.closeModal);
@@ -27,6 +28,7 @@ export function UserSettingsModal() {
         {(
           [
             ['profile', 'Perfil'],
+            ['style', 'Estilo'],
             ['appearance', 'Aparência'],
             ['notifications', 'Notificações'],
             ['audio', 'Voz e vídeo'],
@@ -45,6 +47,7 @@ export function UserSettingsModal() {
         ))}
       </div>
       {tab === 'profile' && <Profile />}
+      {tab === 'style' && <StyleTab />}
       {tab === 'appearance' && <Appearance />}
       {tab === 'notifications' && <Notifications />}
       {tab === 'shortcuts' && <ShortcutsTab />}
@@ -123,7 +126,7 @@ function Profile() {
         </div>
         <div className="flex items-end gap-4 px-4 pb-4">
           <button onClick={changeAvatar} className="group relative -mt-10 rounded-full" title="Trocar foto">
-            <Avatar name={name || me.username} color={color} src={me.avatarUrl} size={84} className="rounded-full ring-[6px] ring-surface-0" />
+            <Avatar name={name || me.username} color={color} src={me.avatarUrl} frame={me.frame} size={84} className="rounded-full ring-[6px] ring-surface-0" />
             <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
               {uploading ? '…' : <ImagePlus size={22} />}
             </span>

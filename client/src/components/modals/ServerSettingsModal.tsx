@@ -357,7 +357,7 @@ function Members({ detail }: { detail: ServerDetail }) {
           return (
             <div key={m.id} className="px-4 py-3">
               <div className="flex items-center gap-3">
-                <Avatar name={memberName(m)} color={m.avatarColor} src={m.avatarUrl} size={36} />
+                <Avatar name={memberName(m)} color={m.avatarColor} src={m.avatarUrl} frame={m.frame} size={36} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 font-semibold">
                     {memberName(m)} {m.nickname && <span className="text-xs font-normal text-fg-subtle">({m.displayName})</span>} {owner && <Crown size={14} className="text-warn" />}

@@ -1,3 +1,5 @@
+import { useStickers } from './stickers';
+import type { PlacedSticker } from '../lib/types';
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
@@ -169,6 +171,12 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('mention', (m: MentionEvent) => receiveMention(m));
     socket.on('sounds:changed', ({ serverId }: { serverId: string }) => {
       if (get().sounds[serverId]) void get().loadSounds(serverId);
+    });
+    socket.on('stickers:changed', ({ channelId, stickers }: { channelId: string; stickers: PlacedSticker[] }) =>
+      useStickers.getState().setPlaced(channelId, stickers),
+    );
+    socket.on('custom-stickers:changed', ({ serverId }: { serverId: string }) => {
+      if (useStickers.getState().custom[serverId]) void useStickers.getState().loadCustom(serverId);
     });
     socket.on('sound:play', (e: { url: string; userId: string; channelId: string; name: string }) => playSoundboard(e));
     socket.on('message:new', (msg: Message) => {

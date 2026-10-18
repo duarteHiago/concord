@@ -22,7 +22,7 @@ export function NudgeCard() {
     <div role="alert" className="fixed top-6 left-1/2 z-[95] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 animate-pop-in">
       <div className="flex items-center gap-3.5 rounded-[24px] bg-surface-3 p-3.5 shadow-2xl ring-2 ring-accent">
         <div className="nudge-shake">
-          <Avatar name={name} color={nudge.from.avatarColor} src={nudge.from.avatarUrl} size={52} />
+          <Avatar name={name} color={nudge.from.avatarColor} src={nudge.from.avatarUrl} frame={nudge.from.frame} size={52} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 font-display text-[15px] font-bold">

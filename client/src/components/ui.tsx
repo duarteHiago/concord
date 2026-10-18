@@ -18,6 +18,7 @@ export function Avatar({
   size = 40,
   status,
   speaking,
+  frame,
   className,
 }: {
   name: string;
@@ -26,6 +27,8 @@ export function Avatar({
   size?: number;
   status?: 'online' | 'dnd' | 'offline' | null;
   speaking?: boolean;
+  /** moldura animada escolhida no perfil */
+  frame?: string | null;
   className?: string;
 }) {
   return (
@@ -49,11 +52,12 @@ export function Avatar({
           {initials(name)}
         </div>
       )}
+      {frame && <AvatarFrame frame={frame} size={size} />}
       {status && (
         <span
           title={status === 'dnd' ? 'Não perturbe' : status === 'online' ? 'Online' : 'Offline'}
           className={cx(
-            'absolute -right-0.5 -bottom-0.5 flex items-center justify-center rounded-full border-[3px] border-surface-2',
+            'absolute -right-0.5 -bottom-0.5 z-[2] flex items-center justify-center rounded-full border-[3px] border-surface-2',
             status === 'online' ? 'bg-ok' : status === 'dnd' ? 'bg-danger' : 'bg-fg-subtle',
           )}
           style={{ width: Math.max(12, size * 0.34), height: Math.max(12, size * 0.34) }}
@@ -62,6 +66,33 @@ export function Avatar({
         </span>
       )}
     </div>
+  );
+}
+
+/** Partículas que giram em volta de algumas molduras. */
+const FRAME_PARTICLES: Record<string, string[]> = {
+  orbit: ['', ''],
+  hearts: ['💖', '💗', '💕'],
+  sakura: ['🌸', '🌸', '🌸'],
+  galaxy: ['✦', '✧', '✦', '✧'],
+  fire: ['🔥', '🔥'],
+};
+
+export function AvatarFrame({ frame, size }: { frame: string; size: number }) {
+  const particles = FRAME_PARTICLES[frame] ?? [];
+  const fw = Math.max(2, Math.round(size * 0.065));
+  return (
+    <span className={cx('avatar-frame', `frame-${frame}`)} style={{ '--fw': `${fw}px`, '--ps': `${Math.max(7, size * 0.2)}px` } as React.CSSProperties}>
+      {particles.length > 0 && (
+        <span className="frame-particles">
+          {particles.map((p, i) => (
+            <i key={i} style={{ transform: `rotate(${(360 / particles.length) * i}deg)` }}>
+              <b>{p}</b>
+            </i>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -243,7 +274,7 @@ export function AvatarStack({
   size = 30,
   max = 5,
 }: {
-  people: { id: string; name: string; color: string; src?: string | null; speaking?: boolean }[];
+  people: { id: string; name: string; color: string; src?: string | null; frame?: string | null; speaking?: boolean }[];
   size?: number;
   max?: number;
 }) {
@@ -253,7 +284,7 @@ export function AvatarStack({
     <div className="flex items-center">
       {shown.map((p, i) => (
         <div key={p.id} className="rounded-full ring-[3px] ring-surface-3" style={{ marginLeft: i ? -size * 0.28 : 0, zIndex: shown.length - i }}>
-          <Avatar name={p.name} color={p.color} src={p.src} size={size} speaking={p.speaking} />
+          <Avatar name={p.name} color={p.color} src={p.src} frame={p.frame} size={size} speaking={p.speaking} />
         </div>
       ))}
       {extra > 0 && (

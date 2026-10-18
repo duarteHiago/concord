@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { config } from './config.ts';
 import { fail } from './http.ts';
 
-export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds';
+export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds' | 'cards' | 'patches' | 'stickers';
 
 const MB = 1024 * 1024;
 // GIFs animados não são redimensionados no navegador, por isso os limites de foto são folgados
@@ -14,6 +14,9 @@ const LIMITS: Record<UploadKind, number> = {
   backgrounds: 8 * MB,
   banners: 8 * MB,
   sounds: 1 * MB,
+  cards: 8 * MB,
+  patches: 2 * MB,
+  stickers: 3 * MB,
 };
 
 /** Identifica o formato pelos primeiros bytes (não confia no Content-Type). */
@@ -63,7 +66,7 @@ export function saveSound(owner: string, body: unknown): string {
 }
 
 export function removeUpload(url: string | null | undefined) {
-  const m = url?.match(/^\/uploads\/(avatars|icons|backgrounds|banners|sounds)\/([\w.-]+)$/);
+  const m = url?.match(/^\/uploads\/(avatars|icons|backgrounds|banners|sounds|cards|patches|stickers)\/([\w.-]+)$/);
   if (!m) return;
   try {
     unlinkSync(join(config.uploadsDir, m[1], basename(m[2])));

@@ -243,7 +243,7 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
 
   const people = participants.flatMap((v) => {
     const m = detail.members.find((x) => x.id === v.userId);
-    return m ? [{ id: m.id, name: memberName(m), color: m.avatarColor, src: m.avatarUrl, speaking: !!speaking?.[m.id] && !v.muted }] : [];
+    return m ? [{ id: m.id, name: memberName(m), color: m.avatarColor, src: m.avatarUrl, frame: m.frame, speaking: !!speaking?.[m.id] && !v.muted }] : [];
   });
 
   return (
@@ -304,7 +304,7 @@ function VoiceParticipant({ detail, state, speaking }: { detail: ServerDetail; s
       }}
       className="flex h-9 w-full items-center gap-2.5 rounded-xl px-1.5 text-left text-sm text-fg-muted hover:bg-surface-4 hover:text-fg"
     >
-      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} size={26} speaking={speaking && !state.muted} />
+      <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} frame={member.frame} size={26} speaking={speaking && !state.muted} />
       <span className="flex-1 truncate font-semibold" style={{ color: memberColor(detail, member.id) }}>
         {memberName(member)}
       </span>
@@ -419,7 +419,7 @@ function UserCard() {
         </div>
       )}
       <button onClick={() => setMenu(!menu)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" title="Status e perfil" aria-expanded={menu}>
-        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={40} status={presence} />
+        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} frame={me.frame} size={40} status={presence} />
         <div className="min-w-0 leading-tight">
           <div className="truncate text-sm font-bold">{me.displayName}</div>
           <div className={cx('truncate text-xs', presence === 'dnd' ? 'text-danger' : 'text-fg-muted')}>

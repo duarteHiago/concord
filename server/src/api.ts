@@ -27,7 +27,9 @@ import {
   run,
   tx,
   type ChannelRow,
+  type CustomStickerRow,
   type DmChannelRow,
+  type PlacedStickerRow,
   type InviteRow,
   type MessageRow,
   type RoleRow,
@@ -40,6 +42,17 @@ import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './liv
 import { removeUpload, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, normalize as normalizeCode, rotateRecoveryCode } from './recovery.ts';
 import { playGame } from './games.ts';
+import {
+  FRAMES,
+  MAX_CUSTOM_STICKERS,
+  MAX_PATCHES,
+  MAX_PLACED_STICKERS,
+  PATCH_SHAPES,
+  PRESET_STICKERS,
+  STICKER_FINISHES,
+  type FrameId,
+  type Patch,
+} from '../../shared/cosmetics.ts';
 import {
   dropVoice,
   emitToChannel,
@@ -68,10 +81,32 @@ const now = () => Date.now();
 
 type PublicUser = Pick<
   UserRow,
-  'id' | 'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio' | 'banner_url' | 'is_bot'
+  'id' | 'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio' | 'banner_url' | 'is_bot' | 'profile_style'
 >;
 
+interface ProfileStyle {
+  frame?: FrameId | null;
+  cardBg?: string | null;
+  patches?: Patch[];
+}
+
+function parseStyle(raw: string | null | undefined): ProfileStyle {
+  try {
+    const v = JSON.parse(raw || '{}') as ProfileStyle;
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+const styleJson = (st: ProfileStyle) => ({
+  frame: st.frame && (FRAMES as readonly string[]).includes(st.frame) ? st.frame : null,
+  cardBgUrl: st.cardBg ?? null,
+  patches: Array.isArray(st.patches) ? st.patches : [],
+});
+
 const userJson = (u: PublicUser) => ({
+  ...styleJson(parseStyle(u.profile_style)),
   id: u.id,
   username: u.username,
   displayName: u.display_name,
@@ -82,6 +117,12 @@ const userJson = (u: PublicUser) => ({
   bannerUrl: u.banner_url,
   bot: !!u.is_bot,
 });
+
+/** Autor de mensagem: sem os patches (só aparecem no cartão do perfil). */
+const authorJson = (u: PublicUser) => {
+  const { patches: _patches, ...rest } = userJson(u);
+  return rest;
+};
 
 /** Dados do próprio usuário: inclui as preferências (tema etc.), que só ele vê. */
 const meJson = (u: UserRow) => {
@@ -124,10 +165,10 @@ const messageJson = (m: MessageWithAuthor) => ({
   data: parseData(m.data),
   createdAt: m.created_at,
   editedAt: m.edited_at,
-  author: userJson({ ...m, id: m.author_id }),
+  author: authorJson({ ...m, id: m.author_id }),
 });
 
-const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot
+const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style
   FROM messages m JOIN users u ON u.id = m.author_id`;
 
 // ============================================================ Auth
@@ -159,6 +200,7 @@ api.post('/auth/register', async (req, res) => {
     is_bot: 0,
     bot_owner_id: null,
     bot_token_hash: null,
+    profile_style: '{}',
     banner_color: null,
     bio: '',
     settings: '{}',
@@ -306,6 +348,75 @@ api.delete('/me/banner', (_req, res) => {
   run('UPDATE users SET banner_url = NULL WHERE id = ?', me);
   profileChanged(me);
   res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+// ---- Cosméticos: moldura animada, fundo do cartão e patches ----
+
+function saveStyle(userId: string, style: ProfileStyle) {
+  run('UPDATE users SET profile_style = ? WHERE id = ?', JSON.stringify(style), userId);
+  profileChanged(userId);
+}
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+function cleanPatches(raw: unknown, me: string): Patch[] {
+  if (!Array.isArray(raw)) fail(400, 'Patches inválidos');
+  const list = raw as Record<string, unknown>[];
+  if (list.length > MAX_PATCHES) fail(400, `No máximo ${MAX_PATCHES} patches`);
+  const ownImage = (v: unknown) => typeof v === 'string' && v.startsWith(`/uploads/patches/${me}-`) && /^\/uploads\/patches\/[\w-]+\.(png|jpg|gif|webp)$/.test(v);
+  const pick = (v: unknown, fallback: string) => (typeof v === 'string' && HEX.test(v) ? v : fallback);
+  return list.map((p) => ({
+    id: typeof p?.id === 'string' && /^[\w-]{1,40}$/.test(p.id) ? p.id : randomUUID(),
+    shape: (PATCH_SHAPES as readonly string[]).includes(p?.shape as string) ? (p.shape as Patch['shape']) : 'circle',
+    bg: pick(p?.bg, '#2b2234'),
+    border: pick(p?.border, '#ff8a6b'),
+    fg: pick(p?.fg, '#ffffff'),
+    icon: typeof p?.icon === 'string' ? [...p.icon].slice(0, 4).join('') : '',
+    text: typeof p?.text === 'string' ? p.text.trim().slice(0, 14) : '',
+    ...(ownImage(p?.image) ? { image: p.image as string } : {}),
+  }));
+}
+
+api.patch('/me/style', (req, res) => {
+  const me = uid(res);
+  const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  if (req.body?.frame !== undefined) {
+    const frame = req.body.frame;
+    if (frame !== null && !(FRAMES as readonly string[]).includes(frame)) fail(400, 'Moldura inválida');
+    style.frame = frame;
+  }
+  if (req.body?.patches !== undefined) {
+    const next = cleanPatches(req.body.patches, me);
+    for (const old of style.patches ?? []) if (old.image && !next.some((p) => p.image === old.image)) removeUpload(old.image);
+    style.patches = next;
+  }
+  saveStyle(me, style);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+/** Fundo do mini perfil (imagem ou GIF). */
+api.post('/me/card-bg', imageBody, (req, res) => {
+  const me = uid(res);
+  const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  const old = style.cardBg;
+  style.cardBg = saveImage('cards', me, req.body);
+  saveStyle(me, style);
+  removeUpload(old);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+api.delete('/me/card-bg', (_req, res) => {
+  const me = uid(res);
+  const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  removeUpload(style.cardBg);
+  style.cardBg = null;
+  saveStyle(me, style);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+/** Imagem de um patch (logo do time etc.). Só passa a valer quando o patch é salvo. */
+api.post('/me/patch-image', imageBody, (req, res) => {
+  res.json({ url: saveImage('patches', uid(res), req.body) });
 });
 
 /** Fundo do tema: guardado no servidor para aparecer igual no navegador e no app desktop. */
@@ -996,6 +1107,157 @@ api.post('/sounds/:id/play', (req, res) => {
   res.json({ ok: true });
 });
 
+// ============================================================ Stickers
+
+const customStickerJson = (s: CustomStickerRow) => ({ id: s.id, serverId: s.server_id, name: s.name, url: s.url, uploaderId: s.uploader_id });
+const placedJson = (s: PlacedStickerRow) => ({
+  id: s.id,
+  sticker: s.sticker,
+  finish: s.finish,
+  x: s.x,
+  y: s.y,
+  rot: s.rot,
+  scale: s.scale,
+  authorId: s.author_id,
+});
+
+const placedIn = (channelId: string) =>
+  all<PlacedStickerRow>('SELECT * FROM placed_stickers WHERE channel_id = ? ORDER BY created_at', channelId).map(placedJson);
+
+function stickersChanged(channel: ChannelRow) {
+  void emitToChannel(channel, 'stickers:changed', { channelId: channel.id, stickers: placedIn(channel.id) });
+}
+
+const unit = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback);
+const rotation = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-180, Math.min(180, v)) : fallback);
+const scaleOf = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0.4, Math.min(3, v)) : fallback);
+const finishOf = (v: unknown, fallback: string) => ((STICKER_FINISHES as readonly unknown[]).includes(v) ? (v as string) : fallback);
+
+api.get('/servers/:id/stickers', (req, res) => {
+  const server = requireMember(req.params.id, uid(res));
+  res.json(all<CustomStickerRow>('SELECT * FROM custom_stickers WHERE server_id = ? ORDER BY created_at', server.id).map(customStickerJson));
+});
+
+api.post('/servers/:id/stickers', humansOnly, imageBody, (req, res) => {
+  const me = uid(res);
+  const server = requireMember(req.params.id, me);
+  const name = str(req.query.name, 'nome do sticker', 1, 32);
+  const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM custom_stickers WHERE server_id = ?', server.id)!.n;
+  if (count >= MAX_CUSTOM_STICKERS) fail(400, `O servidor já tem ${MAX_CUSTOM_STICKERS} stickers. Apague algum antes.`);
+  const row: CustomStickerRow = { id: randomUUID(), server_id: server.id, name, url: saveImage('stickers', server.id, req.body), uploader_id: me, created_at: now() };
+  run(
+    'INSERT INTO custom_stickers (id, server_id, name, url, uploader_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    row.id,
+    row.server_id,
+    name,
+    row.url,
+    me,
+    row.created_at,
+  );
+  emitToServer(server.id, 'custom-stickers:changed', { serverId: server.id });
+  res.json(customStickerJson(row));
+});
+
+api.delete('/stickers/:id', (req, res) => {
+  const me = uid(res);
+  const row = get<CustomStickerRow>('SELECT * FROM custom_stickers WHERE id = ?', req.params.id) ?? fail(404, 'Sticker não encontrado');
+  if (row.uploader_id !== me) requireServerPerm(row.server_id, me, P.MANAGE_SERVER);
+  const channels = all<ChannelRow>(
+    'SELECT DISTINCT c.* FROM channels c JOIN placed_stickers p ON p.channel_id = c.id WHERE p.sticker = ?',
+    `custom:${row.id}`,
+  );
+  run('DELETE FROM placed_stickers WHERE sticker = ?', `custom:${row.id}`);
+  run('DELETE FROM custom_stickers WHERE id = ?', row.id);
+  removeUpload(row.url);
+  emitToServer(row.server_id, 'custom-stickers:changed', { serverId: row.server_id });
+  channels.forEach(stickersChanged);
+  res.json({ ok: true });
+});
+
+/** Stickers colados no palco de uma sala de voz (todo mundo vê). */
+api.get('/channels/:id/stickers', (req, res) => {
+  const channel = requireChannelPerm(req.params.id, uid(res), P.VIEW_CHANNEL);
+  res.json(placedIn(channel.id));
+});
+
+api.post('/channels/:id/stickers', humansOnly, (req, res) => {
+  const me = uid(res);
+  const channel = requireChannelPerm(req.params.id, me, P.CONNECT);
+  if (channel.type !== 'voice') fail(400, 'Stickers só podem ser colados em salas de voz');
+  const sticker = String(req.body?.sticker ?? '');
+  if (sticker.startsWith('custom:')) {
+    if (!get('SELECT 1 FROM custom_stickers WHERE id = ? AND server_id = ?', sticker.slice(7), channel.server_id)) fail(404, 'Sticker não encontrado');
+  } else if (!sticker.startsWith('preset:') || !(PRESET_STICKERS as readonly string[]).includes(sticker.slice(7))) {
+    fail(400, 'Sticker inválido');
+  }
+  const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM placed_stickers WHERE channel_id = ?', channel.id)!.n;
+  if (count >= MAX_PLACED_STICKERS) fail(400, `A sala já tem ${MAX_PLACED_STICKERS} stickers. Tire algum antes.`);
+  const row: PlacedStickerRow = {
+    id: randomUUID(),
+    channel_id: channel.id,
+    sticker,
+    finish: finishOf(req.body?.finish, 'gloss'),
+    x: unit(req.body?.x, 0.5),
+    y: unit(req.body?.y, 0.5),
+    rot: rotation(req.body?.rot, 0),
+    scale: scaleOf(req.body?.scale, 1),
+    author_id: me,
+    created_at: now(),
+  };
+  run(
+    'INSERT INTO placed_stickers (id, channel_id, sticker, finish, x, y, rot, scale, author_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    row.id,
+    row.channel_id,
+    row.sticker,
+    row.finish,
+    row.x,
+    row.y,
+    row.rot,
+    row.scale,
+    me,
+    row.created_at,
+  );
+  stickersChanged(channel);
+  res.json(placedJson(row));
+});
+
+/** Quem colou (ou quem modera mensagens) pode mover, girar, redimensionar e tirar. */
+function ownSticker(channelId: string, stickerId: string, me: string) {
+  const channel = requireChannelPerm(channelId, me, P.VIEW_CHANNEL);
+  const row =
+    get<PlacedStickerRow>('SELECT * FROM placed_stickers WHERE id = ? AND channel_id = ?', stickerId, channel.id) ?? fail(404, 'Sticker não encontrado');
+  if (row.author_id !== me && !has(channelPermissions(channel, me), P.MANAGE_MESSAGES)) fail(403, 'Só quem colou pode mexer nesse sticker');
+  return { channel, row };
+}
+
+api.patch('/channels/:id/stickers/:sid', (req, res) => {
+  const { channel, row } = ownSticker(req.params.id, req.params.sid, uid(res));
+  const next = {
+    x: unit(req.body?.x, row.x),
+    y: unit(req.body?.y, row.y),
+    rot: rotation(req.body?.rot, row.rot),
+    scale: scaleOf(req.body?.scale, row.scale),
+    finish: finishOf(req.body?.finish, row.finish),
+  };
+  run('UPDATE placed_stickers SET x = ?, y = ?, rot = ?, scale = ?, finish = ? WHERE id = ?', next.x, next.y, next.rot, next.scale, next.finish, row.id);
+  stickersChanged(channel);
+  res.json(placedJson({ ...row, ...next }));
+});
+
+api.delete('/channels/:id/stickers/:sid', (req, res) => {
+  const { channel, row } = ownSticker(req.params.id, req.params.sid, uid(res));
+  run('DELETE FROM placed_stickers WHERE id = ?', row.id);
+  stickersChanged(channel);
+  res.json({ ok: true });
+});
+
+api.delete('/channels/:id/stickers', (req, res) => {
+  const channel = requireChannelPerm(req.params.id, uid(res), P.MANAGE_MESSAGES);
+  run('DELETE FROM placed_stickers WHERE channel_id = ?', channel.id);
+  stickersChanged(channel);
+  res.json({ ok: true });
+});
+
 // ============================================================ Bots
 
 const newBotToken = () => `cb_${randomBytes(32).toString('base64url')}`;
@@ -1125,7 +1387,7 @@ api.post('/channels/:id/games', async (req, res) => {
 // ============================================================ Conversas privadas (DMs)
 
 const DM_SELECT = `SELECT m.id, m.dm_id AS channel_id, m.author_id, m.content, m.kind, m.data, m.created_at, m.edited_at,
-  u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot
+  u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style
   FROM dm_messages m JOIN users u ON u.id = m.author_id`;
 
 const otherOf = (dm: DmChannelRow, me: string) => (dm.user_a === me ? dm.user_b : dm.user_a);
