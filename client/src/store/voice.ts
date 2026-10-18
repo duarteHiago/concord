@@ -8,6 +8,7 @@ import {
   VideoPreset,
   VideoPresets,
   type LocalAudioTrack,
+  type LocalTrack,
   type RemoteTrack,
   type VideoCodec,
 } from 'livekit-client';
@@ -55,7 +56,10 @@ export interface ShareSettings {
   fps: FpsOption;
   audio: boolean;
   mode: 'motion' | 'detail';
-  codec: VideoCodec;
+  /** 'auto' = o codec que a placa de vídeo codifica (escolhido na hora de transmitir) */
+  codec: VideoCodec | 'auto';
+  /** versão das preferências (para migrações) */
+  v?: number;
 }
 
 export interface AudioSettings {
@@ -139,7 +143,7 @@ voiceNotices.addEventListener('fallback', () =>
   toast.info('A supressão máxima (DeepFilterNet 3) não carregou agora; usando a IA leve (GTCRN).'),
 );
 
-const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'h264' };
+const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'auto', v: 2 };
 
 /** Carrega as preferências salvas, migrando o formato antigo (fps embutido no id do preset, ex.: "1080p60"). */
 function loadShareSettings(): ShareSettings {
@@ -157,8 +161,57 @@ function loadShareSettings(): ShareSettings {
     fps: fps ?? DEFAULT_SHARE.fps,
     audio: raw.audio ?? DEFAULT_SHARE.audio,
     mode: raw.mode ?? DEFAULT_SHARE.mode,
-    codec: raw.codec ?? DEFAULT_SHARE.codec,
+    // v2: codec automático (quem ficou em VP8 codificava a tela pelo processador e travava o PC)
+    codec: raw.v === 2 ? (raw.codec ?? DEFAULT_SHARE.codec) : 'auto',
+    v: 2,
   };
+}
+
+const HW_CODECS: { codec: VideoCodec; mime: string }[] = [
+  { codec: 'h264', mime: 'video/H264' },
+  { codec: 'av1', mime: 'video/AV1' },
+  { codec: 'vp9', mime: 'video/VP9' },
+];
+
+/**
+ * Escolhe um codec que a placa de vídeo codifica (Media Capabilities: powerEfficient = hardware).
+ * Sem confirmação de hardware, usa H.264: no Windows o Chromium ainda tenta a placa de vídeo por conta
+ * própria (e, se o navegador nem tiver H.264, o LiveKit cai sozinho para VP8).
+ */
+async function pickShareCodec(width: number, height: number, fps: number, bitrate: number): Promise<VideoCodec> {
+  const mc = navigator.mediaCapabilities;
+  if (mc?.encodingInfo) {
+    for (const { codec, mime } of HW_CODECS) {
+      try {
+        const info = await Promise.race([
+          mc.encodingInfo({ type: 'webrtc', video: { contentType: mime, width, height, bitrate, framerate: fps } }),
+          new Promise<null>((r) => setTimeout(() => r(null), 1500)),
+        ]);
+        if (info?.supported && info.powerEfficient) return codec;
+      } catch {
+        // codec não reconhecido por este navegador
+      }
+    }
+  }
+  return 'h264';
+}
+
+/** Alguns segundos depois de começar: avisa se a tela está sendo codificada pelo processador. */
+async function warnIfSoftwareEncoding(track: LocalTrack | undefined, heavy: boolean) {
+  if (!track) return;
+  await new Promise((r) => setTimeout(r, 4000));
+  const report = await track.getRTCStatsReport?.().catch(() => undefined);
+  let software = false;
+  report?.forEach((s: Record<string, unknown>) => {
+    if (s.type === 'outbound-rtp' && s.kind === 'video' && s.powerEfficientEncoder === false) software = true;
+  });
+  if (software) {
+    toast.info(
+      heavy
+        ? 'Sua tela está sendo codificada pelo processador (sem aceleração da placa de vídeo), o que pesa no PC. Se travar ou picotar, transmita em 720p ou 30 fps.'
+        : 'Sua tela está sendo codificada pelo processador (sem aceleração da placa de vídeo).',
+    );
+  }
 }
 const DEFAULT_AUDIO: AudioSettings = {
   inputId: 'default',
@@ -570,6 +623,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       // No app desktop o áudio vem do capturador por processo (sem as vozes da sala),
       // então o getDisplayMedia pede só o vídeo da fonte escolhida no seletor do Concord.
       const desktopShare = !!desktop && !!sourceId;
+      const codec: VideoCodec = settings.codec === 'auto' ? await pickShareCodec(preset.width, preset.height, fps, bitrate) : settings.codec;
       try {
         if (lp.isScreenShareEnabled) await get().stopShare();
         if (desktopShare) await desktop!.selectSource(sourceId!);
@@ -585,7 +639,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
             suppressLocalAudioPlayback: true,
           },
           {
-            videoCodec: settings.codec,
+            videoCodec: codec,
             screenShareEncoding: { maxBitrate: bitrate, maxFramerate: fps, priority: 'high' },
             screenShareSimulcastLayers: preset.height > 720 ? [new VideoPreset(1280, 720, 2_000_000, 30)] : [],
             simulcast: true,
@@ -596,6 +650,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
           },
         );
         syncLocalFlags();
+        void warnIfSoftwareEncoding(lp.getTrackPublication(Track.Source.ScreenShare)?.track, preset.height > 720 || fps > 30);
         set({ focus: `${lp.identity}:screen` });
         bump();
         if (desktopShare && settings.audio && (await desktopInfo()).processAudio) {

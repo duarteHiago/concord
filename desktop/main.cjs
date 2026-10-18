@@ -362,23 +362,20 @@ async function pollActivity() {
 }
 
 // ------------------------------------------------------------------ prioridade durante a transmissão
-// Enquanto transmite, os processos que capturam e codificam a tela ganham prioridade "acima do normal"
-// (como o OBS faz), para um jogo no outro monitor não roubar a CPU da live. Volta ao normal ao parar.
+// Enquanto transmite, só o processo da placa de vídeo (captura e codificação por hardware) ganha prioridade
+// "acima do normal". A página e o processo principal ficam no normal: quando a tela é codificada pelo
+// processador (sem hardware), dar prioridade a eles fazia a live tirar CPU de tudo e o PC inteiro travava.
 
-const CAPTURE_PROCESS = /video.?capture|gpu|audio/i;
+const CAPTURE_PROCESS = /video.?capture/i;
 let boosted = new Set();
 
 function setStreamingPriority(on) {
   const level = on ? os.constants.priority.PRIORITY_ABOVE_NORMAL : os.constants.priority.PRIORITY_NORMAL;
   const pids = new Set();
   if (on) {
-    pids.add(process.pid); // processo principal: a captura da tela (Windows Graphics Capture) roda nele
-    const page = win?.webContents.getOSProcessId();
-    if (page) pids.add(page); // a página: o codificador de vídeo do WebRTC roda nela
     for (const m of app.getAppMetrics()) {
       if (m.type === 'GPU' || (m.type === 'Utility' && CAPTURE_PROCESS.test(`${m.serviceName ?? ''} ${m.name ?? ''}`))) pids.add(m.pid);
     }
-    if (capture?.pid) pids.add(capture.pid); // capturador de áudio da transmissão
   } else {
     for (const pid of boosted) pids.add(pid);
   }
