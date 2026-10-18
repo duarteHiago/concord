@@ -12,6 +12,9 @@ export const config = {
   downloadsDir: env.DOWNLOADS_DIR ?? '',
   publicDir:env.PUBLIC_DIR ?? fileURLToPath(new URL('../../client/dist', import.meta.url)),
   allowRegistration: env.ALLOW_REGISTRATION !== 'false',
+  // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
+  metricsPort: Number(env.METRICS_PORT ?? 9464),
+  metricsHost: env.METRICS_HOST ?? '127.0.0.1',
   livekit: {
     // URL que o navegador usa. Vazio = mesmo domínio do app em /livekit (via proxy reverso).
     publicUrl: env.LIVEKIT_PUBLIC_URL ?? '',

@@ -1,6 +1,8 @@
 # Modo túnel (cloudflared): a Cloudflare cuida do HTTPS; o Caddy só roteia localmente.
 {
 	auto_https off
+	# métricas para o monitoramento (lidas pelo Prometheus em 127.0.0.1:2019)
+	metrics
 }
 
 :8090 {
@@ -9,6 +11,11 @@
 	# Sinalização do LiveKit no mesmo domínio: wss://DOMINIO/livekit
 	handle_path /livekit/* {
 		reverse_proxy 127.0.0.1:7880
+	}
+
+	# Monitoramento (Grafana, com login)
+	handle /grafana* {
+		reverse_proxy 127.0.0.1:13001
 	}
 
 	handle {

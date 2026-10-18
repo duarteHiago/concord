@@ -4,6 +4,7 @@ import { P, has } from '../../shared/permissions.ts';
 import { channelPermissions, getChannel } from './access.ts';
 import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, verifyToken } from './http.ts';
+import { socketEvents } from './metrics.ts';
 
 export interface VoiceState {
   userId: string;
@@ -171,6 +172,27 @@ export function onlineUserIds() {
   return [...online.keys()];
 }
 
+/** Números ao vivo para o monitoramento. */
+export function liveStats() {
+  let streams = 0;
+  let cameras = 0;
+  let muted = 0;
+  const rooms = new Set<string>();
+  for (const v of voice.values()) {
+    rooms.add(v.channelId);
+    if (v.streaming) streams++;
+    if (v.camera) cameras++;
+    if (v.muted) muted++;
+  }
+  return {
+    sockets: io ? io.engine.clientsCount : 0,
+    online: online.size,
+    voice: { participants: voice.size, rooms: rooms.size, streams, cameras, muted },
+  };
+}
+
+const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'reaction', 'activity:set', 'typing']);
+
 export function setupRealtime(httpServer: HttpServer) {
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
 
@@ -184,6 +206,7 @@ export function setupRealtime(httpServer: HttpServer) {
   io.on('connection', (socket) => {
     const userId = socket.data.userId as string;
     socket.join(`user:${userId}`);
+    socket.onAny((event: string) => socketEvents.inc({ event: KNOWN_SOCKET_EVENTS.has(event) ? event : 'outro' }));
 
     const servers = all<{ server_id: string }>('SELECT server_id FROM members WHERE user_id = ?', userId);
     for (const { server_id } of servers) {

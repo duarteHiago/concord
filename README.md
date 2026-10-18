@@ -119,6 +119,17 @@ Atualizar: `git pull && docker compose up -d --build`. Os dados ficam em `./data
 
 Cada espectador de uma transmissão 1080p60 recebe cerca de 6 a 9 Mbps **saindo da VPS**. Por exemplo, 5 pessoas assistindo usam uns 45 Mbps de upload da VPS. A CPU quase não pesa, porque o LiveKit não recodifica o vídeo.
 
+## Monitoramento (Grafana)
+
+O deploy sobe junto um monitoramento ao vivo em `https://SEU_DOMINIO/grafana` (usuário `admin`; a senha é gerada na VPS e fica no `.env`: `grep GRAFANA_ADMIN_PASSWORD /opt/concord/.env`).
+
+- **Visão geral**: site no ar visto de fora, latência, online, em voz, transmissões, requisições/s, erros, CPU/RAM/disco.
+- **VPS**: CPU por núcleo e por tipo, carga, memória, swap, disco (uso, leitura/escrita), rede, conexões.
+- **Containers**: CPU, memória, disco e reinícios de cada container da VPS.
+- **App e rede**: rotas da API (req/s e p95), eventos (mensagens, logins, uploads...), Socket.io, salas de voz, Node.js (event loop, heap), Caddy, túnel da Cloudflare, ping e disponibilidade.
+
+Coleta: Prometheus (a cada 10 s, guarda 15 dias), node-exporter, um coletor próprio do `docker stats` (`deploy/monitoring/docker-exporter.mjs`), blackbox (latência) e as métricas do próprio app (`127.0.0.1:9464`). Tudo escuta só em `127.0.0.1`; o único acesso de fora é o Grafana, com login. Para desligar: `MONITORING=off ./deploy/setup.sh`. Os painéis são gerados por `python deploy/monitoring/dashboards.py`.
+
 ## Observações
 
 - Use Chrome ou Edge no PC para transmitir. Áudio do sistema funciona no Windows ao compartilhar a **tela inteira** ou uma **aba**; ao compartilhar uma janela só, o navegador não captura o áudio dela.

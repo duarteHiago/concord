@@ -30,6 +30,12 @@ elif [ -n "${DOMAIN:-}" ]; then
 fi
 DOMAIN="$(grep ^DOMAIN= .env | cut -d= -f2)"
 
+# senha do Grafana: gerada aqui na VPS e nunca impressa (os logs do CI são públicos)
+if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' .env; then
+  echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)" >> .env
+  echo ">> Senha do Grafana criada no .env (veja com: grep GRAFANA_ADMIN_PASSWORD $(pwd)/.env)"
+fi
+
 COMPOSE=(docker compose)
 if [ "$MODE" = "tunnel" ]; then
   COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.tunnel.yml)
@@ -123,12 +129,36 @@ if [ -z "$("${COMPOSE[@]}" ps -q 2>/dev/null)" ]; then
   fi
 fi
 
+# ---- monitoramento (Prometheus + Grafana em https://DOMINIO/grafana). MONITORING=off desliga.
+if [ "${MONITORING:-on}" != "off" ]; then
+  MON_PORTS="19090 19100 19323 19115 13001"
+  if ! docker ps --format '{{.Names}}' | grep -q -- '-prometheus-'; then
+    BUSY=""
+    for p in $MON_PORTS; do ss -ltnH "sport = :$p" | grep -q . && BUSY="$BUSY $p"; done
+    if [ -n "$BUSY" ]; then
+      echo "!! Monitoramento não instalado: portas já em uso por outro serviço:$BUSY"
+      MONITORING=off
+    fi
+  fi
+fi
+if [ "${MONITORING:-on}" != "off" ]; then
+  sed "s|__DOMAIN__|${DOMAIN}|g" deploy/monitoring/prometheus.yml.tmpl > deploy/monitoring/prometheus.yml
+  COMPOSE+=(-f docker-compose.monitoring.yml)
+fi
+
 mkdir -p data
-"${COMPOSE[@]}" up -d --build
+"${COMPOSE[@]}" up -d --build --remove-orphans
 # recarrega o Caddyfile caso ele tenha mudado (o compose não detecta mudança no arquivo montado)
 "${COMPOSE[@]}" restart caddy
 echo
+if [ "${MONITORING:-on}" != "off" ]; then
+  # recarrega a configuração do Prometheus (alvos novos) sem perder o histórico
+  "${COMPOSE[@]}" kill -s SIGHUP prometheus >/dev/null 2>&1 || true
+fi
 echo ">> Pronto! Acesse https://${DOMAIN}"
+if [ "${MONITORING:-on}" != "off" ]; then
+  echo ">> Monitoramento: https://${DOMAIN}/grafana  (usuário: admin; senha: grep GRAFANA_ADMIN_PASSWORD $(pwd)/.env)"
+fi
 if [ "$MODE" = "tunnel" ]; then
   echo ">> Se o provedor tiver firewall no painel, libere: 7881/tcp e 7882/udp (mídia da transmissão)."
 else

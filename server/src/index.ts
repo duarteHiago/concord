@@ -5,11 +5,13 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { api } from './api.ts';
 import { config } from './config.ts';
 import { HttpError } from './http.ts';
-import { setupRealtime } from './realtime.ts';
+import { httpMetrics, registerLiveGauges, startMetricsServer } from './metrics.ts';
+import { liveStats, setupRealtime } from './realtime.ts';
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
+app.use(httpMetrics);
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req, res) => {
@@ -54,6 +56,8 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 const httpServer = createServer(app);
 setupRealtime(httpServer);
+registerLiveGauges({ sockets: () => liveStats().sockets, online: () => liveStats().online, voice: () => liveStats().voice });
+startMetricsServer();
 httpServer.listen(config.port, config.host, () => {
   console.log(`Concord rodando em http://${config.host}:${config.port}`);
 });

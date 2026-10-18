@@ -78,4 +78,6 @@ jobs:
       - name: Verificar saúde
         run: |
           ssh "$TARGET" "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:3000/health \
-            && echo && cd /opt/concord && docker compose ps --format '{{.Service}}: {{.Status}}'"
+            && echo && (curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:13001/api/health >/dev/null \
+              && echo 'Grafana: ok' || echo 'Grafana: não respondeu') \
+            && docker ps --filter label=com.docker.compose.project=concord --format '{{.Names}}: {{.Status}}'"

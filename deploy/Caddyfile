@@ -1,8 +1,18 @@
 # HTTPS automático (Let's Encrypt). O navegador só permite capturar a tela em HTTPS.
+{
+	# métricas para o monitoramento (lidas pelo Prometheus em 127.0.0.1:2019)
+	metrics
+}
+
 {$DOMAIN} {
 	# Sinalização do LiveKit no mesmo domínio: wss://DOMINIO/livekit
 	handle_path /livekit/* {
 		reverse_proxy 127.0.0.1:7880
+	}
+
+	# Monitoramento (Grafana, com login)
+	handle /grafana* {
+		reverse_proxy 127.0.0.1:13001
 	}
 
 	handle {

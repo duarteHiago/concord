@@ -5,3 +5,4 @@ data/
 data-dev/
 .env
 *.tgz
+deploy/monitoring/prometheus.yml
