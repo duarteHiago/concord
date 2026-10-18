@@ -1,7 +1,7 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { clipSettings } from '../../lib/clip';
-import { NOISE_MODES } from '../../lib/voiceEffects';
+import { NOISE_MODES, micLevels, preloadDfn, type GateMode, type MicLevel } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
 import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
@@ -757,7 +757,10 @@ function Audio() {
           {NOISE_MODES.map((m) => (
             <button
               key={m.id}
-              onClick={() => void setAudioSettings({ noiseMode: m.id })}
+              onClick={() => {
+                if (m.id === 'dfn') preloadDfn();
+                void setAudioSettings({ noiseMode: m.id });
+              }}
               aria-pressed={settings.noiseMode === m.id}
               className={cx(
                 'rounded-2xl border-2 p-3 text-left transition-colors',
@@ -770,7 +773,15 @@ function Audio() {
           ))}
         </div>
       </div>
+      <MicSensitivity />
       <div className="divide-y divide-line rounded-xl bg-surface-0">
+        <div className="flex items-center justify-between p-3">
+          <div>
+            <div className="text-sm font-semibold">Nivelar o volume da voz</div>
+            <div className="text-xs text-fg-muted">Deixa sua voz com volume uniforme (fala baixa sobe, grito não estoura). Com a IA ligada, age depois da limpeza, sem aumentar o ruído.</div>
+          </div>
+          <Toggle checked={settings.autoGain} onChange={(v) => void setAudioSettings({ autoGain: v })} />
+        </div>
         <div className="flex items-center justify-between p-3">
           <div>
             <div className="text-sm font-semibold">Cancelamento de eco</div>
@@ -778,6 +789,85 @@ function Audio() {
           </div>
           <Toggle checked={settings.echoCancellation} onChange={(v) => void setAudioSettings({ echoCancellation: v })} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Sensibilidade do microfone (portão de voz), com medidor ao vivo como no Discord. */
+function MicSensitivity() {
+  const gate = useVoice((s) => s.audioSettings.gate);
+  const setAudioSettings = useVoice((s) => s.setAudioSettings);
+  const inRoom = useVoice((s) => s.status === 'connected' && s.micOn);
+  const [level, setLevel] = useState<MicLevel | null>(null);
+
+  useEffect(() => {
+    const onLevel = (e: Event) => setLevel((e as CustomEvent<MicLevel>).detail);
+    micLevels.addEventListener('level', onLevel);
+    return () => micLevels.removeEventListener('level', onLevel);
+  }, []);
+
+  // -80 dB (silêncio) a -10 dB (bem alto) → 0 a 100%
+  const pct = (db: number) => Math.min(100, Math.max(0, ((db + 80) / 70) * 100));
+  const threshold = gate.mode === 'manual' ? gate.threshold : (level?.threshold ?? -50);
+  const modes: [GateMode, string][] = [
+    ['auto', 'Automática'],
+    ['manual', 'Manual'],
+    ['off', 'Desligada'],
+  ];
+
+  return (
+    <div>
+      <SectionTitle>Sensibilidade do microfone</SectionTitle>
+      <div className="rounded-2xl bg-surface-0 p-3">
+        <div role="radiogroup" aria-label="Sensibilidade do microfone" className="mb-2 flex flex-wrap gap-1.5">
+          {modes.map(([id, label]) => (
+            <button
+              key={id}
+              role="radio"
+              aria-checked={gate.mode === id}
+              onClick={() => void setAudioSettings({ gate: { ...gate, mode: id } })}
+              className={cx('rounded-full px-4 py-1.5 text-sm font-semibold', gate.mode === id ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mb-3 text-xs text-fg-muted">
+          {gate.mode === 'auto'
+            ? 'O microfone só abre quando você fala; nas pausas ninguém ouve o barulho de fundo. O limite se ajusta sozinho ao ambiente.'
+            : gate.mode === 'manual'
+              ? 'Arraste a linha: abaixo dela o microfone fica fechado.'
+              : 'O microfone fica sempre aberto (só a supressão de ruído atua).'}
+        </p>
+        {gate.mode !== 'off' && (
+          <>
+            <div className="relative h-3 overflow-hidden rounded-full bg-surface-3" aria-hidden="true">
+              <div
+                className={cx('absolute inset-y-0 left-0 rounded-full transition-[width] duration-75', level?.open ? 'bg-ok' : 'bg-fg-subtle')}
+                style={{ width: `${level && inRoom ? pct(level.level) : 0}%` }}
+              />
+              <div className="absolute inset-y-0 w-0.5 bg-warn" style={{ left: `${pct(threshold)}%` }} />
+            </div>
+            {gate.mode === 'manual' && (
+              <input
+                type="range"
+                min={-80}
+                max={-10}
+                step={1}
+                value={gate.threshold}
+                aria-label="Limite de sensibilidade (dB)"
+                onChange={(e) => void setAudioSettings({ gate: { ...gate, threshold: Number(e.target.value) } })}
+                className="mt-2 w-full"
+              />
+            )}
+            <p className="mt-1.5 text-[11px] text-fg-subtle">
+              {inRoom
+                ? `Verde = microfone aberto. ${gate.mode === 'manual' ? `Limite: ${gate.threshold} dB` : 'A linha amarela é o limite automático.'}`
+                : 'Entre numa sala de voz para ver o medidor ao vivo.'}
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

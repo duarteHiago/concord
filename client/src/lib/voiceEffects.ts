@@ -1,5 +1,5 @@
 // Processamento do microfone como um processador do LiveKit (WebAudio):
-// supressão de ruído por IA (GTCRN ou RNNoise) → efeito de voz.
+// mono → supressão de ruído por IA (DeepFilterNet3, GTCRN ou RNNoise) → portão de voz → efeito de voz.
 // O processador sobrevive a trocas de microfone: o LiveKit chama restart() quando a faixa reinicia.
 import { GtcrnWorkletNode, RnnoiseWorkletNode, loadGtcrn, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
 import gtcrnWasmUrl from '@sapphi-red/web-noise-suppressor/gtcrn.wasm?url';
@@ -9,12 +9,17 @@ import rnnoiseSimdWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wa
 import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
 import type { AudioProcessorOptions, LocalAudioTrack, Track, TrackProcessor } from 'livekit-client';
 
-/** off: nenhum; browser: filtro do navegador; rnnoise / gtcrn: redes neurais (rodam no seu PC). */
-export type NoiseMode = 'off' | 'browser' | 'rnnoise' | 'gtcrn';
+/** off: nenhum; browser: filtro do navegador; dfn / rnnoise / gtcrn: redes neurais (rodam no seu PC). */
+export type NoiseMode = 'off' | 'browser' | 'rnnoise' | 'gtcrn' | 'dfn';
 
 export const NOISE_MODES: { id: NoiseMode; label: string; hint: string }[] = [
-  { id: 'gtcrn', label: 'IA avançada (GTCRN)', hint: 'Remove até barulhos fortes (teclado mecânico, ventilador, rua). Usa um pouco mais de CPU.' },
-  { id: 'rnnoise', label: 'IA leve (RNNoise)', hint: 'A mesma do Jitsi e do OBS. Boa e muito leve.' },
+  {
+    id: 'dfn',
+    label: 'IA máxima (DeepFilterNet 3)',
+    hint: 'A mais forte: tira teclado, ventilador, rua e TV, mantendo a voz natural. Baixa ~12 MB na primeira vez.',
+  },
+  { id: 'gtcrn', label: 'IA leve (GTCRN)', hint: 'Quase tão boa quanto a máxima e bem mais leve. Boa para PCs mais fracos.' },
+  { id: 'rnnoise', label: 'IA básica (RNNoise)', hint: 'Só ruído constante (ventilador, chiado); deixa passar teclado.' },
   { id: 'browser', label: 'Do navegador', hint: 'O filtro básico do Chrome.' },
   { id: 'off', label: 'Desligada', hint: 'Som cru do microfone (bom para música).' },
 ];
@@ -44,7 +49,45 @@ function addModule(ctx: AudioContext, url: string) {
   return p;
 }
 
+// DeepFilterNet3: arquivos servidos pelo próprio Concord (client/public/vendor/deepfilternet3)
+type DfnCore = InstanceType<typeof import('deepfilternet3-noise-filter').DeepFilterNet3Core>;
+let dfnCore: Promise<DfnCore> | null = null;
+function loadDfn(): Promise<DfnCore> {
+  dfnCore ??= (async () => {
+    const { DeepFilterNet3Core } = await import('deepfilternet3-noise-filter');
+    // limite de atenuação em dB: 100 = tira o ruído por completo
+    const core = new DeepFilterNet3Core({
+      sampleRate: 48000,
+      noiseReductionLevel: 100,
+      assetConfig: { cdnUrl: `${location.origin}/vendor/deepfilternet3` },
+    });
+    await core.initialize();
+    return core;
+  })().catch((err) => {
+    dfnCore = null; // tenta de novo na próxima vez
+    throw err;
+  });
+  return dfnCore;
+}
+
+/** Baixa o modelo do DeepFilterNet3 com antecedência (ex.: ao entrar numa sala). */
+export const preloadDfn = () => void loadDfn().catch(() => {});
+
+/** Avisos do processamento (ex.: a IA máxima não carregou e caiu para a leve). */
+export const voiceNotices = new EventTarget();
+
 async function noiseNode(ctx: AudioContext, mode: NoiseMode): Promise<AudioWorkletNode | null> {
+  if (mode === 'dfn') {
+    try {
+      const core = await loadDfn();
+      return await core.createAudioWorkletNode(ctx);
+    } catch (err) {
+      // GTCRN mediu quase tão bem quanto o DFN3 e é leve: é o plano B
+      console.warn('[voz] DeepFilterNet3 indisponível, usando GTCRN', err);
+      voiceNotices.dispatchEvent(new CustomEvent('fallback', { detail: (err as Error).message }));
+      return noiseNode(ctx, 'gtcrn');
+    }
+  }
   if (mode === 'gtcrn') {
     const [wasmBinary] = await Promise.all([wasm('gtcrn', () => loadGtcrn({ url: gtcrnWasmUrl })), addModule(ctx, gtcrnWorkletUrl)]);
     return new GtcrnWorkletNode(ctx, { maxChannels: 1, wasmBinary });
@@ -105,6 +148,106 @@ class ConcordPitch extends AudioWorkletProcessor {
 }
 registerProcessor('concord-pitch', ConcordPitch);
 `;
+
+// Portão de voz (como a "sensibilidade de entrada automática" do Discord): fecha o microfone quando você
+// não está falando, para o resto de ruído não passar. Aprende sozinho o ruído de fundo (modo automático)
+// e só abre com som que dura (~20 ms seguidos, como uma sílaba): estalos curtos, tipo tecla, não abrem.
+// Atrasa o som 25 ms para não cortar o começo das palavras e segura aberto um pouco depois da fala.
+const GATE_WORKLET = `
+class ConcordGate extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.mode = 'auto'; this.threshold = -50;
+    this.floor = -60; this.open = false; this.hold = 0; this.gain = 0;
+    this.delay = new Float32Array(Math.round(sampleRate * 0.025)); this.w = 0;
+    this.above = 0; this.needAbove = Math.round(sampleRate * 0.02 / 128);
+    this.energies = new Float32Array(8); this.ei = 0;
+    this.attack = 1 - Math.exp(-1 / (sampleRate * 0.002));
+    this.release = 1 - Math.exp(-1 / (sampleRate * 0.12));
+    this.holdSamples = Math.round(sampleRate * 0.22);
+    this.report = 0;
+    this.port.onmessage = (e) => {
+      if (e.data.mode) this.mode = e.data.mode;
+      if (typeof e.data.threshold === 'number') this.threshold = e.data.threshold;
+    };
+  }
+  process(inputs, outputs) {
+    const input = inputs[0] && inputs[0][0];
+    const out = outputs[0];
+    if (!input) return true;
+    let e = 0;
+    for (let i = 0; i < input.length; i++) e += input[i] * input[i];
+    const block = 10 * Math.log10(e / input.length + 1e-12);
+    this.energies[this.ei] = e / input.length;
+    this.ei = (this.ei + 1) % this.energies.length;
+    let avg = 0;
+    for (let i = 0; i < this.energies.length; i++) avg += this.energies[i];
+    const level = 10 * Math.log10(avg / this.energies.length + 1e-12);
+    // ruído de fundo: desce rápido, sobe devagar (~5 dB/s)
+    if (level < this.floor) this.floor += (level - this.floor) * 0.1;
+    else this.floor += 0.015;
+    this.floor = Math.min(-25, Math.max(-90, this.floor));
+    const thr = this.mode === 'manual' ? this.threshold : Math.max(this.floor + 14, -62);
+    // conta blocos seguidos acima do limite (som que dura); estalo curto zera a contagem
+    this.above = block > thr ? this.above + 1 : 0;
+    const voice = this.open ? level > thr : this.above >= this.needAbove;
+    if (this.mode === 'off' || voice) {
+      this.open = true;
+      this.hold = this.holdSamples;
+    } else if (this.hold > 0) this.hold -= input.length;
+    else this.open = false;
+    const target = this.open ? 1 : 0;
+    for (let i = 0; i < input.length; i++) {
+      const delayed = this.delay[this.w];
+      this.delay[this.w] = input[i];
+      this.w = (this.w + 1) % this.delay.length;
+      this.gain += (target - this.gain) * (target > this.gain ? this.attack : this.release);
+      const v = delayed * this.gain;
+      for (let c = 0; c < out.length; c++) out[c][i] = v;
+    }
+    this.report += input.length;
+    if (this.report >= sampleRate * 0.05) {
+      this.report = 0;
+      this.port.postMessage({ level, threshold: thr, open: this.open });
+    }
+    return true;
+  }
+}
+registerProcessor('concord-gate', ConcordGate);
+`;
+
+export type GateMode = 'auto' | 'manual' | 'off';
+export interface GateSettings {
+  mode: GateMode;
+  /** limiar em dB (modo manual) */
+  threshold: number;
+}
+export const DEFAULT_GATE: GateSettings = { mode: 'auto', threshold: -50 };
+
+/** Nível do microfone já processado (para o medidor nas configurações). */
+export interface MicLevel {
+  level: number;
+  threshold: number;
+  open: boolean;
+}
+export const micLevels = new EventTarget();
+
+const gateLoaded = new WeakMap<BaseAudioContext, Promise<void>>();
+function loadGateWorklet(ctx: AudioContext) {
+  let p = gateLoaded.get(ctx);
+  if (!p) {
+    const url = URL.createObjectURL(new Blob([GATE_WORKLET], { type: 'application/javascript' }));
+    p = ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url));
+    gateLoaded.set(ctx, p);
+  }
+  return p;
+}
+
+let currentGate: AudioWorkletNode | null = null;
+/** Muda a sensibilidade na hora, sem reiniciar o microfone. */
+export function updateGate(gate: GateSettings) {
+  currentGate?.port.postMessage(gate);
+}
 
 const workletLoaded = new WeakMap<BaseAudioContext, Promise<void>>();
 function loadPitchWorklet(ctx: AudioContext) {
@@ -212,13 +355,17 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
   processedTrack?: MediaStreamTrack;
   private effect: EffectId;
   private noise: NoiseMode;
+  private gate: GateSettings;
+  private level: boolean;
   private nodes: AudioNode[] = [];
   private source?: MediaStreamAudioSourceNode;
   private dest?: MediaStreamAudioDestinationNode;
 
-  constructor(noise: NoiseMode, effect: EffectId) {
+  constructor(noise: NoiseMode, effect: EffectId, gate: GateSettings, level: boolean) {
     this.noise = noise;
     this.effect = effect;
+    this.gate = gate;
+    this.level = level;
   }
 
   async init(opts: AudioProcessorOptions) {
@@ -243,6 +390,32 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
       input = denoise;
       this.nodes.push(denoise);
     }
+    // portão depois da IA (decide pelo som já limpo) e antes do efeito (não corta o eco/reverb)
+    await loadGateWorklet(ctx);
+    const gate = new AudioWorkletNode(ctx, 'concord-gate', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] });
+    gate.port.postMessage(this.gate);
+    gate.port.onmessage = (e: MessageEvent<MicLevel>) => micLevels.dispatchEvent(new CustomEvent<MicLevel>('level', { detail: e.data }));
+    input.connect(gate);
+    input = gate;
+    this.nodes.push(gate);
+    currentGate = gate;
+    if (this.level) {
+      // nivelador de volume depois da limpeza: deixa a voz uniforme sem "subir" o ruído
+      // (o ganho automático do navegador fica desligado: ele aumentava o barulho nas pausas)
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -28;
+      comp.knee.value = 12;
+      comp.ratio.value = 3.5;
+      comp.attack.value = 0.004;
+      comp.release.value = 0.25;
+      // o compressor do navegador já aplica um ganho de compensação automático
+      const makeup = ctx.createGain();
+      makeup.gain.value = 1;
+      input.connect(comp);
+      comp.connect(makeup);
+      input = makeup;
+      this.nodes.push(comp, makeup);
+    }
     this.nodes.push(...(await build(ctx, this.effect, input, this.dest)));
     this.processedTrack = this.dest.stream.getAudioTracks()[0];
   }
@@ -263,6 +436,7 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
       }
     }
     this.source?.disconnect();
+    if (currentGate && this.nodes.includes(currentGate)) currentGate = null;
     this.nodes = [];
   }
 }
@@ -270,17 +444,23 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
 let sharedContext: AudioContext | null = null;
 
 /** Aplica (ou remove) a supressão de ruído por IA e o efeito na faixa do microfone. */
-export async function applyVoiceProcessing(track: LocalAudioTrack, noise: NoiseMode, effect: EffectId) {
-  const usesAi = noise === 'rnnoise' || noise === 'gtcrn';
+export async function applyVoiceProcessing(
+  track: LocalAudioTrack,
+  noise: NoiseMode,
+  effect: EffectId,
+  gate: GateSettings = DEFAULT_GATE,
+  level = true,
+) {
+  const usesAi = noise === 'rnnoise' || noise === 'gtcrn' || noise === 'dfn';
   // microfone que se apresenta em estéreo (alguns fones/placas USB, às vezes com um lado mudo):
   // passa pelo processador mesmo sem IA/efeito só para virar mono e chegar nos dois lados do fone
   const stereoMic = (track.mediaStreamTrack.getSettings().channelCount ?? 1) > 1;
-  if (!usesAi && effect === 'none' && !stereoMic) {
+  if (!usesAi && effect === 'none' && !stereoMic && gate.mode === 'off') {
     if (track.getProcessor()) await track.stopProcessor();
     return;
   }
   // RNNoise e GTCRN trabalham em 48 kHz
   sharedContext ??= new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
   track.setAudioContext(sharedContext);
-  await track.setProcessor(new VoiceProcessor(noise, effect));
+  await track.setProcessor(new VoiceProcessor(noise, effect, gate, level && usesAi));
 }

@@ -36,6 +36,8 @@ app.use('/api', (_req, res) => {
 });
 
 if (existsSync(config.publicDir)) {
+  // modelos de IA e outros arquivos de terceiros: o caminho tem a versão, então podem ficar no cache para sempre
+  app.use('/vendor', express.static(join(config.publicDir, 'vendor'), { maxAge: '365d', immutable: true, index: false, fallthrough: false }));
   app.use(express.static(config.publicDir, { maxAge: '1h', index: false }));
   // SPA: qualquer outra rota devolve o index.html
   app.get('/{*path}', (_req, res) => {

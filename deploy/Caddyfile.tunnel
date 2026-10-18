@@ -13,6 +13,9 @@
 		reverse_proxy 127.0.0.1:7880
 	}
 
+	# compressão (o modelo de supressão de ruído cai de 16 MB para ~4 MB)
+	encode zstd gzip
+
 	# Monitoramento (Grafana, com login)
 	handle /grafana* {
 		reverse_proxy 127.0.0.1:13001

@@ -17,7 +17,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { closePopout } from '../lib/popout';
-import { applyVoiceProcessing, EFFECTS, type EffectId, type NoiseMode } from '../lib/voiceEffects';
+import { applyVoiceProcessing, DEFAULT_GATE, EFFECTS, updateGate, voiceNotices, type EffectId, type GateSettings, type NoiseMode } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -61,6 +61,10 @@ export interface AudioSettings {
   outputId: string;
   noiseMode: NoiseMode;
   echoCancellation: boolean;
+  /** ganho automático do navegador (sobe o volume quando você fala baixo) */
+  autoGain: boolean;
+  /** portão de voz: fecha o microfone quando você não está falando */
+  gate: GateSettings;
   videoInputId: string;
   cameraQuality: '720p' | '1080p';
 }
@@ -124,6 +128,11 @@ function save(key: string, value: unknown) {
   }
 }
 
+// a IA máxima não carregou (rede, navegador antigo...): o processamento já caiu para a IA leve
+voiceNotices.addEventListener('fallback', () =>
+  toast.info('A supressão máxima (DeepFilterNet 3) não carregou agora; usando a IA leve (GTCRN).'),
+);
+
 const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'h264' };
 
 /** Carrega as preferências salvas, migrando o formato antigo (fps embutido no id do preset, ex.: "1080p60"). */
@@ -148,8 +157,10 @@ function loadShareSettings(): ShareSettings {
 const DEFAULT_AUDIO: AudioSettings = {
   inputId: 'default',
   outputId: 'default',
-  noiseMode: 'rnnoise',
+  noiseMode: 'dfn',
   echoCancellation: true,
+  autoGain: true,
+  gate: DEFAULT_GATE,
   videoInputId: '',
   cameraQuality: '720p',
 };
@@ -349,7 +360,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
     const track = pub?.track as LocalAudioTrack | undefined;
     if (!track) return;
     try {
-      await applyVoiceProcessing(track, get().audioSettings.noiseMode, get().effect);
+      const { noiseMode, gate, autoGain } = get().audioSettings;
+      await applyVoiceProcessing(track, noiseMode, get().effect, gate, autoGain);
     } catch (err) {
       toast.error(`Não foi possível aplicar o efeito: ${(err as Error).message}`);
     }
@@ -358,7 +370,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
   async function enableMic(on: boolean) {
     const room = get().room;
     if (!room) return;
-    const { inputId, noiseMode, echoCancellation } = get().audioSettings;
+    const { inputId, noiseMode, echoCancellation, autoGain } = get().audioSettings;
     await room.localParticipant.setMicrophoneEnabled(
       on,
       {
@@ -368,7 +380,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
         // com a IA ligada, o filtro do navegador fica desligado (senão a voz é processada duas vezes)
         noiseSuppression: noiseMode === 'browser',
         echoCancellation,
-        autoGainControl: true,
+        // com IA, o volume é nivelado depois da limpeza (ver voiceEffects); o do navegador aumentava o ruído
+        autoGainControl: autoGain && !['dfn', 'gtcrn', 'rnnoise'].includes(noiseMode),
       },
       // sem isso o LiveKit publica em estéreo quando o microfone diz ter 2 canais, e quem ouve
       // pode receber a voz só num lado do fone
@@ -642,7 +655,14 @@ export const useVoice = create<VoiceStore>((set, get) => {
         if (patch.outputId) await room.switchActiveDevice('audiooutput', patch.outputId);
         if (patch.inputId && get().micOn) await room.switchActiveDevice('audioinput', patch.inputId);
         if (patch.videoInputId && get().cameraOn) await room.switchActiveDevice('videoinput', patch.videoInputId);
-        if ((patch.noiseMode !== undefined || patch.echoCancellation !== undefined) && get().micOn) {
+        if (patch.gate && get().micOn) {
+          // ligar/desligar o portão muda o processamento; só o limiar muda na hora
+          if (patch.gate.mode === 'off' || !get().room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.getProcessor()) {
+            await applyCurrentEffect();
+          }
+          updateGate(audioSettings.gate);
+        }
+        if ((patch.noiseMode !== undefined || patch.echoCancellation !== undefined || patch.autoGain !== undefined) && get().micOn) {
           await enableMic(false);
           await enableMic(true);
         }
@@ -705,6 +725,13 @@ function loadAudioSettings(): AudioSettings {
     // ignorado
   }
   if (!hadMode && saved.noiseSuppression === false) saved.noiseMode = 'off';
+  // configurações de antes do portão de voz: quem estava no padrão antigo (RNNoise) passa para o novo
+  // padrão (DeepFilterNet3), que mediu ~30 dB a mais de redução de ruído
+  try {
+    if (!('gate' in JSON.parse(localStorage.getItem('concord.audio') ?? '{}')) && saved.noiseMode === 'rnnoise') saved.noiseMode = 'dfn';
+  } catch {
+    // ignorado
+  }
   delete saved.noiseSuppression;
   return saved;
 }

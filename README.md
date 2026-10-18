@@ -39,7 +39,7 @@ O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, ge
 - **Reações flutuantes:** escolha um emoji no botão de coração e clique na tela. Uma rajada sobe a partir do ponto clicado, para todos da sala.
 - **Minigames:** roleta, dado e cara ou coroa, pelo botão **+** do chat ou por `/roleta a, b, c`, `/dado 2d6` e `/moeda`. O servidor sorteia o resultado, então todo mundo vê a mesma roleta parar no mesmo lugar.
 - **Mensagens privadas:** pelo botão de balão no topo da barra de servidores, ou por "Mensagem" no perfil de alguém de um servidor em comum.
-- **Supressão de ruído por IA:** GTCRN (avançada) ou RNNoise (leve), as duas rodando no seu PC, via [web-noise-suppressor](https://github.com/sapphi-red/web-noise-suppressor).
+- **Supressão de ruído por IA:** [DeepFilterNet 3](https://github.com/Rikorose/DeepFilterNet) (padrão, o modelo aberto mais forte; servido pelo próprio Concord), GTCRN (leve) ou RNNoise, todas rodando no seu PC. Depois da limpeza vêm um **portão de voz** com sensibilidade automática (como no Discord: nas pausas ninguém ouve nada) e um nivelador de volume. Em teste com fala + ventilador + teclado, o ruído nas pausas caiu de −39 dB para silêncio.
 - **Trocar microfone, saída e câmera** pela setinha ao lado de cada ícone, na barra de baixo.
 - **Atalhos de teclado** configuráveis em Configurações → Atalhos. Ctrl+K abre a busca rápida. No app desktop, silenciar e ensurdecer funcionam com o app em segundo plano.
 
