@@ -30,6 +30,7 @@ import {
   type CustomStickerRow,
   type DmChannelRow,
   type PlacedStickerRow,
+  type ServerPatchRow,
   type InviteRow,
   type MessageRow,
   type RoleRow,
@@ -359,13 +360,29 @@ function saveStyle(userId: string, style: ProfileStyle) {
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-function cleanPatches(raw: unknown, me: string): Patch[] {
-  if (!Array.isArray(raw)) fail(400, 'Patches inválidos');
-  const list = raw as Record<string, unknown>[];
-  if (list.length > MAX_PATCHES) fail(400, `No máximo ${MAX_PATCHES} patches`);
-  const ownImage = (v: unknown) => typeof v === 'string' && v.startsWith(`/uploads/patches/${me}-`) && /^\/uploads\/patches\/[\w-]+\.(png|jpg|gif|webp)$/.test(v);
+/** Imagem enviada por quem criou o patch, ou de um patch compartilhado num servidor da pessoa. */
+function patchImageAllowed(url: unknown, me: string): url is string {
+  if (typeof url !== 'string' || !/^\/uploads\/patches\/[\w-]+\.(png|jpg|gif|webp)$/.test(url)) return false;
+  if (url.startsWith(`/uploads/patches/${me}-`)) return true;
+  return !!get(
+    `SELECT 1 FROM server_patches p JOIN members m ON m.server_id = p.server_id AND m.user_id = ? WHERE p.data LIKE ? LIMIT 1`,
+    me,
+    `%${url}%`,
+  );
+}
+
+/** Apaga a imagem de um patch quando ninguém mais usa. */
+function dropPatchImage(url: string | undefined) {
+  if (!url) return;
+  const like = `%${url}%`;
+  if (get('SELECT 1 FROM server_patches WHERE data LIKE ? LIMIT 1', like)) return;
+  if (get('SELECT 1 FROM users WHERE profile_style LIKE ? LIMIT 1', like)) return;
+  removeUpload(url);
+}
+
+function cleanPatch(p: Record<string, unknown>, me: string): Patch {
   const pick = (v: unknown, fallback: string) => (typeof v === 'string' && HEX.test(v) ? v : fallback);
-  return list.map((p) => ({
+  return {
     id: typeof p?.id === 'string' && /^[\w-]{1,40}$/.test(p.id) ? p.id : randomUUID(),
     shape: (PATCH_SHAPES as readonly string[]).includes(p?.shape as string) ? (p.shape as Patch['shape']) : 'circle',
     bg: pick(p?.bg, '#2b2234'),
@@ -373,13 +390,21 @@ function cleanPatches(raw: unknown, me: string): Patch[] {
     fg: pick(p?.fg, '#ffffff'),
     icon: typeof p?.icon === 'string' ? [...p.icon].slice(0, 4).join('') : '',
     text: typeof p?.text === 'string' ? p.text.trim().slice(0, 14) : '',
-    ...(ownImage(p?.image) ? { image: p.image as string } : {}),
-  }));
+    ...(patchImageAllowed(p?.image, me) ? { image: p.image as string } : {}),
+  };
+}
+
+function cleanPatches(raw: unknown, me: string): Patch[] {
+  if (!Array.isArray(raw)) fail(400, 'Patches inválidos');
+  const list = raw as Record<string, unknown>[];
+  if (list.length > MAX_PATCHES) fail(400, `No máximo ${MAX_PATCHES} patches`);
+  return list.map((p) => cleanPatch(p, me));
 }
 
 api.patch('/me/style', (req, res) => {
   const me = uid(res);
   const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  let dropped: Patch[] = [];
   if (req.body?.frame !== undefined) {
     const frame = req.body.frame;
     if (frame !== null && !(FRAMES as readonly string[]).includes(frame)) fail(400, 'Moldura inválida');
@@ -387,10 +412,11 @@ api.patch('/me/style', (req, res) => {
   }
   if (req.body?.patches !== undefined) {
     const next = cleanPatches(req.body.patches, me);
-    for (const old of style.patches ?? []) if (old.image && !next.some((p) => p.image === old.image)) removeUpload(old.image);
+    dropped = (style.patches ?? []).filter((old) => old.image && !next.some((p) => p.image === old.image));
     style.patches = next;
   }
   saveStyle(me, style);
+  dropped.forEach((p) => dropPatchImage(p.image));
   res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
 });
 
@@ -1104,6 +1130,50 @@ api.post('/sounds/:id/play', (req, res) => {
   for (const s of voiceStatesFor(sound.server_id).filter((x) => x.channelId === v!.channelId)) {
     emitToUser(s.userId, 'sound:play', { soundId: sound.id, url: sound.url, name: sound.name, userId: me, channelId: v!.channelId });
   }
+  res.json({ ok: true });
+});
+
+// ============================================================ Patches do servidor
+
+const MAX_SERVER_PATCHES = 120;
+
+const serverPatchJson = (r: ServerPatchRow) => {
+  let patch: Patch;
+  try {
+    patch = JSON.parse(r.data) as Patch;
+  } catch {
+    patch = { id: r.id, shape: 'circle', bg: '#2b2234', border: '#ff8a6b', fg: '#ffffff', icon: '?', text: '' };
+  }
+  return { id: r.id, serverId: r.server_id, creatorId: r.creator_id, createdAt: r.created_at, patch: { ...patch, id: r.id } };
+};
+
+api.get('/servers/:id/patches', (req, res) => {
+  const server = requireMember(req.params.id, uid(res));
+  res.json(all<ServerPatchRow>('SELECT * FROM server_patches WHERE server_id = ? ORDER BY created_at DESC', server.id).map(serverPatchJson));
+});
+
+/** Qualquer membro pode criar um patch para o servidor; todo mundo de lá pode usar. */
+api.post('/servers/:id/patches', humansOnly, (req, res) => {
+  const me = uid(res);
+  const server = requireMember(req.params.id, me);
+  const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM server_patches WHERE server_id = ?', server.id)!.n;
+  if (count >= MAX_SERVER_PATCHES) fail(400, `O servidor já tem ${MAX_SERVER_PATCHES} patches. Apague algum antes.`);
+  const id = randomUUID();
+  const patch = { ...cleanPatch((req.body?.patch ?? {}) as Record<string, unknown>, me), id };
+  if (!patch.text && !patch.icon && !patch.image) fail(400, 'O patch precisa de texto, emoji ou imagem');
+  const row: ServerPatchRow = { id, server_id: server.id, creator_id: me, data: JSON.stringify(patch), created_at: now() };
+  run('INSERT INTO server_patches (id, server_id, creator_id, data, created_at) VALUES (?, ?, ?, ?, ?)', id, server.id, me, row.data, row.created_at);
+  emitToServer(server.id, 'server-patches:changed', { serverId: server.id });
+  res.json(serverPatchJson(row));
+});
+
+api.delete('/server-patches/:id', (req, res) => {
+  const me = uid(res);
+  const row = get<ServerPatchRow>('SELECT * FROM server_patches WHERE id = ?', req.params.id) ?? fail(404, 'Patch não encontrado');
+  if (row.creator_id !== me) requireServerPerm(row.server_id, me, P.MANAGE_SERVER);
+  run('DELETE FROM server_patches WHERE id = ?', row.id);
+  dropPatchImage(serverPatchJson(row).patch.image);
+  emitToServer(row.server_id, 'server-patches:changed', { serverId: row.server_id });
   res.json({ ok: true });
 });
 

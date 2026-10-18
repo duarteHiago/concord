@@ -21,6 +21,15 @@ export interface User {
   patches?: Patch[];
 }
 
+/** Patch compartilhado num servidor. */
+export interface ServerPatch {
+  id: string;
+  serverId: string;
+  creatorId: string | null;
+  createdAt: number;
+  patch: Patch;
+}
+
 /** Sticker enviado pela galera do servidor. */
 export interface CustomSticker {
   id: string;

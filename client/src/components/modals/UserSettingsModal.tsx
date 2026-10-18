@@ -13,7 +13,7 @@ import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { useVoice } from '../../store/voice';
-import { Avatar, Button, Input, Modal, Toggle, cx } from '../ui';
+import { Avatar, Button, ImageHint, Input, Modal, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
@@ -82,7 +82,7 @@ function Profile() {
     if (!file) return;
     setUploadingBanner(true);
     try {
-      setMe(await uploadImage<Me>('/me/banner', await prepareImage(file, 1500, false)));
+      setMe(await uploadImage<Me>('/me/banner', await prepareImage(file, 1200, 3)));
       toast.success('Capa atualizada');
     } catch (err) {
       toast.error(err);
@@ -106,8 +106,8 @@ function Profile() {
   return (
     <div className="space-y-5">
       {/* prévia do cartão de perfil */}
-      <div className="overflow-hidden rounded-2xl border border-line bg-surface-0">
-        <div className="group relative h-28">
+      <div className="max-w-[480px] overflow-hidden rounded-2xl border border-line bg-surface-0">
+        <div className="group relative aspect-[3/1]">
           {me.bannerUrl ? (
             <img src={me.bannerUrl} alt="" className="h-full w-full object-cover" />
           ) : (
@@ -148,7 +148,11 @@ function Profile() {
         </div>
       </div>
 
-      <p className="-mt-2 text-xs text-fg-subtle">Foto e capa aceitam GIF animado (até 8 MB).</p>
+      <div className="-mt-2 space-y-1.5">
+        <ImageHint spec="avatar" label="Foto" />
+        <ImageHint spec="banner" label="Capa" />
+        <p className="pl-[34px] text-xs text-fg-subtle">Até 8 MB. Fotos são recortadas no centro na proporção certa; GIFs são enviados como estão.</p>
+      </div>
 
       <Input label="Nome de exibição" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} hint="Em cada servidor você também pode usar um apelido diferente." />
 
@@ -356,6 +360,7 @@ function Appearance() {
 
       <div>
         <SectionTitle>Imagem de fundo</SectionTitle>
+        <ImageHint spec="background" className="mb-2" />
         <div className="flex gap-2">
           <Input value={bgUrl} onChange={(e) => setBgUrl(e.target.value)} placeholder="https://… (link de uma imagem)" className="flex-1" />
           <Button variant="secondary" onClick={() => updateBg({ url: bgUrl.trim() || null })}>

@@ -1,13 +1,15 @@
-import { Check, ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
-import { FRAMES, MAX_PATCHES, PATCH_SHAPES } from '../../../../shared/cosmetics.ts';
+import { FRAMES, MAX_PATCHES } from '../../../../shared/cosmetics.ts';
 import { api } from '../../lib/api';
-import type { Me, Patch } from '../../lib/types';
+import type { Me, Patch, ServerPatch } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
-import { useApp } from '../../store/app';
+import { HOME, useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { PATCH_PRESETS, PATCH_TILTS, PatchBadge } from '../PatchBadge';
-import { Avatar, Button, Input, cx } from '../ui';
+import { PatchForm } from '../PatchForm';
+import { ServerPatchesPanel, equipPatch, newPatchDraft } from '../ServerPatches';
+import { Avatar, Button, ImageHint, cx } from '../ui';
 
 const FRAME_NAMES: Record<string, string> = {
   neon: 'Neon',
@@ -24,14 +26,6 @@ const FRAME_NAMES: Record<string, string> = {
   sakura: 'Sakura',
 };
 
-const SHAPE_NAMES: Record<Patch['shape'], string> = {
-  circle: 'Redondo',
-  shield: 'Escudo',
-  rect: 'Retângulo',
-  hex: 'Hexágono',
-  star: 'Selo',
-  banner: 'Faixa',
-};
 
 function Title({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
@@ -42,7 +36,6 @@ function Title({ children, hint }: { children: React.ReactNode; hint?: string })
   );
 }
 
-const newId = () => Math.random().toString(36).slice(2, 10);
 
 export function StyleTab() {
   const me = useApp((s) => s.me)!;
@@ -62,7 +55,7 @@ export function StyleTab() {
     if (!file) return;
     setUploadingBg(true);
     try {
-      setMe(await uploadImage<Me>('/me/card-bg', await prepareImage(file, 1000, false)));
+      setMe(await uploadImage<Me>('/me/card-bg', await prepareImage(file, 1200, 2 / 3)));
       toast.success('Fundo do perfil atualizado');
     } catch (err) {
       toast.error(err);
@@ -93,6 +86,7 @@ export function StyleTab() {
       <section className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_240px]">
         <div>
           <Title hint="Imagem ou GIF que preenche o cartão que abre quando clicam em você (até 8 MB).">Fundo do mini perfil</Title>
+          <ImageHint spec="cardBg" className="mb-3" />
           <div className="flex gap-2">
             <Button variant="secondary" loading={uploadingBg} onClick={changeCardBg}>
               <ImagePlus size={15} /> {me.cardBgUrl ? 'Trocar fundo' : 'Escolher imagem ou GIF'}
@@ -140,7 +134,7 @@ function CardPreview({ me }: { me: Me }) {
         style={me.cardBgUrl ? { backgroundImage: `linear-gradient(rgb(0 0 0 / 0.15), rgb(0 0 0 / 0.45)), url("${me.cardBgUrl}")` } : undefined}
       >
         {me.bannerUrl ? (
-          <img src={me.bannerUrl} alt="" className="h-20 w-full object-cover" />
+          <img src={me.bannerUrl} alt="" className="aspect-[3/1] w-full object-cover" />
         ) : (
           <div className="h-14" style={me.cardBgUrl ? undefined : { background: `linear-gradient(135deg, ${top}, ${top}55)` }} />
         )}
@@ -171,10 +165,15 @@ function CardPreview({ me }: { me: Me }) {
 function PatchesEditor() {
   const me = useApp((s) => s.me)!;
   const setMe = useApp((s) => s.setMe);
+  const servers = useApp((s) => s.servers);
+  const activeServerId = useApp((s) => s.activeServerId);
   const patches = me.patches ?? [];
   const [editing, setEditing] = useState<Patch | null>(null);
   const [gallery, setGallery] = useState(false);
+  const [source, setSource] = useState<string>('preset');
+  const [shareTo, setShareTo] = useState<string>('');
   const full = patches.length >= MAX_PATCHES;
+  const isNew = editing ? !patches.some((x) => x.id === editing.id) : false;
 
   async function save(next: Patch[]) {
     try {
@@ -187,13 +186,31 @@ function PatchesEditor() {
   }
 
   async function commit(p: Patch) {
+    if (isNew && shareTo) {
+      // cria no servidor (todo mundo de lá pode usar) e costura no perfil
+      try {
+        const created = await api.post<ServerPatch>(`/servers/${shareTo}/patches`, { patch: p });
+        if (await equipPatch(created.patch)) setEditing(null);
+        toast.success('Patch criado e compartilhado no servidor');
+      } catch (err) {
+        toast.error(err);
+      }
+      return;
+    }
     const exists = patches.some((x) => x.id === p.id);
     if (await save(exists ? patches.map((x) => (x.id === p.id ? p : x)) : [...patches, p])) setEditing(null);
   }
 
+  function startCreate() {
+    setShareTo(activeServerId && activeServerId !== HOME ? activeServerId : (servers[0]?.id ?? ''));
+    setEditing(newPatchDraft());
+  }
+
   return (
     <div className="mt-6">
-      <Title hint={`Bordados que ficam costurados no seu cartão (até ${MAX_PATCHES}). Monte o seu com emoji, texto ou a logo do seu time.`}>Patches</Title>
+      <Title hint={`Bordados que ficam costurados no seu cartão (até ${MAX_PATCHES}). Os patches criados num servidor ficam disponíveis para todo mundo de lá.`}>
+        Patches
+      </Title>
 
       <div className="flex flex-wrap items-center gap-2">
         {patches.map((p, i) => (
@@ -220,13 +237,9 @@ function PatchesEditor() {
         {!full && (
           <>
             <Button variant="secondary" className="h-10" onClick={() => setGallery(!gallery)}>
-              <Plus size={15} /> Prontos
+              <Plus size={15} /> Escolher
             </Button>
-            <Button
-              variant="secondary"
-              className="h-10"
-              onClick={() => setEditing({ id: newId(), shape: 'shield', bg: '#211a28', border: '#ff8a6b', fg: '#ffffff', icon: '⭐', text: 'MEU TIME' })}
-            >
+            <Button variant="secondary" className="h-10" onClick={startCreate}>
               <Pencil size={14} /> Criar
             </Button>
           </>
@@ -234,109 +247,72 @@ function PatchesEditor() {
       </div>
 
       {gallery && !full && (
-        <div className="mt-3 grid grid-cols-4 gap-2 rounded-2xl bg-surface-0 p-3 sm:grid-cols-8">
-          {PATCH_PRESETS.map((p, i) => (
-            <button
-              key={i}
-              title={`Costurar "${p.text}"`}
-              onClick={() => void save([...patches, { ...p, id: newId() }]).then((ok) => ok && patches.length + 1 >= MAX_PATCHES && setGallery(false))}
-              className="flex items-center justify-center rounded-xl p-1 hover:bg-surface-2"
-            >
-              <PatchBadge patch={{ ...p, id: `p${i}` }} size={52} />
-            </button>
-          ))}
+        <div className="mt-3 rounded-2xl bg-surface-0 p-3">
+          <div role="tablist" className="mb-3 flex flex-wrap gap-1.5">
+            {[{ id: 'preset', name: 'Prontos' }, ...servers.map((sv) => ({ id: sv.id, name: sv.name }))].map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={source === t.id}
+                onClick={() => setSource(t.id)}
+                className={cx(
+                  'max-w-40 truncate rounded-full px-3 py-1 text-xs font-semibold',
+                  source === t.id ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg',
+                )}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+          {source === 'preset' ? (
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+              {PATCH_PRESETS.map((p, i) => (
+                <button
+                  key={i}
+                  title={`Costurar "${p.text}"`}
+                  onClick={() =>
+                    void save([...patches, { ...p, id: newPatchDraft().id }]).then((ok) => ok && patches.length + 1 >= MAX_PATCHES && setGallery(false))
+                  }
+                  className="flex items-center justify-center rounded-xl p-1 hover:bg-surface-2"
+                >
+                  <PatchBadge patch={{ ...p, id: `p${i}` }} size={52} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <ServerPatchesPanel key={source} serverId={source} compact />
+          )}
         </div>
       )}
 
-      {editing && <PatchForm initial={editing} onCancel={() => setEditing(null)} onSave={commit} />}
+      {editing && (
+        <PatchForm
+          initial={editing}
+          onCancel={() => setEditing(null)}
+          onSave={commit}
+          saveLabel={isNew && shareTo ? 'Criar e compartilhar' : 'Costurar'}
+          extra={
+            isNew &&
+            servers.length > 0 && (
+              <label className="flex flex-wrap items-center gap-2 text-xs font-semibold text-fg-muted">
+                Compartilhar no servidor
+                <select
+                  value={shareTo}
+                  onChange={(e) => setShareTo(e.target.value)}
+                  className="h-8 rounded-lg border border-line bg-surface-2 px-2 text-xs text-fg outline-none focus:border-accent"
+                >
+                  <option value="">Não, só para mim</option>
+                  {servers.map((sv) => (
+                    <option key={sv.id} value={sv.id}>
+                      {sv.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )
+          }
+        />
+      )}
     </div>
-  );
-}
-
-function PatchForm({ initial, onCancel, onSave }: { initial: Patch; onCancel: () => void; onSave: (p: Patch) => Promise<void> }) {
-  const [p, setP] = useState<Patch>(initial);
-  const [busy, setBusy] = useState(false);
-  const set = (part: Partial<Patch>) => setP((cur) => ({ ...cur, ...part }));
-
-  async function uploadLogo() {
-    const file = await pickImage();
-    if (!file) return;
-    setBusy(true);
-    try {
-      const { url } = await uploadImage<{ url: string }>('/me/patch-image', await prepareImage(file, 256, false));
-      set({ image: url });
-    } catch (err) {
-      toast.error(err);
-    }
-    setBusy(false);
-  }
-
-  return (
-    <div className="mt-3 flex animate-pop-in flex-col gap-4 rounded-2xl bg-surface-0 p-4 sm:flex-row">
-      <div className="flex shrink-0 items-center justify-center rounded-2xl bg-surface-2 p-4 sm:w-36">
-        <PatchBadge patch={p} size={104} tilt={-4} />
-      </div>
-      <div className="min-w-0 flex-1 space-y-3">
-        <div className="flex flex-wrap gap-1.5">
-          {PATCH_SHAPES.map((shape) => (
-            <button
-              key={shape}
-              onClick={() => set({ shape })}
-              aria-pressed={p.shape === shape}
-              className={cx(
-                'rounded-full px-3 py-1 text-xs font-semibold',
-                p.shape === shape ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg',
-              )}
-            >
-              {SHAPE_NAMES[shape]}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-[1fr_88px] gap-2">
-          <Input label="Texto" value={p.text} maxLength={14} onChange={(e) => set({ text: e.target.value })} placeholder="Ex.: CLUTCH" />
-          <Input label="Emoji" value={p.icon} onChange={(e) => set({ icon: [...e.target.value].slice(0, 4).join('') })} placeholder="🔥" />
-        </div>
-        <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-fg-muted">
-          <ColorField label="Tecido" value={p.bg} onChange={(bg) => set({ bg })} />
-          <ColorField label="Borda" value={p.border} onChange={(border) => set({ border })} />
-          <ColorField label="Linha" value={p.fg} onChange={(fg) => set({ fg })} />
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" className="h-9 text-xs" loading={busy} onClick={uploadLogo}>
-            <ImagePlus size={14} /> {p.image ? 'Trocar logo' : 'Usar logo/imagem'}
-          </Button>
-          {p.image && (
-            <Button variant="ghost" className="h-9 text-xs" onClick={() => set({ image: undefined })}>
-              Tirar logo
-            </Button>
-          )}
-          <div className="ml-auto flex gap-2">
-            <Button variant="ghost" className="h-9" onClick={onCancel}>
-              Cancelar
-            </Button>
-            <Button
-              className="h-9"
-              disabled={!p.text.trim() && !p.icon && !p.image}
-              onClick={async () => {
-                setBusy(true);
-                await onSave({ ...p, text: p.text.trim() });
-                setBusy(false);
-              }}
-            >
-              <Check size={15} /> Costurar
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="flex items-center gap-2">
-      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-8 w-8 cursor-pointer rounded-lg border-0 bg-transparent p-0" />
-      {label}
-    </label>
   );
 }

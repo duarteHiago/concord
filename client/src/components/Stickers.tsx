@@ -9,7 +9,7 @@ import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import { useActiveDetail, useApp } from '../store/app';
 import { useStickers } from '../store/stickers';
 import { toast } from '../store/toast';
-import { cx } from './ui';
+import { ImageHint, cx } from './ui';
 
 const FINISH_NAMES: Record<StickerFinish, string> = { gloss: 'Brilho', holo: 'Holográfico', gold: 'Ouro', glitter: 'Glitter' };
 const BASE = 118; // tamanho do sticker no palco com escala 1
@@ -404,7 +404,7 @@ export function StickerButton({ channel }: { channel: Channel }) {
               </>
             )}
           </div>
-          {tab === 'server' && <p className="mt-2 px-1 text-[11px] text-fg-subtle">Dica: PNG ou GIF com fundo transparente fica com o recorte de sticker perfeito.</p>}
+          {tab === 'server' && <ImageHint spec="sticker" className="mt-2 px-1 text-[11px]" />}
 
           <div className="mt-2 flex items-center justify-between border-t border-line px-1 pt-2 text-[11px] text-fg-subtle">
             <span>Arraste para mover · role o mouse para mudar o tamanho</span>

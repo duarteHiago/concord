@@ -96,6 +96,40 @@ export function AvatarFrame({ frame, size }: { frame: string; size: number }) {
   );
 }
 
+/** Proporções e tamanhos ideais de cada imagem do app. */
+export const IMAGE_SPECS = {
+  avatar: { w: 1, h: 1, size: '512 × 512 px', note: 'Quadrada. GIF animado vale.' },
+  serverIcon: { w: 1, h: 1, size: '512 × 512 px', note: 'Quadrada. GIF animado vale.' },
+  banner: { w: 3, h: 1, size: '1200 × 400 px', note: 'Faixa larga (3:1). GIF animado vale.' },
+  cardBg: { w: 2, h: 3, size: '800 × 1200 px', note: 'Em pé (2:3). GIF animado vale.' },
+  background: { w: 16, h: 9, size: '1920 × 1080 px', note: 'Tela cheia (16:9). Em telas diferentes as bordas podem ser cortadas.' },
+  patchLogo: { w: 1, h: 1, size: '256 × 256 px', note: 'Quadrada, PNG com fundo transparente.' },
+  sticker: { w: 1, h: 1, size: '512 × 512 px', note: 'Quadrada, PNG ou GIF com fundo transparente.' },
+} as const;
+export type ImageSpec = keyof typeof IMAGE_SPECS;
+
+/** Mostra a proporção e o tamanho ideais da imagem antes de enviar. */
+export function ImageHint({ spec, label, className }: { spec: ImageSpec; label?: string; className?: string }) {
+  const s = IMAGE_SPECS[spec];
+  const box = 22;
+  const w = s.w >= s.h ? box : (box * s.w) / s.h;
+  const h = s.h >= s.w ? box : (box * s.h) / s.w;
+  return (
+    <div className={cx('flex items-center gap-2.5 text-xs text-fg-subtle', className)}>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center" aria-hidden="true">
+        <span className="rounded-[3px] border-2 border-dashed border-accent/70 bg-accent/10" style={{ width: w, height: h }} />
+      </span>
+      <span>
+        <b className="font-semibold text-fg-muted">
+          {label && `${label}: `}
+          {s.w}:{s.h} · {s.size}
+        </b>{' '}
+        — {s.note}
+      </span>
+    </div>
+  );
+}
+
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
 export function Button({

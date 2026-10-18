@@ -5,7 +5,7 @@ import type { Bot } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
-import { Avatar, Button, Input, Spinner } from '../ui';
+import { Avatar, Button, ImageHint, Input, Spinner } from '../ui';
 
 const DOCS_URL = 'https://github.com/duarteHiago/concord/blob/main/docs/bots.md';
 
@@ -128,6 +128,7 @@ function BotCard({ bot, onChange, onToken, onDeleted }: { bot: Bot; onChange: (b
             <span className="rounded bg-accent-2/20 px-1 text-[9px] leading-4 font-bold text-accent-2">BOT</span>
           </div>
           <div className="text-xs text-fg-muted">@{bot.username}</div>
+          <ImageHint spec="avatar" className="mt-1 text-[11px]" />
         </div>
         {confirming === null && (
           <>

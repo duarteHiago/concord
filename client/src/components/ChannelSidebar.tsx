@@ -12,6 +12,7 @@ import {
   PhoneOff,
   Plus,
   Settings,
+  Shirt,
   Trash2,
   UserPlus,
   Video,
@@ -109,6 +110,7 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
             item('Meu apelido aqui', <Pencil size={16} />, () => openModal({ type: 'nickname', serverId: detail.server.id, userId: me.id }))}
           {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS)) &&
             item('Configurações do servidor', <Settings size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id }))}
+          {item('Patches do servidor', <Shirt size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id, tab: 'patches' }))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar sala ou canal', <Plus size={16} />, () => openModal({ type: 'createChannel', serverId: detail.server.id, kind: 'voice' }))}
           <div className="mx-2 my-1 h-px bg-line" />
           {isOwner

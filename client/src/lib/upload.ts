@@ -13,21 +13,27 @@ export function pickImage(): Promise<File | null> {
 }
 
 /**
- * Redimensiona e recorta (quadrado opcional) no próprio navegador antes de enviar.
- * GIFs são enviados como estão para manter a animação.
+ * Redimensiona e recorta no centro (quadrado ou numa proporção largura/altura) no próprio navegador antes de enviar,
+ * assim a imagem nunca fica esticada onde aparece. GIFs são enviados como estão para manter a animação.
  */
-export async function prepareImage(file: File, maxSize: number, square: boolean): Promise<Blob> {
+export async function prepareImage(file: File, maxSize: number, crop: boolean | number): Promise<Blob> {
   if (file.type === 'image/gif') return file;
   const bitmap = await createImageBitmap(file);
   let sx = 0;
   let sy = 0;
   let sw = bitmap.width;
   let sh = bitmap.height;
-  if (square) {
-    const side = Math.min(sw, sh);
-    sx = (sw - side) / 2;
-    sy = (sh - side) / 2;
-    sw = sh = side;
+  const aspect = crop === true ? 1 : typeof crop === 'number' ? crop : 0;
+  if (aspect) {
+    if (sw / sh > aspect) {
+      const w = sh * aspect;
+      sx = (sw - w) / 2;
+      sw = w;
+    } else {
+      const h = sw / aspect;
+      sy = (sh - h) / 2;
+      sh = h;
+    }
   }
   const scale = Math.min(1, maxSize / Math.max(sw, sh));
   const canvas = document.createElement('canvas');

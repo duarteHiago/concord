@@ -176,6 +176,15 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_placed_stickers ON placed_stickers(channel_id, created_at);
+  -- patches criados pela galera e compartilhados no servidor
+  CREATE TABLE IF NOT EXISTS server_patches (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    creator_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    data TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_server_patches ON server_patches(server_id, created_at);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_bot_token ON users(bot_token_hash) WHERE bot_token_hash IS NOT NULL;
 `);
 
@@ -253,6 +262,14 @@ export interface CustomStickerRow {
   name: string;
   url: string;
   uploader_id: string | null;
+  created_at: number;
+}
+
+export interface ServerPatchRow {
+  id: string;
+  server_id: string;
+  creator_id: string | null;
+  data: string;
   created_at: number;
 }
 

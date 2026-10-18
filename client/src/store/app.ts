@@ -172,6 +172,9 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('sounds:changed', ({ serverId }: { serverId: string }) => {
       if (get().sounds[serverId]) void get().loadSounds(serverId);
     });
+    socket.on('server-patches:changed', (d: { serverId: string }) =>
+      window.dispatchEvent(new CustomEvent('concord:server-patches', { detail: d })),
+    );
     socket.on('stickers:changed', ({ channelId, stickers }: { channelId: string; stickers: PlacedSticker[] }) =>
       useStickers.getState().setPlaced(channelId, stickers),
     );

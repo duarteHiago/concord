@@ -99,7 +99,7 @@ export function MemberPopover() {
             close();
             openModal({ type: 'image', src: member.bannerUrl!, alt: `Capa de ${name}` });
           }}
-          className="block h-28 w-full"
+          className="block aspect-[3/1] w-full"
         >
           <img src={member.bannerUrl} alt="" className="h-full w-full object-cover" />
         </button>

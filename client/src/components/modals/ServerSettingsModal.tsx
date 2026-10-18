@@ -1,5 +1,6 @@
 import { memberName } from '../../lib/types';
-import { ArrowDown, ArrowUp, Crown, ImagePlus, Link2, Plus, Search, Shield, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Crown, ImagePlus, Link2, Plus, Search, Shield, Shirt, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
+import { ServerPatchesPanel } from '../ServerPatches';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useEffect, useState } from 'react';
 import { P, PERMISSION_INFO, has, type PermissionInfo } from '../../../../shared/permissions.ts';
@@ -7,7 +8,7 @@ import { api } from '../../lib/api';
 import type { Invite, Role, ServerDetail } from '../../lib/types';
 import { memberPosition, useApp } from '../../store/app';
 import { toast } from '../../store/toast';
-import { Avatar, Button, IconButton, Input, RoleDot, Toggle, cx } from '../ui';
+import { Avatar, Button, IconButton, ImageHint, Input, RoleDot, Toggle, cx } from '../ui';
 
 const COLORS = ['#ed4245', '#f47b67', '#faa61a', '#fee75c', '#3ba55c', '#1abc9c', '#00b0f4', '#5865f2', '#7c5cff', '#9b59b6', '#eb459e', '#99aab5'];
 
@@ -29,6 +30,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
     { id: 'roles', label: 'Cargos', icon: <Shield size={16} />, show: has(perms, P.MANAGE_ROLES) },
     { id: 'members', label: 'Membros', icon: <Users size={16} />, show: true },
     { id: 'invites', label: 'Convites', icon: <Link2 size={16} />, show: has(perms, P.CREATE_INVITE) },
+    { id: 'patches', label: 'Patches', icon: <Shirt size={16} />, show: true },
   ].filter((t) => t.show);
   const current = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id;
 
@@ -58,6 +60,15 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
           {current === 'roles' && <Roles detail={detail} />}
           {current === 'members' && <Members detail={detail} />}
           {current === 'invites' && <Invites detail={detail} />}
+          {current === 'patches' && (
+            <section>
+              <h2 className="text-xl font-bold">Patches do servidor</h2>
+              <p className="mt-1 mb-5 text-sm text-fg-muted">
+                Bordados criados pela galera daqui. Qualquer membro pode criar e todo mundo pode costurar no próprio perfil.
+              </p>
+              <ServerPatchesPanel serverId={detail.server.id} />
+            </section>
+          )}
         </div>
         <button
           onClick={close}
@@ -110,6 +121,7 @@ function Overview({ detail }: { detail: ServerDetail }) {
         </div>
         <div className="flex-1">
           <Input label="Nome do servidor" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
+          <ImageHint spec="serverIcon" className="mt-3" />
         </div>
       </div>
       <div>
