@@ -1,3 +1,4 @@
+import { reduceMotion } from './motion';
 // "Chamar atenção" (inspirado no MSN): tremida, som, notificação do sistema e cartão no app.
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
@@ -29,7 +30,7 @@ export function receiveNudge(n: NudgeEvent) {
 }
 
 function shakeScreen() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (reduceMotion()) return;
   const root = document.getElementById('root');
   if (!root) return;
   root.classList.remove('nudge-shake');

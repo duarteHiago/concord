@@ -105,6 +105,8 @@ export interface UserSettings {
   globalShortcuts?: boolean;
   notifications?: Partial<NotifySettings>;
   mutedNudges?: string[];
+  /** animações: sempre ligadas (padrão), seguir o sistema ou reduzidas */
+  motion?: 'full' | 'system' | 'reduce';
 }
 
 export interface Me extends User {

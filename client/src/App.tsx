@@ -12,10 +12,13 @@ import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
 import { HOME, useActiveDetail, useApp } from './store/app';
 import { DmView } from './components/DirectMessages';
+import { setMotionPref } from './lib/motion';
 
 export default function App() {
   const ready = useApp((s) => s.ready);
   const me = useApp((s) => s.me);
+  const motion = me?.settings.motion;
+  useEffect(() => setMotionPref(motion), [motion]);
   const bootstrap = useApp((s) => s.bootstrap);
 
   useEffect(() => {

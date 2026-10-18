@@ -1,6 +1,7 @@
 // Visuais dos minigames (roleta, dados 3D, moeda 3D e confete), em qualquer tamanho.
 import { Crown, Sun } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { reduceMotion } from '../lib/motion';
 import { playCoin, playRattle, playTick } from '../lib/sounds';
 import type { GameData } from '../lib/types';
 import { cx } from './ui';
@@ -11,7 +12,6 @@ type Roulette = Extract<GameData, { type: 'roulette' }>;
 type Dice = Extract<GameData, { type: 'dice' }>;
 type Coin = Extract<GameData, { type: 'coin' }>;
 
-const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ------------------------------------------------------------------ roleta
 

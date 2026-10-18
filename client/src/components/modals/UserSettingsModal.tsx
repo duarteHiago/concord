@@ -1,6 +1,7 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { NOISE_MODES } from '../../lib/voiceEffects';
+import { systemReducesMotion } from '../../lib/motion';
 import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
 import { StyleTab } from './StyleTab';
@@ -290,6 +291,39 @@ function Swatches({ value, onChange, allowNone }: { value: string | null; onChan
 
 // ------------------------------------------------------------------ Aparência
 
+/** Animações: o Windows costuma pedir "reduzir movimento" sem a pessoa saber, então o padrão é ligado. */
+function MotionSetting() {
+  const motion = useApp((s) => s.me?.settings.motion) ?? 'full';
+  const saveSettings = useApp((s) => s.saveSettings);
+  const options = [
+    ['full', 'Sempre ligadas'],
+    ['system', 'Seguir o sistema'],
+    ['reduce', 'Reduzidas'],
+  ] as const;
+  return (
+    <div>
+      <SectionTitle>Animações</SectionTitle>
+      <div role="radiogroup" aria-label="Animações" className="flex flex-wrap gap-1.5">
+        {options.map(([id, label]) => (
+          <button
+            key={id}
+            role="radio"
+            aria-checked={motion === id}
+            onClick={() => void saveSettings({ motion: id })}
+            className={cx('rounded-full px-4 py-1.5 text-sm font-semibold', motion === id ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs text-fg-subtle">
+        Tremida, roleta, dados, moeda, reações, molduras e brilho dos stickers.
+        {systemReducesMotion() && ' Seu sistema está pedindo menos movimento (efeitos de animação desligados no Windows).'}
+      </p>
+    </div>
+  );
+}
+
 function Appearance() {
   // o seletor devolve o objeto guardado (estável); normalizar dentro dele criaria um objeto novo a cada render
   const stored = useApp((s) => s.me?.settings?.theme);
@@ -323,6 +357,7 @@ function Appearance() {
 
   return (
     <div className="space-y-6">
+      <MotionSetting />
       <div>
         <SectionTitle>Tema</SectionTitle>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

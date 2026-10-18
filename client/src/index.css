@@ -128,14 +128,12 @@ h3,
   will-change: transform, opacity;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .nudge-shake {
-    animation: none;
-  }
-  .reaction-particle {
-    animation-duration: 1.2s !important;
-    animation-name: fade-in;
-  }
+:root[data-motion='reduce'] .nudge-shake {
+  animation: none;
+}
+:root[data-motion='reduce'] .reaction-particle {
+  animation-duration: 1.2s !important;
+  animation-name: fade-in;
 }
 
 input[type='range'] {
@@ -203,13 +201,11 @@ video::-webkit-media-controls {
   animation: confetti-fly 1.8s cubic-bezier(0.15, 0.55, 0.4, 1) both;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .wheel-pointer,
-  .dice-bounce,
-  .coin-jump,
-  .confetti-piece {
-    animation: none;
-  }
+:root[data-motion='reduce'] .wheel-pointer,
+:root[data-motion='reduce'] .dice-bounce,
+:root[data-motion='reduce'] .coin-jump,
+:root[data-motion='reduce'] .confetti-piece {
+  animation: none;
 }
 
 /* ---------- molduras animadas da foto de perfil ---------- */
@@ -486,13 +482,11 @@ video::-webkit-media-controls {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .avatar-frame,
-  .avatar-frame::before,
-  .frame-particles,
-  .frame-particles b,
-  .sticker-shine,
-  .sticker-pop {
-    animation: none !important;
-  }
+:root[data-motion='reduce'] .avatar-frame,
+:root[data-motion='reduce'] .avatar-frame::before,
+:root[data-motion='reduce'] .frame-particles,
+:root[data-motion='reduce'] .frame-particles b,
+:root[data-motion='reduce'] .sticker-shine,
+:root[data-motion='reduce'] .sticker-pop {
+  animation: none !important;
 }
