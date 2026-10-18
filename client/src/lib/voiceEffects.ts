@@ -225,11 +225,21 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
     const ctx = opts.audioContext;
     if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
     this.source = ctx.createMediaStreamSource(new MediaStream([opts.track]));
+    // tudo em mono: a supressão de ruído só processa o 1º canal; se o microfone vier em estéreo,
+    // o 2º canal ficaria mudo e a voz chegaria só num lado do fone de quem ouve
+    const mono = ctx.createGain();
+    mono.channelCount = 1;
+    mono.channelCountMode = 'explicit';
+    mono.channelInterpretation = 'speakers'; // mistura esquerdo + direito
+    this.source.connect(mono);
+    this.nodes.push(mono);
     this.dest = ctx.createMediaStreamDestination();
-    let input: AudioNode = this.source;
+    this.dest.channelCount = 1;
+    this.dest.channelCountMode = 'explicit';
+    let input: AudioNode = mono;
     const denoise = await noiseNode(ctx, this.noise);
     if (denoise) {
-      this.source.connect(denoise);
+      mono.connect(denoise);
       input = denoise;
       this.nodes.push(denoise);
     }
@@ -262,7 +272,10 @@ let sharedContext: AudioContext | null = null;
 /** Aplica (ou remove) a supressão de ruído por IA e o efeito na faixa do microfone. */
 export async function applyVoiceProcessing(track: LocalAudioTrack, noise: NoiseMode, effect: EffectId) {
   const usesAi = noise === 'rnnoise' || noise === 'gtcrn';
-  if (!usesAi && effect === 'none') {
+  // microfone que se apresenta em estéreo (alguns fones/placas USB, às vezes com um lado mudo):
+  // passa pelo processador mesmo sem IA/efeito só para virar mono e chegar nos dois lados do fone
+  const stereoMic = (track.mediaStreamTrack.getSettings().channelCount ?? 1) > 1;
+  if (!usesAi && effect === 'none' && !stereoMic) {
     if (track.getProcessor()) await track.stopProcessor();
     return;
   }

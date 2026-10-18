@@ -330,13 +330,21 @@ export const useVoice = create<VoiceStore>((set, get) => {
     const room = get().room;
     if (!room) return;
     const { inputId, noiseMode, echoCancellation } = get().audioSettings;
-    await room.localParticipant.setMicrophoneEnabled(on, {
-      deviceId: inputId,
-      // com a IA ligada, o filtro do navegador fica desligado (senão a voz é processada duas vezes)
-      noiseSuppression: noiseMode === 'browser',
-      echoCancellation,
-      autoGainControl: true,
-    });
+    await room.localParticipant.setMicrophoneEnabled(
+      on,
+      {
+        deviceId: inputId,
+        // voz é sempre mono: alguns fones/placas se apresentam como estéreo com um lado vazio
+        channelCount: 1,
+        // com a IA ligada, o filtro do navegador fica desligado (senão a voz é processada duas vezes)
+        noiseSuppression: noiseMode === 'browser',
+        echoCancellation,
+        autoGainControl: true,
+      },
+      // sem isso o LiveKit publica em estéreo quando o microfone diz ter 2 canais, e quem ouve
+      // pode receber a voz só num lado do fone
+      { forceStereo: false },
+    );
     syncLocalFlags();
     if (on) await applyCurrentEffect();
   }
