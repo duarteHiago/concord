@@ -14,6 +14,8 @@ export interface ThemePalette {
   'fg-subtle': string;
   accent: string;
   'accent-2': string;
+  /** cor do texto sobre o destaque (botões, pílulas) */
+  'on-accent': string;
 }
 
 export interface ThemePreset {
@@ -35,11 +37,30 @@ const dark = (p: Partial<ThemePalette>): ThemePalette => ({
   'fg-subtle': '#6b7180',
   accent: '#7c5cff',
   'accent-2': '#22d3ee',
+  'on-accent': '#ffffff',
   ...p,
 });
 
 export const PRESETS: ThemePreset[] = [
-  { id: 'concord', name: 'Concord', palette: dark({}) },
+  {
+    id: 'noturno',
+    name: 'Noturno',
+    palette: dark({
+      'surface-0': '#120e16',
+      'surface-1': '#17121c',
+      'surface-2': '#211a28',
+      'surface-3': '#2b2234',
+      'surface-4': '#362c41',
+      'line-strong': 'rgb(255 255 255 / 0.13)',
+      fg: '#f3ecf7',
+      'fg-muted': '#b3a6c2',
+      'fg-subtle': '#9486a6',
+      accent: '#ff8a6b',
+      'accent-2': '#c4a5ff',
+      'on-accent': '#2a1410',
+    }),
+  },
+  { id: 'concord', name: 'Violeta', palette: dark({}) },
   {
     id: 'midnight',
     name: 'Meia-noite',
@@ -48,22 +69,22 @@ export const PRESETS: ThemePreset[] = [
   {
     id: 'nord',
     name: 'Nórdico',
-    palette: dark({ 'surface-0': '#232831', 'surface-1': '#2b313c', 'surface-2': '#2e3440', 'surface-3': '#3b4252', 'surface-4': '#434c5e', fg: '#eceff4', 'fg-muted': '#c4cad6', 'fg-subtle': '#8a93a6', accent: '#88c0d0', 'accent-2': '#a3be8c' }),
+    palette: dark({ 'surface-0': '#232831', 'surface-1': '#2b313c', 'surface-2': '#2e3440', 'surface-3': '#3b4252', 'surface-4': '#434c5e', fg: '#eceff4', 'fg-muted': '#c4cad6', 'fg-subtle': '#8a93a6', accent: '#88c0d0', 'accent-2': '#a3be8c', 'on-accent': '#1b222c' }),
   },
   {
     id: 'synthwave',
     name: 'Synthwave',
-    palette: dark({ 'surface-0': '#120b1e', 'surface-1': '#1a1029', 'surface-2': '#211534', 'surface-3': '#2c1c45', 'surface-4': '#3a2659', fg: '#f6e9ff', 'fg-muted': '#c9b3e0', 'fg-subtle': '#8c74a8', accent: '#ff3cac', 'accent-2': '#2bd2ff' }),
+    palette: dark({ 'surface-0': '#120b1e', 'surface-1': '#1a1029', 'surface-2': '#211534', 'surface-3': '#2c1c45', 'surface-4': '#3a2659', fg: '#f6e9ff', 'fg-muted': '#c9b3e0', 'fg-subtle': '#8c74a8', accent: '#ff3cac', 'accent-2': '#2bd2ff', 'on-accent': '#ffffff' }),
   },
   {
     id: 'forest',
     name: 'Floresta',
-    palette: dark({ 'surface-0': '#0b120e', 'surface-1': '#101a14', 'surface-2': '#14201a', 'surface-3': '#1b2a22', 'surface-4': '#24372d', fg: '#e6f2ea', 'fg-muted': '#a7c0b1', 'fg-subtle': '#6c8577', accent: '#34d399', 'accent-2': '#facc15' }),
+    palette: dark({ 'surface-0': '#0b120e', 'surface-1': '#101a14', 'surface-2': '#14201a', 'surface-3': '#1b2a22', 'surface-4': '#24372d', fg: '#e6f2ea', 'fg-muted': '#a7c0b1', 'fg-subtle': '#7d9688', accent: '#34d399', 'accent-2': '#facc15', 'on-accent': '#05200f' }),
   },
   {
     id: 'ember',
     name: 'Brasa',
-    palette: dark({ 'surface-0': '#120c0a', 'surface-1': '#1a1210', 'surface-2': '#201714', 'surface-3': '#2a1e1a', 'surface-4': '#372822', fg: '#f6ebe6', 'fg-muted': '#c8b0a6', 'fg-subtle': '#8a7068', accent: '#f97316', 'accent-2': '#fbbf24' }),
+    palette: dark({ 'surface-0': '#120c0a', 'surface-1': '#1a1210', 'surface-2': '#201714', 'surface-3': '#2a1e1a', 'surface-4': '#372822', fg: '#f6ebe6', 'fg-muted': '#c8b0a6', 'fg-subtle': '#9a8078', accent: '#f97316', 'accent-2': '#fbbf24', 'on-accent': '#2a1206' }),
   },
   {
     id: 'light',
@@ -81,12 +102,13 @@ export const PRESETS: ThemePreset[] = [
       'fg-subtle': '#7c8291',
       accent: '#6246ea',
       'accent-2': '#0891b2',
+      'on-accent': '#ffffff',
     },
   },
 ];
 
 export const DEFAULT_THEME: ThemeSettings = {
-  preset: 'concord',
+  preset: 'noturno',
   accent: null,
   background: { url: null, blur: 0, dim: 0.35 },
   scale: 1,
@@ -111,6 +133,19 @@ export function cachedTheme(): ThemeSettings {
   }
 }
 
+/** Texto escuro sobre cores claras, branco sobre cores escuras (luminância relativa do WCAG). */
+function readableOn(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#ffffff';
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(m[1].slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // contraste com branco vs. com quase-preto: fica com o maior
+  return (1.05) / (lum + 0.05) >= (lum + 0.05) / 0.06 ? '#ffffff' : '#1a1014';
+}
+
 /** Aplica o tema na página: variáveis de cor, fundo, escala e CSS personalizado. */
 export function applyTheme(theme: ThemeSettings) {
   try {
@@ -120,7 +155,10 @@ export function applyTheme(theme: ThemeSettings) {
   }
   const root = document.documentElement;
   const preset = PRESETS.find((p) => p.id === theme.preset) ?? PRESETS[0];
-  const palette: ThemePalette = { ...preset.palette, ...(theme.accent ? { accent: theme.accent } : {}) };
+  const palette: ThemePalette = {
+    ...preset.palette,
+    ...(theme.accent ? { accent: theme.accent, 'on-accent': readableOn(theme.accent) } : {}),
+  };
   const hasBg = !!theme.background.url;
 
   for (const [key, value] of Object.entries(palette)) {

@@ -75,9 +75,9 @@ export function Button({
       {...props}
       disabled={props.disabled || loading}
       className={cx(
-        'inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50',
-        variant === 'primary' && 'bg-accent text-white shadow-lg shadow-accent/20 hover:bg-accent-hover',
-        variant === 'secondary' && 'bg-surface-4 text-fg hover:bg-white/15',
+        'inline-flex h-10 items-center justify-center gap-2 rounded-full px-5 font-display text-sm font-bold transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50',
+        variant === 'primary' && 'bg-accent text-on-accent hover:bg-accent-hover',
+        variant === 'secondary' && 'bg-surface-3 text-fg hover:bg-surface-4',
         variant === 'danger' && 'bg-danger text-white hover:bg-red-600',
         variant === 'ghost' && 'text-fg-muted hover:bg-white/5 hover:text-fg',
         className,
@@ -103,7 +103,7 @@ export function IconButton({
       title={label}
       aria-label={label}
       className={cx(
-        'inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-40',
+        'inline-flex items-center justify-center rounded-full transition-colors disabled:opacity-40',
         danger ? 'text-danger hover:bg-danger/15' : active ? 'bg-white/10 text-fg' : 'text-fg-muted hover:bg-white/8 hover:text-fg',
         className,
       )}
@@ -116,11 +116,11 @@ export function IconButton({
 export function Input({ label, hint, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: string; hint?: string }) {
   return (
     <label className="block">
-      {label && <span className="mb-1.5 block text-xs font-bold tracking-wide text-fg-muted uppercase">{label}</span>}
+      {label && <span className="mb-1.5 block text-xs font-bold text-fg-muted">{label}</span>}
       <input
         {...props}
         className={cx(
-          'h-10 w-full rounded-lg border border-line bg-surface-0 px-3 text-sm text-fg outline-none transition-colors placeholder:text-fg-subtle focus:border-accent',
+          'h-11 w-full rounded-2xl border border-transparent bg-surface-3 px-4 text-sm text-fg outline-none transition-colors placeholder:text-fg-subtle focus:border-accent',
           className,
         )}
       />
@@ -171,7 +171,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={onClose}>
       <div
-        className="flex max-h-[90vh] w-full animate-pop-in flex-col overflow-hidden rounded-2xl border border-line bg-surface-2 shadow-2xl"
+        className="flex max-h-[90vh] w-full animate-pop-in flex-col overflow-hidden rounded-[28px] bg-surface-2 shadow-2xl ring-1 ring-line"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -185,7 +185,7 @@ export function Modal({
           </div>
         )}
         <div className="overflow-y-auto px-6 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-line bg-surface-1 px-6 py-4">{footer}</div>}
+        {footer && <div className="flex justify-end gap-2 px-6 pt-2 pb-6">{footer}</div>}
       </div>
     </div>
   );
@@ -200,7 +200,7 @@ export function Toasts() {
           key={t.id}
           onClick={() => dismiss(t.id)}
           className={cx(
-            'pointer-events-auto animate-slide-up rounded-xl border px-4 py-2.5 text-sm font-medium shadow-2xl backdrop-blur',
+            'pointer-events-auto animate-slide-up rounded-full border px-5 py-2.5 text-sm font-semibold shadow-2xl backdrop-blur',
             t.kind === 'error' && 'border-danger/40 bg-red-950/90 text-red-100',
             t.kind === 'success' && 'border-ok/40 bg-emerald-950/90 text-emerald-100',
             t.kind === 'info' && 'border-line-strong bg-surface-3/95 text-fg',
@@ -224,4 +224,42 @@ export function Spinner({ size = 24 }: { size?: number }) {
 
 export function RoleDot({ color }: { color: string | null }) {
   return <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: color ?? '#99aab5' }} />;
+}
+
+/** Pílula "ao vivo" do design Noturno. */
+export function LivePill({ children = 'ao vivo', className }: { children?: ReactNode; className?: string }) {
+  return (
+    <span className={cx('rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap text-on-accent', className)}>{children}</span>
+  );
+}
+
+/** Pilha de avatares sobrepostos (cartões das salas). */
+export function AvatarStack({
+  people,
+  size = 30,
+  max = 5,
+}: {
+  people: { id: string; name: string; color: string; src?: string | null; speaking?: boolean }[];
+  size?: number;
+  max?: number;
+}) {
+  const shown = people.slice(0, max);
+  const extra = people.length - shown.length;
+  return (
+    <div className="flex items-center">
+      {shown.map((p, i) => (
+        <div key={p.id} className="rounded-full ring-[3px] ring-surface-3" style={{ marginLeft: i ? -size * 0.28 : 0, zIndex: shown.length - i }}>
+          <Avatar name={p.name} color={p.color} src={p.src} size={size} speaking={p.speaking} />
+        </div>
+      ))}
+      {extra > 0 && (
+        <span
+          className="flex items-center justify-center rounded-full bg-surface-4 text-[11px] font-bold text-fg-muted ring-[3px] ring-surface-3"
+          style={{ width: size, height: size, marginLeft: -size * 0.28 }}
+        >
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
 }

@@ -77,8 +77,8 @@ const a = await open('A', A.token);
 const b = await open('B', B.token);
 let exitCode = 1;
 try {
-  await a.page.getByText('Voz conectada').waitFor({ timeout: 20000 });
-  await b.page.getByText('Voz conectada').waitFor({ timeout: 20000 });
+  await a.page.getByRole('button', { name: 'Sair da sala' }).first().waitFor({ timeout: 20000 });
+  await b.page.getByRole('button', { name: 'Sair da sala' }).first().waitFor({ timeout: 20000 });
   await a.page.waitForTimeout(4000);
   check((await liveAudios(a.page)) >= 1, 'A ouve B');
   check((await liveAudios(b.page)) >= 1, 'B ouve A');

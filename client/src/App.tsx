@@ -4,7 +4,6 @@ import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
-import { ServerRail } from './components/ServerRail';
 import { Spinner, Toasts } from './components/ui';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
@@ -44,24 +43,25 @@ function Shell() {
   const channel = detail?.channels.find((c) => c.id === channelId);
 
   return (
-    <div className="flex h-full">
-      <ServerRail />
+    <div className="flex h-full gap-4 bg-surface-1 p-4">
+      <ChannelSidebar />
       {activeServerId ? (
-        <>
-          <ChannelSidebar />
-          <main className="flex min-w-0 flex-1 flex-col bg-surface-2">
-            {channel?.type === 'voice' ? (
-              <VoiceView channel={channel} />
-            ) : channel ? (
-              <ChatView channel={channel} />
-            ) : (
-              <div className="flex flex-1 items-center justify-center">
-                <Spinner />
-              </div>
-            )}
-          </main>
-          {memberListOpen && channel?.type === 'text' && <MemberList />}
-        </>
+        channel?.type === 'voice' ? (
+          <VoiceView channel={channel} />
+        ) : (
+          <>
+            <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
+              {channel ? (
+                <ChatView channel={channel} />
+              ) : (
+                <div className="flex flex-1 items-center justify-center">
+                  <Spinner />
+                </div>
+              )}
+            </main>
+            {memberListOpen && channel && <MemberList />}
+          </>
+        )
       ) : (
         <WelcomeView />
       )}

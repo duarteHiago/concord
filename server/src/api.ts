@@ -722,7 +722,6 @@ api.post('/invites/:code', (req, res) => {
 
 api.get('/channels/:id/messages', (req, res) => {
   const channel = requireChannelPerm(req.params.id, uid(res), P.VIEW_CHANNEL);
-  if (channel.type !== 'text') return res.json([]);
   const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
   const limit = Math.min(100, Number(req.query.limit) || 50);
   const rows = all<MessageWithAuthor>(
@@ -737,7 +736,6 @@ api.get('/channels/:id/messages', (req, res) => {
 api.post('/channels/:id/messages', async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
-  if (channel.type !== 'text') fail(400, 'Este canal não aceita mensagens');
   const content = str(req.body?.content, 'mensagem', 1, 2000);
   const id = randomUUID();
   run('INSERT INTO messages (id, channel_id, author_id, content, created_at) VALUES (?, ?, ?, ?, ?)', id, channel.id, me, content, now());

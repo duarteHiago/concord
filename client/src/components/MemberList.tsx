@@ -26,10 +26,10 @@ export function MemberList() {
   if (offline.length) groups.push({ title: 'Offline', members: offline });
 
   return (
-    <aside className="hidden w-60 shrink-0 overflow-y-auto bg-surface-1 px-2 py-4 lg:block">
+    <aside className="panel hidden w-64 shrink-0 overflow-y-auto px-3 py-5 lg:block">
       {groups.map((g) => (
         <div key={g.title} className="mb-5">
-          <h3 className="mb-1 px-2 text-[11px] font-bold tracking-wider text-fg-subtle uppercase">
+          <h3 className="mb-1.5 px-2 font-sans text-xs font-bold text-fg-subtle">
             {g.title} — {g.members.length}
           </h3>
           {g.members.map((m) => (
@@ -47,7 +47,7 @@ function MemberRow({ detail, member, online }: { detail: ServerDetail; member: M
   return (
     <button
       onClick={(e) => openPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
-      className={cx('flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-white/5', !online && 'opacity-40 hover:opacity-100')}
+      className={cx('flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-surface-3', !online && 'opacity-40 hover:opacity-100')}
     >
       <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} size={34} status={online ? 'online' : 'offline'} />
       <div className="min-w-0 flex-1">

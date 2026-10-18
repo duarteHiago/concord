@@ -5,7 +5,7 @@ import { Button } from './ui';
 export function WelcomeView() {
   const openModal = useApp((s) => s.openModal);
   return (
-    <div className="flex flex-1 items-center justify-center bg-surface-2 p-8">
+    <div className="panel flex flex-1 items-center justify-center p-8">
       <div className="max-w-md animate-slide-up text-center">
         <img src="/icon.svg" alt="" className="mx-auto mb-6 h-20 w-20" />
         <h1 className="text-3xl font-extrabold">Seu espaço começa aqui</h1>
