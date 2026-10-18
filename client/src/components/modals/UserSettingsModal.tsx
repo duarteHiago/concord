@@ -773,6 +773,7 @@ function Audio() {
           ))}
         </div>
       </div>
+      {settings.noiseMode === 'dfn' && <NoiseStrength />}
       <MicSensitivity />
       <div className="divide-y divide-line rounded-xl bg-surface-0">
         <div className="flex items-center justify-between p-3">
@@ -789,6 +790,43 @@ function Audio() {
           </div>
           <Toggle checked={settings.echoCancellation} onChange={(v) => void setAudioSettings({ echoCancellation: v })} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Intensidade da IA máxima: mais forte tira mais ruído, mais natural preserva mais a voz. */
+function NoiseStrength() {
+  const strength = useVoice((s) => s.audioSettings.noiseStrength);
+  const setAudioSettings = useVoice((s) => s.setAudioSettings);
+  const [value, setValue] = useState(strength);
+  useEffect(() => setValue(strength), [strength]);
+  const label = value >= 80 ? 'Máxima' : value >= 45 ? 'Forte' : value >= 30 ? 'Equilibrada' : 'Natural';
+  return (
+    <div>
+      <SectionTitle>Intensidade da supressão</SectionTitle>
+      <div className="rounded-2xl bg-surface-0 p-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-fg-muted">Voz mais natural</span>
+          <input
+            type="range"
+            min={15}
+            max={100}
+            step={5}
+            value={value}
+            aria-label="Intensidade da supressão de ruído"
+            // aplica na hora, sem reiniciar o microfone
+            onChange={(e) => {
+              setValue(Number(e.target.value));
+              void setAudioSettings({ noiseStrength: Number(e.target.value) });
+            }}
+            className="min-w-0 flex-1"
+          />
+          <span className="text-xs text-fg-muted">Menos ruído</span>
+        </div>
+        <p className="mt-1.5 text-xs text-fg-subtle">
+          {label} ({value} dB). Se sua voz ficar abafada, puxe para a esquerda; se ainda passar barulho, para a direita.
+        </p>
       </div>
     </div>
   );

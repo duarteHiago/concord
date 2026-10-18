@@ -14,11 +14,15 @@ export type NoiseMode = 'off' | 'browser' | 'rnnoise' | 'gtcrn' | 'dfn';
 
 export const NOISE_MODES: { id: NoiseMode; label: string; hint: string }[] = [
   {
+    id: 'gtcrn',
+    label: 'IA natural (recomendada)',
+    hint: 'Tira ventilador, teclado e barulho de rua mantendo a voz natural. Leve no PC.',
+  },
+  {
     id: 'dfn',
     label: 'IA máxima (DeepFilterNet 3)',
-    hint: 'A mais forte: tira teclado, ventilador, rua e TV, mantendo a voz natural. Baixa ~12 MB na primeira vez.',
+    hint: 'Some até com o último clique de teclado; a voz pode ficar um pouco mais "seca". Ajuste a intensidade abaixo.',
   },
-  { id: 'gtcrn', label: 'IA leve (GTCRN)', hint: 'Quase tão boa quanto a máxima e bem mais leve. Boa para PCs mais fracos.' },
   { id: 'rnnoise', label: 'IA básica (RNNoise)', hint: 'Só ruído constante (ventilador, chiado); deixa passar teclado.' },
   { id: 'browser', label: 'Do navegador', hint: 'O filtro básico do Chrome.' },
   { id: 'off', label: 'Desligada', hint: 'Som cru do microfone (bom para música).' },
@@ -55,10 +59,10 @@ let dfnCore: Promise<DfnCore> | null = null;
 function loadDfn(): Promise<DfnCore> {
   dfnCore ??= (async () => {
     const { DeepFilterNet3Core } = await import('deepfilternet3-noise-filter');
-    // limite de atenuação em dB: 100 = tira o ruído por completo
+    // limite de atenuação em dB (ajustado depois pela intensidade escolhida)
     const core = new DeepFilterNet3Core({
       sampleRate: 48000,
-      noiseReductionLevel: 100,
+      noiseReductionLevel: DEFAULT_NOISE_STRENGTH,
       assetConfig: { cdnUrl: `${location.origin}/vendor/deepfilternet3` },
     });
     await core.initialize();
@@ -70,17 +74,31 @@ function loadDfn(): Promise<DfnCore> {
   return dfnCore;
 }
 
+/** Muda a intensidade do DeepFilterNet3 na hora (sem reiniciar o microfone). */
+export function updateNoiseStrength(level: number) {
+  void dfnCore?.then((core) => core.setSuppressionLevel(level)).catch(() => {});
+}
+
 /** Baixa o modelo do DeepFilterNet3 com antecedência (ex.: ao entrar numa sala). */
 export const preloadDfn = () => void loadDfn().catch(() => {});
 
 /** Avisos do processamento (ex.: a IA máxima não carregou e caiu para a leve). */
 export const voiceNotices = new EventTarget();
 
-async function noiseNode(ctx: AudioContext, mode: NoiseMode): Promise<AudioWorkletNode | null> {
+/**
+ * Força da supressão (limite de atenuação em dB do DeepFilterNet3): mais alto = tira mais ruído, mas abafa a voz.
+ * Medido com voz real + teclado: 100 dB distorcia mais a voz e cortava 0,6% da fala; 45 dB tira o teclado
+ * quase todo (-77 dB nas pausas) sem cortes.
+ */
+export const DEFAULT_NOISE_STRENGTH = 45;
+
+async function noiseNode(ctx: AudioContext, mode: NoiseMode, strength = DEFAULT_NOISE_STRENGTH): Promise<AudioWorkletNode | null> {
   if (mode === 'dfn') {
     try {
       const core = await loadDfn();
-      return await core.createAudioWorkletNode(ctx);
+      const node = await core.createAudioWorkletNode(ctx);
+      core.setSuppressionLevel(strength);
+      return node;
     } catch (err) {
       // GTCRN mediu quase tão bem quanto o DFN3 e é leve: é o plano B
       console.warn('[voz] DeepFilterNet3 indisponível, usando GTCRN', err);
@@ -163,8 +181,11 @@ class ConcordGate extends AudioWorkletProcessor {
     this.above = 0; this.needAbove = Math.round(sampleRate * 0.02 / 128);
     this.energies = new Float32Array(8); this.ei = 0;
     this.attack = 1 - Math.exp(-1 / (sampleRate * 0.002));
-    this.release = 1 - Math.exp(-1 / (sampleRate * 0.12));
-    this.holdSamples = Math.round(sampleRate * 0.22);
+    this.release = 1 - Math.exp(-1 / (sampleRate * 0.25));
+    // segura aberto 450 ms: cobre a pausa entre palavras (antes cortava no meio da frase)
+    this.holdSamples = Math.round(sampleRate * 0.45);
+    // fechado = -40 dB, não silêncio absoluto: soa como "abaixar", não como corte
+    this.closedGain = 0.01;
     this.report = 0;
     this.port.onmessage = (e) => {
       if (e.data.mode) this.mode = e.data.mode;
@@ -196,7 +217,7 @@ class ConcordGate extends AudioWorkletProcessor {
       this.hold = this.holdSamples;
     } else if (this.hold > 0) this.hold -= input.length;
     else this.open = false;
-    const target = this.open ? 1 : 0;
+    const target = this.open ? 1 : this.closedGain;
     for (let i = 0; i < input.length; i++) {
       const delayed = this.delay[this.w];
       this.delay[this.w] = input[i];
@@ -222,7 +243,9 @@ export interface GateSettings {
   /** limiar em dB (modo manual) */
   threshold: number;
 }
-export const DEFAULT_GATE: GateSettings = { mode: 'auto', threshold: -50 };
+// desligado por padrão: com o DeepFilterNet3 as pausas já ficam em silêncio e o portão só arriscava
+// cortar a fala (medido: 1,3% da fala cortada com portão, 0% sem)
+export const DEFAULT_GATE: GateSettings = { mode: 'off', threshold: -50 };
 
 /** Nível do microfone já processado (para o medidor nas configurações). */
 export interface MicLevel {
@@ -357,11 +380,13 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
   private noise: NoiseMode;
   private gate: GateSettings;
   private level: boolean;
+  private strength: number;
   private nodes: AudioNode[] = [];
   private source?: MediaStreamAudioSourceNode;
   private dest?: MediaStreamAudioDestinationNode;
 
-  constructor(noise: NoiseMode, effect: EffectId, gate: GateSettings, level: boolean) {
+  constructor(noise: NoiseMode, effect: EffectId, gate: GateSettings, level: boolean, strength: number) {
+    this.strength = strength;
     this.noise = noise;
     this.effect = effect;
     this.gate = gate;
@@ -384,7 +409,7 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
     this.dest.channelCount = 1;
     this.dest.channelCountMode = 'explicit';
     let input: AudioNode = mono;
-    const denoise = await noiseNode(ctx, this.noise);
+    const denoise = await noiseNode(ctx, this.noise, this.strength);
     if (denoise) {
       mono.connect(denoise);
       input = denoise;
@@ -450,6 +475,7 @@ export async function applyVoiceProcessing(
   effect: EffectId,
   gate: GateSettings = DEFAULT_GATE,
   level = true,
+  strength = DEFAULT_NOISE_STRENGTH,
 ) {
   const usesAi = noise === 'rnnoise' || noise === 'gtcrn' || noise === 'dfn';
   // microfone que se apresenta em estéreo (alguns fones/placas USB, às vezes com um lado mudo):
@@ -462,5 +488,5 @@ export async function applyVoiceProcessing(
   // RNNoise e GTCRN trabalham em 48 kHz
   sharedContext ??= new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
   track.setAudioContext(sharedContext);
-  await track.setProcessor(new VoiceProcessor(noise, effect, gate, level && usesAi));
+  await track.setProcessor(new VoiceProcessor(noise, effect, gate, level && usesAi, strength));
 }

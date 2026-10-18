@@ -17,7 +17,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { closePopout } from '../lib/popout';
-import { applyVoiceProcessing, DEFAULT_GATE, EFFECTS, updateGate, voiceNotices, type EffectId, type GateSettings, type NoiseMode } from '../lib/voiceEffects';
+import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, updateNoiseStrength, EFFECTS, updateGate, voiceNotices, type EffectId, type GateSettings, type NoiseMode } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -65,6 +65,10 @@ export interface AudioSettings {
   autoGain: boolean;
   /** portão de voz: fecha o microfone quando você não está falando */
   gate: GateSettings;
+  /** força da supressão do DeepFilterNet3 (limite de atenuação em dB) */
+  noiseStrength: number;
+  /** versão das preferências (para migrações) */
+  v?: number;
   videoInputId: string;
   cameraQuality: '720p' | '1080p';
 }
@@ -157,10 +161,13 @@ function loadShareSettings(): ShareSettings {
 const DEFAULT_AUDIO: AudioSettings = {
   inputId: 'default',
   outputId: 'default',
-  noiseMode: 'dfn',
+  // GTCRN: com voz real foi o que melhor preservou a voz (a DFN3 no máximo deixava abafado)
+  noiseMode: 'gtcrn',
   echoCancellation: true,
   autoGain: true,
   gate: DEFAULT_GATE,
+  noiseStrength: DEFAULT_NOISE_STRENGTH,
+  v: 2,
   videoInputId: '',
   cameraQuality: '720p',
 };
@@ -360,8 +367,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
     const track = pub?.track as LocalAudioTrack | undefined;
     if (!track) return;
     try {
-      const { noiseMode, gate, autoGain } = get().audioSettings;
-      await applyVoiceProcessing(track, noiseMode, get().effect, gate, autoGain);
+      const { noiseMode, gate, autoGain, noiseStrength } = get().audioSettings;
+      await applyVoiceProcessing(track, noiseMode, get().effect, gate, autoGain, noiseStrength);
     } catch (err) {
       toast.error(`Não foi possível aplicar o efeito: ${(err as Error).message}`);
     }
@@ -662,6 +669,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
           }
           updateGate(audioSettings.gate);
         }
+        if (patch.noiseStrength !== undefined) updateNoiseStrength(patch.noiseStrength);
         if ((patch.noiseMode !== undefined || patch.echoCancellation !== undefined || patch.autoGain !== undefined) && get().micOn) {
           await enableMic(false);
           await enableMic(true);
@@ -725,10 +733,23 @@ function loadAudioSettings(): AudioSettings {
     // ignorado
   }
   if (!hadMode && saved.noiseSuppression === false) saved.noiseMode = 'off';
+  // versão 2: o portão automático (padrão da versão anterior) cortava a fala; volta para desligado uma vez
+  try {
+    const raw = JSON.parse(localStorage.getItem('concord.audio') ?? '{}');
+    if (raw.v !== 2) {
+      // a versão anterior colocou todo mundo na DFN3 no máximo + portão: abafava e picotava a voz
+      if (raw.gate?.mode === 'auto') saved.gate = { ...saved.gate, mode: 'off' };
+      if (saved.noiseMode === 'dfn' || saved.noiseMode === 'rnnoise') saved.noiseMode = 'gtcrn';
+      saved.noiseStrength = DEFAULT_NOISE_STRENGTH;
+      saved.v = 2;
+    }
+  } catch {
+    // ignorado
+  }
   // configurações de antes do portão de voz: quem estava no padrão antigo (RNNoise) passa para o novo
   // padrão (DeepFilterNet3), que mediu ~30 dB a mais de redução de ruído
   try {
-    if (!('gate' in JSON.parse(localStorage.getItem('concord.audio') ?? '{}')) && saved.noiseMode === 'rnnoise') saved.noiseMode = 'dfn';
+    if (!('gate' in JSON.parse(localStorage.getItem('concord.audio') ?? '{}')) && saved.noiseMode === 'rnnoise') saved.noiseMode = 'gtcrn';
   } catch {
     // ignorado
   }
