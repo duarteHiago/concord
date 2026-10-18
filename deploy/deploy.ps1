@@ -1,15 +1,15 @@
 # Envia o projeto para a VPS e roda a instalação. Uso (PowerShell, na raiz do projeto):
-#   .\deploy\deploy.ps1 -Tunnel -Domain concord.seudominio.com   -> via Cloudflare Tunnel (cria o subdomínio)
-#   .\deploy\deploy.ps1 -Domain concord.seudominio.com           -> modo direto (registro A + Let's Encrypt)
-#   .\deploy\deploy.ps1                                          -> modo direto em 72-60-150-220.sslip.io
+#   .\deploy\deploy.ps1 -Server root@IP -Tunnel -Domain concord.seudominio.com   -> via Cloudflare Tunnel (cria o subdomínio)
+#   .\deploy\deploy.ps1 -Server root@IP -Domain concord.seudominio.com           -> modo direto (registro A + Let's Encrypt)
+#   .\deploy\deploy.ps1 -Server root@IP -Domain IP-COM-HIFENS.sslip.io           -> modo direto sem domínio próprio
 # A senha da VPS é pedida pelo próprio ssh/scp (ou nenhuma, se você usar chave SSH).
 param(
-  [string]$Server = "root@72.60.150.220",
-  [string]$Domain = "72-60-150-220.sslip.io",
+  [Parameter(Mandatory = $true)][string]$Server,   # ex.: root@203.0.113.10
+  [Parameter(Mandatory = $true)][string]$Domain,   # ex.: concord.seudominio.com
   [switch]$Tunnel
 )
 $ErrorActionPreference = "Stop"
-if ($Tunnel -and $Domain -like "*sslip.io") { throw "No modo túnel informe seu subdomínio: -Domain concord.seudominio.com" }
+if ($Tunnel -and $Domain -like "*sslip.io") { throw "No modo túnel use um subdomínio seu (o sslip.io não funciona com túnel)" }
 $mode = if ($Tunnel) { "tunnel" } else { "direct" }
 $root = Split-Path $PSScriptRoot -Parent
 $archive = Join-Path $env:TEMP "concord-deploy.tgz"

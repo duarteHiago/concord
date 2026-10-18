@@ -1,14 +1,14 @@
 # Configura o deploy automático (GitHub Actions -> VPS). Rode UMA vez, na raiz do projeto:
-#   powershell -ExecutionPolicy Bypass -File .\deploy\setup-cicd.ps1
+#   powershell -ExecutionPolicy Bypass -File .\deploy\setup-cicd.ps1 -VpsHost IP -Domain concord.seudominio.com
 # O que faz:
 #   1. Cria uma chave SSH exclusiva para o deploy (~/.ssh/concord_deploy)
 #   2. Instala a chave pública na VPS (pede a senha da VPS uma última vez)
 #   3. Salva a chave privada e a impressão digital da VPS como secrets do repositório
 #   4. Cria as variáveis do deploy (host, usuário, domínio, modo)
 param(
-  [string]$VpsHost = "72.60.150.220",
+  [Parameter(Mandatory = $true)][string]$VpsHost,  # IP ou nome da VPS
   [string]$VpsUser = "root",
-  [string]$Domain = "concord.yaatoro.com",
+  [Parameter(Mandatory = $true)][string]$Domain,   # ex.: concord.seudominio.com
   [string]$Mode = "tunnel",
   [string]$Repo = ""
 )
