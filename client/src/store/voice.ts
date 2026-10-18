@@ -167,34 +167,12 @@ function loadShareSettings(): ShareSettings {
   };
 }
 
-const HW_CODECS: { codec: VideoCodec; mime: string }[] = [
-  { codec: 'h264', mime: 'video/H264' },
-  { codec: 'av1', mime: 'video/AV1' },
-  { codec: 'vp9', mime: 'video/VP9' },
-];
-
 /**
- * Escolhe um codec que a placa de vídeo codifica (Media Capabilities: powerEfficient = hardware).
- * Sem confirmação de hardware, usa H.264: no Windows o Chromium ainda tenta a placa de vídeo por conta
- * própria (e, se o navegador nem tiver H.264, o LiveKit cai sozinho para VP8).
+ * Codec automático: H.264. Com o servidor aceitando o perfil 42001f (deploy/livekit.yaml), o Chromium codifica
+ * H.264 pela placa de vídeo (NVENC/AMF/QuickSync) quando ela existe, e cai para o processador (OpenH264) só
+ * quando não existe. AV1/VP9 ficam no processador no Chromium mesmo com placa que suporte (testado).
  */
-async function pickShareCodec(width: number, height: number, fps: number, bitrate: number): Promise<VideoCodec> {
-  const mc = navigator.mediaCapabilities;
-  if (mc?.encodingInfo) {
-    for (const { codec, mime } of HW_CODECS) {
-      try {
-        const info = await Promise.race([
-          mc.encodingInfo({ type: 'webrtc', video: { contentType: mime, width, height, bitrate, framerate: fps } }),
-          new Promise<null>((r) => setTimeout(() => r(null), 1500)),
-        ]);
-        if (info?.supported && info.powerEfficient) return codec;
-      } catch {
-        // codec não reconhecido por este navegador
-      }
-    }
-  }
-  return 'h264';
-}
+const AUTO_CODEC: VideoCodec = 'h264';
 
 /** Alguns segundos depois de começar: avisa se a tela está sendo codificada pelo processador. */
 async function warnIfSoftwareEncoding(track: LocalTrack | undefined, heavy: boolean) {
@@ -623,7 +601,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       // No app desktop o áudio vem do capturador por processo (sem as vozes da sala),
       // então o getDisplayMedia pede só o vídeo da fonte escolhida no seletor do Concord.
       const desktopShare = !!desktop && !!sourceId;
-      const codec: VideoCodec = settings.codec === 'auto' ? await pickShareCodec(preset.width, preset.height, fps, bitrate) : settings.codec;
+      const codec: VideoCodec = settings.codec === 'auto' ? AUTO_CODEC : settings.codec;
       try {
         if (lp.isScreenShareEnabled) await get().stopShare();
         if (desktopShare) await desktop!.selectSource(sourceId!);

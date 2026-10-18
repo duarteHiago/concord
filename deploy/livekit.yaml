@@ -8,5 +8,23 @@ rtc:
 room:
   empty_timeout: 300
   departure_timeout: 20
+  # Codecs: a lista padrão do LiveKit + os perfis H.264 42001f/4d001f. Sem eles o servidor só aceita o
+  # perfil 42e01f, e nesse perfil o Chromium codifica a tela pelo processador (OpenH264) mesmo com placa
+  # NVIDIA/AMD/Intel. Com 42001f ele usa o codificador da placa de vídeo (NVENC etc.). Testado de ponta a ponta.
+  enabled_codecs:
+    - mime: audio/PCMU
+    - mime: audio/PCMA
+    - mime: audio/opus
+    - mime: audio/red
+    - mime: video/VP8
+    - mime: video/H264
+    - mime: video/H264
+      fmtp_line: level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f
+    - mime: video/H264
+      fmtp_line: level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f
+    - mime: video/VP9
+    - mime: video/AV1
+    - mime: video/H265
+    - mime: video/rtx
 logging:
   level: info

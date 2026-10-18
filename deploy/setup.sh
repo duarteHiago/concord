@@ -150,6 +150,13 @@ mkdir -p data
 "${COMPOSE[@]}" up -d --build --remove-orphans
 # recarrega o Caddyfile caso ele tenha mudado (o compose não detecta mudança no arquivo montado)
 "${COMPOSE[@]}" restart caddy
+# o LiveKit só lê a configuração ao iniciar: reinicia só se ela mudou (derruba as chamadas por alguns segundos)
+LK_SUM="$(sha256sum deploy/livekit.yaml | cut -d' ' -f1)"
+if [ "$(cat data/.livekit.sha 2>/dev/null)" != "$LK_SUM" ]; then
+  echo ">> Configuração do LiveKit mudou: reiniciando o LiveKit"
+  "${COMPOSE[@]}" restart livekit
+  echo "$LK_SUM" > data/.livekit.sha
+fi
 echo
 if [ "${MONITORING:-on}" != "off" ]; then
   # recarrega a configuração do Prometheus (alvos novos) sem perder o histórico

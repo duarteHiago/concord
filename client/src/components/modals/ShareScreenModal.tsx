@@ -10,11 +10,11 @@ const CODECS: { id: VideoCodec | 'auto'; label: string; hint: string }[] = [
   {
     id: 'auto',
     label: 'Automático',
-    hint: 'Usa o codec que a sua placa de vídeo codifica (H.264, AV1 ou VP9), sem pesar no processador. Recomendado.',
+    hint: 'H.264 pela placa de vídeo (NVIDIA, AMD ou Intel), sem pesar no processador. Recomendado.',
   },
   { id: 'h264', label: 'H.264', hint: 'Normalmente codificado pela placa de vídeo. Compatível com tudo.' },
-  { id: 'vp9', label: 'VP9', hint: 'Mais qualidade por bit, usa mais CPU.' },
-  { id: 'av1', label: 'AV1', hint: 'Máxima eficiência; requer GPU recente para codificar em tempo real.' },
+  { id: 'vp9', label: 'VP9', hint: 'Codificado pelo processador: mais qualidade por bit, mas pesa bastante.' },
+  { id: 'av1', label: 'AV1', hint: 'Codificado pelo processador aqui (o navegador ainda não usa a placa para AV1): pesa muito.' },
   { id: 'vp8', label: 'VP8', hint: 'Sempre codificado pelo processador: em 1080p60 pesa bastante no PC.' },
 ];
 
