@@ -39,6 +39,10 @@ if (existsSync(config.publicDir)) {
   // modelos de IA e outros arquivos de terceiros: o caminho tem a versão, então podem ficar no cache para sempre
   app.use('/vendor', express.static(join(config.publicDir, 'vendor'), { maxAge: '365d', immutable: true, index: false, fallthrough: false }));
   app.use(express.static(config.publicDir, { maxAge: '1h', index: false }));
+  // landing page (quem chega sem login em / é mandado para cá pelo index.html)
+  app.get('/inicio/', (_req, res) => {
+    res.sendFile(join(config.publicDir, 'inicio', 'index.html'));
+  });
   // SPA: qualquer outra rota devolve o index.html
   app.get('/{*path}', (_req, res) => {
     res.sendFile(join(config.publicDir, 'index.html'));

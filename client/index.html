@@ -8,6 +8,14 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Concord</title>
+    <script>
+      // Visitante sem login cai na landing page; o app desktop e o link "Entrar" (/?entrar) vão direto para o login
+      try {
+        if (location.pathname === '/' && !localStorage.getItem('concord.token') && !/Electron\//.test(navigator.userAgent) && !/[?&]entrar\b/.test(location.search)) {
+          location.replace('/inicio/');
+        }
+      } catch {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />

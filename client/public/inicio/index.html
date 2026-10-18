@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#140f19">
+<meta name="description" content="Concord: app de voz e transmissão de tela a 60 fps pra jogar com a galera. Stickers, patches, molduras, roleta e muito mais. Código aberto.">
+<meta property="og:title" content="Concord · sua galera, sua call, seu jeito">
+<meta property="og:description" content="Voz limpa, live a 60 fps, stickers, patches e brincadeiras. Código aberto.">
+<meta property="og:image" content="/inicio/call.webp">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Concord</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,800&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: uma "noite com a galera" — faixas largas alternando palco escuro e brinquedos interativos,
+   cada recurso do app aparece como algo que dá para mexer, não como um card de texto. */
+:root {
+  --night: #140f19;      /* chão da página */
+  --plum: #211a28;       /* painéis */
+  --plum-2: #2c2336;     /* painel elevado */
+  --line: #3a2f47;       /* bordas */
+  --cream: #fbf1e8;      /* texto */
+  --muted: #b6a8c6;      /* texto secundário */
+  --coral: #ff8a6b;      /* marca */
+  --coral-deep: #e8613f;
+  --lilac: #c4a5ff;
+  --mint: #5eead4;
+  --sun: #f5c451;
+  --ink: #1a1024;        /* contorno de sticker/patch */
+  --display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --radius: 22px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--night);
+  color: var(--cream);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.55;
+  overflow-x: hidden;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--night); }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--sun); outline-offset: 3px; border-radius: 8px; }
+.wrap { width: 100%; max-width: 1180px; margin-inline: auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); line-height: 1.02; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+h2 { font-size: clamp(36px, 6vw, 64px); font-weight: 800; }
+h3 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+p { margin: 0; }
+.eyebrow { font-family: var(--mono); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--coral); }
+.lede { color: var(--muted); font-size: 19px; max-width: 58ch; }
+.btn {
+  display: inline-flex; align-items: center; gap: 10px; height: 54px; padding: 0 26px; border-radius: 999px; border: 0;
+  font-family: var(--display); font-weight: 800; font-size: 17px; text-decoration: none; cursor: pointer;
+  transition: transform .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.btn:hover { transform: translateY(-2px) rotate(-1deg); }
+.btn:active { transform: translateY(1px) scale(.98); }
+.btn-primary { background: var(--coral); color: var(--ink); box-shadow: 0 6px 0 var(--coral-deep), 0 18px 40px -12px rgb(255 138 107 / .6); }
+.btn-primary:hover { box-shadow: 0 8px 0 var(--coral-deep), 0 22px 50px -12px rgb(255 138 107 / .7); }
+.btn-ghost { background: var(--plum-2); color: var(--cream); box-shadow: inset 0 0 0 2px var(--line); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--plum-2); font-size: 13px; font-weight: 700; color: var(--muted); }
+
+/* ------------------------------------------------ topo */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; backdrop-filter: blur(14px); background: rgb(20 15 25 / .78); border-bottom: 1px solid rgb(58 47 71 / .6); }
+.nav .wrap { display: flex; align-items: center; gap: 18px; height: 68px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--display); font-weight: 800; font-size: 24px; letter-spacing: -0.03em; }
+.brand img { height: 40px; width: auto; display: block; }
+.nav-links { display: flex; gap: 22px; margin-left: auto; font-weight: 700; font-size: 15px; color: var(--muted); }
+.nav-links a { text-decoration: none; }
+.nav-links a:hover { color: var(--cream); }
+.nav .btn { height: 42px; padding: 0 18px; font-size: 15px; box-shadow: 0 4px 0 var(--coral-deep); }
+.nav .nav-login { box-shadow: inset 0 0 0 2px var(--line); }
+@media (max-width: 860px) { .nav-links { display: none; } .nav .nav-login { margin-left: auto; } }
+@media (max-width: 520px) { .nav .btn-primary { display: none; } }
+
+/* ------------------------------------------------ hero */
+.hero { position: relative; padding-block: 56px 72px; overflow: hidden; }
+.hero::before { content: ""; position: absolute; inset: -20% -10% auto; height: 120%; background: radial-gradient(600px 380px at 78% 30%, rgb(196 165 255 / .18), transparent 70%), radial-gradient(520px 340px at 15% 10%, rgb(255 138 107 / .16), transparent 70%); pointer-events: none; }
+.hero .wrap { position: relative; display: grid; gap: 56px; }
+.hero h1 { font-size: clamp(54px, 9vw, 112px); font-weight: 800; letter-spacing: -0.045em; }
+.hero h1 .line { display: inline-block; margin-inline: .12em; }
+.hero h1 .line:nth-child(2) { color: var(--coral); }
+.hero h1 .line:nth-child(3) { font-style: italic; font-weight: 600; color: var(--lilac); }
+.hero-copy { display: grid; gap: 26px; min-width: 0; justify-items: center; text-align: center; }
+.hero-copy .lede { margin-inline: auto; }
+.hero-copy .hero-cta, .hero-copy .hero-note { justify-content: center; }
+.hero-cta { display: flex; flex-wrap: wrap; gap: 14px; }
+.hero-note { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .hero h1 .line { animation: rise .8s cubic-bezier(.2, 1.2, .3, 1) both; }
+  .hero h1 .line:nth-child(2) { animation-delay: .12s; }
+  .hero h1 .line:nth-child(3) { animation-delay: .24s; }
+}
+@keyframes rise { from { transform: translateY(40px) rotate(-3deg); } }
+@keyframes pop-in { from { transform: translateY(30px) scale(.94) rotate(2deg); } }
+
+/* print real do app */
+.shot { position: relative; margin: 8px 0 0; min-width: 0; }
+.shot img { display: block; width: 100%; height: auto; border-radius: 28px; box-shadow: 0 50px 100px -40px rgb(0 0 0 / .9), 0 0 0 1px var(--line), 0 0 0 10px rgb(33 26 40 / .6); }
+.shot figcaption { margin-top: 18px; text-align: center; font: 700 13px var(--mono); color: var(--muted); }
+.tag { position: absolute; z-index: 2; padding: 10px 16px; border-radius: 999px; font: 800 16px var(--display); color: var(--ink); box-shadow: 0 6px 0 var(--ink); white-space: nowrap; }
+.t1 { background: var(--coral); left: 30%; top: -18px; rotate: -4deg; }
+.t2 { background: var(--sun); left: -10px; top: 60%; rotate: 5deg; }
+.t3 { background: var(--mint); right: -10px; bottom: 9%; rotate: -5deg; }
+@media (max-width: 700px) { .tag { font-size: 13px; padding: 7px 12px; } .t2 { top: 55%; } .t3 { bottom: 40px; } }
+@media (prefers-reduced-motion: no-preference) {
+  .shot { animation: pop-in .9s .2s cubic-bezier(.2, 1.3, .3, 1) both; }
+  .tag { animation: bob 3.2s ease-in-out infinite; }
+  .t2 { animation-delay: -1s; } .t3 { animation-delay: -2s; }
+}
+@keyframes bob { 50% { transform: translateY(-8px); } }
+/* mock do app */
+.mock { position: relative; border-radius: 30px; background: var(--plum); padding: 14px; box-shadow: 0 40px 80px -30px rgb(0 0 0 / .8), inset 0 0 0 1px var(--line); min-width: 0; }
+.mock-top { display: flex; align-items: center; gap: 10px; padding: 4px 6px 12px; }
+.mock-top b { font-family: var(--display); font-size: 18px; }
+.live { background: var(--coral); color: var(--ink); font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .06em; }
+.stage { position: relative; aspect-ratio: 16 / 10; border-radius: 22px; overflow: hidden; background: #0b0810; isolation: isolate; }
+.game { position: absolute; inset: 0; background:
+  radial-gradient(circle at 70% 75%, #ff8a6b 0 7%, transparent 7.5%),
+  linear-gradient(180deg, #2a1d4a 0%, #6a2c5e 55%, #ff8a6b 56%, #c95a3f 100%); }
+.game::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 46px, rgb(0 0 0 / .18) 46px 48px); mask: linear-gradient(transparent 56%, #000 56%); }
+.ship { position: absolute; left: 18%; top: 34%; width: 26%; aspect-ratio: 2; }
+@media (prefers-reduced-motion: no-preference) { .ship { animation: fly 4s ease-in-out infinite; } }
+@keyframes fly { 50% { transform: translate(40%, -18%) rotate(-6deg); } }
+.stats { position: absolute; left: 12px; top: 12px; font: 700 12px var(--mono); background: rgb(20 15 25 / .85); padding: 5px 10px; border-radius: 999px; }
+.stats i { font-style: normal; color: var(--mint); }
+.bubbles { position: absolute; left: 50%; bottom: 12px; translate: -50%; display: flex; gap: 12px; }
+.av { position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font: 800 18px var(--display); color: #fff; }
+.code-pop { position: absolute; right: 12px; top: 12px; width: min(250px, 60%); background: var(--plum-2); border-radius: 16px; padding: 10px 12px; box-shadow: 0 10px 30px rgb(0 0 0 / .5), inset 0 0 0 1px var(--line); font-size: 12px; color: var(--muted); }
+.code-pop b { display: block; font: 700 20px var(--mono); color: var(--coral); }
+@media (prefers-reduced-motion: no-preference) { .code-pop { animation: code-cycle 7s ease-in-out infinite; } }
+@keyframes code-cycle { 0%, 8% { transform: translateY(-140%); opacity: 0; } 14%, 62% { transform: none; opacity: 1; } 70%, 100% { transform: translateY(-140%); opacity: 0; } }
+.mock-sticker { position: absolute; width: 22%; aspect-ratio: 1; left: 6%; bottom: 22%; rotate: -12deg; }
+.reaction-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.float-emoji { position: absolute; bottom: -10%; font-size: 30px; will-change: transform, opacity; animation: float-up 2.8s ease-out forwards; }
+@keyframes float-up {
+  0% { transform: translate(0, 0) scale(.6); opacity: 0; }
+  12% { opacity: 1; transform: translate(0, -20px) scale(1.15); }
+  100% { transform: translate(var(--dx), -360px) scale(1); opacity: 0; }
+}
+.mock-dock { display: flex; justify-content: center; gap: 8px; padding-top: 12px; }
+.mock-dock span { width: 38px; height: 38px; border-radius: 50%; background: var(--plum-2); display: grid; place-items: center; font-size: 16px; }
+.mock-dock span.on { background: var(--coral); }
+
+/* molduras animadas (iguais às do app) */
+.frame { position: absolute; inset: -5px; border-radius: 50%; pointer-events: none; filter: drop-shadow(0 0 6px var(--glow, transparent)); }
+.frame::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 3px; background: var(--fbg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+@media (prefers-reduced-motion: no-preference) { .frame::before { animation: spin var(--spd, 3s) linear infinite; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.f-fire { --fbg: conic-gradient(#ff3d00, #ffb300, #ff6d00, #ffea00, #ff3d00); --glow: #ff6d00; --spd: 1.4s; }
+.f-neon { --fbg: conic-gradient(#ff2bd6, #00e5ff, #7c5cff, #ff2bd6); --glow: #ff2bd6; --spd: 2.4s; }
+.f-galaxy { --fbg: conic-gradient(#1b0a3c, #7c3aed, #ec4899, #1e3a8a, #22d3ee, #1b0a3c); --glow: #a855f7; --spd: 6s; }
+.f-gold { --fbg: conic-gradient(#8a6a1f, #ffe08a, #c9971c, #fff6c9, #a87c1e, #ffe08a, #8a6a1f); --glow: #ffc94d; --spd: 4s; }
+.f-ice { --fbg: conic-gradient(#c9f6ff, #5ad1ff, #fff, #2a8cff, #c9f6ff); --glow: #5ad1ff; --spd: 5s; }
+.f-toxic { --fbg: conic-gradient(#39ff14, #0b3d0b, #a6ff00, #0b3d0b, #39ff14); --glow: #39ff14; --spd: 1.8s; }
+.f-rainbow { --fbg: conic-gradient(#ff004c, #ff9500, #ffee00, #2bff88, #00c3ff, #8a2bff, #ff004c); --glow: #ffffff66; }
+.f-hearts { --fbg: conic-gradient(#ff4fa3, #ffb3d9, #ff4fa3, #ff8cc6, #ff4fa3); --glow: #ff4fa3; --spd: 5s; }
+
+/* ------------------------------------------------ letreiro */
+.ticker { border-block: 2px solid var(--ink); background: var(--sun); color: var(--ink); overflow: hidden; transform: rotate(-1.4deg); margin-block: 10px 30px; }
+.ticker-track { display: flex; width: max-content; gap: 34px; padding-block: 12px; font: 800 20px var(--display); white-space: nowrap; }
+.ticker-track span::after { content: "✦"; margin-left: 34px; }
+@media (prefers-reduced-motion: no-preference) { .ticker-track { animation: marquee 32s linear infinite; } }
+@keyframes marquee { to { transform: translateX(-50%); } }
+
+/* ------------------------------------------------ seções */
+section.band { padding-block: 88px; }
+.band-head { display: grid; gap: 16px; margin-bottom: 40px; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+.split > * { min-width: 0; }
+
+/* na call: bento */
+.bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+.tile { background: var(--plum); border-radius: var(--radius); padding: 24px; display: grid; gap: 12px; align-content: start; box-shadow: inset 0 0 0 1px var(--line); min-width: 0; }
+.tile p { color: var(--muted); font-size: 16px; }
+.t-60 { grid-column: span 3; background: linear-gradient(140deg, var(--plum) 40%, #3a2142); }
+.t-noise { grid-column: span 3; }
+.t-echo, .t-pop, .t-code { grid-column: span 2; }
+@media (max-width: 900px) { .bento { grid-template-columns: 1fr 1fr; } .t-60, .t-noise { grid-column: span 2; } .t-echo, .t-pop, .t-code { grid-column: span 2; } }
+.big-num { font: 800 clamp(64px, 10vw, 120px) / .9 var(--display); letter-spacing: -0.05em; color: var(--coral); }
+.big-num small { font-size: .32em; letter-spacing: 0; color: var(--cream); margin-left: 6px; }
+.noise-demo { display: grid; gap: 10px; }
+.noise-demo canvas { width: 100%; height: 110px; border-radius: 14px; background: #0f0b14; }
+.toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 800; font-size: 15px; background: none; border: 0; color: var(--cream); padding: 0; }
+.toggle .sw { width: 50px; height: 28px; border-radius: 999px; background: var(--line); position: relative; transition: background .2s; }
+.toggle .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--cream); transition: transform .25s cubic-bezier(.2, 1.4, .4, 1); }
+.toggle[aria-pressed="true"] .sw { background: var(--mint); }
+.toggle[aria-pressed="true"] .sw::after { transform: translateX(22px); }
+.mini-code { font: 700 22px var(--mono); color: var(--coral); background: #0f0b14; border-radius: 12px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.kbd { font: 700 12px var(--mono); padding: 2px 7px; border-radius: 6px; background: var(--plum-2); box-shadow: inset 0 -2px 0 var(--line); color: var(--cream); }
+
+/* reações */
+.react-zone { position: relative; border-radius: 30px; background: radial-gradient(circle at 50% 120%, rgb(255 138 107 / .25), transparent 60%), var(--plum); min-height: 340px; overflow: hidden; display: grid; place-items: end center; padding: 26px; box-shadow: inset 0 0 0 1px var(--line); }
+.react-bar { position: relative; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; background: var(--plum-2); padding: 8px; border-radius: 999px; }
+.react-bar button { width: 52px; height: 52px; border-radius: 50%; border: 0; background: transparent; font-size: 28px; cursor: pointer; transition: transform .15s; }
+.react-bar button:hover { transform: scale(1.25) rotate(-8deg); background: var(--line); }
+
+/* stickers */
+.sticker-board { position: relative; border-radius: 30px; aspect-ratio: 16 / 10; overflow: hidden; background: linear-gradient(180deg, #23183a, #3b1f3a 60%, #592b38); box-shadow: inset 0 0 0 1px var(--line); max-width: 100%; touch-action: none; }
+.sticker-board::before { content: "arraste os stickers · role para girar"; position: absolute; left: 16px; bottom: 12px; font: 700 12px var(--mono); color: rgb(251 241 232 / .45); }
+.sticker { position: absolute; width: 22%; aspect-ratio: 1; cursor: grab; filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff) drop-shadow(0 8px 10px rgb(0 0 0 / .45)); }
+.sticker:active { cursor: grabbing; }
+.sticker img { width: 100%; height: 100%; pointer-events: none; user-select: none; }
+.sticker .shine { position: absolute; inset: 0; pointer-events: none; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  background: linear-gradient(115deg, transparent 35%, rgb(255 255 255 / .8) 47%, transparent 58%); background-size: 300% 100%; mix-blend-mode: screen; }
+.sticker.holo .shine { background: linear-gradient(115deg, transparent 35%, rgb(255 255 255 / .7) 47%, transparent 58%), linear-gradient(125deg, #ff004c, #ff9500, #ffee00, #2bff88, #00c3ff, #8a2bff, #ff004c); background-size: 300% 100%, 400% 400%; mix-blend-mode: color-dodge; opacity: .75; }
+.sticker.gold img { filter: grayscale(1) sepia(1) saturate(5) hue-rotate(-8deg) brightness(1.05) contrast(1.15); }
+@media (prefers-reduced-motion: no-preference) {
+  .sticker .shine { animation: sweep 3.4s ease-in-out infinite; }
+  .sticker.holo .shine { animation: sweep 3.4s ease-in-out infinite, holo 6s linear infinite; }
+  .sticker.slap { animation: slap .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+}
+@keyframes sweep { 0% { background-position: 120% 0; } 60%, 100% { background-position: -20% 0; } }
+@keyframes holo { to { background-position: -20% 0, 400% 400%; } }
+@keyframes slap { from { transform: scale(1.9) rotate(-14deg); opacity: 0; } }
+.tray { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.tray button { width: 74px; height: 74px; border: 0; border-radius: 18px; background: var(--plum-2); cursor: pointer; padding: 8px; transition: transform .15s; }
+.tray button:hover { transform: translateY(-4px) rotate(-5deg); }
+.tray img { width: 100%; height: 100%; }
+.finishes { display: flex; flex-wrap: wrap; gap: 8px; }
+.finishes button { border: 0; border-radius: 999px; padding: 8px 14px; font-weight: 800; font-size: 14px; background: var(--plum-2); color: var(--muted); cursor: pointer; }
+.finishes button[aria-pressed="true"] { background: var(--coral); color: var(--ink); }
+
+/* patches */
+.patch-row { display: flex; flex-wrap: wrap; gap: 26px; justify-content: center; perspective: 900px; }
+.patch-wrap { width: 150px; height: 150px; cursor: pointer; border: 0; background: none; padding: 0; transform-style: preserve-3d; transition: transform .25s ease-out; }
+.patch-wrap .face { position: absolute; inset: 0; backface-visibility: hidden; filter: drop-shadow(0 4px 0 rgb(0 0 0 / .35)) drop-shadow(0 10px 14px rgb(0 0 0 / .4)); }
+.patch-wrap .back { transform: rotateY(180deg); }
+.patch-wrap.flipped { transform: rotateY(180deg) !important; transition: transform .7s cubic-bezier(.3, 1.4, .5, 1); }
+
+/* perfil */
+.profile-grid { display: grid; grid-template-columns: 380px 1fr; gap: 40px; align-items: center; }
+@media (max-width: 900px) { .profile-grid { grid-template-columns: 1fr; } }
+.card-demo { --c-bg: #211a28; --c-panel: #17121c; --c-accent: #ff8a6b; --c-fg: #fbf1e8;
+  border-radius: 26px; overflow: hidden; background: var(--c-panel); color: var(--c-fg); box-shadow: 0 30px 60px -24px rgb(0 0 0 / .8), inset 0 0 0 1px rgb(255 255 255 / .08); transition: background .35s, color .35s; max-width: 380px; width: 100%; }
+.card-demo .banner { height: 110px; background: linear-gradient(135deg, var(--c-accent), color-mix(in oklab, var(--c-accent), #000 45%)); transition: background .35s; }
+.card-demo .body { padding: 0 18px 18px; display: grid; gap: 12px; }
+.card-demo .row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: -42px; }
+.card-demo .inner { background: var(--c-bg); border-radius: 18px; padding: 14px; display: grid; gap: 6px; transition: background .35s; }
+.card-demo .inner b { font: 800 22px var(--display); }
+.card-demo .inner small { opacity: .7; }
+.card-demo .btn-c { margin-top: 6px; height: 40px; border-radius: 999px; display: grid; place-items: center; font-weight: 800; background: var(--c-accent); color: #1a1024; transition: background .35s; }
+.big-av { position: relative; width: 84px; height: 84px; border-radius: 50%; background: linear-gradient(135deg, #7c5cff, #c4a5ff); display: grid; place-items: center; font: 800 32px var(--display); color: #fff; box-shadow: 0 0 0 6px var(--c-panel); }
+.big-av .frame { inset: -8px; }
+.big-av .frame::before { padding: 5px; }
+.mini-patches { display: flex; }
+.mini-patches svg { width: 40px; height: 40px; margin-left: -6px; }
+.pickers { display: grid; gap: 22px; }
+.swatches, .frames { display: flex; flex-wrap: wrap; gap: 10px; }
+.swatches button { border: 0; cursor: pointer; border-radius: 16px; padding: 8px 14px 8px 8px; display: flex; align-items: center; gap: 10px; background: var(--plum-2); color: var(--cream); font-weight: 800; font-size: 14px; box-shadow: inset 0 0 0 2px transparent; }
+.swatches button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--coral); }
+.swatches i { width: 28px; height: 28px; border-radius: 10px; display: block; }
+.frames button { position: relative; width: 52px; height: 52px; border-radius: 50%; border: 0; cursor: pointer; background: linear-gradient(135deg, #7c5cff, #c4a5ff); color: #fff; font: 800 12px var(--display); }
+.frames button[aria-pressed="true"] { outline: 3px solid var(--coral); outline-offset: 6px; }
+
+/* brincadeiras */
+.games { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16px; }
+@media (max-width: 960px) { .games { grid-template-columns: 1fr; } }
+.game-tile { background: var(--plum); border-radius: var(--radius); padding: 24px; display: grid; gap: 16px; justify-items: center; text-align: center; box-shadow: inset 0 0 0 1px var(--line); min-width: 0; }
+.game-tile code { font: 700 14px var(--mono); color: var(--sun); }
+.wheel-box { position: relative; width: min(300px, 100%); aspect-ratio: 1; }
+.wheel-box svg { width: 100%; height: 100%; transition: transform 4.6s cubic-bezier(.12, .8, .14, 1); }
+.wheel-pointer { position: absolute; top: -6px; left: 50%; translate: -50%; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-top: 26px solid var(--cream); filter: drop-shadow(0 3px 0 var(--ink)); z-index: 2; }
+.result { min-height: 34px; font: 800 26px var(--display); color: var(--coral); }
+.dice { display: flex; gap: 16px; }
+.die { width: 74px; height: 74px; border-radius: 18px; background: var(--coral); box-shadow: inset 0 -6px 0 var(--coral-deep), 0 8px 0 var(--ink); display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); padding: 11px; }
+.die i { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); place-self: center; visibility: hidden; }
+.die i.on { visibility: visible; }
+.die.rolling { animation: tumble .7s ease-in-out; }
+@keyframes tumble { 25% { transform: rotate(-30deg) translateY(-20px); } 50% { transform: rotate(40deg) translateY(-34px); } 75% { transform: rotate(-12deg) translateY(-8px); } }
+.coin { width: 120px; height: 120px; position: relative; transform-style: preserve-3d; transition: transform 1.4s cubic-bezier(.3, 1.3, .5, 1); }
+.coin span { position: absolute; inset: 0; border-radius: 50%; display: grid; place-items: center; font: 800 22px var(--display); color: #5b3a00; background: radial-gradient(circle at 35% 30%, #fff6c9, #f5c451 45%, #c9971c); box-shadow: inset 0 0 0 6px #e0a526, 0 8px 0 #8a6a1f; backface-visibility: hidden; }
+.coin span:last-child { transform: rotateY(180deg); }
+
+/* comandos */
+.cmds { display: flex; flex-wrap: wrap; gap: 10px; }
+.cmds span { font: 700 15px var(--mono); padding: 10px 16px; border-radius: 14px; background: var(--plum); box-shadow: inset 0 0 0 1px var(--line); }
+.cmds span b { color: var(--coral); font-weight: 700; }
+.cmds span em { color: var(--muted); font-style: normal; font-family: var(--body); font-weight: 600; margin-left: 8px; font-size: 14px; }
+
+/* chamar atenção */
+.nudge-band { background: var(--coral); color: var(--ink); }
+.nudge-band .wrap { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; align-items: center; padding-block: 72px; }
+@media (max-width: 900px) { .nudge-band .wrap { grid-template-columns: 1fr; } }
+.nudge-band h2 { font-size: clamp(40px, 7vw, 84px); }
+.nudge-band p { font-size: 19px; max-width: 46ch; font-weight: 600; }
+.nudge-btn { justify-self: center; width: 230px; height: 230px; border-radius: 50%; border: 0; cursor: pointer; background: var(--ink); color: var(--sun); font: 800 26px/1.05 var(--display); box-shadow: 0 12px 0 #000, 0 0 0 10px rgb(26 16 36 / .2); transition: transform .12s; }
+.nudge-btn:hover { transform: rotate(-4deg) scale(1.03); }
+.nudge-btn:active { transform: translateY(8px); box-shadow: 0 4px 0 #000; }
+body.shaking { animation: shake .62s cubic-bezier(.36, .07, .19, .97); }
+@keyframes shake { 10%, 90% { transform: translate(-2px, 1px); } 20%, 80% { transform: translate(5px, -2px); } 30%, 50%, 70% { transform: translate(-9px, 3px) rotate(-.4deg); } 40%, 60% { transform: translate(9px, -3px) rotate(.4deg); } }
+
+/* open source */
+.oss { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 900px) { .oss { grid-template-columns: 1fr; } }
+.oss .tile b { font: 800 30px var(--display); color: var(--mint); }
+
+/* marca */
+.brand-kit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .brand-kit { grid-template-columns: 1fr; } }
+.logos { display: flex; flex-wrap: wrap; gap: 14px; }
+.logo-card { border-radius: 18px; padding: 22px; display: grid; place-items: center; min-width: 120px; flex: 1; }
+.logo-card img { width: 72px; height: 72px; }
+.logo-card.wide { flex-basis: 100%; padding: 28px; }
+.logo-card.wide img { width: min(360px, 100%); height: auto; }
+.logo-card .tiny { display: flex; align-items: end; gap: 12px; }
+.palette { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.palette div { border-radius: 16px; padding: 46px 12px 10px; font: 700 12px var(--mono); }
+.type-specimen { display: grid; gap: 6px; }
+.type-specimen .d { font: 800 52px/1 var(--display); letter-spacing: -0.04em; }
+.type-specimen .b { font-size: 17px; color: var(--muted); }
+.type-specimen .m { font: 700 15px var(--mono); color: var(--sun); }
+.voice { display: grid; gap: 10px; }
+.voice div { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; color: var(--muted); }
+.voice div::before { font-weight: 800; }
+.voice .yes::before { content: "✔"; color: var(--mint); }
+.voice .no::before { content: "✖"; color: var(--coral); }
+
+/* final */
+.final { text-align: center; padding-block: 110px 80px; position: relative; overflow: hidden; }
+.final-mark { display: block; margin: 0 auto 18px; width: 150px; height: 150px; }
+@media (prefers-reduced-motion: no-preference) { .final-mark { animation: hop 2.4s cubic-bezier(.3, 1.6, .5, 1) infinite; } }
+@keyframes hop { 0%, 60%, 100% { transform: none; } 20% { transform: translateY(-22px) rotate(-8deg); } 40% { transform: translateY(0) rotate(4deg) scale(1.04, .96); } }
+.final h2 { font-size: clamp(48px, 9vw, 110px); }
+.final .hero-cta { justify-content: center; margin-top: 28px; }
+footer { border-top: 1px solid var(--line); padding-block: 26px 36px; color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; align-items: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- logo: duas bolhas de conversa que se encaixam num "C" -->
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#topo"><img src="/brand/concord-logo.png" alt="Concord" width="180" height="40"></a>
+    <nav class="nav-links" aria-label="Seções">
+      <a href="#na-call">Na call</a>
+      <a href="#stickers">Stickers</a>
+      <a href="#patches">Patches</a>
+      <a href="#perfil">Perfil</a>
+      <a href="#brincadeiras">Brincadeiras</a>
+      <a href="#seu-servidor">Seu servidor</a>
+    </nav>
+    <a class="btn btn-ghost nav-login" href="/?entrar">Entrar</a>
+    <a class="btn btn-primary" href="/downloads/Concord-Setup.exe">Baixar</a>
+  </div>
+</header>
+
+<main id="topo">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-copy">
+        <span class="eyebrow">voz · tela · zoeira</span>
+        <h1><span class="line">Sua galera.</span><span class="line">Sua call.</span><span class="line">Seu jeito.</span></h1>
+        <p class="lede">O Concord é o app de voz e transmissão de tela feito pra jogar junto: live a 60 fps pela placa de vídeo, voz limpa com IA, stickers que brilham, patches bordados e um botão que faz a tela do seu amigo tremer.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="/downloads/Concord-Setup.exe">⬇ Baixar para Windows</a>
+          <a class="btn btn-ghost" href="/?entrar">Abrir no navegador</a>
+        </div>
+        <div class="hero-note">
+          <span class="chip">🔓 Código aberto (MIT)</span>
+          <span class="chip">🏠 Roda no seu servidor</span>
+          <span class="chip">💸 Sem plano pago</span>
+        </div>
+      </div>
+
+      <figure class="shot">
+        <img src="/inicio/call.webp" width="2400" height="1350" alt="Print do Concord: a Ana transmitindo um jogo na Sala de Transmissão, com stickers GG e MVP colados no palco, emojis subindo, os participantes com molduras e o papo da sala com roleta e dados" fetchpriority="high">
+        <span class="tag t1">🖥️ live a 60 fps</span>
+        <span class="tag t2">✨ stickers no palco</span>
+        <span class="tag t3">🎲 roleta e dados no papo</span>
+        <figcaption>Print real do app.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <div class="ticker" aria-hidden="true">
+    <div class="ticker-track">
+      <span>Live a 60 fps</span><span>Voz limpa com IA</span><span>Stickers holográficos</span><span>Patches bordados</span><span>Molduras animadas</span><span>Roleta, dados e moeda</span><span>Chamar atenção</span><span>Código no topo do jogo</span><span>Soundpad</span><span>Efeitos de voz</span><span>Bots</span><span>Temas</span>
+      <span>Live a 60 fps</span><span>Voz limpa com IA</span><span>Stickers holográficos</span><span>Patches bordados</span><span>Molduras animadas</span><span>Roleta, dados e moeda</span><span>Chamar atenção</span><span>Código no topo do jogo</span><span>Soundpad</span><span>Efeitos de voz</span><span>Bots</span><span>Temas</span>
+    </div>
+  </div>
+
+  <!-- NA CALL -->
+  <section class="band" id="na-call">
+    <div class="wrap">
+      <div class="band-head">
+        <span class="eyebrow">na call</span>
+        <h2>Feito pra quem joga junto.</h2>
+        <p class="lede">Tudo que a galera precisa numa noite de jogo, sem pagar nada e sem anúncio.</p>
+      </div>
+      <div class="bento">
+        <article class="tile t-60">
+          <span class="eyebrow">transmissão de tela</span>
+          <div class="big-num">60<small>fps</small></div>
+          <p>Tela ou janela em 1080p a 60 quadros, codificada pela placa de vídeo (NVENC, AMD, Intel). Dá pra assistir numa janela separada, em tela cheia no outro monitor e dar zoom com o mouse.</p>
+        </article>
+        <article class="tile t-noise">
+          <span class="eyebrow">voz limpa</span>
+          <h3>Teclado e ventilador ficam do seu lado.</h3>
+          <div class="noise-demo">
+            <canvas id="wave" width="600" height="110" aria-label="Onda de áudio: com a IA ligada o ruído some entre as falas"></canvas>
+            <button class="toggle" id="noise-toggle" aria-pressed="true"><span class="sw"></span>IA de supressão de ruído</button>
+          </div>
+        </article>
+        <article class="tile t-echo">
+          <span class="eyebrow">áudio da live</span>
+          <h3>O jogo sem o eco da call.</h3>
+          <p>O app manda o som do jogo ou da janela, sem as vozes da sala voltando pra todo mundo.</p>
+        </article>
+        <article class="tile t-pop">
+          <span class="eyebrow">soundpad + efeitos</span>
+          <h3>Voz de robô, de esquilo, de caverna.</h3>
+          <p>Mesa de sons do servidor e efeitos na sua voz em tempo real. Use com moderação. Ou não.</p>
+        </article>
+        <article class="tile t-code">
+          <span class="eyebrow">código compartilhado</span>
+          <h3>"Qual o código?" nunca mais.</h3>
+          <div class="mini-code">X7K2-PQ9 <span><span class="kbd">Ctrl</span> <span class="kbd">C</span></span></div>
+          <p>Aparece por cima do jogo de todo mundo da sala. Copia sem sair da partida.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- REAÇÕES -->
+  <section class="band" style="padding-top:0">
+    <div class="wrap split">
+      <div class="band-head" style="margin:0">
+        <span class="eyebrow">reações</span>
+        <h2>Clutch? Chuva de emoji.</h2>
+        <p class="lede">Reações sobem pela tela da live estilo TikTok, pra todo mundo da sala ver na hora. Experimenta aí do lado.</p>
+      </div>
+      <div class="react-zone" id="react-zone">
+        <div class="react-bar" role="group" aria-label="Mandar reação">
+          <button aria-label="Coração">❤️</button><button aria-label="Rindo">😂</button><button aria-label="Fogo">🔥</button><button aria-label="Palmas">👏</button><button aria-label="Caveira">💀</button><button aria-label="Festa">🎉</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STICKERS -->
+  <section class="band" id="stickers" style="background:linear-gradient(180deg, transparent, #1b1322 30%, #1b1322 70%, transparent)">
+    <div class="wrap">
+      <div class="band-head">
+        <span class="eyebrow">stickers</span>
+        <h2>Cola na tela da call. Todo mundo vê.</h2>
+        <p class="lede">Stickers cartunescos com recorte branco e acabamento de figurinha rara: brilho, holográfico, ouro e glitter. E dá pra subir os da sua galera.</p>
+      </div>
+      <div class="split" style="align-items:start">
+        <div>
+          <div class="sticker-board" id="board" aria-label="Quadro de stickers: arraste para mover"></div>
+        </div>
+        <div style="display:grid;gap:18px">
+          <h3>Escolha o acabamento</h3>
+          <div class="finishes" role="group" aria-label="Acabamento">
+            <button data-f="gloss" aria-pressed="false">Brilho</button>
+            <button data-f="holo" aria-pressed="true">Holográfico</button>
+            <button data-f="gold" aria-pressed="false">Ouro</button>
+          </div>
+          <h3>Depois clica pra colar</h3>
+          <div class="tray" id="tray"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PATCHES -->
+  <section class="band" id="patches">
+    <div class="wrap">
+      <div class="band-head">
+        <span class="eyebrow">patches</span>
+        <h2>Bordado no perfil, igual jaqueta de time.</h2>
+        <p class="lede">Monte o seu com emoji, texto ou a logo do seu time. O servidor guarda a coleção da galera. Passe o mouse para inclinar, clique para ver o verso.</p>
+      </div>
+      <div class="patch-row" id="patch-row"></div>
+    </div>
+  </section>
+
+  <!-- PERFIL -->
+  <section class="band" id="perfil">
+    <div class="wrap profile-grid">
+      <div class="card-demo" id="card-demo">
+        <div class="banner"></div>
+        <div class="body">
+          <div class="row">
+            <div class="big-av">H<span class="frame f-fire" id="demo-frame"></span></div>
+            <div class="mini-patches" id="mini-patches"></div>
+          </div>
+          <div class="inner">
+            <b>hiago</b>
+            <small>@hiago · jogando agora</small>
+            <span>🎧 Ouvindo no Spotify</span>
+            <div class="btn-c">⚡ Chamar atenção</div>
+          </div>
+        </div>
+      </div>
+      <div class="pickers">
+        <div class="band-head" style="margin:0">
+          <span class="eyebrow">seu perfil</span>
+          <h2>Customiza tudo.</h2>
+          <p class="lede">Tema, fundo, foto e capa em GIF, apelido diferente em cada servidor, molduras animadas em volta da foto. Testa aqui:</p>
+        </div>
+        <div>
+          <h3 style="margin-bottom:10px">Tema</h3>
+          <div class="swatches" id="swatches" role="group" aria-label="Tema"></div>
+        </div>
+        <div>
+          <h3 style="margin-bottom:10px">Moldura</h3>
+          <div class="frames" id="frames" role="group" aria-label="Moldura"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BRINCADEIRAS -->
+  <section class="band" id="brincadeiras">
+    <div class="wrap">
+      <div class="band-head">
+        <span class="eyebrow">brincadeiras</span>
+        <h2>Na dúvida, a roleta decide.</h2>
+        <p class="lede">Minigames direto no chat e no palco da call, com animação pra todo mundo. O resultado é sorteado no servidor, então ninguém rouba.</p>
+      </div>
+      <div class="games">
+        <div class="game-tile">
+          <div class="wheel-box"><span class="wheel-pointer"></span><svg id="wheel" viewBox="0 0 200 200" role="img" aria-label="Roleta"></svg></div>
+          <div class="result" id="wheel-result" aria-live="polite">Onde a gente pede?</div>
+          <button class="btn btn-primary" id="spin">Girar a roleta</button>
+          <code>/roleta Pizza, Sushi, Taco…</code>
+        </div>
+        <div class="game-tile">
+          <div class="dice" id="dice"></div>
+          <div class="result" id="dice-result" aria-live="polite">2 + 5 = 7</div>
+          <button class="btn btn-ghost" id="roll">Rolar os dados</button>
+          <code>/dado 2d6</code>
+        </div>
+        <div class="game-tile">
+          <div style="perspective:600px;padding:20px"><div class="coin" id="coin"><span>☀ Cara</span><span>♛ Coroa</span></div></div>
+          <div class="result" id="coin-result" aria-live="polite">Cara</div>
+          <button class="btn btn-ghost" id="flip">Jogar a moeda</button>
+          <code>/moeda</code>
+        </div>
+      </div>
+      <div style="margin-top:40px;display:grid;gap:14px">
+        <h3>E mais um monte de comando no chat</h3>
+        <div class="cmds">
+          <span><b>/codigo</b> X7K2-PQ9<em>manda pro topo da tela da sala</em></span>
+          <span><b>/nudge</b> @ana<em>chama atenção</em></span>
+          <span><b>/sound</b> risada<em>toca na mesa de sons</em></span>
+          <span><b>/me</b> foi buscar água<em>ação em itálico</em></span>
+          <span><b>/dnd</b><em>não perturbe</em></span>
+          <span><b>/all</b><em>marca todo mundo</em></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAMAR ATENÇÃO -->
+  <section class="nudge-band" aria-labelledby="nudge-title">
+    <div class="wrap">
+      <div style="display:grid;gap:18px">
+        <span class="eyebrow" style="color:var(--ink)">direto de 2005</span>
+        <h2 id="nudge-title">O amigo sumiu? Faz a tela dele tremer.</h2>
+        <p>O "chamar atenção" do MSN voltou: a janela do seu amigo chacoalha, toca um som e aparece uma notificação. Ele pode silenciar você. Mas você vai ter tentado.</p>
+      </div>
+      <button class="nudge-btn" id="nudge">Chamar<br>atenção</button>
+    </div>
+  </section>
+
+  <!-- SEU SERVIDOR -->
+  <section class="band" id="seu-servidor">
+    <div class="wrap">
+      <div class="band-head">
+        <span class="eyebrow">open source</span>
+        <h2>Seu servidor. Suas regras.</h2>
+        <p class="lede">O Concord é código aberto. Sobe numa VPS com um comando, passa pela Cloudflare e vem com painel de monitoramento. Os dados ficam com você.</p>
+      </div>
+      <div class="oss">
+        <div class="tile"><b>MIT</b><p>Licença livre: use, modifique e hospede do jeito que quiser.</p></div>
+        <div class="tile"><b>1 comando</b><p>Docker + Caddy + LiveKit, com HTTPS e túnel da Cloudflare configurados pelo script de instalação.</p></div>
+        <div class="tile"><b>Bots</b><p>API pra criar bots que entram nos servidores, mandam mensagens e respondem comandos.</p></div>
+      </div>
+      <p style="margin-top:22px"><a href="https://github.com/duarteHiago/concord" style="font-weight:800;color:var(--coral)">Ver o código no GitHub →</a></p>
+    </div>
+  </section>
+
+  <!-- KIT DA MARCA -->
+  <section class="band" id="marca" style="background:#1b1322">
+    <div class="wrap">
+      <div class="band-head">
+        <span class="eyebrow">kit da marca</span>
+        <h2>A cara do Concord.</h2>
+        <p class="lede">Um "C" gordinho com um balão de conversa saindo de dentro: a galera falando junta. Contorno grosso e sombra dura, igual sticker. A paleta vem do tema Noturno do app, com as cores da roleta pra dar o tom de brincadeira.</p>
+      </div>
+      <div class="brand-kit">
+        <div class="tile" style="gap:20px">
+          <h3>Logo</h3>
+          <div class="logos">
+            <div class="logo-card wide" style="background:var(--cream)"><img src="/brand/concord-logo.png" alt="Logo completo do Concord sobre fundo claro" width="1348" height="299"></div>
+            <div class="logo-card" style="background:var(--night);box-shadow:inset 0 0 0 1px var(--line)"><img src="/brand/concord-simbolo.svg" alt="Símbolo do Concord sobre fundo escuro"></div>
+            <div class="logo-card" style="background:var(--lilac)"><img src="/brand/concord-simbolo.svg" alt="Símbolo do Concord sobre lilás"></div>
+            <div class="logo-card" style="background:var(--cream)"><span class="tiny"><img src="/brand/concord-simbolo-16px.svg" alt="Versão simplificada em 16 px" style="width:16px;height:16px"><img src="/brand/concord-simbolo-16px.svg" alt="" style="width:32px;height:32px"><img src="/brand/concord-simbolo-16px.svg" alt="" style="width:48px;height:48px"></span></div>
+          </div>
+          <h3>Paleta</h3>
+          <div class="palette">
+            <div style="background:var(--night);box-shadow:inset 0 0 0 1px var(--line)">Noite<br>#140F19</div>
+            <div style="background:var(--plum);box-shadow:inset 0 0 0 1px var(--line)">Ameixa<br>#211A28</div>
+            <div style="background:var(--coral);color:var(--ink)">Coral<br>#FF8A6B</div>
+            <div style="background:var(--lilac);color:var(--ink)">Lilás<br>#C4A5FF</div>
+            <div style="background:var(--mint);color:var(--ink)">Menta<br>#5EEAD4</div>
+            <div style="background:var(--sun);color:var(--ink)">Sol<br>#F5C451</div>
+          </div>
+        </div>
+        <div class="tile" style="gap:20px">
+          <h3>Tipografia</h3>
+          <div class="type-specimen">
+            <span class="d">Bora jogar?</span>
+            <span class="b">Bricolage Grotesque nos títulos (gorda, com personalidade), Nunito Sans no texto (redonda e amigável, a mesma do app) e JetBrains Mono para comandos e códigos.</span>
+            <span class="m">/roleta Pizza, Sushi, Taco</span>
+          </div>
+          <h3>Jeito de falar</h3>
+          <div class="voice">
+            <div class="yes">Fala como amigo no Discord: "bora", "a galera", "chamar atenção".</div>
+            <div class="yes">Uma piada por vez, sempre ao lado da informação útil.</div>
+            <div class="yes">Diz o que acontece: "Código enviado para 3 pessoas da sala".</div>
+            <div class="no">Nada de "plataforma de comunicação colaborativa".</div>
+            <div class="no">Não promete o que não faz (nada de "zero latência").</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINAL -->
+  <section class="final">
+    <div class="wrap">
+      <img class="final-mark" src="/brand/concord-simbolo.svg" alt="" width="150" height="150">
+      <span class="eyebrow">chama a galera</span>
+      <h2>Bora pra call?</h2>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="/downloads/Concord-Setup.exe">⬇ Baixar para Windows</a>
+        <a class="btn btn-ghost" href="/?entrar">Abrir no navegador</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span style="display:flex;align-items:center;gap:8px"><img src="/brand/concord-simbolo-16px.svg" alt="" width="24" height="24"> Concord · feito pela galera, pra galera</span>
+    <span>Código aberto (MIT) · <a href="https://github.com/duarteHiago/concord">GitHub</a></span>
+    <span style="flex-basis:100%;font-size:12px">No print: o jogo Xonotic (GPLv3; captura de Greewrfdsfsf, Wikimedia Commons) e avatares DiceBear Notionists (CC0).</span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------------------------------------------------------- arte dos stickers (a mesma do app)
+  const INK = '#1a1024';
+  const o = (w = 6) => `stroke="${INK}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"`;
+  const txt = (x, y, size, fill, content, rot = 0, sp = 0) => `<text x="${x}" y="${y}" font-family="Arial Black, Impact, sans-serif" font-weight="900" font-size="${size}" text-anchor="middle" letter-spacing="${sp}" fill="${fill}" stroke="${INK}" stroke-width="${(size * 0.18).toFixed(1)}" paint-order="stroke" stroke-linejoin="round" transform="rotate(${rot} ${x} ${y})">${content}</text>`;
+  const shine = (d, op = 0.55) => `<path d="${d}" fill="#fff" opacity="${op}"/>`;
+  const burst = (cx, cy, r1, r2, n, fill) => { const p = []; for (let i = 0; i < n * 2; i++) { const a = (Math.PI * i) / n - Math.PI / 2, r = i % 2 ? r2 : r1; p.push(`${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`); } return `<polygon points="${p.join(' ')}" fill="${fill}" ${o(6)}/>`; };
+  const sparkle = (x, y, s, fill = '#fff') => `<path d="M${x} ${y - s} Q${x + s * 0.18} ${y - s * 0.18} ${x + s} ${y} Q${x + s * 0.18} ${y + s * 0.18} ${x} ${y + s} Q${x - s * 0.18} ${y + s * 0.18} ${x - s} ${y} Q${x - s * 0.18} ${y - s * 0.18} ${x} ${y - s}Z" fill="${fill}" ${o(3)}/>`;
+  const ART = {
+    gg: `<path d="M30 30h140q16 0 16 16v78q0 16-16 16H92l-34 34 4-34H30q-16 0-16-16V46q0-16 16-16z" fill="#3ddc84" ${o(7)}/>${shine('M30 42h70q-50 6-60 40-4-6-10-12V50q0-8 0-8z', 0.45)}${txt(100, 116, 86, '#fff', 'GG', -4, 4)}${sparkle(176, 22, 14, '#ffd23f')}${sparkle(24, 150, 10, '#fff')}`,
+    headshot: `<circle cx="100" cy="92" r="78" fill="none" stroke="${INK}" stroke-width="14"/><circle cx="100" cy="92" r="78" fill="none" stroke="#ff3b4e" stroke-width="7"/><path d="M100 4v34M100 146v34M12 92h34M154 92h34" stroke="${INK}" stroke-width="13" stroke-linecap="round"/><path d="M100 4v34M100 146v34M12 92h34M154 92h34" stroke="#ff3b4e" stroke-width="6" stroke-linecap="round"/><path d="M58 88c0-30 19-50 42-50s42 20 42 50c0 14-6 22-13 27v17H71v-17c-7-5-13-13-13-27z" fill="#fff4e6" ${o()}/><ellipse cx="83" cy="90" rx="12" ry="14" fill="${INK}"/><ellipse cx="117" cy="90" rx="12" ry="14" fill="${INK}"/><circle cx="86" cy="86" r="4" fill="#ff3b4e"/><circle cx="120" cy="86" r="4" fill="#ff3b4e"/><path d="M95 112l5-9 5 9z" fill="${INK}"/><path d="M84 122v10M94 122v10M106 122v10M116 122v10" ${o(4)}/>${shine('M70 70c4-14 14-22 24-24-8 6-14 14-16 26z', 0.7)}<rect x="22" y="150" width="156" height="40" rx="12" fill="#ffd23f" ${o()} transform="rotate(-5 100 170)"/>${txt(100, 182, 30, '#fff', 'HEADSHOT', -5)}`,
+    clutch: `<path d="M100 6c10 30 46 44 46 92 0 22-10 38-22 46 6-14 2-30-10-38 2 22-8 32-14 36 2-14-6-24-14-30 0 18-14 22-14 40-14-10-26-28-26-52 0-34 22-46 28-70 6 14 10 24 8 38 10-10 20-28 18-62z" fill="#ff7a1a" ${o(7)}/><path d="M100 56c6 18 26 28 26 54 0 14-8 24-16 28 2-12-2-20-10-26 0 14-8 20-12 24 0-10-4-16-10-20-2 12-10 16-10 26-8-8-12-18-12-30 0-20 14-28 18-42 4 8 6 14 6 22 8-8 12-20 10-36z" fill="#ffd23f"/><rect x="16" y="132" width="168" height="50" rx="14" fill="#ff3b4e" ${o(7)} transform="rotate(4 100 157)"/>${txt(100, 170, 38, '#fff', 'CLUTCH', 4, 2)}`,
+    mvp: `${burst(100, 108, 84, 66, 12, '#ffcf3f')}<circle cx="100" cy="108" r="56" fill="#ffb703" ${o(6)}/><circle cx="100" cy="108" r="44" fill="#ffd23f" ${o(4)}/><path d="M70 58l12-28 18 20 18-20 12 28z" fill="#ffd23f" ${o(6)}/><circle cx="82" cy="30" r="5" fill="#ff3b4e" ${o(3)}/><circle cx="118" cy="30" r="5" fill="#ff3b4e" ${o(3)}/>${txt(100, 126, 44, '#fff', 'MVP', 0, 1)}${shine('M66 92c6-16 18-24 30-26-12 8-18 16-22 30z', 0.6)}`,
+    rushb: `<path d="M14 60h112V22l64 68-64 68v-38H14z" fill="#ffd23f" ${o(8)}/>${shine('M24 70h96v-32l14 14-10 10v18H24z', 0.4)}${txt(86, 112, 44, '#fff', 'RUSH B', 0, 1)}${txt(100, 190, 32, '#ff3b4e', 'CYKA!', -6)}`,
+    dragon: `<path d="M40 60l-18-40 42 22M160 60l18-40-42 22" fill="#ffb703" ${o(6)}/><path d="M100 30c44 0 70 30 70 70 0 20-6 34-18 44l8 30-36-16c-8 2-16 2-24 2-44 0-70-26-70-60s26-70 70-70z" fill="#4cc96a" ${o(7)}/><path d="M60 128c16 14 50 18 80 4" fill="none" ${o(5)}/><ellipse cx="74" cy="88" rx="17" ry="20" fill="#fff" ${o(5)}/><ellipse cx="126" cy="88" rx="17" ry="20" fill="#fff" ${o(5)}/><ellipse cx="78" cy="92" rx="8" ry="11" fill="${INK}"/><ellipse cx="122" cy="92" rx="8" ry="11" fill="${INK}"/><circle cx="81" cy="87" r="3" fill="#fff"/><circle cx="125" cy="87" r="3" fill="#fff"/><circle cx="90" cy="118" r="4" fill="${INK}"/><circle cx="110" cy="118" r="4" fill="${INK}"/><path d="M86 36l6 14 8-16 8 16 6-14" fill="#ffb703" ${o(4)}/><path d="M150 150c16 6 30 2 40-8-4 18-18 30-36 30" fill="#ff7a1a" ${o(5)}/>${shine('M60 52c12-12 26-16 40-16-18 6-30 14-36 28z', 0.45)}`,
+    ez: `<circle cx="100" cy="92" r="78" fill="#ffd23f" ${o(7)}/><path d="M30 76h140v10c-4 0-6 4-8 10-4 14-12 20-28 20s-22-10-26-24h-16c-4 14-10 24-26 24s-24-6-28-20c-2-6-4-10-8-10z" fill="${INK}"/>${shine('M50 82c2-6 10-8 18-6-8 4-12 8-14 14z', 0.8)}${shine('M114 82c2-6 10-8 18-6-8 4-12 8-14 14z', 0.8)}<path d="M66 132q34 22 70-6" fill="none" ${o(8)}/>${txt(100, 194, 50, '#fff', 'EZ', -8, 4)}`,
+    onfire: `<path d="M100 16c6 20 30 26 34 50 10-10 12-20 10-32 22 18 36 44 36 74 0 46-36 80-80 80S20 154 20 108c0-26 12-44 28-58 0 14 4 22 12 28 0-30 22-46 40-62z" fill="#ff5a1f" ${o(7)}/><path d="M100 176c-30 0-50-20-50-46 0-14 6-26 14-34 2 10 6 16 12 20 2-22 12-36 24-46 4 14 16 22 20 36 6-6 8-12 8-20 12 10 22 26 22 44 0 26-20 46-50 46z" fill="#ffd23f"/><path d="M100 160c-14-10-30-22-30-38 0-10 8-16 16-16 6 0 10 4 14 8 4-4 8-8 14-8 8 0 16 6 16 16 0 16-16 28-30 38z" fill="#ff3b4e" ${o(5)}/>${txt(100, 196, 34, '#fff', 'ON FIRE', -4, 1)}`,
+  };
+  const artUrl = (k) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">${ART[k]}</svg>`);
+  function fillSticker(el, key) {
+    const url = artUrl(key);
+    el.innerHTML = `<img alt="" src="${url}"><span class="shine" style="-webkit-mask-image:url('${url}');mask-image:url('${url}')"></span>`;
+  }
+  document.querySelectorAll('[data-art]').forEach((el) => fillSticker(el, el.dataset.art));
+
+  // ---------------------------------------------------------- reações flutuando
+  const EMOJI = ['❤️', '😂', '🔥', '👏', '💀', '🎉', '😮', '💯'];
+  function burstEmoji(layer, emoji, n = 1) {
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement('span');
+      s.className = 'float-emoji';
+      s.textContent = emoji;
+      s.style.left = 10 + Math.random() * 80 + '%';
+      s.style.setProperty('--dx', (Math.random() * 120 - 60).toFixed(0) + 'px');
+      s.style.animationDelay = i * 90 + 'ms';
+      layer.appendChild(s);
+      s.addEventListener('animationend', () => s.remove());
+    }
+  }
+  const zone = document.getElementById('react-zone');
+  zone.querySelectorAll('.react-bar button').forEach((b) => b.addEventListener('click', () => burstEmoji(zone, b.textContent, 6)));
+
+  // ---------------------------------------------------------- onda da supressão de ruído
+  const wave = document.getElementById('wave');
+  const wctx = wave.getContext('2d');
+  const toggle = document.getElementById('noise-toggle');
+  let clean = true, t0 = 0;
+  toggle.addEventListener('click', () => { clean = !clean; toggle.setAttribute('aria-pressed', String(clean)); if (reduce) drawWave(0); });
+  function drawWave(t) {
+    const { width: w, height: h } = wave;
+    wctx.clearRect(0, 0, w, h);
+    wctx.lineWidth = 2.5;
+    wctx.strokeStyle = clean ? '#5eead4' : '#ff8a6b';
+    wctx.beginPath();
+    for (let x = 0; x < w; x++) {
+      const p = (x + t * 0.12) % 300;
+      const speaking = p < 150; // fala, pausa, fala...
+      const env = speaking ? Math.sin((p / 150) * Math.PI) : 0;
+      const voice = env * (Math.sin(x * 0.11 + t * 0.01) * 0.6 + Math.sin(x * 0.37) * 0.3) * 40;
+      const noise = clean ? 0 : (Math.random() - 0.5) * 18 + ((x * 7 + Math.floor(t / 40)) % 53 === 0 ? 40 : 0);
+      const y = h / 2 + voice + noise;
+      x ? wctx.lineTo(x, y) : wctx.moveTo(x, y);
+    }
+    wctx.stroke();
+  }
+  function loop(t) { drawWave(t); if (!reduce) requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
+
+  // ---------------------------------------------------------- quadro de stickers
+  const board = document.getElementById('board');
+  const tray = document.getElementById('tray');
+  let finish = 'holo';
+  document.querySelectorAll('.finishes button').forEach((b) => b.addEventListener('click', () => {
+    finish = b.dataset.f;
+    document.querySelectorAll('.finishes button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  function place(key, x, y, rot, slap = true) {
+    const s = document.createElement('div');
+    s.className = `sticker ${finish}${slap ? ' slap' : ''}`;
+    s.style.left = x + '%';
+    s.style.top = y + '%';
+    s.style.rotate = rot + 'deg';
+    s.tabIndex = 0;
+    s.setAttribute('role', 'img');
+    s.setAttribute('aria-label', 'Sticker ' + key);
+    fillSticker(s, key);
+    board.appendChild(s);
+    let drag = null;
+    s.addEventListener('pointerdown', (e) => { s.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, l: parseFloat(s.style.left), t: parseFloat(s.style.top) }; board.appendChild(s); });
+    s.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const r = board.getBoundingClientRect();
+      s.style.left = Math.min(82, Math.max(-4, drag.l + ((e.clientX - drag.x) / r.width) * 100)) + '%';
+      s.style.top = Math.min(72, Math.max(-6, drag.t + ((e.clientY - drag.y) / r.height) * 100)) + '%';
+    });
+    s.addEventListener('pointerup', () => (drag = null));
+    s.addEventListener('wheel', (e) => { e.preventDefault(); s.style.rotate = (parseFloat(s.style.rotate) || 0) + (e.deltaY > 0 ? 12 : -12) + 'deg'; }, { passive: false });
+    while (board.children.length > 12) board.firstElementChild.remove();
+  }
+  Object.keys(ART).forEach((key) => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-label', 'Colar sticker ' + key);
+    b.innerHTML = `<img alt="" src="${artUrl(key)}">`;
+    b.addEventListener('click', () => place(key, 6 + Math.random() * 70, 6 + Math.random() * 56, Math.round(Math.random() * 40 - 20)));
+    tray.appendChild(b);
+  });
+  [['gg', 8, 10, -10], ['mvp', 62, 8, 9], ['dragon', 36, 40, -4], ['headshot', 70, 50, 12]].forEach(([k, x, y, r], i) => {
+    finish = ['holo', 'gold', 'gloss', 'holo'][i];
+    place(k, x, y, r, false);
+  });
+  finish = 'holo';
+
+  // ---------------------------------------------------------- patches bordados (como no app)
+  function scallop(b, out, inn) { const p = []; for (let i = 0; i < b * 2; i++) { const a = (Math.PI * i) / b - Math.PI / 2, r = i % 2 ? inn : out; p.push(`${(50 + r * Math.cos(a)).toFixed(2)},${(50 + r * Math.sin(a)).toFixed(2)}`); } return `M${p.join('L')}Z`; }
+  const SHAPES = {
+    circle: 'M50 3a47 47 0 1 0 0.01 0Z',
+    shield: 'M50 3 L93 17 V49 C93 76 73 90 50 98 C27 90 7 76 7 49 V17 Z',
+    hex: 'M50 2 L92 26 V74 L50 98 L8 74 V26 Z',
+    star: scallop(14, 48, 41),
+    banner: 'M2 26 H98 L88 50 L98 74 H2 L12 50 Z',
+  };
+  const grow = (k) => `translate(50 50) scale(${k}) translate(-50 -50)`;
+  let pid = 0;
+  function patchSvg(p, back = false) {
+    const d = SHAPES[p.shape], id = 'p' + pid++;
+    if (back) {
+      return `<svg viewBox="0 0 100 100"><defs><pattern id="${id}" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><rect width="3" height="3" fill="#e9e3d6"/><circle cx="1" cy="1" r=".5" fill="#d3cbbb"/></pattern></defs><path d="${d}" fill="${p.border}"/><path d="${d}" fill="url(#${id})" transform="${grow(0.9)}"/><path d="${d}" fill="none" stroke="${p.border}" stroke-width="1.4" stroke-dasharray="3 2.5" transform="${grow(0.8)}"/><rect x="32" y="44" width="36" height="12" rx="2" fill="#fff" stroke="#bdb4a3" stroke-width=".6"/><text x="50" y="50.5" text-anchor="middle" dominant-baseline="central" font-family="Nunito Sans, sans-serif" font-weight="800" font-size="5" fill="#6b5f7a" letter-spacing=".6">CONCORD</text></svg>`;
+    }
+    const wide = p.shape === 'banner';
+    const tsize = Math.min(p.icon ? 15 : 22, (p.icon ? 66 : 74) / (Math.max(3, p.text.length) * 0.72));
+    return `<svg viewBox="0 0 100 100"><defs><pattern id="${id}f" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" stroke="#000" stroke-opacity=".16" stroke-width="1.4"/></pattern><radialGradient id="${id}l" cx="35%" cy="25%" r="80%"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".25"/></radialGradient></defs>
+      <path d="${d}" fill="${p.border}"/><path d="${d}" fill="none" stroke="#000" stroke-opacity=".35" stroke-width="7" stroke-dasharray=".9 1.6" transform="${grow(0.93)}"/>
+      <path d="${d}" fill="${p.bg}" transform="${grow(0.84)}"/><path d="${d}" fill="url(#${id}f)" transform="${grow(0.84)}"/>
+      <path d="${d}" fill="none" stroke="${p.fg}" stroke-opacity=".55" stroke-width="1.6" stroke-dasharray="3.5 2.5" stroke-linecap="round" transform="${grow(0.75)}"/>
+      ${p.icon ? `<text x="50" y="${wide ? 46 : 46}" text-anchor="middle" dominant-baseline="central" font-size="${wide ? 26 : 34}">${p.icon}</text>` : ''}
+      <text x="50" y="${p.icon ? (wide ? 70 : 76) : 51}" text-anchor="middle" dominant-baseline="central" fill="${p.fg}" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="${p.icon ? tsize : tsize * 1.1}" stroke="#000" stroke-opacity=".35" stroke-width=".8" paint-order="stroke">${p.text}</text>
+      <path d="${d}" fill="url(#${id}l)" transform="${grow(0.84)}"/></svg>`;
+  }
+  const PATCHES = [
+    { shape: 'shield', bg: '#1c2a44', border: '#ffcc33', fg: '#ffcc33', icon: '🎯', text: 'HEADSHOT' },
+    { shape: 'circle', bg: '#3a0d0d', border: '#ff5a36', fg: '#ffd2c2', icon: '🔥', text: 'CLUTCH' },
+    { shape: 'banner', bg: '#f7c948', border: '#1b1020', fg: '#1b1020', icon: '', text: 'RUSH B' },
+    { shape: 'hex', bg: '#2d1b4e', border: '#ffd700', fg: '#ffd700', icon: '👑', text: 'MVP' },
+    { shape: 'star', bg: '#0b132b', border: '#c0c0c0', fg: '#ffffff', icon: '🐐', text: 'GOAT' },
+    { shape: 'circle', bg: '#0f3d2e', border: '#5cffb0', fg: '#ffffff', icon: '🦈', text: 'TUBARÕES' },
+  ];
+  const row = document.getElementById('patch-row');
+  PATCHES.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.className = 'patch-wrap';
+    b.setAttribute('aria-label', `Patch ${p.text}: clique para ver o verso`);
+    b.style.transform = `rotate(${[-8, 6, -4, 9, -10, 5][i]}deg)`;
+    b.innerHTML = `<div class="face">${patchSvg(p)}</div><div class="face back">${patchSvg(p, true)}</div>`;
+    const base = b.style.transform;
+    b.addEventListener('pointermove', (e) => {
+      if (b.classList.contains('flipped') || reduce) return;
+      const r = b.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      b.style.transform = `rotateY(${x * 40}deg) rotateX(${-y * 40}deg) scale(1.12)`;
+    });
+    b.addEventListener('pointerleave', () => { if (!b.classList.contains('flipped')) b.style.transform = base; });
+    b.addEventListener('click', () => { b.classList.toggle('flipped'); if (!b.classList.contains('flipped')) b.style.transform = base; });
+    row.appendChild(b);
+  });
+  document.getElementById('mini-patches').innerHTML = PATCHES.slice(0, 3).map((p) => patchSvg(p)).join('');
+
+  // ---------------------------------------------------------- temas e molduras no cartão
+  const card = document.getElementById('card-demo');
+  const THEMES = [
+    ['Noturno', '#211a28', '#17121c', '#ff8a6b', '#fbf1e8'],
+    ['Violeta', '#2a2140', '#1b1530', '#a78bfa', '#f3edff'],
+    ['Synthwave', '#2b0f3a', '#170824', '#ff2bd6', '#ffe9fb'],
+    ['Floresta', '#1c2b22', '#111c16', '#5eead4', '#eafff7'],
+    ['Brasa', '#2e1a14', '#1c0f0b', '#f5c451', '#fff4e0'],
+    ['Claro', '#f4eef8', '#ffffff', '#e8613f', '#24182e'],
+  ];
+  const sw = document.getElementById('swatches');
+  THEMES.forEach(([name, bg, panel, accent, fg], i) => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-pressed', String(i === 0));
+    b.innerHTML = `<i style="background:linear-gradient(135deg, ${accent} 50%, ${panel} 50%)"></i>${name}`;
+    b.addEventListener('click', () => {
+      card.style.setProperty('--c-bg', bg); card.style.setProperty('--c-panel', panel); card.style.setProperty('--c-accent', accent); card.style.setProperty('--c-fg', fg);
+      sw.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    });
+    sw.appendChild(b);
+  });
+  const fr = document.getElementById('frames');
+  const demoFrame = document.getElementById('demo-frame');
+  [['fire', 'Em chamas'], ['neon', 'Neon'], ['galaxy', 'Galáxia'], ['gold', 'Ouro'], ['ice', 'Gelo'], ['toxic', 'Tóxico'], ['rainbow', 'Arco-íris'], ['hearts', 'Corações']].forEach(([f, label], i) => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-pressed', String(i === 0));
+    b.setAttribute('aria-label', 'Moldura ' + label);
+    b.title = label;
+    b.innerHTML = `H<span class="frame f-${f}"></span>`;
+    b.addEventListener('click', () => { demoFrame.className = 'frame f-' + f; fr.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
+    fr.appendChild(b);
+  });
+
+  // ---------------------------------------------------------- roleta, dados e moeda
+  const OPTS = ['Pizza', 'Sushi', 'Taco', 'Hambúrguer', 'Açaí', 'Lasanha'];
+  const COLORS = ['#ff8a6b', '#c4a5ff', '#5eead4', '#f5c451', '#7c9cff', '#ff6b9a'];
+  const wheel = document.getElementById('wheel');
+  const seg = 360 / OPTS.length;
+  wheel.innerHTML = OPTS.map((name, i) => {
+    const a0 = ((i * seg - 90) * Math.PI) / 180, a1 = (((i + 1) * seg - 90) * Math.PI) / 180;
+    const x0 = 100 + 92 * Math.cos(a0), y0 = 100 + 92 * Math.sin(a0), x1 = 100 + 92 * Math.cos(a1), y1 = 100 + 92 * Math.sin(a1);
+    const mid = i * seg + seg / 2;
+    return `<path d="M100 100 L${x0.toFixed(2)} ${y0.toFixed(2)} A92 92 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z" fill="${COLORS[i]}" stroke="#1a1024" stroke-width="2.5"/><text x="100" y="40" transform="rotate(${mid} 100 100)" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="13" fill="#1a1024">${name}</text>`;
+  }).join('') + '<circle cx="100" cy="100" r="96" fill="none" stroke="#1a1024" stroke-width="5"/><circle cx="100" cy="100" r="13" fill="#1a1024"/><circle cx="100" cy="100" r="6" fill="#fbf1e8"/>';
+  let turns = 0;
+  const wres = document.getElementById('wheel-result');
+  document.getElementById('spin').addEventListener('click', () => {
+    const pick = Math.floor(Math.random() * OPTS.length);
+    turns += 5 * 360 + (360 - (pick * seg + seg / 2)) - (turns % 360);
+    wheel.style.transform = `rotate(${turns}deg)`;
+    wres.textContent = 'Girando…';
+    setTimeout(() => { wres.textContent = OPTS[pick] + '!'; }, reduce ? 50 : 4700);
+  });
+  const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+  const diceEl = document.getElementById('dice');
+  const dres = document.getElementById('dice-result');
+  function drawDice(vals) { diceEl.innerHTML = vals.map((v) => `<div class="die" role="img" aria-label="Dado ${v}">${Array.from({ length: 9 }, (_, i) => `<i class="${PIPS[v].includes(i) ? 'on' : ''}"></i>`).join('')}</div>`).join(''); }
+  drawDice([2, 5]);
+  document.getElementById('roll').addEventListener('click', () => {
+    const vals = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+    let n = 0;
+    const tick = setInterval(() => { drawDice([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]); diceEl.querySelectorAll('.die').forEach((d) => d.classList.add('rolling')); if (++n > 6 || reduce) { clearInterval(tick); drawDice(vals); dres.textContent = `${vals[0]} + ${vals[1]} = ${vals[0] + vals[1]}`; } }, 110);
+  });
+  const coin = document.getElementById('coin');
+  const cres = document.getElementById('coin-result');
+  let spins = 0;
+  document.getElementById('flip').addEventListener('click', () => {
+    const coroa = Math.random() < 0.5;
+    spins += 1800 + (coroa ? 180 : 0) - (spins % 360);
+    coin.style.transform = `rotateY(${spins}deg)`;
+    cres.textContent = '…';
+    setTimeout(() => { cres.textContent = coroa ? 'Coroa' : 'Cara'; }, reduce ? 50 : 1400);
+  });
+
+  // ---------------------------------------------------------- chamar atenção (treme a página + trinado)
+  let ctx = null;
+  document.getElementById('nudge').addEventListener('click', () => {
+    try {
+      ctx ??= new AudioContext();
+      [880, 660, 880, 660, 880, 1175].forEach((f, i) => {
+        const osc = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.065;
+        osc.type = 'triangle'; osc.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+        osc.connect(g).connect(ctx.destination); osc.start(t); osc.stop(t + 0.07);
+      });
+    } catch {}
+    if (reduce) return;
+    document.body.classList.remove('shaking');
+    void document.body.offsetWidth;
+    document.body.classList.add('shaking');
+    setTimeout(() => document.body.classList.remove('shaking'), 650);
+  });
+})();
+</script>
+</body>
+</html>
