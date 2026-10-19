@@ -114,6 +114,9 @@ addColumn('users', 'bot_token_hash', 'TEXT');
 addColumn('messages', 'kind', "TEXT NOT NULL DEFAULT 'text'");
 addColumn('messages', 'data', 'TEXT');
 addColumn('users', 'profile_style', "TEXT NOT NULL DEFAULT '{}'");
+// login com Google: só o identificador da conta (sub)
+addColumn('users', 'google_sub', 'TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google ON users(google_sub) WHERE google_sub IS NOT NULL');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sounds (
@@ -330,6 +333,7 @@ export interface UserRow {
   bot_owner_id: string | null;
   bot_token_hash: string | null;
   profile_style: string;
+  google_sub?: string | null;
   created_at: number;
 }
 

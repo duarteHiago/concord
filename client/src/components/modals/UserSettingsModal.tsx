@@ -6,6 +6,7 @@ import { systemReducesMotion } from '../../lib/motion';
 import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
 import { StyleTab } from './StyleTab';
+import { GoogleAccountSection } from '../GoogleLogin';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
@@ -915,6 +916,7 @@ function MicSensitivity() {
 
 function RecoverySection() {
   const hasCode = useApp((s) => !!s.me?.hasRecoveryCode);
+  const noPassword = useApp((s) => s.me?.hasPassword === false);
   const openModal = useApp((s) => s.openModal);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -940,8 +942,12 @@ function RecoverySection() {
           : 'Você ainda não tem um código. Sem ele, se esquecer a senha, só quem administra o servidor consegue redefini-la.'}
       </p>
       <div className="flex items-end gap-2">
-        <Input label="Senha atual" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="flex-1" />
-        <Button variant={hasCode ? 'secondary' : 'primary'} disabled={!password} loading={loading} onClick={generate} className="h-11 shrink-0">
+        {noPassword ? (
+          <span className="flex-1" />
+        ) : (
+          <Input label="Senha atual" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="flex-1" />
+        )}
+        <Button variant={hasCode ? 'secondary' : 'primary'} disabled={!password && !noPassword} loading={loading} onClick={generate} className="h-11 shrink-0">
           {hasCode ? 'Gerar novo código' : 'Gerar código'}
         </Button>
       </div>
@@ -1015,25 +1021,33 @@ function UpdateRow() {
 
 function Account() {
   const logout = useApp((s) => s.logout);
+  const me = useApp((s) => s.me)!;
+  const setMe = useApp((s) => s.setMe);
+  const noPassword = me.hasPassword === false;
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [saving, setSaving] = useState(false);
   return (
     <div className="space-y-5">
       {desktop && <DesktopServer />}
+      <GoogleAccountSection />
       <RecoverySection />
       <div className="space-y-3">
-        <h3 className="font-semibold">Alterar senha</h3>
-        <Input label="Senha atual" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        <h3 className="font-semibold">{noPassword ? 'Criar senha' : 'Alterar senha'}</h3>
+        {noPassword ? (
+          <p className="text-sm text-fg-muted">Você entra pelo Google. Criando uma senha, também dá para entrar com usuário e senha.</p>
+        ) : (
+          <Input label="Senha atual" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        )}
         <Input label="Nova senha" type="password" value={next} onChange={(e) => setNext(e.target.value)} hint="Mínimo de 6 caracteres" />
         <Button
           loading={saving}
-          disabled={!current || next.length < 6}
+          disabled={(!current && !noPassword) || next.length < 6}
           onClick={async () => {
             setSaving(true);
             try {
-              await api.patch('/me', { currentPassword: current, newPassword: next });
-              toast.success('Senha alterada');
+              setMe(await api.patch<Me>('/me', { currentPassword: current, newPassword: next }));
+              toast.success(noPassword ? 'Senha criada' : 'Senha alterada');
               setCurrent('');
               setNext('');
             } catch (err) {
@@ -1042,7 +1056,7 @@ function Account() {
             setSaving(false);
           }}
         >
-          Alterar senha
+          {noPassword ? 'Criar senha' : 'Alterar senha'}
         </Button>
       </div>
       <div className="h-px bg-line" />

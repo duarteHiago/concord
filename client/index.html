@@ -11,7 +11,7 @@
     <script>
       // Visitante sem login cai na landing page; o app desktop e o link "Entrar" (/?entrar) vão direto para o login
       try {
-        if (location.pathname === '/' && !localStorage.getItem('concord.token') && !/Electron\//.test(navigator.userAgent) && !/[?&]entrar\b/.test(location.search)) {
+        if (location.pathname === '/' && !localStorage.getItem('concord.token') && !/Electron\//.test(navigator.userAgent) && !/[?&]entrar\b/.test(location.search) && !/google-/.test(location.hash)) {
           location.replace('/inicio/');
         }
       } catch {}

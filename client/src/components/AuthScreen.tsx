@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import type { InvitePreview } from '../lib/types';
 import { useApp } from '../store/app';
+import { GoogleButton, GoogleSignupForm } from './GoogleLogin';
 import { Avatar, Button, Input } from './ui';
 
 type Mode = 'login' | 'register' | 'reset';
@@ -29,6 +30,7 @@ export function AuthScreen() {
     setPassword('');
   };
   const pendingInvite = useApp((s) => s.pendingInvite);
+  const googleSignup = useApp((s) => s.googleSignup);
   const [invite, setInvite] = useState<InvitePreview | null>(null);
 
   useEffect(() => {
@@ -81,6 +83,9 @@ export function AuthScreen() {
           <p className="text-xs text-fg-subtle">Hospedado por você, sem limites de qualidade.</p>
         </div>
 
+        {googleSignup ? (
+          <GoogleSignupForm />
+        ) : (
         <form onSubmit={submit} className="space-y-4 p-8 md:p-10">
           {invite && (
             <div className="mb-2 flex items-center gap-3 rounded-xl border border-accent/40 bg-accent/10 p-3">
@@ -129,6 +134,7 @@ export function AuthScreen() {
           <Button type="submit" loading={loading} className="h-11 w-full">
             {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar conta' : 'Redefinir senha'}
           </Button>
+          {mode !== 'reset' && <GoogleButton />}
           {mode === 'reset' && (
             <p className="text-xs text-fg-subtle">
               Sem o código? Peça para quem administra o Concord rodar <code>node src/cli.ts reset-password {username || 'seu-usuario'}</code> no servidor.
@@ -141,6 +147,7 @@ export function AuthScreen() {
             </button>
           </p>
         </form>
+        )}
       </div>
     </div>
   );

@@ -116,6 +116,8 @@ export interface UserSettings {
 export interface Me extends User {
   settings: UserSettings & Record<string, unknown>;
   hasRecoveryCode?: boolean;
+  googleLinked?: boolean;
+  hasPassword?: boolean;
 }
 
 export interface NudgeEvent {

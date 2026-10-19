@@ -30,6 +30,24 @@ elif [ -n "${DOMAIN:-}" ]; then
 fi
 DOMAIN="$(grep ^DOMAIN= .env | cut -d= -f2)"
 
+# Login com Google: o ID do cliente vem da variável do CI; o secret chega por um arquivo temporário
+# (.google.env, escrito pelo CI via stdin) para não aparecer em linha de comando nem em log.
+upsert_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }
+if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
+  if printf '%s' "$GOOGLE_CLIENT_ID" | grep -qE '^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$'; then
+    upsert_env GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID"
+  else
+    echo "!! GOOGLE_CLIENT_ID com formato inesperado; ignorado." >&2
+  fi
+fi
+if [ -f .google.env ]; then
+  GSECRET="$(grep '^GOOGLE_CLIENT_SECRET=' .google.env | cut -d= -f2-)"
+  if printf '%s' "$GSECRET" | grep -qE '^[A-Za-z0-9_-]{10,100}$'; then upsert_env GOOGLE_CLIENT_SECRET "$GSECRET"; fi
+  rm -f .google.env
+  unset GSECRET
+fi
+chmod 600 .env
+
 # Convite do servidor oficial da comunidade (o app mostra "Entrar na comunidade"). Vem da variável do CI.
 if [ -n "${COMMUNITY_INVITE:-}" ]; then
   if ! printf '%s' "$COMMUNITY_INVITE" | grep -qE '^[A-Za-z0-9_-]{4,64}$'; then

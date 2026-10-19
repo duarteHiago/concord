@@ -67,9 +67,13 @@ interface AppState {
   modal: Modal | null;
   memberListOpen: boolean;
   pendingInvite: string | null;
+  /** cadastro pelo Google esperando a pessoa escolher o nome de usuário */
+  googleSignup: string | null;
 
   bootstrap: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
+  googleSignupSubmit: (username: string, displayName: string) => Promise<'done' | 'desktop'>;
   register: (username: string, password: string, displayName: string) => Promise<void>;
   resetPassword: (username: string, code: string, newPassword: string) => Promise<void>;
   logout: () => void;
@@ -289,6 +293,7 @@ export const useApp = create<AppState>((set, get) => {
     modal: null,
     memberListOpen: true,
     pendingInvite: null,
+    googleSignup: null,
 
     bootstrap: async () => {
       setUnauthorizedHandler(() => get().logout());
@@ -297,6 +302,17 @@ export const useApp = create<AppState>((set, get) => {
         // o convite só é aberto depois do login (startSession)
         history.replaceState(null, '', '/');
         set({ pendingInvite: match[1] });
+      }
+      // volta do login com Google: o resultado vem no fragmento (#) e é apagado da barra de endereço
+      const hash = new URLSearchParams(location.hash.slice(1));
+      let googleNote: (() => void) | null = null;
+      if ([...hash.keys()].some((k) => k.startsWith('google-'))) {
+        history.replaceState(null, '', location.pathname + location.search);
+        if (hash.get('google-token')) setToken(hash.get('google-token'));
+        if (hash.get('google-signup')) set({ googleSignup: hash.get('google-signup') });
+        const err = hash.get('google-error');
+        if (err) googleNote = () => toast.error(err);
+        if (hash.get('google-linked')) googleNote = () => toast.success('Conta Google conectada. Agora você também entra com ela.');
       }
       const token = getToken();
       if (token) {
@@ -308,6 +324,25 @@ export const useApp = create<AppState>((set, get) => {
         }
       }
       set({ ready: true });
+      googleNote?.();
+    },
+
+    loginWithToken: async (token) => {
+      setToken(token);
+      startSession(token, await api.get<Me>('/me'));
+    },
+
+    googleSignupSubmit: async (username, displayName) => {
+      const res = await api.post<{ token?: string; user?: Me; recoveryCode?: string; handoff?: boolean }>('/auth/google/signup', {
+        ticket: get().googleSignup,
+        username,
+        displayName,
+      });
+      set({ googleSignup: null });
+      if (res.handoff) return 'desktop';
+      startSession(res.token!, res.user!);
+      if (res.recoveryCode) set({ modal: { type: 'recoveryCode', code: res.recoveryCode, next: get().modal ?? undefined } });
+      return 'done';
     },
 
     login: async (username, password) => {

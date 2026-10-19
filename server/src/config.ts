@@ -12,6 +12,9 @@ export const config = {
   downloadsDir: env.DOWNLOADS_DIR ?? '',
   publicDir:env.PUBLIC_DIR ?? fileURLToPath(new URL('../../client/dist', import.meta.url)),
   allowRegistration: env.ALLOW_REGISTRATION !== 'false',
+  // endereço público do site (https://dominio), usado no retorno do login com Google
+  publicUrl: (env.PUBLIC_URL ?? '').replace(/\/+$/, ''),
+  google: { clientId: env.GOOGLE_CLIENT_ID ?? '', clientSecret: env.GOOGLE_CLIENT_SECRET ?? '' },
   // código de um convite permanente: o app mostra "Entrar na comunidade" e a landing page ganha o botão
   communityInvite: (env.COMMUNITY_INVITE ?? '').trim().replace(/^.*\/invite\//, ''),
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
