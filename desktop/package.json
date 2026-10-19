@@ -32,7 +32,8 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Concord"
+      "shortcutName": "Concord",
+      "include": "build/installer.nsh"
     }
   }
 }
