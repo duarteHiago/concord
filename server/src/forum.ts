@@ -8,12 +8,15 @@ import { all, get, run, tx, type ChannelRow, type ForumPostRow, type ForumReplyR
 import { fail, str, uid } from './http.ts';
 import { emitToChannel, emitToUser } from './realtime.ts';
 
-type AuthorFields = Pick<UserRow, 'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio' | 'banner_url' | 'is_bot' | 'profile_style'>;
+type AuthorFields = Pick<
+  UserRow,
+  'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio' | 'banner_url' | 'is_bot' | 'profile_style' | 'verified'
+>;
 type PostWithAuthor = ForumPostRow & AuthorFields;
 type ReplyWithAuthor = ForumReplyRow & AuthorFields;
 type AuthorJson = (u: AuthorFields & { id: string }) => unknown;
 
-const AUTHOR_COLS = 'u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style';
+const AUTHOR_COLS = 'u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style, u.verified';
 const POST_SELECT = `SELECT p.*, ${AUTHOR_COLS} FROM forum_posts p JOIN users u ON u.id = p.author_id`;
 const REPLY_SELECT = `SELECT r.*, ${AUTHOR_COLS} FROM forum_replies r JOIN users u ON u.id = r.author_id`;
 

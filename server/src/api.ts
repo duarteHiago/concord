@@ -241,6 +241,7 @@ api.post('/auth/register', async (req, res) => {
     bio: '',
     settings: '{}',
     recovery_hash: null,
+    verified: 0,
     created_at: now(),
   };
   run(
@@ -664,7 +665,7 @@ api.get('/servers', (_req, res) => {
 api.post('/servers', humansOnly, (req, res) => {
   const me = uid(res);
   const name = str(req.body?.name, 'nome', 2, 50);
-  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, created_at: now() };
+  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, verified: 0, created_at: now() };
 
   tx(() => {
     run('INSERT INTO servers (id, name, owner_id, icon_color, created_at) VALUES (?, ?, ?, ?, ?)', server.id, name, me, server.icon_color, server.created_at);
