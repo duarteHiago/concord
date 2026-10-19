@@ -80,7 +80,16 @@ export function AuthScreen() {
               </li>
             </ul>
           </div>
-          <p className="text-xs text-fg-subtle">Hospedado por você, sem limites de qualidade.</p>
+          <p className="text-xs text-fg-subtle">
+            Hospedado por você, sem limites de qualidade. ·{' '}
+            <a href="/privacidade/" target="_blank" rel="noreferrer" className="hover:text-fg">
+              Privacidade
+            </a>{' '}
+            ·{' '}
+            <a href="/termos/" target="_blank" rel="noreferrer" className="hover:text-fg">
+              Termos
+            </a>
+          </p>
         </div>
 
         {googleSignup ? (
@@ -138,6 +147,19 @@ export function AuthScreen() {
           {mode === 'reset' && (
             <p className="text-xs text-fg-subtle">
               Sem o código? Peça para quem administra o Concord rodar <code>node src/cli.ts reset-password {username || 'seu-usuario'}</code> no servidor.
+            </p>
+          )}
+          {mode === 'register' && (
+            <p className="text-xs text-fg-subtle">
+              Ao criar a conta você concorda com os{' '}
+              <a href="/termos/" target="_blank" rel="noreferrer" className="underline hover:text-fg">
+                Termos
+              </a>{' '}
+              e a{' '}
+              <a href="/privacidade/" target="_blank" rel="noreferrer" className="underline hover:text-fg">
+                Política de Privacidade
+              </a>
+              .
             </p>
           )}
           <p className="text-sm text-fg-muted">

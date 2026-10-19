@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#140f19">
+<title>Política de Privacidade · Concord</title>
+<meta name="description" content="Como o Concord trata os seus dados: o que guardamos, por quê, com quem compartilhamos e como pedir acesso ou exclusão.">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+<header class="top"><a href="/inicio/" class="brand"><img src="/brand/concord-logo.png" alt="Concord" width="160" height="36"></a><nav><a href="/termos/">Termos de Serviço</a><a href="/?entrar">Entrar</a></nav></header>
+<main class="doc">
+<p class="eyebrow">Política de Privacidade</p>
+<h1>Seus dados no Concord</h1>
+<p class="updated">Última atualização: 19 de outubro de 2026</p>
+
+<div class="tldr">
+  <h2>Resumo</h2>
+  <ul>
+    <li>Guardamos só o necessário para o app funcionar: sua conta, o que você publica e suas preferências.</li>
+    <li>Não vendemos dados, não mostramos anúncios e não usamos rastreadores.</li>
+    <li>Voz, vídeo e transmissões de tela passam em tempo real e <b>não são gravados</b>.</li>
+    <li>Entrando com o Google, guardamos só um identificador da conta: nada de e-mail, foto ou acesso aos seus dados do Google.</li>
+    <li>Você pode pedir uma cópia ou a exclusão dos seus dados a qualquer momento.</li>
+  </ul>
+</div>
+
+<h2>1. Quem somos</h2>
+<p>O Concord é um aplicativo de voz, chat e transmissão de tela de <a href="https://github.com/duarteHiago/concord">código aberto</a>. Esta política vale para o serviço oficial em <b>concord-community.com</b>, incluindo o site, o app no navegador e o app para Windows. Quem hospeda o Concord no próprio servidor é responsável pelos dados daquela instalação.</p>
+<p>Para os fins da Lei Geral de Proteção de Dados (LGPD, Lei 13.709/2018), a equipe que mantém o concord-community.com é a controladora dos dados tratados aqui. Os canais de contato estão na seção 9.</p>
+
+<h2>2. O que guardamos</h2>
+<table>
+  <thead><tr><th>Dado</th><th>Para quê</th></tr></thead>
+  <tbody>
+    <tr><td><b>Conta:</b> nome de usuário, nome de exibição, senha (guardada só como <i>hash</i> bcrypt, nunca em texto) e código de recuperação (também só o <i>hash</i>)</td><td>Entrar na conta e recuperar o acesso</td></tr>
+    <tr><td><b>Login com Google (opcional):</b> só o identificador da sua conta Google (<i>sub</i>)</td><td>Reconhecer você quando entra pelo Google</td></tr>
+    <tr><td><b>Perfil:</b> foto, capa, bio, cor, moldura, patches e apelidos por servidor</td><td>Mostrar seu perfil para as pessoas dos seus servidores</td></tr>
+    <tr><td><b>Conteúdo:</b> mensagens, mensagens privadas (DMs), posts e respostas em fóruns, stickers, sons e imagens que você envia</td><td>Entregar e exibir o que você publica para quem deve ver</td></tr>
+    <tr><td><b>Participação:</b> servidores em que você está, cargos, convites e resgates de patches</td><td>Permissões e funcionamento dos servidores</td></tr>
+    <tr><td><b>Preferências:</b> tema, sons, atalhos, notificações e opções de áudio</td><td>Deixar o app igual em todos os seus aparelhos</td></tr>
+  </tbody>
+</table>
+
+<h3>O que fica só enquanto você está conectado (não é guardado)</h3>
+<ul>
+  <li><b>Voz, câmera e transmissão de tela:</b> passam pelo nosso servidor de mídia em tempo real até quem está na sala. Não gravamos nada.</li>
+  <li><b>Status e atividade:</b> se você está online, em "não perturbe", ou o que está jogando e ouvindo. Este último só no app para Windows e só se a opção estiver ligada. Ficam na memória do servidor e somem quando você desconecta.</li>
+  <li><b>Reações, "chamar atenção" e "digitando…":</b> são entregues na hora e não ficam salvos.</li>
+</ul>
+
+<h3>O que não coletamos</h3>
+<p>Não pedimos e-mail, telefone, documento ou localização. Não usamos cookies de rastreamento, pixels de anúncio nem ferramentas de analytics. O servidor do Concord não registra o seu endereço IP. As métricas de funcionamento (quantas salas abertas, uso de CPU etc.) são só contagens, sem nada que identifique alguém.</p>
+<p>No seu navegador ou no app, guardamos localmente o token de acesso e algumas preferências (<i>localStorage</i>). Isso serve só para manter você conectado e não é usado para rastreamento.</p>
+
+<h2>3. Com quem compartilhamos</h2>
+<p>Não vendemos nem alugamos dados. Usamos alguns serviços para o Concord funcionar:</p>
+<ul>
+  <li><b>Cloudflare:</b> proteção e entrega do site. Como todo serviço desse tipo, processa o seu endereço IP e dados técnicos da conexão.</li>
+  <li><b>Provedor da hospedagem (VPS):</b> onde ficam o servidor e o banco de dados.</li>
+  <li><b>Google:</b> só se você escolher "Entrar com Google", para confirmar o seu login. Também carregamos as fontes do site pelo Google Fonts, o que envia ao Google o seu IP ao abrir a página.</li>
+</ul>
+<p>O que você publica é visto pelas pessoas que têm acesso: os membros do servidor ou canal, ou quem está na sua DM. Os administradores de cada servidor podem moderar o conteúdo publicado nele.</p>
+<p>Só entregamos dados a autoridades quando a lei brasileira exigir, mediante ordem válida.</p>
+
+<h2>4. Base legal</h2>
+<p>Tratamos os dados para executar o serviço que você pediu ao criar a conta (art. 7º, V, da LGPD), por legítimo interesse na segurança e no bom funcionamento do serviço (art. 7º, IX) e para cumprir obrigações legais (art. 7º, II). Opções como mostrar a atividade são do seu consentimento, e você pode desligá-las quando quiser nas configurações.</p>
+
+<h2>5. Por quanto tempo</h2>
+<p>Os dados ficam guardados enquanto a sua conta existir. Uma mensagem, imagem ou post que você apaga sai do banco na hora. Quando a conta é excluída, apagamos o perfil, as imagens enviadas e os vínculos. Se existir alguma cópia de segurança do banco, ela é descartada em até 30 dias.</p>
+
+<h2>6. Segurança</h2>
+<p>Usamos HTTPS em todas as conexões, senhas e códigos com <i>hash</i>, firewall no servidor e acesso administrativo só por chave. O código é aberto, então qualquer pessoa pode conferir como os dados são tratados. Nenhum sistema é 100% seguro. Se acontecer um incidente que afete você, avisamos pelos canais do serviço.</p>
+
+<h2>7. Seus direitos</h2>
+<p>Pela LGPD, você pode pedir a qualquer momento:</p>
+<ul>
+  <li>confirmação de que tratamos seus dados e uma cópia deles;</li>
+  <li>correção de dados errados (a maior parte você mesmo edita no perfil);</li>
+  <li><b>exclusão da conta</b> e dos seus dados;</li>
+  <li>informação sobre com quem compartilhamos;</li>
+  <li>revogação de consentimentos, como desconectar o Google em <i>Configurações → Conta</i>.</li>
+</ul>
+<p>Responderemos em até 15 dias. Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</p>
+
+<h2>8. Crianças e adolescentes</h2>
+<p>O Concord não é feito para menores de 13 anos. Entre 13 e 18 anos, o uso deve ter o conhecimento e a autorização de um responsável. Se soubermos de uma conta de alguém com menos de 13 anos, ela será removida.</p>
+
+<h2>9. Contato</h2>
+<p>Para pedidos sobre seus dados (cópia, correção, exclusão) ou dúvidas sobre esta política:</p>
+<ul>
+  <li><b>Servidor oficial da comunidade:</b> mande uma mensagem privada para um administrador. É o canal recomendado para pedidos sobre dados, porque confirma que a conta é sua.</li>
+  <li><b>GitHub:</b> <a href="https://github.com/duarteHiago/concord/issues">github.com/duarteHiago/concord/issues</a>, para dúvidas gerais. Não publique dados pessoais lá, porque as issues são públicas.</li>
+</ul>
+
+<h2>10. Mudanças</h2>
+<p>Se esta política mudar de forma importante, avisaremos no canal #anúncios do servidor oficial e atualizaremos a data no topo da página.</p>
+</main>
+<footer class="foot"><span>Concord · código aberto (MIT)</span><span><a href="/privacidade/">Privacidade</a> · <a href="/termos/">Termos</a> · <a href="https://github.com/duarteHiago/concord">GitHub</a></span></footer>
+</body>
+</html>

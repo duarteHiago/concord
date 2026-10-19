@@ -1,0 +1,48 @@
+/* Páginas de texto (privacidade, termos): mesma paleta da landing, leitura confortável. */
+:root {
+  --night: #140f19;
+  --plum: #211a28;
+  --line: #3a2f47;
+  --cream: #fbf1e8;
+  --muted: #b6a8c6;
+  --coral: #ff8a6b;
+  --lilac: #c4a5ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--night);
+  color: var(--cream);
+  font: 17px/1.65 "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+}
+a { color: var(--coral); }
+a:hover { color: var(--lilac); }
+.top, .foot, .doc { width: 100%; max-width: 820px; margin-inline: auto; padding-inline: max(20px, env(safe-area-inset-left)); }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 24px; }
+.top img { display: block; height: 36px; width: auto; }
+.top nav { display: flex; gap: 18px; font-weight: 700; font-size: 15px; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--cream); }
+.doc { padding-bottom: 60px; }
+.eyebrow { margin: 24px 0 6px; font: 700 13px "JetBrains Mono", Consolas, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--coral); }
+h1 { margin: 0; font-size: clamp(34px, 6vw, 52px); line-height: 1.05; letter-spacing: -0.02em; }
+h2 { margin: 40px 0 10px; font-size: 24px; line-height: 1.2; }
+h3 { margin: 24px 0 6px; font-size: 18px; }
+p, li { color: #e6dcea; }
+.updated { margin-top: 8px; color: var(--muted); font-size: 14px; }
+.tldr { margin-top: 28px; padding: 6px 24px 14px; border-radius: 22px; background: linear-gradient(120deg, rgb(255 138 107 / 0.12), rgb(196 165 255 / 0.1)); box-shadow: inset 0 0 0 1px var(--line); }
+.tldr h2 { margin-top: 18px; font-size: 18px; }
+ul { padding-left: 22px; }
+li { margin: 6px 0; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 12px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; }
+td:first-child { width: 58%; }
+.foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding-block: 24px 36px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+@media (max-width: 600px) {
+  table, tbody, tr, td { display: block; width: 100% !important; }
+  thead { display: none; }
+  td { border: 0; padding: 4px 0; }
+  tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
+}
