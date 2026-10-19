@@ -10,12 +10,16 @@ import { useApp } from '../store/app';
 import { toast } from '../store/toast';
 import { Button, Input } from './ui';
 
-let googleConfigured: Promise<boolean> | null = null;
+// só o "sim" fica guardado: se o Google for ligado com o app aberto, a próxima tela já pergunta de novo
+let googleOn = false;
 export function useGoogleEnabled() {
-  const [on, setOn] = useState(false);
+  const [on, setOn] = useState(googleOn);
   useEffect(() => {
-    googleConfigured ??= api.get<{ googleLogin?: boolean }>('/config').then((c) => !!c.googleLogin, () => false);
-    void googleConfigured.then(setOn);
+    if (googleOn) return;
+    api.get<{ googleLogin?: boolean }>('/config').then((c) => {
+      googleOn = !!c.googleLogin;
+      setOn(googleOn);
+    }, () => {});
   }, []);
   return on;
 }
