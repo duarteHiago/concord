@@ -1,5 +1,5 @@
-import { ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useState } from 'react';
+import { Check, Copy, Gift, ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { FRAMES, MAX_PATCHES } from '../../../../shared/cosmetics.ts';
 import { api } from '../../lib/api';
 import type { Me, Patch, ServerPatch } from '../../lib/types';
@@ -172,6 +172,7 @@ function PatchesEditor() {
   const [gallery, setGallery] = useState(false);
   const [source, setSource] = useState<string>('preset');
   const [shareTo, setShareTo] = useState<string>('');
+  const [giftOf, setGiftOf] = useState<Patch | null>(null);
   const full = patches.length >= MAX_PATCHES;
   const isNew = editing ? !patches.some((x) => x.id === editing.id) : false;
 
@@ -217,6 +218,16 @@ function PatchesEditor() {
           <div key={p.id} className="group relative">
             <PatchBadge patch={p} size={56} tilt={PATCH_TILTS[i % PATCH_TILTS.length]} />
             <div className="absolute -top-1.5 -right-1.5 hidden gap-0.5 group-focus-within:flex group-hover:flex">
+              {!p.drop && (
+                <button
+                  aria-label={`Criar link de presente do patch ${p.text}`}
+                  title="Link de presente: amigos resgatam este patch"
+                  onClick={() => setGiftOf(p)}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-on-accent shadow"
+                >
+                  <Gift size={11} />
+                </button>
+              )}
               <button
                 aria-label={`Editar patch ${p.text}`}
                 onClick={() => setEditing(p)}
@@ -285,6 +296,9 @@ function PatchesEditor() {
         </div>
       )}
 
+      {giftOf && <GiftLinks patch={giftOf} onClose={() => setGiftOf(null)} />}
+      <ClaimedPatches />
+
       {editing && (
         <PatchForm
           initial={editing}
@@ -313,6 +327,129 @@ function PatchesEditor() {
           }
         />
       )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ patches de presente
+
+interface DropLink {
+  code: string;
+  patch: Patch;
+  uses: number;
+  maxUses: number;
+  expiresAt: number | null;
+}
+
+const dropUrl = (code: string) => `${location.origin}/resgatar/${code}`;
+
+/** Links de presente de um patch: quem abre o link resgata o patch (uma vez por pessoa). */
+function GiftLinks({ patch, onClose }: { patch: Patch; onClose: () => void }) {
+  const [links, setLinks] = useState<DropLink[] | null>(null);
+  const [maxUses, setMaxUses] = useState(10);
+  const [expiresIn, setExpiresIn] = useState(7 * 86400);
+  const [copied, setCopied] = useState('');
+  const same = (d: DropLink) => JSON.stringify({ ...d.patch, drop: undefined }) === JSON.stringify({ ...patch, id: undefined, drop: undefined });
+
+  const load = () => void api.get<DropLink[]>('/me/drops').then((all) => setLinks(all.filter(same)), toast.error);
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function create() {
+    try {
+      const d = await api.post<DropLink>('/me/drops', { patchId: patch.id, maxUses, expiresIn });
+      setLinks((cur) => [d, ...(cur ?? [])]);
+      void copy(d.code);
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+  async function copy(code: string) {
+    await navigator.clipboard.writeText(dropUrl(code)).catch(() => {});
+    setCopied(code);
+    setTimeout(() => setCopied((c) => (c === code ? '' : c)), 2000);
+  }
+
+  const sel = 'h-9 rounded-xl border border-line bg-surface-2 px-2 text-sm text-fg outline-none focus:border-accent';
+  return (
+    <div className="mt-3 rounded-2xl bg-surface-0 p-4">
+      <div className="mb-3 flex items-center gap-3">
+        <PatchBadge patch={patch} size={44} />
+        <div className="min-w-0 flex-1">
+          <div className="font-bold">Link de presente</div>
+          <div className="text-xs text-fg-muted">Quem abrir o link resgata este patch para o próprio perfil. Quem ganhou não consegue repassar.</div>
+        </div>
+        <button aria-label="Fechar" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-fg-muted hover:bg-surface-3 hover:text-fg">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select aria-label="Quantos resgates" value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))} className={sel}>
+          {[1, 5, 10, 25, 50, 0].map((n) => (
+            <option key={n} value={n}>
+              {n === 0 ? 'Resgates ilimitados' : n === 1 ? '1 resgate' : `${n} resgates`}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Validade" value={expiresIn} onChange={(e) => setExpiresIn(Number(e.target.value))} className={sel}>
+          <option value={86400}>Vale 1 dia</option>
+          <option value={7 * 86400}>Vale 7 dias</option>
+          <option value={30 * 86400}>Vale 30 dias</option>
+          <option value={0}>Nunca expira</option>
+        </select>
+        <Button className="h-9" onClick={() => void create()}>
+          <Gift size={14} /> Criar link
+        </Button>
+      </div>
+      {links && links.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {links.map((d) => {
+            const expired = !!d.expiresAt && d.expiresAt < Date.now();
+            return (
+              <li key={d.code} className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                <code className={cx('min-w-0 flex-1 truncate', expired && 'line-through opacity-50')}>{dropUrl(d.code)}</code>
+                <span className="shrink-0 text-xs text-fg-muted">
+                  {d.uses}
+                  {d.maxUses ? `/${d.maxUses}` : ''} resgates
+                </span>
+                {!expired && (
+                  <button aria-label="Copiar link" onClick={() => void copy(d.code)} className="flex h-7 w-7 items-center justify-center rounded-full text-fg-muted hover:bg-surface-3 hover:text-fg">
+                    {copied === d.code ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
+                  </button>
+                )}
+                {!expired && (
+                  <button
+                    aria-label="Desativar link"
+                    title="Desativar (quem já resgatou continua com o patch)"
+                    onClick={() => void api.del(`/me/drops/${d.code}`).then(load, toast.error)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-danger hover:bg-danger/15"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Patches ganhos de presente que não estão no perfil agora: dá para costurar de novo. */
+function ClaimedPatches() {
+  const me = useApp((s) => s.me)!;
+  const [list, setList] = useState<Patch[]>([]);
+  useEffect(() => void api.get<Patch[]>('/me/claimed-patches').then(setList, () => setList([])), []);
+  const off = list.filter((p) => !(me.patches ?? []).some((x) => x.id === p.id));
+  if (off.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-surface-0 p-3">
+      <span className="mr-1 text-xs font-bold text-fg-muted">Ganhos de presente</span>
+      {off.map((p) => (
+        <button key={p.id} title="Costurar no perfil" onClick={() => void equipPatch(p)} className="rounded-xl p-1 hover:bg-surface-2">
+          <PatchBadge patch={p} size={44} />
+        </button>
+      ))}
     </div>
   );
 }

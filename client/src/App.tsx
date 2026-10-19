@@ -11,6 +11,7 @@ import { NudgeCard } from './components/NudgeCard';
 import { GameOverlay } from './components/GameOverlay';
 import { ClipToast } from './components/Clip';
 import { PatchInspectorHost } from './components/PatchInspector';
+import { DropClaimModal, DropPage, useClaimAfterLogin, useDrop } from './components/PatchDrop';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
 import { HOME, useActiveDetail, useApp } from './store/app';
@@ -24,6 +25,8 @@ export default function App() {
   const motion = me?.settings.motion;
   useEffect(() => setMotionPref(motion), [motion]);
   const bootstrap = useApp((s) => s.bootstrap);
+  const dropStage = useDrop((s) => s.stage);
+  useClaimAfterLogin();
 
   useEffect(() => {
     void bootstrap();
@@ -39,7 +42,8 @@ export default function App() {
 
   return (
     <>
-      {me ? <Shell /> : <AuthScreen />}
+      {dropStage === 'page' ? <DropPage /> : me ? <Shell /> : <AuthScreen />}
+      {me && dropStage === 'claim' && <DropClaimModal />}
       <ModalHost />
       <Toasts />
       <UpdateBanner />

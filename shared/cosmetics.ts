@@ -35,6 +35,8 @@ export interface Patch {
   artScale?: number; // 0.4 a 3
   artX?: number; // -40 a 40 (unidades do quadro 100×100)
   artY?: number;
+  /** resgatado por um link de presente (id do resgate): não pode virar link de novo */
+  drop?: string;
 }
 
 export const ART_SCALE = { min: 0.4, max: 3 } as const;

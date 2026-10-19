@@ -30,6 +30,7 @@ import {
   type CustomStickerRow,
   type DmChannelRow,
   type PlacedStickerRow,
+  type PatchDropRow,
   type ServerPatchRow,
   type InviteRow,
   type MessageRow,
@@ -191,7 +192,8 @@ api.post('/auth/register', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 3, 32);
   if (!/^[a-zA-Z0-9_.]+$/.test(username)) fail(400, 'Usuário deve conter apenas letras, números, "_" e "."');
   const password = str(req.body?.password, 'senha', 6, 128);
-  const displayName = optStr(req.body?.displayName, 'nome', 1, 32) || username;
+  // nome de exibição é opcional no cadastro: vazio vira o próprio usuário
+  const displayName = optStr(req.body?.displayName?.trim?.() || undefined, 'nome', 1, 32) || username;
   if (get('SELECT 1 FROM users WHERE username = ?', username)) fail(409, 'Esse nome de usuário já está em uso');
 
   const user: UserRow = {
@@ -256,6 +258,30 @@ api.get('/invites/:code', (req, res) => {
   const header = req.headers.authorization;
   const viewer = verifyToken(header?.startsWith('Bearer ') ? header.slice(7) : undefined);
   res.json({ code: invite!.code, server: serverJson(server), memberCount: count, alreadyMember: !!viewer && isMember(server.id, viewer) });
+});
+
+// ---- Patches de presente (link de resgate) ----
+
+const dropValid = (d: PatchDropRow) => (!d.expires_at || d.expires_at > now()) && (!d.max_uses || d.uses < d.max_uses);
+const findDrop = (code: string) => get<PatchDropRow>('SELECT * FROM patch_drops WHERE code = ?', code);
+/** O patch como fica no perfil de quem resgatou (marcado com o resgate). */
+const claimedPatch = (d: PatchDropRow): Patch => ({ ...(JSON.parse(d.patch) as Patch), id: `d${d.id.slice(0, 12)}`, drop: d.id });
+
+/** Prévia pública: aparece na página de resgate, antes do login. */
+api.get('/drops/:code', (req, res) => {
+  const drop = findDrop(req.params.code) ?? fail(404, 'Este link de presente não existe');
+  const creator = get<UserRow>('SELECT * FROM users WHERE id = ?', drop.creator_id)!;
+  const header = req.headers.authorization;
+  const viewer = verifyToken(header?.startsWith('Bearer ') ? header.slice(7) : undefined);
+  res.json({
+    code: drop.code,
+    patch: claimedPatch(drop),
+    creator: { displayName: creator.display_name, avatarUrl: creator.avatar_url, avatarColor: creator.avatar_color, frame: styleJson(parseStyle(creator.profile_style)).frame },
+    remaining: drop.max_uses ? Math.max(0, drop.max_uses - drop.uses) : null,
+    expiresAt: drop.expires_at,
+    available: dropValid(drop),
+    claimed: !!viewer && !!get('SELECT 1 FROM patch_claims WHERE drop_id = ? AND user_id = ?', drop.id, viewer),
+  });
 });
 
 api.use(requireAuth);
@@ -371,6 +397,8 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 function patchImageAllowed(url: unknown, me: string): url is string {
   if (typeof url !== 'string' || !/^\/uploads\/patches\/[\w-]+\.(png|jpg|gif|webp)$/.test(url)) return false;
   if (url.startsWith(`/uploads/patches/${me}-`)) return true;
+  // patch ganho por link de presente
+  if (get('SELECT 1 FROM patch_claims c JOIN patch_drops d ON d.id = c.drop_id WHERE c.user_id = ? AND d.patch LIKE ? LIMIT 1', me, `%${url}%`)) return true;
   return !!get(
     `SELECT 1 FROM server_patches p JOIN members m ON m.server_id = p.server_id AND m.user_id = ? WHERE p.data LIKE ? LIMIT 1`,
     me,
@@ -384,6 +412,7 @@ function dropPatchImage(url: string | undefined) {
   const like = `%${url}%`;
   if (get('SELECT 1 FROM server_patches WHERE data LIKE ? LIMIT 1', like)) return;
   if (get('SELECT 1 FROM users WHERE profile_style LIKE ? LIMIT 1', like)) return;
+  if (get('SELECT 1 FROM patch_drops WHERE patch LIKE ? LIMIT 1', like)) return;
   removeUpload(url);
 }
 
@@ -412,6 +441,7 @@ function cleanPatch(p: Record<string, unknown>, me: string): Patch {
     text: typeof p?.text === 'string' ? p.text.trim().slice(0, 14) : '',
     ...(patchImageAllowed(p?.image, me) ? { image: p.image as string } : {}),
     ...artFields(p),
+    ...(typeof p?.drop === 'string' && get('SELECT 1 FROM patch_claims WHERE drop_id = ? AND user_id = ?', p.drop, me) ? { drop: p.drop } : {}),
   };
 }
 
@@ -1692,6 +1722,92 @@ api.delete('/dm-messages/:id', (req, res) => {
   run('DELETE FROM dm_messages WHERE id = ?', req.params.id);
   deliverDm(dm, 'dm:delete', { id: req.params.id, channelId: dm.id });
   res.json({ ok: true });
+});
+
+// ============================================================ Patches de presente
+
+const dropJson = (d: PatchDropRow) => ({
+  code: d.code,
+  patch: JSON.parse(d.patch) as Patch,
+  uses: d.uses,
+  maxUses: d.max_uses,
+  expiresAt: d.expires_at,
+  createdAt: d.created_at,
+});
+
+/** Cria um link de resgate para um patch do próprio perfil (só patch criado pela pessoa). */
+api.post('/me/drops', humansOnly, (req, res) => {
+  const me = uid(res);
+  const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  const patch = (style.patches ?? []).find((p) => p.id === req.body?.patchId) ?? fail(404, 'Patch não encontrado no seu perfil');
+  if (patch.drop) fail(403, 'Patches ganhos de presente não podem ser repassados');
+  if (patch.image && !patch.image.startsWith(`/uploads/patches/${me}-`)) fail(403, 'Só dá para presentear patches criados por você');
+  if ((get<{ n: number }>('SELECT COUNT(*) AS n FROM patch_drops WHERE creator_id = ?', me)?.n ?? 0) >= 50) fail(400, 'Você já tem 50 links de presente. Apague algum antes.');
+  const maxUses = Math.max(0, Math.min(1000, Number(req.body?.maxUses ?? 0) | 0));
+  const expiresIn = Math.max(0, Number(req.body?.expiresIn ?? 0) | 0); // segundos; 0 = nunca
+  const { id: _id, drop: _drop, ...art } = patch;
+  const row: PatchDropRow = {
+    id: randomUUID(),
+    code: randomBytes(6).toString('base64url'),
+    creator_id: me,
+    patch: JSON.stringify(art),
+    max_uses: maxUses,
+    uses: 0,
+    expires_at: expiresIn > 0 ? now() + expiresIn * 1000 : null,
+    created_at: now(),
+  };
+  run(
+    'INSERT INTO patch_drops (id, code, creator_id, patch, max_uses, uses, expires_at, created_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
+    row.id,
+    row.code,
+    me,
+    row.patch,
+    row.max_uses,
+    row.expires_at,
+    row.created_at,
+  );
+  res.json(dropJson(row));
+});
+
+api.get('/me/drops', (_req, res) => {
+  res.json(all<PatchDropRow>('SELECT * FROM patch_drops WHERE creator_id = ? ORDER BY created_at DESC', uid(res)).map(dropJson));
+});
+
+/** Apagar o link não tira o patch de quem já resgatou. */
+api.delete('/me/drops/:code', (req, res) => {
+  const me = uid(res);
+  const drop = findDrop(req.params.code);
+  if (!drop || drop.creator_id !== me) fail(404, 'Link não encontrado');
+  if (get('SELECT 1 FROM patch_claims WHERE drop_id = ? LIMIT 1', drop!.id)) {
+    // mantém o registro (o patch de quem resgatou continua valendo); só para de aceitar resgates
+    run('UPDATE patch_drops SET expires_at = ? WHERE id = ?', now() - 1, drop!.id);
+  } else {
+    run('DELETE FROM patch_drops WHERE id = ?', drop!.id);
+  }
+  res.json({ ok: true });
+});
+
+/** Resgata o patch (uma vez por pessoa). Não costura sozinho: o app pergunta se quer equipar. */
+api.post('/drops/:code/claim', humansOnly, (req, res) => {
+  const me = uid(res);
+  const drop = findDrop(req.params.code) ?? fail(404, 'Este link de presente não existe');
+  if (!get('SELECT 1 FROM patch_claims WHERE drop_id = ? AND user_id = ?', drop.id, me)) {
+    if (!dropValid(drop)) fail(410, drop.max_uses && drop.uses >= drop.max_uses ? 'Os resgates deste patch acabaram' : 'Este link de presente expirou');
+    tx(() => {
+      run('INSERT INTO patch_claims (drop_id, user_id, claimed_at) VALUES (?, ?, ?)', drop.id, me, now());
+      run('UPDATE patch_drops SET uses = uses + 1 WHERE id = ?', drop.id);
+    });
+  }
+  res.json({ patch: claimedPatch(drop) });
+});
+
+/** Patches que a pessoa ganhou de presente (para equipar depois). */
+api.get('/me/claimed-patches', (_req, res) => {
+  const rows = all<PatchDropRow>(
+    'SELECT d.* FROM patch_claims c JOIN patch_drops d ON d.id = c.drop_id WHERE c.user_id = ? ORDER BY c.claimed_at DESC',
+    uid(res),
+  );
+  res.json(rows.map(claimedPatch));
 });
 
 // ============================================================ Fórum

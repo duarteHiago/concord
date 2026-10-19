@@ -243,6 +243,26 @@ db.exec(`
   );
 `);
 
+// Patches de presente: quem criou o patch gera um link; cada pessoa resgata uma vez.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS patch_drops (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    patch TEXT NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 0,
+    uses INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS patch_claims (
+    drop_id TEXT NOT NULL REFERENCES patch_drops(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    claimed_at INTEGER NOT NULL,
+    PRIMARY KEY (drop_id, user_id)
+  );
+`);
+
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
 if (version < 2) {
@@ -440,4 +460,15 @@ export interface ForumReplyRow {
   content: string;
   created_at: number;
   edited_at: number | null;
+}
+
+export interface PatchDropRow {
+  id: string;
+  code: string;
+  creator_id: string;
+  patch: string;
+  max_uses: number;
+  uses: number;
+  expires_at: number | null;
+  created_at: number;
 }
