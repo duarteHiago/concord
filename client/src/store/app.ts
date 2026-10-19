@@ -4,7 +4,7 @@ import type { PlacedSticker } from '../lib/types';
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
-import { applyTheme, normalizeTheme } from '../lib/theme';
+import { applyTheme, DEFAULT_THEME, normalizeTheme } from '../lib/theme';
 import { receiveDirectMessage, receiveMention, type MentionEvent } from '../lib/mentions';
 import { receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
@@ -331,6 +331,7 @@ export const useApp = create<AppState>((set, get) => {
       void desktop?.setGlobalShortcuts?.({});
       disconnectSocket();
       setToken(null);
+      applyTheme(DEFAULT_THEME);
       set({ me: null, servers: [], details: {}, activeServerId: null, messages: {}, voiceStates: {}, modal: null });
     },
 
