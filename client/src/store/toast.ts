@@ -17,6 +17,8 @@ let seq = 0;
 export const useToasts = create<ToastState>((set, get) => ({
   toasts: [],
   push: (message, kind = 'info') => {
+    // o mesmo aviso repetido (ex.: erro de microfone tentando de novo) aparece uma vez só
+    if (get().toasts.some((t) => t.message === message && t.kind === kind)) return;
     const id = ++seq;
     set({ toasts: [...get().toasts, { id, message, kind }] });
     setTimeout(() => get().dismiss(id), 4500);
