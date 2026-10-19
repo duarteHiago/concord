@@ -1,4 +1,4 @@
-import { Bell, BellOff, Crown, Gamepad2, Headphones, MessageCircle, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
+import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Headphones, MessageCircle, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useRef, useState } from 'react';
@@ -8,7 +8,7 @@ import { memberPosition, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
-import { Avatar, RoleDot, cx } from './ui';
+import { Avatar, RoleDot, VerifiedBadge, cx } from './ui';
 import { PATCH_TILTS, PatchBadge } from './PatchBadge';
 import { usePatchInspect } from '../store/patchInspect';
 
@@ -142,6 +142,7 @@ export function MemberPopover() {
         <div className={cx('rounded-2xl p-3', member.cardBgUrl ? 'bg-surface-0/80 backdrop-blur-md' : 'bg-surface-0')}>
           <div className="flex items-center gap-1.5 text-lg font-bold">
             <span className="truncate">{name}</span>
+            {member.verified && <VerifiedBadge size={16} />}
             {member.bot && <span className="shrink-0 rounded bg-accent-2/20 px-1.5 text-[10px] leading-5 font-bold text-accent-2">BOT</span>}
             {detail.server.ownerId === member.id && <Crown size={16} className="shrink-0 text-warn" />}
             {canNick && (
@@ -292,6 +293,16 @@ export function MemberPopover() {
                 {localMuted ? 'Silenciado para mim (toque para ouvir)' : 'Silenciar para mim'}
               </button>
             </>
+          )}
+
+          {me.isAuthority && !isMe && (
+            <div className="mt-3 space-y-1">
+              <ModButton
+                icon={<BadgeCheck size={15} />}
+                label={member.verified ? 'Remover selo de verificado' : 'Marcar como verificado'}
+                onClick={() => void api.put(`/users/${member.id}/verified`, { verified: !member.verified }).catch(toast.error)}
+              />
+            </div>
           )}
 
           {canModerate && (

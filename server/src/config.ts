@@ -17,6 +17,9 @@ export const config = {
   google: { clientId: env.GOOGLE_CLIENT_ID ?? '', clientSecret: env.GOOGLE_CLIENT_SECRET ?? '' },
   // código de um convite permanente: o app mostra "Entrar na comunidade" e a landing page ganha o botão
   communityInvite: (env.COMMUNITY_INVITE ?? '').trim().replace(/^.*\/invite\//, ''),
+  // servidor cujo cargo "Administrador" vira autoridade da instalação inteira: dá o selo de verificado
+  // em qualquer servidor ou pessoa (não só no próprio servidor). Vazio desliga a função.
+  authorityServerId: (env.AUTHORITY_SERVER_ID ?? '').trim(),
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
   metricsPort: Number(env.METRICS_PORT ?? 9464),
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',

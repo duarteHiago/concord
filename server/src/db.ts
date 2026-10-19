@@ -117,6 +117,10 @@ addColumn('users', 'profile_style', "TEXT NOT NULL DEFAULT '{}'");
 // login com Google: só o identificador da conta (sub)
 addColumn('users', 'google_sub', 'TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google ON users(google_sub) WHERE google_sub IS NOT NULL');
+// selo de verificado: só quem tem Administrador no servidor configurado como autoridade da instância
+// (AUTHORITY_SERVER_ID) concede isso, em qualquer servidor ou pessoa — ver access.ts#isInstanceAuthority
+addColumn('users', 'verified', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('servers', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sounds (
@@ -334,6 +338,7 @@ export interface UserRow {
   bot_token_hash: string | null;
   profile_style: string;
   google_sub?: string | null;
+  verified: number;
   created_at: number;
 }
 
@@ -382,6 +387,7 @@ export interface ServerRow {
   owner_id: string;
   icon_color: string;
   icon_url: string | null;
+  verified: number;
   created_at: number;
 }
 

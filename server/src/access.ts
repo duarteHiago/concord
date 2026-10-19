@@ -1,4 +1,5 @@
 import { ALL_PERMISSIONS, P, computeChannelPermissions, has } from '../../shared/permissions.ts';
+import { config } from './config.ts';
 import { all, get, type ChannelRow, type OverwriteRow, type RoleRow, type ServerRow } from './db.ts';
 import { fail } from './http.ts';
 
@@ -86,6 +87,13 @@ export function requireChannelPerm(channelId: string, userId: string, flag: numb
   if (!perms) fail(404, 'Canal não encontrado');
   if (!has(perms, flag)) fail(403, 'Você não tem permissão para isso');
   return channel;
+}
+
+/** Autoridade da instalação (selo de verificado): quem tem Administrador no servidor configurado em
+ * AUTHORITY_SERVER_ID pode verificar/desverificar qualquer servidor ou pessoa, não só o próprio. */
+export function isInstanceAuthority(userId: string): boolean {
+  if (!config.authorityServerId) return false;
+  return has(serverPermissions(config.authorityServerId, userId), P.ADMINISTRATOR);
 }
 
 /** O ator pode agir sobre o alvo? (hierarquia de cargos) */

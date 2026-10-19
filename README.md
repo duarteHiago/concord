@@ -117,6 +117,8 @@ Abra http://localhost:3000, crie uma conta e um servidor. Para simular outra pes
 
 **Servidor oficial da comunidade (opcional):** crie um servidor com o modelo "Comunidade", gere um convite que **nunca expira** e coloque o código em `COMMUNITY_INVITE=` no `.env` (ou na variável `COMMUNITY_INVITE` do repositório, para o CI/CD). O app passa a mostrar "Entrar na comunidade" para todo mundo, e a landing page ganha o botão.
 
+**Selo de verificado (opcional):** escolha um servidor para ser a autoridade da instalação e coloque o `id` dele em `AUTHORITY_SERVER_ID=` no `.env`. Quem tiver o cargo **Administrador** nesse servidor passa a poder marcar qualquer servidor ou pessoa (de qualquer servidor, não só o próprio) como verificado, em Configurações do servidor → Visão geral, ou no perfil de alguém. Sem essa variável, a função fica desligada.
+
 Atualizar: `git pull && docker compose up -d --build`. Os dados ficam em `./data/concord.db`; para backup, basta copiar esse arquivo.
 
 ### Dimensionamento

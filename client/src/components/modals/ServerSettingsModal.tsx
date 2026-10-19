@@ -8,7 +8,7 @@ import { api } from '../../lib/api';
 import type { Invite, Role, ServerDetail } from '../../lib/types';
 import { memberPosition, useApp } from '../../store/app';
 import { toast } from '../../store/toast';
-import { Avatar, Button, IconButton, ImageHint, Input, RoleDot, Toggle, cx } from '../ui';
+import { Avatar, Button, IconButton, ImageHint, Input, RoleDot, Toggle, VerifiedBadge, cx } from '../ui';
 
 const COLORS = ['#ed4245', '#f47b67', '#faa61a', '#fee75c', '#3ba55c', '#1abc9c', '#00b0f4', '#5865f2', '#7c5cff', '#9b59b6', '#eb459e', '#99aab5'];
 
@@ -23,10 +23,11 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
     return () => window.removeEventListener('keydown', onKey);
   }, [close]);
 
+  const me = useApp((s) => s.me);
   if (!detail) return null;
   const perms = detail.permissions;
   const tabs = [
-    { id: 'overview', label: 'Visão geral', icon: <Wrench size={16} />, show: has(perms, P.MANAGE_SERVER) },
+    { id: 'overview', label: 'Visão geral', icon: <Wrench size={16} />, show: has(perms, P.MANAGE_SERVER) || !!me?.isAuthority },
     { id: 'roles', label: 'Cargos', icon: <Shield size={16} />, show: has(perms, P.MANAGE_ROLES) },
     { id: 'members', label: 'Membros', icon: <Users size={16} />, show: true },
     { id: 'invites', label: 'Convites', icon: <Link2 size={16} />, show: has(perms, P.CREATE_INVITE) },
@@ -89,6 +90,8 @@ function Overview({ detail }: { detail: ServerDetail }) {
   const [color, setColor] = useState(detail.server.iconColor);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const isAuthority = useApp((s) => s.me?.isAuthority);
+  const canManage = has(detail.permissions, P.MANAGE_SERVER);
 
   async function changeIcon() {
     const file = await pickImage();
@@ -105,39 +108,57 @@ function Overview({ detail }: { detail: ServerDetail }) {
   return (
     <section className="space-y-5">
       <h2 className="text-xl font-bold">Visão geral do servidor</h2>
-      <div className="flex items-center gap-5">
-        <div className="flex flex-col items-center gap-2">
-          <Avatar name={name} color={color} src={detail.server.iconUrl} size={88} className="[&>*]:rounded-3xl" />
-          <div className="flex gap-1">
-            <Button variant="secondary" className="h-7 px-2 text-xs" loading={uploading} onClick={changeIcon}>
-              <ImagePlus size={14} /> Ícone
-            </Button>
-            {detail.server.iconUrl && (
-              <Button variant="ghost" className="h-7 px-2" title="Remover ícone" onClick={() => void api.del(`/servers/${detail.server.id}/icon`).catch(toast.error)}>
-                <Trash2 size={14} />
-              </Button>
-            )}
+      {canManage && (
+        <>
+          <div className="flex items-center gap-5">
+            <div className="flex flex-col items-center gap-2">
+              <Avatar name={name} color={color} src={detail.server.iconUrl} size={88} className="[&>*]:rounded-3xl" />
+              <div className="flex gap-1">
+                <Button variant="secondary" className="h-7 px-2 text-xs" loading={uploading} onClick={changeIcon}>
+                  <ImagePlus size={14} /> Ícone
+                </Button>
+                {detail.server.iconUrl && (
+                  <Button variant="ghost" className="h-7 px-2" title="Remover ícone" onClick={() => void api.del(`/servers/${detail.server.id}/icon`).catch(toast.error)}>
+                    <Trash2 size={14} />
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="flex-1">
+              <Input label="Nome do servidor" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
+              <ImageHint spec="serverIcon" className="mt-3" />
+            </div>
           </div>
+          <div>
+            <span className="mb-2 block text-xs font-bold tracking-wide text-fg-muted uppercase">Cor do ícone</span>
+            <ColorPicker value={color} onChange={(c) => c && setColor(c)} />
+          </div>
+          <Button
+            loading={saving}
+            onClick={async () => {
+              setSaving(true);
+              await api.patch(`/servers/${detail.server.id}`, { name, iconColor: color }).then(() => toast.success('Servidor atualizado'), toast.error);
+              setSaving(false);
+            }}
+          >
+            Salvar alterações
+          </Button>
+        </>
+      )}
+      {isAuthority && (
+        <div className="flex items-center justify-between gap-4 rounded-xl bg-surface-0 p-3">
+          <div>
+            <div className="flex items-center gap-1.5 text-sm font-semibold">
+              Servidor verificado <VerifiedBadge size={14} />
+            </div>
+            <div className="text-xs text-fg-muted">Selo de confiança da instalação, concedido pela autoridade — não pelo dono do servidor.</div>
+          </div>
+          <Toggle
+            checked={!!detail.server.verified}
+            onChange={(v) => void api.put(`/servers/${detail.server.id}/verified`, { verified: v }).catch(toast.error)}
+          />
         </div>
-        <div className="flex-1">
-          <Input label="Nome do servidor" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
-          <ImageHint spec="serverIcon" className="mt-3" />
-        </div>
-      </div>
-      <div>
-        <span className="mb-2 block text-xs font-bold tracking-wide text-fg-muted uppercase">Cor do ícone</span>
-        <ColorPicker value={color} onChange={(c) => c && setColor(c)} />
-      </div>
-      <Button
-        loading={saving}
-        onClick={async () => {
-          setSaving(true);
-          await api.patch(`/servers/${detail.server.id}`, { name, iconColor: color }).then(() => toast.success('Servidor atualizado'), toast.error);
-          setSaving(false);
-        }}
-      >
-        Salvar alterações
-      </Button>
+      )}
     </section>
   );
 }

@@ -9,7 +9,7 @@ import { onVisibilityChange } from '../lib/visibility';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
-import { Avatar, IconButton, Spinner, cx } from './ui';
+import { Avatar, IconButton, Spinner, VerifiedBadge, cx } from './ui';
 import { mentionsMe } from '../lib/mentions';
 import { availableCommands, runCommand } from '../lib/commands';
 import { GameCard, GameMenuButton } from './Games';
@@ -144,6 +144,7 @@ function Bubble({
   const avatarUrl = member?.avatarUrl ?? message.author.avatarUrl;
   const frame = member ? member.frame : message.author.frame;
   const avatarColor = member?.avatarColor ?? message.author.avatarColor;
+  const verified = member?.verified ?? message.author.verified;
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const size = compact ? 32 : 36;
   const isAction = message.content.startsWith('/me ');
@@ -186,8 +187,9 @@ function Bubble({
         {!grouped && (
           <div className={cx('mb-1 flex items-baseline gap-2 px-1', mine && 'flex-row-reverse')}>
             {!mine && (
-              <span className="text-[13px] font-bold" style={{ color: memberColor(detail, message.author.id) }}>
+              <span className="flex items-center gap-1 text-[13px] font-bold" style={{ color: memberColor(detail, message.author.id) }}>
                 {name}
+                {verified && <VerifiedBadge size={13} />}
               </span>
             )}
             <span className="text-[11px] text-fg-subtle">{time}</span>

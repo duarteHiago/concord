@@ -32,7 +32,7 @@ import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { ServerStrip } from './ServerRail';
 import { DeviceSplitButton } from './DeviceMenu';
-import { Avatar, AvatarStack, IconButton, LivePill, cx } from './ui';
+import { Avatar, AvatarStack, IconButton, LivePill, VerifiedBadge, cx } from './ui';
 
 export function ChannelSidebar() {
   const detail = useActiveDetail();
@@ -99,7 +99,10 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
     <div ref={ref} className="relative px-5 pt-5 pb-3">
       <button onClick={() => setOpen(!open)} className="group flex w-full items-center gap-2 text-left" aria-expanded={open}>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-[22px] leading-tight font-bold">{detail.server.name}</div>
+          <div className="flex items-center gap-1.5">
+            <div className="truncate font-display text-[22px] leading-tight font-bold">{detail.server.name}</div>
+            {detail.server.verified && <VerifiedBadge size={17} className="shrink-0" />}
+          </div>
           <div className="text-[13px] text-fg-muted">
             {onlineCount} {onlineCount === 1 ? 'pessoa online' : 'pessoas online'}
           </div>
@@ -111,7 +114,7 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
           {has(perms, P.CREATE_INVITE) && item('Convidar amigos', <UserPlus size={16} />, () => openModal({ type: 'invite', serverId: detail.server.id }))}
           {(has(perms, P.CHANGE_NICKNAME) || has(perms, P.MANAGE_NICKNAMES)) &&
             item('Meu apelido aqui', <Pencil size={16} />, () => openModal({ type: 'nickname', serverId: detail.server.id, userId: me.id }))}
-          {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS)) &&
+          {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS) || me.isAuthority) &&
             item('Configurações do servidor', <Settings size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id }))}
           {item('Patches do servidor', <Shirt size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id, tab: 'patches' }))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar sala ou canal', <Plus size={16} />, () => openModal({ type: 'createChannel', serverId: detail.server.id, kind: 'voice' }))}

@@ -12,6 +12,7 @@ import {
   getRole,
   getServer,
   highestPosition,
+  isInstanceAuthority,
   isMember,
   memberRoles,
   outranks,
@@ -87,7 +88,17 @@ const now = () => Date.now();
 
 type PublicUser = Pick<
   UserRow,
-  'id' | 'username' | 'display_name' | 'avatar_color' | 'avatar_url' | 'banner_color' | 'bio' | 'banner_url' | 'is_bot' | 'profile_style'
+  | 'id'
+  | 'username'
+  | 'display_name'
+  | 'avatar_color'
+  | 'avatar_url'
+  | 'banner_color'
+  | 'bio'
+  | 'banner_url'
+  | 'is_bot'
+  | 'profile_style'
+  | 'verified'
 >;
 
 interface ProfileStyle {
@@ -122,6 +133,7 @@ const userJson = (u: PublicUser) => ({
   bio: u.bio,
   bannerUrl: u.banner_url,
   bot: !!u.is_bot,
+  verified: !!u.verified,
 });
 
 /** Autor de mensagem: sem os patches (só aparecem no cartão do perfil). */
@@ -138,10 +150,25 @@ const meJson = (u: UserRow) => {
   } catch {
     // ignorado
   }
-  return { ...userJson(u), settings, hasRecoveryCode: !!u.recovery_hash, googleLinked: !!u.google_sub, hasPassword: !!u.password_hash };
+  return {
+    ...userJson(u),
+    settings,
+    hasRecoveryCode: !!u.recovery_hash,
+    googleLinked: !!u.google_sub,
+    hasPassword: !!u.password_hash,
+    // pode conceder o selo de verificado em qualquer servidor/pessoa (ver access.ts#isInstanceAuthority)
+    isAuthority: isInstanceAuthority(u.id),
+  };
 };
 
-const serverJson = (s: ServerRow) => ({ id: s.id, name: s.name, ownerId: s.owner_id, iconColor: s.icon_color, iconUrl: s.icon_url });
+const serverJson = (s: ServerRow) => ({
+  id: s.id,
+  name: s.name,
+  ownerId: s.owner_id,
+  iconColor: s.icon_color,
+  iconUrl: s.icon_url,
+  verified: !!s.verified,
+});
 
 const roleJson = (r: RoleRow) => ({
   id: r.id,
@@ -769,6 +796,24 @@ api.delete('/servers/:id/icon', (req, res) => {
   run('UPDATE servers SET icon_url = NULL WHERE id = ?', server.id);
   serverChanged(server.id);
   res.json(serverJson(getServer(server.id)));
+});
+
+// ---- selo de verificado (autoridade da instalação, ver access.ts#isInstanceAuthority) ----
+
+api.put('/servers/:id/verified', (req, res) => {
+  if (!isInstanceAuthority(uid(res))) fail(403, 'Você não tem permissão para isso');
+  const server = getServer(req.params.id);
+  run('UPDATE servers SET verified = ? WHERE id = ?', req.body?.verified ? 1 : 0, server.id);
+  serverChanged(server.id);
+  res.json(serverJson(getServer(server.id)));
+});
+
+api.put('/users/:id/verified', (req, res) => {
+  if (!isInstanceAuthority(uid(res))) fail(403, 'Você não tem permissão para isso');
+  const target = get<UserRow>('SELECT * FROM users WHERE id = ?', req.params.id) ?? fail(404, 'Usuário não encontrado');
+  run('UPDATE users SET verified = ? WHERE id = ?', req.body?.verified ? 1 : 0, target.id);
+  profileChanged(target.id);
+  res.json(userJson(get<UserRow>('SELECT * FROM users WHERE id = ?', target.id)!));
 });
 
 /** Apelido por servidor: o próprio (CHANGE_NICKNAME) ou de quem está abaixo (MANAGE_NICKNAMES). */

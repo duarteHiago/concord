@@ -13,6 +13,8 @@ export interface User {
   bannerUrl?: string | null;
   bio: string;
   bot?: boolean;
+  /** selo de verificado: concedido pela autoridade da instalação, não pela pessoa nem pelo servidor */
+  verified?: boolean;
   /** moldura animada da foto */
   frame?: string | null;
   /** fundo do mini perfil (imagem/GIF) */
@@ -118,6 +120,8 @@ export interface Me extends User {
   hasRecoveryCode?: boolean;
   googleLinked?: boolean;
   hasPassword?: boolean;
+  /** pode conceder/revogar o selo de verificado em qualquer servidor ou pessoa */
+  isAuthority?: boolean;
 }
 
 export interface NudgeEvent {
@@ -142,6 +146,7 @@ export interface ServerSummary {
   ownerId: string;
   iconColor: string;
   iconUrl: string | null;
+  verified?: boolean;
 }
 
 export interface Role {

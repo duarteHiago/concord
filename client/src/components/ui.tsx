@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { BadgeCheck, X } from 'lucide-react';
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useToasts } from '../store/toast';
 
@@ -293,6 +293,11 @@ export function Spinner({ size = 24 }: { size?: number }) {
 
 export function RoleDot({ color }: { color: string | null }) {
   return <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: color ?? '#99aab5' }} />;
+}
+
+/** Selo de verificado: concedido pela autoridade da instalação (ver server/src/access.ts), não é autodeclarado. */
+export function VerifiedBadge({ size = 15, className }: { size?: number; className?: string }) {
+  return <BadgeCheck size={size} title="Verificado" className={cx('shrink-0 fill-accent text-on-accent', className)} />;
 }
 
 /** Pílula "ao vivo" do design Noturno. */

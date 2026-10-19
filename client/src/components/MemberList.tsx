@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { memberName, type Activity, type Member, type Presence, type ServerDetail } from '../lib/types';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
-import { Avatar, cx } from './ui';
+import { Avatar, VerifiedBadge, cx } from './ui';
 
 /** Painel lateral com a lista de membros (canais de texto). */
 export function MemberList() {
@@ -112,6 +112,7 @@ function MemberRow({ detail, member, presence }: { detail: ServerDetail; member:
           <span className="truncate text-sm font-semibold" style={{ color: memberColor(detail, member.id) }}>
             {memberName(member)}
           </span>
+          {member.verified && <VerifiedBadge size={13} />}
           {member.bot && <span className="shrink-0 rounded bg-accent-2/20 px-1 text-[9px] leading-4 font-bold text-accent-2">BOT</span>}
           {detail.server.ownerId === member.id && <Crown size={13} className="shrink-0 text-warn" />}
         </div>
