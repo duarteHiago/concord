@@ -124,8 +124,10 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q active; then
   ufw allow 7881/tcp
   ufw allow 7882/udp
   # 7880 é a sinalização/API do LiveKit: o navegador chega nela pelo proxy (/livekit), nunca direto
+  # (o bloqueio vai no topo da lista: uma regra "permitir tudo" anterior não pode vencer)
   ufw delete allow 7880/tcp >/dev/null 2>&1 || true
-  ufw deny 7880/tcp >/dev/null
+  ufw delete deny 7880/tcp >/dev/null 2>&1 || true
+  ufw insert 1 deny 7880/tcp >/dev/null 2>&1 || ufw deny 7880/tcp >/dev/null
   if [ "$MODE" != "tunnel" ]; then
     ufw allow 80/tcp
     ufw allow 443/tcp
