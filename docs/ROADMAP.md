@@ -47,3 +47,55 @@ Uma transmissão "nativa" no app desktop, por fora do Chromium:
 - Uso de processador da live abaixo de 5% de um núcleo.
 - Quem assiste vê tudo igual a hoje: assistir, janela separada, estatísticas, volume da transmissão.
 - Se o nativo falhar, o app volta sozinho para a captura do navegador, com aviso.
+
+## Testes de carga e resistência
+
+**Status:** planejado · **Tamanho:** médio · **Onde:** ambiente de teste + VPS
+
+### Objetivo
+
+Descobrir o limite de cada parte do Concord (API, tempo real, voz e vídeo, app) e o que quebra primeiro, antes que a comunidade cresça.
+
+### Decisões em aberto
+
+1. **Meta de uso:** quantas pessoas online ao mesmo tempo, quantas numa mesma call e quantas lives simultâneas. Sem meta definida, testar em degraus (100, 500, 1.000, 5.000) até quebrar.
+2. **Ambiente:** usar a VPS antiga (72.60.150.220, parada desde a mudança para concord-community.com) como ambiente de teste, com banco próprio e um subdomínio como `teste.concord-community.com`. Antes, salvar uma cópia dos dados originais dela. Os números só valem direto se ela tiver a mesma configuração da VPS de produção.
+
+### Onde testar
+
+- **Não fazer teste pesado em produção:** derruba a call de quem está usando, e a Cloudflare pode tratar como ataque.
+- **A carga sai de fora,** não do PC de desenvolvimento: máquinas temporárias do GitHub Actions ou uma VPS alugada por hora.
+- **Em produção, só uma checagem leve e curta,** num horário vazio, para confirmar os números do ambiente de teste.
+
+### O que testar
+
+| Parte | O que simular | Ferramenta |
+|---|---|---|
+| API (HTTP) | login, abrir servidor, listar e enviar mensagens, fórum, uploads | k6 |
+| Tempo real (Socket.io) | milhares de conexões, presença, "digitando", entrega de mensagens para muita gente | Artillery (fala Socket.io nativamente) |
+| Voz e vídeo (LiveKit) | salas com dezenas falando, várias lives 1080p60 com muitos espectadores | `lk load-test` (ferramenta oficial do LiveKit) |
+| App no navegador | servidor com 2.000 membros, canal com 10 mil mensagens, 30 pessoas na call: trava? vaza memória? | Playwright medindo memória e FPS |
+| Rede ruim | perda de pacote, 300 ms de atraso, queda no meio da call | `tc netem` |
+| Falhas | reiniciar app ou LiveKit com gente em call: todo mundo reconecta sozinho? | scripts de caos |
+
+Tipos de teste:
+
+- **Carga:** uso esperado por 30 minutos.
+- **Estresse:** aumentar até quebrar, para achar o limite.
+- **Pico:** mil pessoas entrando de uma vez, como depois de um anúncio.
+- **Resistência:** carga média por 6 a 12 horas, para pegar vazamento de memória.
+
+### Suspeitos (pela leitura do código)
+
+1. **Presença:** cada pessoa que entra ou sai avisa todos os conectados (`io.emit` em `realtime.ts`). Cresce ao quadrado com muita gente entrando junto.
+2. **Entrega de mensagem:** `emitToChannel` percorre todas as conexões do servidor e checa permissões a cada mensagem e a cada "digitando".
+3. **Abrir um servidor:** `GET /servers/:id` devolve todos os membros de uma vez. Pesa na resposta e na lista do app em comunidades grandes.
+4. **Login:** o bcrypt é caro de propósito; um pico de logins ocupa o processador.
+5. **Banda das lives:** cada espectador 1080p60 consome de 6 a 9 Mbps saindo da VPS. Provavelmente é o limite real, antes da CPU.
+6. **SQLite:** um único escritor. Medir quantas mensagens por segundo ele aguenta.
+
+### Entregáveis
+
+- `tests/load/` com os cenários e um script que cria milhares de contas e servidores de teste.
+- Métricas novas no Grafana: atraso do event loop do Node, conexões abertas, mensagens por segundo.
+- Relatório com o limite de cada parte e a lista do que corrigir primeiro.
