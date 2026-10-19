@@ -297,7 +297,11 @@ export function RoleDot({ color }: { color: string | null }) {
 
 /** Selo de verificado: concedido pela autoridade da instalação (ver server/src/access.ts), não é autodeclarado. */
 export function VerifiedBadge({ size = 15, className }: { size?: number; className?: string }) {
-  return <BadgeCheck size={size} title="Verificado" className={cx('shrink-0 fill-accent text-on-accent', className)} />;
+  return (
+    <span title="Verificado" className={cx('inline-flex shrink-0', className)}>
+      <BadgeCheck size={size} className="fill-accent text-on-accent" />
+    </span>
+  );
 }
 
 /** Pílula "ao vivo" do design Noturno. */
