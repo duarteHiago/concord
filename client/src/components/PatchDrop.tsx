@@ -14,6 +14,7 @@ export interface DropInfo {
   code: string;
   patch: Patch;
   creator: { displayName: string; avatarUrl: string | null; avatarColor: string; frame: string | null };
+  server: { name: string; iconUrl: string | null; iconColor: string } | null;
   remaining: number | null;
   expiresAt: number | null;
   available: boolean;
@@ -110,7 +111,14 @@ export function DropPage() {
           <h1 className="font-display text-3xl font-extrabold sm:text-4xl">{name ? `Patch ${name}` : 'Um patch exclusivo'} pra você!</h1>
           <p className="mt-2 flex items-center justify-center gap-2 text-fg-muted">
             <Avatar name={info.creator.displayName} color={info.creator.avatarColor} src={info.creator.avatarUrl} frame={info.creator.frame} size={24} />
-            <b className="text-fg">{info.creator.displayName}</b> te mandou um bordado para o seu perfil.
+            <b className="text-fg">{info.creator.displayName}</b>
+            {info.server && (
+              <>
+                , do servidor <Avatar name={info.server.name} color={info.server.iconColor} src={info.server.iconUrl} size={22} className="[&>*]:rounded-lg" />
+                <b className="text-fg">{info.server.name}</b>,
+              </>
+            )}{' '}
+            te mandou um bordado para o seu perfil.
           </p>
           {info.remaining !== null && info.available && (
             <p className="mt-1 text-sm text-fg-subtle">

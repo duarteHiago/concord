@@ -277,6 +277,10 @@ api.get('/drops/:code', (req, res) => {
     code: drop.code,
     patch: claimedPatch(drop),
     creator: { displayName: creator.display_name, avatarUrl: creator.avatar_url, avatarColor: creator.avatar_color, frame: styleJson(parseStyle(creator.profile_style)).frame },
+    server: (() => {
+      const sv = drop.server_id ? get<ServerRow>('SELECT * FROM servers WHERE id = ?', drop.server_id) : undefined;
+      return sv ? { name: sv.name, iconUrl: sv.icon_url, iconColor: sv.icon_color } : null;
+    })(),
     remaining: drop.max_uses ? Math.max(0, drop.max_uses - drop.uses) : null,
     expiresAt: drop.expires_at,
     available: dropValid(drop),
@@ -1728,6 +1732,7 @@ api.delete('/dm-messages/:id', (req, res) => {
 
 const dropJson = (d: PatchDropRow) => ({
   code: d.code,
+  serverId: d.server_id,
   patch: JSON.parse(d.patch) as Patch,
   uses: d.uses,
   maxUses: d.max_uses,
@@ -1738,6 +1743,8 @@ const dropJson = (d: PatchDropRow) => ({
 /** Cria um link de resgate para um patch do próprio perfil (só patch criado pela pessoa). */
 api.post('/me/drops', humansOnly, (req, res) => {
   const me = uid(res);
+  // só admin de servidor cria link de presente, e o link sai em nome desse servidor
+  const server = requireServerPerm(str(req.body?.serverId, 'servidor', 1, 64), me, P.ADMINISTRATOR);
   const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
   const patch = (style.patches ?? []).find((p) => p.id === req.body?.patchId) ?? fail(404, 'Patch não encontrado no seu perfil');
   if (patch.drop) fail(403, 'Patches ganhos de presente não podem ser repassados');
@@ -1750,6 +1757,7 @@ api.post('/me/drops', humansOnly, (req, res) => {
     id: randomUUID(),
     code: randomBytes(6).toString('base64url'),
     creator_id: me,
+    server_id: server.id,
     patch: JSON.stringify(art),
     max_uses: maxUses,
     uses: 0,
@@ -1757,16 +1765,24 @@ api.post('/me/drops', humansOnly, (req, res) => {
     created_at: now(),
   };
   run(
-    'INSERT INTO patch_drops (id, code, creator_id, patch, max_uses, uses, expires_at, created_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
+    'INSERT INTO patch_drops (id, code, creator_id, server_id, patch, max_uses, uses, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)',
     row.id,
     row.code,
     me,
+    server.id,
     row.patch,
     row.max_uses,
     row.expires_at,
     row.created_at,
   );
   res.json(dropJson(row));
+});
+
+/** Servidores em que a pessoa é admin (onde pode criar links de presente). */
+api.get('/me/admin-servers', (_req, res) => {
+  const me = uid(res);
+  const rows = all<ServerRow>('SELECT s.* FROM servers s JOIN members m ON m.server_id = s.id AND m.user_id = ? ORDER BY s.name', me);
+  res.json(rows.filter((s) => has(serverPermissions(s.id, me), P.ADMINISTRATOR)).map(serverJson));
 });
 
 api.get('/me/drops', (_req, res) => {

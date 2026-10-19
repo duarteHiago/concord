@@ -2,7 +2,7 @@ import { Check, Copy, Gift, ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-re
 import { useEffect, useState } from 'react';
 import { FRAMES, MAX_PATCHES } from '../../../../shared/cosmetics.ts';
 import { api } from '../../lib/api';
-import type { Me, Patch, ServerPatch } from '../../lib/types';
+import type { Me, Patch, ServerPatch, ServerSummary } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { HOME, useApp } from '../../store/app';
 import { toast } from '../../store/toast';
@@ -173,6 +173,9 @@ function PatchesEditor() {
   const [source, setSource] = useState<string>('preset');
   const [shareTo, setShareTo] = useState<string>('');
   const [giftOf, setGiftOf] = useState<Patch | null>(null);
+  // links de presente: só admin de servidor cria (o link sai em nome do servidor)
+  const [adminServers, setAdminServers] = useState<ServerSummary[]>([]);
+  useEffect(() => void api.get<ServerSummary[]>('/me/admin-servers').then(setAdminServers, () => {}), []);
   const full = patches.length >= MAX_PATCHES;
   const isNew = editing ? !patches.some((x) => x.id === editing.id) : false;
 
@@ -218,7 +221,7 @@ function PatchesEditor() {
           <div key={p.id} className="group relative">
             <PatchBadge patch={p} size={56} tilt={PATCH_TILTS[i % PATCH_TILTS.length]} />
             <div className="absolute -top-1.5 -right-1.5 hidden gap-0.5 group-focus-within:flex group-hover:flex">
-              {!p.drop && (
+              {!p.drop && adminServers.length > 0 && (
                 <button
                   aria-label={`Criar link de presente do patch ${p.text}`}
                   title="Link de presente: amigos resgatam este patch"
@@ -296,7 +299,7 @@ function PatchesEditor() {
         </div>
       )}
 
-      {giftOf && <GiftLinks patch={giftOf} onClose={() => setGiftOf(null)} />}
+      {giftOf && <GiftLinks patch={giftOf} servers={adminServers} onClose={() => setGiftOf(null)} />}
       <ClaimedPatches />
 
       {editing && (
@@ -344,7 +347,9 @@ interface DropLink {
 const dropUrl = (code: string) => `${location.origin}/resgatar/${code}`;
 
 /** Links de presente de um patch: quem abre o link resgata o patch (uma vez por pessoa). */
-function GiftLinks({ patch, onClose }: { patch: Patch; onClose: () => void }) {
+function GiftLinks({ patch, servers, onClose }: { patch: Patch; servers: ServerSummary[]; onClose: () => void }) {
+  const activeServerId = useApp((s) => s.activeServerId);
+  const [serverId, setServerId] = useState(servers.find((s) => s.id === activeServerId)?.id ?? servers[0]?.id ?? '');
   const [links, setLinks] = useState<DropLink[] | null>(null);
   const [maxUses, setMaxUses] = useState(10);
   const [expiresIn, setExpiresIn] = useState(7 * 86400);
@@ -356,7 +361,7 @@ function GiftLinks({ patch, onClose }: { patch: Patch; onClose: () => void }) {
 
   async function create() {
     try {
-      const d = await api.post<DropLink>('/me/drops', { patchId: patch.id, maxUses, expiresIn });
+      const d = await api.post<DropLink>('/me/drops', { patchId: patch.id, serverId, maxUses, expiresIn });
       setLinks((cur) => [d, ...(cur ?? [])]);
       void copy(d.code);
     } catch (err) {
@@ -383,6 +388,13 @@ function GiftLinks({ patch, onClose }: { patch: Patch; onClose: () => void }) {
         </button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <select aria-label="Em nome de qual servidor" value={serverId} onChange={(e) => setServerId(e.target.value)} className={sel}>
+          {servers.map((sv) => (
+            <option key={sv.id} value={sv.id}>
+              {sv.name}
+            </option>
+          ))}
+        </select>
         <select aria-label="Quantos resgates" value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))} className={sel}>
           {[1, 5, 10, 25, 50, 0].map((n) => (
             <option key={n} value={n}>

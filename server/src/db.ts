@@ -262,6 +262,8 @@ db.exec(`
     PRIMARY KEY (drop_id, user_id)
   );
 `);
+// o link sai em nome de um servidor (quem cria precisa ser admin dele)
+addColumn('patch_drops', 'server_id', 'TEXT REFERENCES servers(id) ON DELETE SET NULL');
 
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
@@ -466,6 +468,7 @@ export interface PatchDropRow {
   id: string;
   code: string;
   creator_id: string;
+  server_id: string | null;
   patch: string;
   max_uses: number;
   uses: number;
