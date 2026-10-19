@@ -100,10 +100,20 @@ async function noiseNode(ctx: AudioContext, mode: NoiseMode, strength = DEFAULT_
       core.setSuppressionLevel(strength);
       return node;
     } catch (err) {
-      // GTCRN mediu quase tão bem quanto o DFN3 e é leve: é o plano B
-      console.warn('[voz] DeepFilterNet3 indisponível, usando GTCRN', err);
-      voiceNotices.dispatchEvent(new CustomEvent('fallback', { detail: (err as Error).message }));
-      return noiseNode(ctx, 'gtcrn');
+      // o wasm do DFN3 tem 16 MB e, diferente do modelo, hoje não fica em cache de borda — uma
+      // falha de rede passageira é bem provável; tenta mais uma vez antes de desistir
+      console.warn('[voz] DeepFilterNet3 falhou, tentando de novo', err);
+      try {
+        const core = await loadDfn();
+        const node = await core.createAudioWorkletNode(ctx);
+        core.setSuppressionLevel(strength);
+        return node;
+      } catch (err2) {
+        // GTCRN mediu quase tão bem quanto o DFN3 e é leve: é o plano B
+        console.warn('[voz] DeepFilterNet3 indisponível, usando GTCRN', err2);
+        voiceNotices.dispatchEvent(new CustomEvent('fallback', { detail: (err2 as Error).message }));
+        return noiseNode(ctx, 'gtcrn');
+      }
     }
   }
   if (mode === 'gtcrn') {

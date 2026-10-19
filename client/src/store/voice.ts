@@ -138,10 +138,18 @@ function save(key: string, value: unknown) {
   }
 }
 
-// a IA máxima não carregou (rede, navegador antigo...): o processamento já caiu para a IA leve
-voiceNotices.addEventListener('fallback', () =>
-  toast.info('A supressão máxima (DeepFilterNet 3) não carregou agora; usando a IA leve (GTCRN).'),
-);
+// a IA máxima não carregou (rede, navegador antigo...): o processamento já caiu para a IA leve.
+// Antes isso ficava só num toast passageiro — a cada vez que o microfone reiniciava (trocar de sala,
+// de dispositivo etc.) tentava a IA máxima nesta sala de novo e podia falhar de novo, parecendo que a
+// supressão "mudava sozinha". Agora a troca é salva: fica em GTCRN até a pessoa escolher a máxima de novo.
+// Atualiza o estado/preferência direto (sem usar setAudioSettings, que religaria o microfone — e esse
+// aviso dispara no meio de um enableMic() já em andamento, religar de novo no meio causaria uma corrida).
+voiceNotices.addEventListener('fallback', () => {
+  toast.info('A supressão máxima (DeepFilterNet 3) não carregou agora; mudei para a IA leve (GTCRN) em Configurações.');
+  const audioSettings: AudioSettings = { ...useVoice.getState().audioSettings, noiseMode: 'gtcrn' };
+  useVoice.setState({ audioSettings });
+  save('concord.audio', audioSettings);
+});
 
 const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'auto', v: 2 };
 
