@@ -270,6 +270,8 @@ section.band { padding-block: 88px; }
 @media (max-width: 960px) { .games { grid-template-columns: 1fr; } }
 .game-tile { background: var(--plum); border-radius: var(--radius); padding: 24px; display: grid; gap: 16px; justify-items: center; text-align: center; box-shadow: inset 0 0 0 1px var(--line); min-width: 0; }
 .game-tile code { font: 700 14px var(--mono); color: var(--sun); }
+/* mesma altura de slot nos três cartões de minigame, pra "Girar a roleta"/"Rolar os dados"/"Jogar a moeda" ficarem alinhados mesmo com visuais de tamanhos bem diferentes (roleta até 300px, dados 74px, moeda 120px) */
+.game-visual { display: flex; align-items: center; justify-content: center; min-height: 300px; }
 .wheel-box { position: relative; width: min(300px, 100%); aspect-ratio: 1; }
 .wheel-box svg { width: 100%; height: 100%; transition: transform 4.6s cubic-bezier(.12, .8, .14, 1); }
 .wheel-pointer { position: absolute; top: -6px; left: 50%; translate: -50%; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-top: 26px solid var(--cream); filter: drop-shadow(0 3px 0 var(--ink)); z-index: 2; }
@@ -280,6 +282,7 @@ section.band { padding-block: 88px; }
 .die i.on { visibility: visible; }
 .die.rolling { animation: tumble .7s ease-in-out; }
 @keyframes tumble { 25% { transform: rotate(-30deg) translateY(-20px); } 50% { transform: rotate(40deg) translateY(-34px); } 75% { transform: rotate(-12deg) translateY(-8px); } }
+.coin-wrap { perspective: 600px; }
 .coin { width: 120px; height: 120px; position: relative; transform-style: preserve-3d; transition: transform 1.4s cubic-bezier(.3, 1.3, .5, 1); }
 .coin span { position: absolute; inset: 0; border-radius: 50%; display: grid; place-items: center; font: 800 22px var(--display); color: #5b3a00; background: radial-gradient(circle at 35% 30%, #fff6c9, #f5c451 45%, #c9971c); box-shadow: inset 0 0 0 6px #e0a526, 0 8px 0 #8a6a1f; backface-visibility: hidden; }
 .coin span:last-child { transform: rotateY(180deg); }
@@ -530,19 +533,19 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
       </div>
       <div class="games">
         <div class="game-tile">
-          <div class="wheel-box"><span class="wheel-pointer"></span><svg id="wheel" viewBox="0 0 200 200" role="img" aria-label="Roleta"></svg></div>
+          <div class="wheel-box game-visual"><span class="wheel-pointer"></span><svg id="wheel" viewBox="0 0 200 200" role="img" aria-label="Roleta"></svg></div>
           <div class="result" id="wheel-result" aria-live="polite">Onde a gente pede?</div>
           <button class="btn btn-primary" id="spin">Girar a roleta</button>
           <code>/roleta Pizza, Sushi, Taco…</code>
         </div>
         <div class="game-tile">
-          <div class="dice" id="dice"></div>
+          <div class="dice game-visual" id="dice"></div>
           <div class="result" id="dice-result" aria-live="polite">2 + 5 = 7</div>
           <button class="btn btn-ghost" id="roll">Rolar os dados</button>
           <code>/dado 2d6</code>
         </div>
         <div class="game-tile">
-          <div style="perspective:600px;padding:20px"><div class="coin" id="coin"><span>☀ Cara</span><span>♛ Coroa</span></div></div>
+          <div class="coin-wrap game-visual"><div class="coin" id="coin"><span>☀ Cara</span><span>♛ Coroa</span></div></div>
           <div class="result" id="coin-result" aria-live="polite">Cara</div>
           <button class="btn btn-ghost" id="flip">Jogar a moeda</button>
           <code>/moeda</code>
