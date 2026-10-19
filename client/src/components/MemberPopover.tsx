@@ -295,7 +295,7 @@ export function MemberPopover() {
             </>
           )}
 
-          {me.isAuthority && !isMe && (
+          {me.isAuthority && (
             <div className="mt-3 space-y-1">
               <ModButton
                 icon={<BadgeCheck size={15} />}
