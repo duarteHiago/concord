@@ -43,6 +43,7 @@ import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './liv
 import { removeUpload, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, normalize as normalizeCode, rotateRecoveryCode } from './recovery.ts';
 import { playGame } from './games.ts';
+import { registerForumRoutes } from './forum.ts';
 import {
   ART_OFFSET,
   ART_SCALE,
@@ -181,6 +182,7 @@ api.get('/config', (_req, res) => {
   res.json({
     allowRegistration: config.allowRegistration,
     desktopDownload: existsSync(installer) ? `/downloads/${DESKTOP_INSTALLER}` : null,
+    communityInvite: config.communityInvite || null,
   });
 });
 
@@ -506,10 +508,50 @@ api.post('/servers', humansOnly, (req, res) => {
     run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', server.id, me, now());
     run('INSERT INTO member_roles (server_id, user_id, role_id) VALUES (?, ?, ?)', server.id, me, admin);
     const insChan = 'INSERT INTO channels (id, server_id, name, type, topic, position) VALUES (?, ?, ?, ?, ?, ?)';
-    run(insChan, randomUUID(), server.id, 'geral', 'text', 'Bate-papo geral', 0);
-    run(insChan, randomUUID(), server.id, 'clipes-e-prints', 'text', '', 1);
-    run(insChan, randomUUID(), server.id, 'Sala de Transmissão', 'voice', '', 0);
-    run(insChan, randomUUID(), server.id, 'Lounge', 'voice', '', 1);
+    if (req.body?.template === 'community') {
+      const ch = (name: string, type: string, topic: string, pos: number) => {
+        const id = randomUUID();
+        run(insChan, id, server.id, name, type, topic, pos);
+        return id;
+      };
+      // anúncios e boas-vindas: só quem modera escreve
+      const readOnly = [
+        ch('anúncios', 'text', 'Novidades, versões novas e avisos', 0),
+        ch('boas-vindas', 'text', 'Comece por aqui: como a comunidade funciona', 1),
+      ];
+      for (const id of readOnly) run('INSERT INTO channel_overwrites (channel_id, role_id, allow, deny) VALUES (?, ?, 0, ?)', id, everyone, P.SEND_MESSAGES);
+      ch('geral', 'text', 'Bate-papo geral', 2);
+      ch('off-topic', 'text', 'Qualquer assunto', 3);
+      ch('ideias', 'forum', 'Sugira recursos e vote nas ideias da galera', 0);
+      ch('bugs', 'forum', 'Achou um problema? Conte o que aconteceu e como repetir', 1);
+      ch('feedback', 'forum', 'O que está bom, o que pode melhorar', 2);
+      ch('ajuda', 'forum', 'Dúvidas sobre usar ou hospedar o Concord', 3);
+      ch('Bate-papo', 'voice', '', 0);
+      ch('Jogando junto', 'voice', '', 1);
+      const welcome = readOnly[1];
+      run(
+        'INSERT INTO messages (id, channel_id, author_id, content, created_at) VALUES (?, ?, ?, ?, ?)',
+        randomUUID(),
+        welcome,
+        me,
+        [
+          `Bem-vindo à comunidade do ${name}! 👋`,
+          '',
+          '💡 #ideias: sugira recursos e vote (+1) nas ideias que você quer ver.',
+          '🐞 #bugs: conte o que aconteceu, o que esperava e como repetir.',
+          '💬 #feedback: o que está bom e o que pode melhorar.',
+          '❓ #ajuda: dúvidas sobre usar ou hospedar.',
+          '',
+          'Seja gentil, sem spam. A moderação marca o status de cada post (em análise, planejado, feito) pra todo mundo acompanhar.',
+        ].join('\n'),
+        now(),
+      );
+    } else {
+      run(insChan, randomUUID(), server.id, 'geral', 'text', 'Bate-papo geral', 0);
+      run(insChan, randomUUID(), server.id, 'clipes-e-prints', 'text', '', 1);
+      run(insChan, randomUUID(), server.id, 'Sala de Transmissão', 'voice', '', 0);
+      run(insChan, randomUUID(), server.id, 'Lounge', 'voice', '', 1);
+    }
   });
 
   joinServerRoom(me, server.id);
@@ -639,12 +681,12 @@ function removeMember(serverId: string, userId: string) {
 // ============================================================ Canais
 
 function normalizeChannelName(name: string, type: string) {
-  return type === 'text' ? name.toLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, '') || 'canal' : name;
+  return type !== 'voice' ? name.toLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, '') || 'canal' : name;
 }
 
 api.post('/servers/:id/channels', (req, res) => {
   const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_CHANNELS);
-  const type = req.body?.type === 'voice' ? 'voice' : 'text';
+  const type = req.body?.type === 'voice' || req.body?.type === 'forum' ? req.body.type : 'text';
   const name = normalizeChannelName(str(req.body?.name, 'nome', 1, 50), type);
   const topic = optStr(req.body?.topic, 'tópico', 0, 300) ?? '';
   const pos = get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM channels WHERE server_id = ? AND type = ?', server.id, type)!.p;
@@ -1013,6 +1055,7 @@ api.get('/channels/:id/messages', (req, res) => {
 api.post('/channels/:id/messages', async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
+  if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
   const content = str(req.body?.content, 'mensagem', 1, 2000);
   const id = randomUUID();
   run('INSERT INTO messages (id, channel_id, author_id, content, created_at) VALUES (?, ?, ?, ?, ?)', id, channel.id, me, content, now());
@@ -1457,6 +1500,7 @@ api.delete('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
 api.post('/channels/:id/games', async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
+  if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
   const { content, data } = playGame(req.body);
   const id = randomUUID();
   run(
@@ -1649,3 +1693,7 @@ api.delete('/dm-messages/:id', (req, res) => {
   deliverDm(dm, 'dm:delete', { id: req.params.id, channelId: dm.id });
   res.json({ ok: true });
 });
+
+// ============================================================ Fórum
+
+registerForumRoutes(api, authorJson);

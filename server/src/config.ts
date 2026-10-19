@@ -12,6 +12,8 @@ export const config = {
   downloadsDir: env.DOWNLOADS_DIR ?? '',
   publicDir:env.PUBLIC_DIR ?? fileURLToPath(new URL('../../client/dist', import.meta.url)),
   allowRegistration: env.ALLOW_REGISTRATION !== 'false',
+  // código de um convite permanente: o app mostra "Entrar na comunidade" e a landing page ganha o botão
+  communityInvite: (env.COMMUNITY_INVITE ?? '').trim().replace(/^.*\/invite\//, ''),
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
   metricsPort: Number(env.METRICS_PORT ?? 9464),
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',

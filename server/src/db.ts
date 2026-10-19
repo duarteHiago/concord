@@ -59,7 +59,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('text', 'voice')),
+    type TEXT NOT NULL CHECK (type IN ('text', 'voice', 'forum')),
     topic TEXT NOT NULL DEFAULT '',
     position INTEGER NOT NULL DEFAULT 0,
     user_limit INTEGER NOT NULL DEFAULT 0
@@ -186,6 +186,61 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_server_patches ON server_patches(server_id, created_at);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_bot_token ON users(bot_token_hash) WHERE bot_token_hash IS NOT NULL;
+`);
+
+// Canais de fórum: bancos antigos têm o CHECK de channels.type só com 'text' e 'voice'. O SQLite não altera
+// um CHECK, então a tabela é recriada com as mesmas colunas (as chaves estrangeiras apontam pelo nome).
+const channelsSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channels'").get() as { sql: string }).sql;
+if (!channelsSql.includes("'forum'")) {
+  const cols = (db.prepare('PRAGMA table_info(channels)').all() as { name: string }[]).map((c) => c.name).join(', ');
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.exec('BEGIN');
+    db.exec(channelsSql.replace(/CREATE TABLE "?channels"?/, 'CREATE TABLE channels_new').replace("IN ('text', 'voice')", "IN ('text', 'voice', 'forum')"));
+    db.exec(`INSERT INTO channels_new (${cols}) SELECT ${cols} FROM channels`);
+    db.exec('DROP TABLE channels');
+    db.exec('ALTER TABLE channels_new RENAME TO channels');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS forum_posts (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'aberto',
+    pinned INTEGER NOT NULL DEFAULT 0,
+    locked INTEGER NOT NULL DEFAULT 0,
+    vote_count INTEGER NOT NULL DEFAULT 0,
+    reply_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    edited_at INTEGER,
+    last_activity_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_forum_posts ON forum_posts(channel_id, last_activity_at);
+  CREATE TABLE IF NOT EXISTS forum_replies (
+    id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+    author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    edited_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_forum_replies ON forum_replies(post_id, created_at);
+  CREATE TABLE IF NOT EXISTS forum_votes (
+    post_id TEXT NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (post_id, user_id)
+  );
 `);
 
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
@@ -319,7 +374,7 @@ export interface ChannelRow {
   id: string;
   server_id: string;
   name: string;
-  type: 'text' | 'voice';
+  type: 'text' | 'voice' | 'forum';
   topic: string;
   position: number;
   user_limit: number;
@@ -359,4 +414,30 @@ export interface InviteRow {
   max_uses: number;
   expires_at: number | null;
   created_at: number;
+}
+
+export interface ForumPostRow {
+  id: string;
+  channel_id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  tag: string;
+  status: string;
+  pinned: number;
+  locked: number;
+  vote_count: number;
+  reply_count: number;
+  created_at: number;
+  edited_at: number | null;
+  last_activity_at: number;
+}
+
+export interface ForumReplyRow {
+  id: string;
+  post_id: string;
+  author_id: string;
+  content: string;
+  created_at: number;
+  edited_at: number | null;
 }

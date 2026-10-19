@@ -29,6 +29,7 @@ import type {
 /** activeServerId especial: a tela de conversas privadas. */
 export const HOME = '@me';
 import { toast } from './toast';
+import { FORUM_STATUSES } from '../../../shared/forum.ts';
 import { useVoice } from './voice';
 
 export type Modal =
@@ -36,7 +37,7 @@ export type Modal =
   | { type: 'invite'; serverId: string }
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
-  | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' }
+  | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum' }
   | { type: 'userSettings' }
   | { type: 'shareScreen' }
   | { type: 'nickname'; serverId: string; userId: string }
@@ -185,6 +186,15 @@ export const useApp = create<AppState>((set, get) => {
       if (get().sounds[serverId]) void get().loadSounds(serverId);
     });
     socket.on('clip', (e: ClipEvent) => receiveClip(e));
+    // fórum: a tela aberta recarrega; quem postou fica sabendo de respostas e mudanças de status
+    socket.on('forum:changed', (d: { channelId: string; postId?: string }) => window.dispatchEvent(new CustomEvent('concord:forum', { detail: d })));
+    socket.on('forum:status', (d: { title: string; status: string }) => {
+      const label = FORUM_STATUSES.find((x) => x.id === d.status)?.label ?? d.status;
+      toast.success(`Seu post "${d.title}" agora está: ${label}`);
+    });
+    socket.on('forum:reply', (d: { title: string; reply: { author: { displayName: string } } }) => {
+      toast.info(`${d.reply.author.displayName} respondeu seu post "${d.title}"`);
+    });
     // mudanças feitas em outro aparelho (preferências, status, perfil)
     socket.on('me:updated', (next: Me) => {
       const cur = get().me;

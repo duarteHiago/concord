@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
 import { HOME, useApp } from '../store/app';
 import { useVoice } from '../store/voice';
+import { useCommunity, usePendingCommunity } from '../store/community';
 import { cx, initials } from './ui';
 
 /** Fileira de servidores no topo da barra lateral (design Noturno). */
@@ -15,8 +16,13 @@ export function ServerStrip() {
   const voiceServer = useVoice((s) => s.serverId);
   const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0));
   const [download, setDownload] = useState<string | null>(null);
+  // servidor oficial da comunidade: aparece aqui até a pessoa entrar
+  const community = usePendingCommunity();
+  const joining = useCommunity((s) => s.joining);
+  const joinCommunity = useCommunity((s) => s.join);
 
   useEffect(() => {
+    useCommunity.getState().load();
     if (desktop) return;
     api.get<{ desktopDownload: string | null }>('/config').then((c) => setDownload(c.desktopDownload), () => {});
   }, []);
@@ -62,6 +68,20 @@ export function ServerStrip() {
           </button>
         );
       })}
+      {community && (
+        <button
+          title={`Entrar na comunidade: ${community.server.name} (ideias, bugs e ajuda)`}
+          aria-label={`Entrar na comunidade ${community.server.name}`}
+          onClick={() => void joinCommunity()}
+          disabled={joining}
+          className={cx(tile, 'bg-surface-3 hover:bg-surface-4 disabled:opacity-60')}
+        >
+          <img src="/brand/concord-simbolo.svg" alt="" className="h-9 w-9" />
+          <span className="absolute -top-1 -right-1 flex h-5 items-center rounded-full border-[3px] border-surface-2 bg-accent px-1 text-[9px] font-extrabold text-on-accent">
+            +
+          </span>
+        </button>
+      )}
       <button
         title="Adicionar servidor"
         aria-label="Adicionar servidor"

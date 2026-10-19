@@ -10,6 +10,8 @@ App de transmissão de tela a **60 fps** no estilo Discord: servidores, salas de
 - **Voz**: microfone, ensurdecer, câmera, indicador de quem está falando, volume por pessoa, supressão de ruído, escolha de dispositivos e sons de entrada e saída.
 - **Servidores e convites**: link com validade e limite de usos.
 - **Canais de texto**: mensagens em tempo real, edição, exclusão, "digitando…", links e prévia de imagens.
+- **Fóruns**: canais onde cada assunto vira um post com título, etiqueta (ideia, bug, feedback, pergunta), votos (+1) e respostas. A moderação marca o status (em análise, planejado, em andamento, feito, não vai rolar), fixa e tranca posts, e quem postou é avisado. Dá para ordenar por em alta, mais votados, recentes ou com atividade.
+- **Modelo "Comunidade"**: ao criar um servidor, já vem com #anúncios e #boas-vindas (só a moderação escreve), os fóruns ideias, bugs, feedback e ajuda, chat e salas de voz.
 - **Cargos e permissões em bits**: hierarquia, cor, exibição separada e sobrescritas por canal (permitir / herdar / negar). Também dá para criar canais privados.
 - **Moderação**: silenciar na sala, encerrar transmissão, desconectar da sala e expulsar, respeitando a hierarquia de cargos.
 
@@ -112,6 +114,8 @@ Abra http://localhost:3000, crie uma conta e um servidor. Para simular outra pes
    O script instala o Docker, gera os segredos no `.env`, libera as portas no `ufw` e sobe tudo.
 3. Se o provedor tiver firewall no painel, libere as portas **80/tcp, 443/tcp, 7881/tcp e 7882/udp**.
 4. Depois de criar as contas, coloque `ALLOW_REGISTRATION=false` no `.env` e rode `docker compose up -d` para fechar o cadastro.
+
+**Servidor oficial da comunidade (opcional):** crie um servidor com o modelo "Comunidade", gere um convite que **nunca expira** e coloque o código em `COMMUNITY_INVITE=` no `.env` (ou na variável `COMMUNITY_INVITE` do repositório, para o CI/CD). O app passa a mostrar "Entrar na comunidade" para todo mundo, e a landing page ganha o botão.
 
 Atualizar: `git pull && docker compose up -d --build`. Os dados ficam em `./data/concord.db`; para backup, basta copiar esse arquivo.
 

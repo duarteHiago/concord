@@ -1,4 +1,4 @@
-import { Hash, MessageCircle, Search, Server, Volume2 } from 'lucide-react';
+import { Hash, MessageCircle, MessagesSquare, Search, Server, Volume2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { HOME, useApp } from '../../store/app';
 import { cx } from '../ui';
@@ -40,9 +40,9 @@ export function QuickSwitch() {
       for (const c of detail?.channels ?? []) {
         all.push({
           key: c.id,
-          label: c.type === 'text' ? `#${c.name}` : c.name,
+          label: c.type !== 'voice' ? `#${c.name}` : c.name,
           hint: s.name,
-          icon: c.type === 'text' ? <Hash size={16} /> : <Volume2 size={16} />,
+          icon: c.type === 'voice' ? <Volume2 size={16} /> : c.type === 'forum' ? <MessagesSquare size={16} /> : <Hash size={16} />,
           go: () => {
             st.openServer(s.id);
             st.openChannel(s.id, c.id);

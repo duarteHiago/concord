@@ -6,6 +6,7 @@ import {
   HelpCircle,
   Lock,
   LogOut,
+  MessagesSquare,
   Mic,
   MicOff,
   MonitorUp,
@@ -46,6 +47,7 @@ export function ChannelSidebar() {
           <ServerHeader detail={detail} />
           <div className="flex-1 space-y-5 overflow-y-auto px-3 pb-3">
             <ChannelGroup detail={detail} kind="voice" />
+            <ChannelGroup detail={detail} kind="forum" />
             <ChannelGroup detail={detail} kind="text" />
           </div>
         </>
@@ -156,18 +158,23 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
 
 // ------------------------------------------------------------------ salas e canais
 
-function ChannelGroup({ detail, kind }: { detail: ServerDetail; kind: 'text' | 'voice' }) {
+const GROUP_LABEL = { voice: 'Salas', forum: 'Fóruns', text: 'Conversas' } as const;
+const CREATE_LABEL = { voice: 'Criar sala', forum: 'Criar fórum', text: 'Criar canal de texto' } as const;
+
+function ChannelGroup({ detail, kind }: { detail: ServerDetail; kind: 'text' | 'voice' | 'forum' }) {
   const channels = detail.channels.filter((c) => c.type === kind).sort((a, b) => a.position - b.position);
   const openModal = useApp((s) => s.openModal);
   const canManage = has(detail.permissions, P.MANAGE_CHANNELS);
+  // servidor sem fóruns não mostra o grupo vazio
+  if (kind === 'forum' && channels.length === 0) return null;
 
   return (
     <section>
       <div className="group mb-1.5 flex items-center justify-between px-2">
-        <h2 className="font-sans text-xs font-bold text-fg-subtle">{kind === 'voice' ? 'Salas' : 'Conversas'}</h2>
+        <h2 className="font-sans text-xs font-bold text-fg-subtle">{GROUP_LABEL[kind]}</h2>
         {canManage && (
           <IconButton
-            label={kind === 'voice' ? 'Criar sala' : 'Criar canal de texto'}
+            label={CREATE_LABEL[kind]}
             className="h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
             onClick={() => openModal({ type: 'createChannel', serverId: detail.server.id, kind })}
           >
@@ -217,7 +224,7 @@ function TextChannelRow({ detail, channel }: { detail: ServerDetail; channel: Ch
         active ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:bg-surface-3/60 hover:text-fg',
       )}
     >
-      <Hash size={17} className="shrink-0 opacity-70" />
+      {channel.type === 'forum' ? <MessagesSquare size={17} className="shrink-0 opacity-70" /> : <Hash size={17} className="shrink-0 opacity-70" />}
       <span className="flex-1 truncate font-semibold">{channel.name}</span>
       {isPrivate && <Lock size={13} className="shrink-0 opacity-60" />}
       {settingsButton}

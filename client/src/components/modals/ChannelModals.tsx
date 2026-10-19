@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, Hash, Slash, Trash2, Volume2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Hash, MessagesSquare, Slash, Trash2, Volume2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { P, PERMISSION_INFO, has } from '../../../../shared/permissions.ts';
 import { api } from '../../lib/api';
@@ -6,7 +6,13 @@ import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { Button, Input, Modal, RoleDot, Toggle, cx } from '../ui';
 
-export function CreateChannelModal({ serverId, kind }: { serverId: string; kind: 'text' | 'voice' }) {
+const TYPE_INFO = {
+  text: { icon: <Hash size={22} />, label: 'Texto', hint: 'Mensagens, links e imagens' },
+  forum: { icon: <MessagesSquare size={22} />, label: 'Fórum', hint: 'Posts com votos e respostas: ideias, bugs, ajuda' },
+  voice: { icon: <Volume2 size={22} />, label: 'Sala de voz', hint: 'Voz, câmera e transmissão de tela a 60 fps' },
+} as const;
+
+export function CreateChannelModal({ serverId, kind }: { serverId: string; kind: 'text' | 'voice' | 'forum' }) {
   const close = useApp((s) => s.closeModal);
   const [type, setType] = useState(kind);
   const [name, setName] = useState('');
@@ -32,7 +38,7 @@ export function CreateChannelModal({ serverId, kind }: { serverId: string; kind:
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
           <span className="block text-xs font-bold tracking-wide text-fg-muted uppercase">Tipo de canal</span>
-          {(['text', 'voice'] as const).map((t) => (
+          {(['text', 'forum', 'voice'] as const).map((t) => (
             <button
               type="button"
               key={t}
@@ -42,17 +48,15 @@ export function CreateChannelModal({ serverId, kind }: { serverId: string; kind:
                 type === t ? 'border-accent bg-accent/10' : 'border-line bg-surface-0 hover:bg-surface-3',
               )}
             >
-              {t === 'text' ? <Hash size={22} /> : <Volume2 size={22} />}
+              {TYPE_INFO[t].icon}
               <div>
-                <div className="font-semibold">{t === 'text' ? 'Texto' : 'Sala de voz'}</div>
-                <div className="text-xs text-fg-muted">
-                  {t === 'text' ? 'Mensagens, links e imagens' : 'Voz, câmera e transmissão de tela a 60 fps'}
-                </div>
+                <div className="font-semibold">{TYPE_INFO[t].label}</div>
+                <div className="text-xs text-fg-muted">{TYPE_INFO[t].hint}</div>
               </div>
             </button>
           ))}
         </div>
-        <Input label="Nome do canal" value={name} onChange={(e) => setName(e.target.value)} placeholder={type === 'text' ? 'novo-canal' : 'Nova sala'} autoFocus required maxLength={50} />
+        <Input label="Nome do canal" value={name} onChange={(e) => setName(e.target.value)} placeholder={type === 'voice' ? 'Nova sala' : type === 'forum' ? 'ideias' : 'novo-canal'} autoFocus required maxLength={50} />
         <div className="flex items-center justify-between rounded-xl bg-surface-0 p-3">
           <div>
             <div className="text-sm font-semibold">Canal privado</div>
@@ -92,7 +96,7 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
   }
 
   return (
-    <Modal title={<span className="flex items-center gap-2">{channel.type === 'text' ? <Hash size={20} /> : <Volume2 size={20} />} {channel.name}</span>} onClose={close} width={720}>
+    <Modal title={<span className="flex items-center gap-2">{channel.type === 'voice' ? <Volume2 size={20} /> : channel.type === 'forum' ? <MessagesSquare size={20} /> : <Hash size={20} />} {channel.name}</span>} onClose={close} width={720}>
       <div className="mb-5 flex gap-1 border-b border-line">
         {(['overview', 'perms'] as const).map((t) => (
           <button
@@ -108,7 +112,7 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
       {tab === 'overview' ? (
         <div className="space-y-4">
           <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
-          {channel.type === 'text' ? (
+          {channel.type !== 'voice' ? (
             <Input label="Tópico" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={300} placeholder="Do que se trata este canal?" />
           ) : (
             <label className="block">
@@ -134,7 +138,7 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
               onClick={() =>
                 openModal({
                   type: 'confirm',
-                  title: `Apagar ${channel.type === 'text' ? '#' : ''}${channel.name}`,
+                  title: `Apagar ${channel.type !== 'voice' ? '#' : ''}${channel.name}`,
                   message: 'Este canal e todo o seu conteúdo serão apagados permanentemente.',
                   confirmLabel: 'Apagar canal',
                   danger: true,
@@ -162,7 +166,7 @@ function ChannelPermissions({ serverId, channelId }: { serverId: string; channel
   const canEdit = has(detail.permissions, P.MANAGE_ROLES);
   const ow = channel.overwrites.find((o) => o.roleId === roleId) ?? { roleId, allow: 0, deny: 0 };
   const perms = PERMISSION_INFO.filter((p) => p.channel && (channel.type === 'voice' || !['CONNECT', 'SPEAK', 'STREAM', 'MUTE_MEMBERS', 'MOVE_MEMBERS'].includes(p.key)))
-    .filter((p) => channel.type === 'text' || !['SEND_MESSAGES', 'MANAGE_MESSAGES'].includes(p.key));
+    .filter((p) => channel.type !== 'voice' || !['SEND_MESSAGES', 'MANAGE_MESSAGES'].includes(p.key));
 
   async function set(flag: number, state: 'allow' | 'inherit' | 'deny') {
     let { allow, deny } = ow;

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
+import { ForumView } from './components/ForumView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
 import { Spinner, Toasts } from './components/ui';
@@ -68,7 +69,9 @@ function Shell() {
         ) : (
           <>
             <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
-              {channel ? (
+              {channel?.type === 'forum' ? (
+                <ForumView channel={channel} />
+              ) : channel ? (
                 <ChatView channel={channel} />
               ) : (
                 <div className="flex flex-1 items-center justify-center">

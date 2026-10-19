@@ -1,4 +1,4 @@
-import { Link2, Sparkles } from 'lucide-react';
+import { Link2, MessagesSquare, Sparkles, Users } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../../lib/api';
 import type { InvitePreview, ServerSummary } from '../../lib/types';
@@ -40,6 +40,7 @@ export function AddServerModal({ initialTab = 'create', code }: { initialTab?: '
 function CreateForm() {
   const me = useApp((s) => s.me)!;
   const [name, setName] = useState(`Servidor de ${me.displayName}`);
+  const [template, setTemplate] = useState<'friends' | 'community'>('friends');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -48,7 +49,7 @@ function CreateForm() {
     setLoading(true);
     setError('');
     try {
-      const server = await api.post<ServerSummary>('/servers', { name });
+      const server = await api.post<ServerSummary>('/servers', { name, template });
       const st = useApp.getState();
       useApp.setState({ servers: [...st.servers, server] });
       st.openServer(server.id);
@@ -62,9 +63,41 @@ function CreateForm() {
   return (
     <form onSubmit={submit} className="space-y-4">
       <Input label="Nome do servidor" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} autoFocus />
+      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Modelo">
+        {(
+          [
+            ['friends', <Users key="i" size={20} />, 'Amigos', 'Chat e salas pra jogar junto'],
+            ['community', <MessagesSquare key="i" size={20} />, 'Comunidade', 'Anúncios e fóruns de ideias, bugs e ajuda'],
+          ] as const
+        ).map(([id, icon, label, hint]) => (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={template === id}
+            key={id}
+            onClick={() => setTemplate(id)}
+            className={cx(
+              'rounded-xl border p-3 text-left transition-colors',
+              template === id ? 'border-accent bg-accent/10' : 'border-line bg-surface-0 hover:bg-surface-3',
+            )}
+          >
+            {icon}
+            <div className="mt-1 font-semibold">{label}</div>
+            <div className="text-xs text-fg-muted">{hint}</div>
+          </button>
+        ))}
+      </div>
       <p className="text-xs text-fg-subtle">
-        Já vem com os canais <b>#geral</b>, <b>#clipes-e-prints</b>, as salas <b>Sala de Transmissão</b> e <b>Lounge</b>, e os cargos
-        Admin e Moderador.
+        {template === 'friends' ? (
+          <>
+            Já vem com <b>#geral</b>, <b>#clipes-e-prints</b>, as salas <b>Sala de Transmissão</b> e <b>Lounge</b>, e os cargos Admin e Moderador.
+          </>
+        ) : (
+          <>
+            Já vem com <b>#anúncios</b> e <b>#boas-vindas</b> (só a moderação escreve), os fóruns <b>ideias</b>, <b>bugs</b>, <b>feedback</b> e{' '}
+            <b>ajuda</b>, <b>#geral</b>, <b>#off-topic</b> e duas salas de voz.
+          </>
+        )}
       </p>
       {error && <p className="text-sm text-red-300">{error}</p>}
       <Button type="submit" loading={loading} className="w-full">

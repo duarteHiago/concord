@@ -155,7 +155,7 @@ export interface Role {
 export interface Channel {
   id: string;
   name: string;
-  type: 'text' | 'voice';
+  type: 'text' | 'voice' | 'forum';
   topic: string;
   position: number;
   userLimit: number;
@@ -236,4 +236,34 @@ export interface InvitePreview {
   server: ServerSummary;
   memberCount: number;
   alreadyMember: boolean;
+}
+
+/** Post de um canal de fórum. Na lista vem `excerpt`; aberto, vem `content` e as respostas. */
+export interface ForumPost {
+  id: string;
+  channelId: string;
+  title: string;
+  excerpt?: string;
+  content?: string;
+  tag: string;
+  status: string;
+  pinned: boolean;
+  locked: boolean;
+  voteCount: number;
+  replyCount: number;
+  voted: boolean;
+  createdAt: number;
+  editedAt: number | null;
+  lastActivityAt: number;
+  author: User;
+  replies?: ForumReply[];
+}
+
+export interface ForumReply {
+  id: string;
+  postId: string;
+  content: string;
+  createdAt: number;
+  editedAt: number | null;
+  author: User;
 }

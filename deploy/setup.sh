@@ -30,6 +30,17 @@ elif [ -n "${DOMAIN:-}" ]; then
 fi
 DOMAIN="$(grep ^DOMAIN= .env | cut -d= -f2)"
 
+# Convite do servidor oficial da comunidade (o app mostra "Entrar na comunidade"). Vem da variável do CI.
+if [ -n "${COMMUNITY_INVITE:-}" ]; then
+  if ! printf '%s' "$COMMUNITY_INVITE" | grep -qE '^[A-Za-z0-9_-]{4,64}$'; then
+    echo ">> COMMUNITY_INVITE inválido (use só o código do convite)." >&2
+  elif grep -q '^COMMUNITY_INVITE=' .env; then
+    sed -i "s|^COMMUNITY_INVITE=.*|COMMUNITY_INVITE=${COMMUNITY_INVITE}|" .env
+  else
+    echo "COMMUNITY_INVITE=${COMMUNITY_INVITE}" >> .env
+  fi
+fi
+
 # senha do Grafana: gerada aqui na VPS e nunca impressa (os logs do CI são públicos)
 if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' .env; then
   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)" >> .env

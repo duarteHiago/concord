@@ -1,9 +1,12 @@
 import { HelpCircle, Link2, Plus } from 'lucide-react';
 import { useApp } from '../store/app';
+import { useCommunity, usePendingCommunity } from '../store/community';
 import { Button } from './ui';
 
 export function WelcomeView() {
   const openModal = useApp((s) => s.openModal);
+  const community = usePendingCommunity();
+  const joinCommunity = useCommunity((s) => s.join);
   return (
     <div className="panel flex flex-1 items-center justify-center p-8">
       <div className="max-w-md animate-slide-up text-center">
@@ -13,6 +16,18 @@ export function WelcomeView() {
           Crie um servidor para você e seus amigos, ou entre em um com um convite. Lá dentro você terá salas de voz com
           transmissão de tela a 60 fps.
         </p>
+        {community && (
+          <button
+            onClick={() => void joinCommunity()}
+            className="mt-8 flex w-full items-center gap-4 rounded-[24px] bg-accent/12 p-4 text-left ring-1 ring-accent/30 transition-colors hover:bg-accent/20"
+          >
+            <img src="/brand/concord-simbolo.svg" alt="" className="h-12 w-12 shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-display font-bold">Entrar na comunidade {community.server.name}</span>
+              <span className="block text-sm text-fg-muted">Dê ideias, vote nas da galera, reporte bugs e tire dúvidas.</span>
+            </span>
+          </button>
+        )}
         <div className="mt-8 flex justify-center gap-3">
           <Button onClick={() => openModal({ type: 'addServer', tab: 'create' })}>
             <Plus size={18} /> Criar servidor
