@@ -119,19 +119,42 @@ EOF
   fi
 fi
 
-if command -v ufw >/dev/null 2>&1 && ufw status | grep -q active; then
-  echo ">> Liberando portas no firewall (ufw)..."
-  ufw allow 7881/tcp
-  ufw allow 7882/udp
-  # 7880 é a sinalização/API do LiveKit: o navegador chega nela pelo proxy (/livekit), nunca direto
-  # (o bloqueio vai no topo da lista: uma regra "permitir tudo" anterior não pode vencer)
-  ufw delete allow 7880/tcp >/dev/null 2>&1 || true
-  ufw delete deny 7880/tcp >/dev/null 2>&1 || true
-  ufw insert 1 deny 7880/tcp >/dev/null 2>&1 || ufw deny 7880/tcp >/dev/null
+# Firewall: tudo fechado na entrada, menos SSH e a mídia do LiveKit (WebRTC vai direto do navegador
+# para a VPS, não passa pelo proxy da Cloudflare). No modo túnel o site não precisa de porta nenhuma:
+# o cloudflared é quem abre a conexão para fora. No modo direto, 80/443 só aceitam os IPs da Cloudflare.
+# FIREWALL=off pula esta parte (quem já cuida do firewall de outro jeito).
+if [ "${FIREWALL:-on}" != "off" ]; then
+  command -v ufw >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq ufw >/dev/null; }
+  echo ">> Configurando o firewall (ufw)..."
+  ufw default deny incoming >/dev/null
+  ufw default allow outgoing >/dev/null
+  # SSH primeiro: sem isso, ligar o ufw trancaria o próprio deploy do lado de fora
+  SSH_PORT="$(ss -ltnpH 2>/dev/null | awk '/sshd/ {split($4, a, ":"); print a[length(a)]; exit}')"
+  ufw allow "${SSH_PORT:-22}/tcp" >/dev/null
+  ufw allow 7881/tcp >/dev/null
+  ufw allow 7882/udp >/dev/null
+  # 7880 (sinalização/API do LiveKit) e 3000 (app): só pelo proxy local, nunca de fora
+  for p in 80 443 3000 7880; do
+    ufw delete allow "$p/tcp" >/dev/null 2>&1 || true
+  done
+  ufw deny 7880/tcp >/dev/null
   if [ "$MODE" != "tunnel" ]; then
-    ufw allow 80/tcp
-    ufw allow 443/tcp
+    # lista oficial da Cloudflare; regras antigas com o comentário "cloudflare" são trocadas pelas atuais
+    CF_IPS="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4; echo; curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6)"
+    if [ -n "$(printf '%s' "$CF_IPS" | tr -d '[:space:]')" ]; then
+      while ufw status numbered | grep -q 'cloudflare'; do
+        n="$(ufw status numbered | grep 'cloudflare' | head -1 | sed -E 's/^\[ *([0-9]+)\].*/\1/')"
+        yes | ufw delete "$n" >/dev/null
+      done
+      for ip in $CF_IPS; do
+        ufw allow proto tcp from "$ip" to any port 80,443 comment cloudflare >/dev/null
+      done
+    else
+      echo "!! Não consegui baixar a lista de IPs da Cloudflare; mantendo 80/443 fechadas por enquanto." >&2
+    fi
   fi
+  ufw --force enable >/dev/null
+  echo ">> Firewall ativo: liberadas ${SSH_PORT:-22}/tcp (SSH), 7881/tcp e 7882/udp (mídia)$([ "$MODE" != "tunnel" ] && echo ' e 80/443 só para a Cloudflare')."
 fi
 
 if [ -z "$("${COMPOSE[@]}" ps -q 2>/dev/null)" ]; then
