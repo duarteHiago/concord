@@ -123,6 +123,9 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q active; then
   echo ">> Liberando portas no firewall (ufw)..."
   ufw allow 7881/tcp
   ufw allow 7882/udp
+  # 7880 é a sinalização/API do LiveKit: o navegador chega nela pelo proxy (/livekit), nunca direto
+  ufw delete allow 7880/tcp >/dev/null 2>&1 || true
+  ufw deny 7880/tcp >/dev/null
   if [ "$MODE" != "tunnel" ]; then
     ufw allow 80/tcp
     ufw allow 443/tcp

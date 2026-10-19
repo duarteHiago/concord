@@ -16,7 +16,9 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
-const DEFAULT_SERVER = 'https://concord.yaatoro.com';
+const DEFAULT_SERVER = 'https://concord-community.com';
+// endereços antigos do servidor oficial: quem ainda aponta para eles vai para o novo
+const OLD_SERVERS = ['https://concord.yaatoro.com'];
 // No Windows o .ico traz versões desenhadas para 16–48 px (barra de tarefas, Alt+Tab, título da janela)
 const APP_ICON = path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
 
@@ -38,6 +40,10 @@ function saveConfig() {
 }
 
 const config = loadConfig();
+if (OLD_SERVERS.includes(config.server)) {
+  config.server = DEFAULT_SERVER;
+  saveConfig();
+}
 const serverOrigin = () => new URL(config.server).origin;
 
 /** Só a página do servidor configurado (ou a tela offline local) pode usar a ponte do app. */
