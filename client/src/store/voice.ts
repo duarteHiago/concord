@@ -486,6 +486,9 @@ export const useVoice = create<VoiceStore>((set, get) => {
           // não pausa o vídeo com a janela minimizada: a live pode estar aberta em outra janela
           adaptiveStream: { pauseVideoInBackground: false },
           dynacast: true,
+          // mixa o áudio remoto por um GainNode (em vez do volume nativo do <audio>, que trava em 100%):
+          // é isso que permite o volume por usuário passar de 100% (até 200%, como no Discord)
+          webAudioMix: true,
           audioOutput: { deviceId: get().audioSettings.outputId },
           videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
           publishDefaults: { red: true, dtx: true },
