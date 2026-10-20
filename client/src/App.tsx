@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { AuthScreen } from './components/AuthScreen';
-import { EmailResetScreen } from './components/EmailRecovery';
+import { EmailResetScreen, useEmailPrompt } from './components/EmailRecovery';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
 import { ForumView } from './components/ForumView';
@@ -58,6 +58,7 @@ export default function App() {
 }
 
 function Shell() {
+  useEmailPrompt();
   const detail = useActiveDetail();
   const activeServerId = useApp((s) => s.activeServerId);
   const channelId = useApp((s) => (s.activeServerId ? s.activeChannels[s.activeServerId] : undefined));

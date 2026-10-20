@@ -10,6 +10,7 @@ import { AddServerModal } from './AddServerModal';
 import { ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
 import { InviteModal } from './InviteModal';
 import { OnboardingModal } from './OnboardingModal';
+import { EmailPromptModal } from '../EmailRecovery';
 import { ServerSettingsModal } from './ServerSettingsModal';
 import { ShareScreenModal } from './ShareScreenModal';
 import { UserSettingsModal } from './UserSettingsModal';
@@ -55,6 +56,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <ImageViewer src={modal.src} alt={modal.alt} />;
     case 'onboarding':
       return <OnboardingModal />;
+    case 'emailPrompt':
+      return <EmailPromptModal />;
   }
 }
 

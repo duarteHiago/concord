@@ -6,7 +6,7 @@ import { api } from '../lib/api';
 import type { Me } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
-import { Button, Input } from './ui';
+import { Button, Input, Modal } from './ui';
 
 // só o "sim" fica guardado: se o e-mail for ligado com o app aberto, a próxima tela já pergunta de novo
 let emailOn = false;
@@ -106,6 +106,67 @@ export function EmailResetScreen() {
         </button>
       </form>
     </div>
+  );
+}
+
+// o aviso aparece no máximo uma vez por abertura do app
+let promptChecked = false;
+
+/**
+ * Aviso de "agora dá para cadastrar um e-mail": aparece toda vez que o app abre, até a pessoa
+ * cadastrar um e-mail ou clicar em "Depois eu vejo". Fechar no X só adia para a próxima abertura.
+ */
+export function useEmailPrompt() {
+  const enabled = useEmailRecovery();
+  const me = useApp((s) => s.me);
+  const modal = useApp((s) => s.modal);
+  const openModal = useApp((s) => s.openModal);
+  const meId = me?.id;
+  // conta nova (ainda no tutorial de boas-vindas): não empilha outro aviso nesta abertura
+  useEffect(() => {
+    if (meId && !useApp.getState().me?.settings.onboarded) promptChecked = true;
+  }, [meId]);
+  useEffect(() => {
+    if (promptChecked || !enabled || !me || modal) return;
+    // espera um pouco: o app termina de carregar e outros avisos (convite etc.) abrem primeiro
+    const t = window.setTimeout(() => {
+      const s = useApp.getState();
+      if (promptChecked || !s.me || s.modal) return;
+      promptChecked = true;
+      if (!s.me.email && !s.me.emailPending && !s.me.settings.emailPromptDismissed) openModal({ type: 'emailPrompt' });
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [enabled, me, modal, openModal]);
+}
+
+export function EmailPromptModal() {
+  const close = useApp((s) => s.closeModal);
+  const saveSettings = useApp((s) => s.saveSettings);
+  const done = useApp((s) => !!(s.me?.email || s.me?.emailPending));
+  // e-mail enviado para confirmação: o aviso já cumpriu o papel
+  useEffect(() => {
+    if (done) close();
+  }, [done, close]);
+
+  return (
+    <Modal
+      title="Novidade: recupere sua senha por e-mail"
+      subtitle="Cadastre um e-mail e, se um dia esquecer a senha, receba um link para criar outra. É opcional: ninguém vê seu e-mail e não mandamos propaganda."
+      onClose={close}
+      footer={
+        <Button
+          variant="ghost"
+          onClick={() => {
+            void saveSettings({ emailPromptDismissed: true });
+            close();
+          }}
+        >
+          Depois eu vejo
+        </Button>
+      }
+    >
+      <EmailSection />
+    </Modal>
   );
 }
 

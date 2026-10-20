@@ -113,6 +113,8 @@ export interface UserSettings {
   clips?: { receive?: boolean; autoCopy?: boolean };
   /** já viu o tutorial de boas-vindas (ele reaparece em "Configurações → Conta" a qualquer momento) */
   onboarded?: boolean;
+  /** clicou "Depois eu vejo" no aviso do e-mail de recuperação: não mostra mais */
+  emailPromptDismissed?: boolean;
 }
 
 export interface Me extends User {
