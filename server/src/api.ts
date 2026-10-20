@@ -43,7 +43,7 @@ import {
 import { color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { removeUpload, saveImage, saveSound } from './uploads.ts';
-import { allowAttempt, normalize as normalizeCode, rotateRecoveryCode } from './recovery.ts';
+import { allowAttempt, allowLoginAttempt, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
 import { playGame } from './games.ts';
 import { registerForumRoutes } from './forum.ts';
 import * as google from './google.ts';
@@ -274,9 +274,11 @@ api.post('/auth/reset', async (req, res) => {
 api.post('/auth/login', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
   const password = str(req.body?.password, 'senha', 1, 128);
+  if (!allowLoginAttempt(username)) fail(429, 'Muitas tentativas. Espere 15 minutos e tente de novo.');
   const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
   // conta criada pelo Google não tem senha (password_hash vazio)
   if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
+    recordLoginFailure(username);
     fail(401, 'Usuário ou senha incorretos. Se você criou a conta com o Google, use "Entrar com Google".');
   }
   res.json({ token: signToken(user!.id), user: meJson(user!) });

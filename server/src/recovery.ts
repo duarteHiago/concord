@@ -41,3 +41,21 @@ export function allowAttempt(username: string): boolean {
   attempts.set(key, recent);
   return true;
 }
+
+// mesma ideia pro login, mas só conta senha ERRADA: login certo não deve contar contra o limite
+// (senão alguém entrando em várias janelas/dispositivos em pouco tempo cairia no bloqueio)
+const loginFailures = new Map<string, number[]>();
+export function allowLoginAttempt(username: string): boolean {
+  const key = username.toLowerCase();
+  const now = Date.now();
+  const recent = (loginFailures.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
+  loginFailures.set(key, recent);
+  return recent.length < 5;
+}
+export function recordLoginFailure(username: string) {
+  const key = username.toLowerCase();
+  const now = Date.now();
+  const recent = (loginFailures.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
+  recent.push(now);
+  loginFailures.set(key, recent);
+}
