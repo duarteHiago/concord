@@ -22,8 +22,29 @@ export interface DesktopInfo {
   server: string;
 }
 
+export interface DesktopAppMetric {
+  type: string;
+  pid: number;
+  cpuPercent: number | null;
+  memoryMB: number | null;
+}
+
+export interface DesktopDevInfo {
+  versions: Record<string, string>;
+  osRelease: string;
+  cpuModel: string | null;
+  cpuCores: number;
+  totalMemMB: number;
+  freeMemMB: number;
+  onBattery: boolean;
+  appMetrics: DesktopAppMetric[];
+  gpu: unknown;
+}
+
 interface DesktopBridge {
   info(): Promise<DesktopInfo>;
+  // ausente em versões antigas do app desktop
+  devInfo?(): Promise<DesktopDevInfo>;
   getSources(): Promise<DesktopSource[]>;
   selectSource(id: string): Promise<void>;
   startAudio(sourceId: string): Promise<void>;

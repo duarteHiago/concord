@@ -7,6 +7,10 @@ const livekit = process.env.LIVEKIT_DEV_URL ?? 'http://localhost:7880';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    // só pra mostrar no "Modo desenvolvedor" das configurações quando esse build do client foi gerado
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   server: {
     port: 5173,
     fs: { allow: ['..'] },

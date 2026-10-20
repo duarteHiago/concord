@@ -1,7 +1,7 @@
 // Concord Desktop — processo principal do Electron.
 // Carrega o Concord do servidor configurado e adiciona o que o navegador não oferece:
 // seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
-const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, Notification, screen, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, Notification, powerMonitor, screen, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -263,6 +263,28 @@ handle('concord:info', () => ({
   processAudio: processAudioSupported(),
   server: config.server,
 }));
+
+/** Dados pro "Modo desenvolvedor" das configurações: só métricas agregadas dos próprios
+ * processos do Concord e do hardware — nada de arquivos, DLLs ou registro de terceiros. */
+handle('concord:dev-info', async () => {
+  const gpu = await app.getGPUInfo('complete').catch(() => null);
+  return {
+    versions: process.versions,
+    osRelease: os.release(),
+    cpuModel: os.cpus()[0]?.model ?? null,
+    cpuCores: os.cpus().length,
+    totalMemMB: Math.round(os.totalmem() / (1024 * 1024)),
+    freeMemMB: Math.round(os.freemem() / (1024 * 1024)),
+    onBattery: powerMonitor.isOnBatteryPower(),
+    appMetrics: app.getAppMetrics().map((m) => ({
+      type: m.type,
+      pid: m.pid,
+      cpuPercent: m.cpu?.percentCPUUsage ?? null,
+      memoryMB: m.memory?.workingSetSize ? Math.round(m.memory.workingSetSize / 1024) : null,
+    })),
+    gpu,
+  };
+});
 
 handle('concord:sources', async () => {
   const sources = await desktopCapturer.getSources({

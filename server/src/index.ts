@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { api } from './api.ts';
 import { config } from './config.ts';
@@ -14,8 +15,11 @@ app.set('trust proxy', true);
 app.use(httpMetrics);
 app.use(express.json({ limit: '1mb' }));
 
+const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
+const startedAt = Date.now();
+
 app.get('/health', (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, version: pkg.version, nodeVersion: process.version, uptimeSec: Math.round((Date.now() - startedAt) / 1000) });
 });
 // arquivos enviados têm nome aleatório, então podem ficar em cache por bastante tempo
 app.use(
