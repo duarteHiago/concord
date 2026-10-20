@@ -123,7 +123,6 @@ addColumn('users', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('servers', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 // anexos das mensagens (lista em JSON) e os arquivos enviados, ainda sem mensagem ou já anexados
 addColumn('messages', 'attachments', 'TEXT');
-addColumn('dm_messages', 'attachments', 'TEXT');
 db.exec(`
   CREATE TABLE IF NOT EXISTS attachments (
     id TEXT PRIMARY KEY,
@@ -303,6 +302,8 @@ db.exec(`
 // o link sai em nome de um servidor (quem cria precisa ser admin dele)
 addColumn('patch_drops', 'server_id', 'TEXT REFERENCES servers(id) ON DELETE SET NULL');
 
+// (depois do CREATE TABLE de dm_messages: num banco novo a tabela ainda não existe lá em cima)
+addColumn('dm_messages', 'attachments', 'TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
 if (version < 2) {
