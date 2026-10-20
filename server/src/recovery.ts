@@ -44,18 +44,25 @@ export function allowAttempt(username: string): boolean {
 
 // mesma ideia pro login, mas só conta senha ERRADA: login certo não deve contar contra o limite
 // (senão alguém entrando em várias janelas/dispositivos em pouco tempo cairia no bloqueio)
+const LOGIN_MAX = 5;
+const LOGIN_WINDOW = 15 * 60_000;
 const loginFailures = new Map<string, number[]>();
-export function allowLoginAttempt(username: string): boolean {
+function recentFailures(username: string) {
   const key = username.toLowerCase();
   const now = Date.now();
-  const recent = (loginFailures.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
+  const recent = (loginFailures.get(key) ?? []).filter((t) => now - t < LOGIN_WINDOW);
   loginFailures.set(key, recent);
-  return recent.length < 5;
+  return recent;
 }
-export function recordLoginFailure(username: string) {
-  const key = username.toLowerCase();
-  const now = Date.now();
-  const recent = (loginFailures.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
-  recent.push(now);
-  loginFailures.set(key, recent);
+/** 0 = pode tentar; senão, quantos minutos faltam para liberar. */
+export function loginWaitMinutes(username: string): number {
+  const recent = recentFailures(username);
+  if (recent.length < LOGIN_MAX) return 0;
+  return Math.max(1, Math.ceil((recent[0] + LOGIN_WINDOW - Date.now()) / 60_000));
+}
+/** Registra uma senha errada e devolve quantas tentativas ainda restam. */
+export function recordLoginFailure(username: string): number {
+  const recent = recentFailures(username);
+  recent.push(Date.now());
+  return Math.max(0, LOGIN_MAX - recent.length);
 }

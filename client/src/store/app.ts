@@ -74,6 +74,8 @@ interface AppState {
   login: (username: string, password: string) => Promise<void>;
   loginWithToken: (token: string) => Promise<void>;
   googleSignupSubmit: (username: string, displayName: string) => Promise<'done' | 'desktop'>;
+  /** já tem conta no Concord: entra com usuário e senha e conecta o Google a ela */
+  googleSignupLink: (username: string, password: string) => Promise<'done' | 'desktop'>;
   register: (username: string, password: string, displayName: string) => Promise<void>;
   resetPassword: (username: string, code: string, newPassword: string) => Promise<void>;
   logout: () => void;
@@ -342,6 +344,19 @@ export const useApp = create<AppState>((set, get) => {
       if (res.handoff) return 'desktop';
       startSession(res.token!, res.user!);
       if (res.recoveryCode) set({ modal: { type: 'recoveryCode', code: res.recoveryCode, next: get().modal ?? undefined } });
+      return 'done';
+    },
+
+    googleSignupLink: async (username, password) => {
+      const res = await api.post<{ token?: string; user?: Me; handoff?: boolean }>('/auth/google/signup/link', {
+        ticket: get().googleSignup,
+        username,
+        password,
+      });
+      set({ googleSignup: null });
+      if (res.handoff) return 'desktop';
+      startSession(res.token!, res.user!);
+      toast.success('Conta Google conectada. Da próxima vez é só usar "Entrar com Google".');
       return 'done';
     },
 

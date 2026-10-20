@@ -43,7 +43,7 @@ import {
 import { color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { removeUpload, saveImage, saveSound } from './uploads.ts';
-import { allowAttempt, allowLoginAttempt, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
+import { allowAttempt, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
 import { playGame } from './games.ts';
 import { registerForumRoutes } from './forum.ts';
 import * as google from './google.ts';
@@ -271,17 +271,34 @@ api.post('/auth/reset', async (req, res) => {
   res.json({ token: signToken(user!.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user!.id)!), recoveryCode });
 });
 
+/** Confere usuário e senha (com limite de tentativas). Usado no login e ao conectar o Google a uma conta. */
+async function checkPassword(username: string, password: string): Promise<UserRow> {
+  const wait = loginWaitMinutes(username);
+  if (wait) fail(429, `Muitas senhas erradas para esse usuário. Espere ${wait} min e tente de novo, ou use "Esqueci minha senha".`);
+  const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
+  // conta criada pelo Google não tem senha (password_hash vazio): não é chute, então não conta tentativa
+  if (user && !user.password_hash) {
+    fail(401, 'Essa conta foi criada pelo Google e não tem senha. Use "Entrar com Google" (dá para criar uma senha depois, em Configurações > Conta).');
+  }
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    const left = recordLoginFailure(username);
+    fail(
+      401,
+      left === 0
+        ? 'Usuário ou senha incorretos. Por segurança, esse usuário ficou bloqueado por 15 min: use "Esqueci minha senha" se precisar.'
+        : left <= 2
+          ? `Usuário ou senha incorretos. Mais ${left} tentativa(s) erradas e o login fica bloqueado por 15 min.`
+          : 'Usuário ou senha incorretos.',
+    );
+  }
+  return user!;
+}
+
 api.post('/auth/login', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
   const password = str(req.body?.password, 'senha', 1, 128);
-  if (!allowLoginAttempt(username)) fail(429, 'Muitas tentativas. Espere 15 minutos e tente de novo.');
-  const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
-  // conta criada pelo Google não tem senha (password_hash vazio)
-  if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
-    recordLoginFailure(username);
-    fail(401, 'Usuário ou senha incorretos. Se você criou a conta com o Google, use "Entrar com Google".');
-  }
-  res.json({ token: signToken(user!.id), user: meJson(user!) });
+  const user = await checkPassword(username, password);
+  res.json({ token: signToken(user.id), user: meJson(user) });
 });
 
 // Prévia do convite é pública: aparece na tela de login de quem recebeu o link.
@@ -346,7 +363,12 @@ api.get('/auth/google/callback', async (req, res) => {
   }
   const owner = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', sub);
   if (pending.mode === 'link') {
-    if (owner && owner.id !== pending.userId) return deliver({ error: 'Essa conta Google já está ligada a outra conta do Concord.' }, pending.handoff);
+    if (owner && owner.id !== pending.userId) {
+      return deliver(
+        { error: `Essa conta Google já está ligada a outra conta do Concord (@${owner.username}). Cada conta Google só entra em uma conta do Concord.` },
+        pending.handoff,
+      );
+    }
     run('UPDATE users SET google_sub = ? WHERE id = ?', sub, pending.userId!);
     return deliver({ linked: true }, pending.handoff);
   }
@@ -366,7 +388,9 @@ api.post('/auth/google/signup', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 3, 32);
   if (!/^[a-zA-Z0-9_.]+$/.test(username)) fail(400, 'Usuário deve conter apenas letras, números, "_" e "."');
   const displayName = optStr(req.body?.displayName?.trim?.() || undefined, 'nome', 1, 32) || username;
-  if (get('SELECT 1 FROM users WHERE username = ?', username)) fail(409, 'Esse nome de usuário já está em uso');
+  if (get('SELECT 1 FROM users WHERE username = ?', username)) {
+    fail(409, 'Esse nome de usuário já está em uso. Se essa conta é sua, use "Já tenho conta" para conectar o Google a ela.');
+  }
   const ticket = google.takeSignup(String(req.body?.ticket ?? '')) ?? fail(400, 'Esse cadastro expirou. Entre com o Google de novo.');
   const existing = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', ticket.sub);
   const id = existing?.id ?? randomUUID();
@@ -388,6 +412,33 @@ api.post('/auth/google/signup', async (req, res) => {
     return res.json({ handoff: true });
   }
   res.json({ token, user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', id)!), recoveryCode });
+});
+
+/**
+ * Conta Google ainda sem dono, mas a pessoa já tem conta no Concord: entra com usuário e senha e o
+ * Google fica conectado a essa conta (em vez de criar uma segunda conta vazia).
+ */
+api.post('/auth/google/signup/link', async (req, res) => {
+  const username = str(req.body?.username, 'usuário', 1, 32);
+  const password = str(req.body?.password, 'senha', 1, 128);
+  const ticketId = String(req.body?.ticket ?? '');
+  // só olha o ticket aqui: senha errada não deve obrigar a refazer o login no Google
+  if (!google.peekSignup(ticketId)) fail(400, 'Esse cadastro expirou. Entre com o Google de novo.');
+  const user = await checkPassword(username, password);
+  if (user.is_bot) fail(400, 'Bots não entram com o Google.');
+  const ticket = google.takeSignup(ticketId) ?? fail(400, 'Esse cadastro expirou. Entre com o Google de novo.');
+  const owner = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', ticket.sub);
+  if (owner && owner.id !== user.id) fail(409, `Essa conta Google já está ligada a outra conta do Concord (@${owner.username}).`);
+  if (user.google_sub && user.google_sub !== ticket.sub) {
+    fail(409, 'Essa conta do Concord já está conectada a outra conta Google. Entre com aquela conta Google, ou entre com a senha e troque em Configurações > Conta.');
+  }
+  run('UPDATE users SET google_sub = ? WHERE id = ?', ticket.sub, user.id);
+  const token = signToken(user.id);
+  if (ticket.handoff) {
+    google.putHandoff(ticket.handoff, { token });
+    return res.json({ handoff: true });
+  }
+  res.json({ token, user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!) });
 });
 
 /** App desktop: busca o resultado do login feito no navegador (uma vez só). */

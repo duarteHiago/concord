@@ -117,24 +117,43 @@ export function GoogleButton() {
   );
 }
 
-/** Conta Google nova: escolher o nome de usuário do Concord. */
+/**
+ * Conta Google que ainda não está em nenhuma conta do Concord. Antes de criar uma conta nova,
+ * pergunta se a pessoa já tem conta: aí ela entra com a senha e o Google fica conectado a essa
+ * conta (sem isso, quem já tinha conta acabava criando uma segunda, vazia).
+ */
 export function GoogleSignupForm() {
   const submit = useApp((s) => s.googleSignupSubmit);
+  const link = useApp((s) => s.googleSignupLink);
+  const [step, setStep] = useState<'choose' | 'link' | 'create'>('choose');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [nameTaken, setNameTaken] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [desktopDone, setDesktopDone] = useState(false);
+  const [desktopDone, setDesktopDone] = useState<'created' | 'linked' | null>(null);
+
+  const go = (s: typeof step) => {
+    setStep(s);
+    setError('');
+    setNameTaken(false);
+    setPassword('');
+  };
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
+    setNameTaken(false);
     setLoading(true);
     try {
-      if ((await submit(username, displayName)) === 'desktop') setDesktopDone(true);
+      const r = step === 'link' ? await link(username, password) : await submit(username, displayName);
+      if (r === 'desktop') setDesktopDone(step === 'link' ? 'linked' : 'created');
     } catch (err) {
-      setError((err as Error).message);
-      if (/expirou/.test((err as Error).message)) useApp.setState({ googleSignup: null });
+      const msg = (err as Error).message;
+      setError(msg);
+      setNameTaken(step === 'create' && /já está em uso/.test(msg));
+      if (/expirou/.test(msg)) useApp.setState({ googleSignup: null });
     } finally {
       setLoading(false);
     }
@@ -143,28 +162,74 @@ export function GoogleSignupForm() {
   if (desktopDone) {
     return (
       <div className="space-y-3 p-8 text-center md:p-10">
-        <h2 className="text-2xl font-bold">Conta criada! 🎉</h2>
+        <h2 className="text-2xl font-bold">{desktopDone === 'linked' ? 'Google conectado! 🎉' : 'Conta criada! 🎉'}</h2>
         <p className="text-sm text-fg-muted">Pode voltar para o app do Concord: ele já entrou na sua conta.</p>
       </div>
     );
   }
+
+  const back = (
+    <button
+      type="button"
+      onClick={() => (step === 'choose' ? useApp.setState({ googleSignup: null }) : go('choose'))}
+      className="w-full text-sm font-semibold text-fg-muted hover:text-fg"
+    >
+      Voltar
+    </button>
+  );
+
+  if (step === 'choose') {
+    return (
+      <div className="space-y-4 p-8 md:p-10">
+        <div className="mb-6">
+          <h2 className="flex items-center gap-2 text-2xl font-bold">
+            <GoogleLogo /> Você já tem conta no Concord?
+          </h2>
+          <p className="mt-1 text-sm text-fg-muted">Essa conta Google ainda não está ligada a nenhuma conta do Concord.</p>
+        </div>
+        <Button className="h-11 w-full" onClick={() => go('link')}>
+          Já tenho conta: conectar o Google a ela
+        </Button>
+        <Button variant="secondary" className="h-11 w-full" onClick={() => go('create')}>
+          Não tenho: criar uma conta nova
+        </Button>
+        {back}
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-4 p-8 md:p-10">
       <div className="mb-6">
         <h2 className="flex items-center gap-2 text-2xl font-bold">
-          <GoogleLogo /> Quase lá!
+          <GoogleLogo /> {step === 'link' ? 'Conectar sua conta' : 'Quase lá!'}
         </h2>
-        <p className="mt-1 text-sm text-fg-muted">Escolha como você vai aparecer no Concord. Você entra sempre pelo Google, sem senha.</p>
+        <p className="mt-1 text-sm text-fg-muted">
+          {step === 'link'
+            ? 'Entre com seu usuário e senha do Concord uma vez. Depois disso, "Entrar com Google" já abre essa conta.'
+            : 'Escolha como você vai aparecer no Concord. Você entra sempre pelo Google, sem senha.'}
+        </p>
       </div>
-      <Input label="Nome de usuário" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required hint="Letras, números, _ e ." />
-      <Input label="Nome de exibição" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como os outros vão te ver" />
-      {error && <p className="rounded-2xl bg-danger/10 px-4 py-2.5 text-sm text-red-300">{error}</p>}
+      <Input label={step === 'link' ? 'Usuário' : 'Nome de usuário'} value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required autoComplete="username" hint={step === 'create' ? 'Letras, números, _ e .' : undefined} />
+      {step === 'link' ? (
+        <Input label="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+      ) : (
+        <Input label="Nome de exibição" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como os outros vão te ver" />
+      )}
+      {error && (
+        <div className="rounded-2xl bg-danger/10 px-4 py-2.5 text-sm text-red-300">
+          {error}
+          {nameTaken && (
+            <button type="button" onClick={() => go('link')} className="mt-1 block font-semibold text-fg hover:underline">
+              Essa conta é minha: conectar o Google a ela
+            </button>
+          )}
+        </div>
+      )}
       <Button type="submit" loading={loading} className="h-11 w-full">
-        Criar conta
+        {step === 'link' ? 'Entrar e conectar' : 'Criar conta'}
       </Button>
-      <button type="button" onClick={() => useApp.setState({ googleSignup: null })} className="w-full text-sm font-semibold text-fg-muted hover:text-fg">
-        Voltar
-      </button>
+      {back}
     </form>
   );
 }
