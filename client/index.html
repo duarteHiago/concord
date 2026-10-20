@@ -9,9 +9,10 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Concord</title>
     <script>
-      // Visitante sem login cai na landing page; o app desktop e o link "Entrar" (/?entrar) vão direto para o login
+      // Visitante sem login cai na landing page; o app desktop, o link "Entrar" (/?entrar) e as voltas do Google
+      // e dos links de e-mail (confirmar, trocar senha) vão direto para o app
       try {
-        if (location.pathname === '/' && !localStorage.getItem('concord.token') && !/Electron\//.test(navigator.userAgent) && !/[?&]entrar\b/.test(location.search) && !/google-/.test(location.hash)) {
+        if (location.pathname === '/' && !localStorage.getItem('concord.token') && !/Electron\//.test(navigator.userAgent) && !/[?&]entrar\b/.test(location.search) && !/google-|verify-email=|reset-email=/.test(location.hash)) {
           location.replace('/inicio/');
         }
       } catch {}
