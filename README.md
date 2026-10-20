@@ -119,6 +119,8 @@ Abra http://localhost:3000, crie uma conta e um servidor. Para simular outra pes
 
 **Selo de verificado (opcional):** escolha um servidor para ser a autoridade da instalação e coloque o `id` dele em `AUTHORITY_SERVER_ID=` no `.env`. Quem tiver o cargo **Administrador** nesse servidor passa a poder marcar qualquer servidor ou pessoa (de qualquer servidor, não só o próprio) como verificado, em Configurações do servidor → Visão geral, ou no perfil de alguém. Sem essa variável, a função fica desligada.
 
+**Recuperar a senha por e-mail (opcional):** crie uma conta no [Brevo](https://www.brevo.com), autentique o domínio (registros DKIM, DMARC e de verificação no DNS, em *Senders, Domains & Dedicated IPs → Domains*) e gere uma chave em *SMTP & API → API Keys*. No `.env`, coloque `BREVO_API_KEY=` e `MAIL_FROM=` (remetente no domínio autenticado, por exemplo `nao-responda@seudominio.com`). Pelo CI/CD: `gh secret set BREVO_API_KEY` e `gh variable set MAIL_FROM -b nao-responda@seudominio.com`. A pessoa cadastra o e-mail em Configurações → Conta (só vale depois do clique no link de confirmação) e passa a receber um link em "Esqueci minha senha". O e-mail é opcional: o código de recuperação continua funcionando. Sem a chave, a função não aparece no app.
+
 Atualizar: `git pull && docker compose up -d --build`. Os dados ficam em `./data/concord.db`; para backup, basta copiar esse arquivo.
 
 ### Dimensionamento

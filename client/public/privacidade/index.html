@@ -23,6 +23,7 @@
     <li>Não vendemos dados, não mostramos anúncios e não usamos rastreadores.</li>
     <li>Voz, vídeo e transmissões de tela passam em tempo real e <b>não são gravados</b>.</li>
     <li>Entrando com o Google, guardamos só um identificador da conta: nada de e-mail, foto ou acesso aos seus dados do Google.</li>
+    <li>O e-mail é opcional: se você cadastrar um, ele serve só para recuperar a senha.</li>
     <li>Você pode pedir uma cópia ou a exclusão dos seus dados a qualquer momento.</li>
   </ul>
 </div>
@@ -36,6 +37,7 @@
   <thead><tr><th>Dado</th><th>Para quê</th></tr></thead>
   <tbody>
     <tr><td><b>Conta:</b> nome de usuário, nome de exibição, senha (guardada só como <i>hash</i> bcrypt, nunca em texto) e código de recuperação (também só o <i>hash</i>)</td><td>Entrar na conta e recuperar o acesso</td></tr>
+    <tr><td><b>E-mail de recuperação (opcional):</b> o endereço que você cadastrar e confirmar em Configurações → Conta</td><td>Mandar o link de "Esqueci minha senha" e avisar quando a senha ou o e-mail da conta mudarem. Não mandamos propaganda nem newsletter, e o e-mail não aparece para outras pessoas</td></tr>
     <tr><td><b>Login com Google (opcional):</b> só o identificador da sua conta Google (<i>sub</i>)</td><td>Reconhecer você quando entra pelo Google</td></tr>
     <tr><td><b>Perfil:</b> foto, capa, bio, cor, moldura, patches e apelidos por servidor</td><td>Mostrar seu perfil para as pessoas dos seus servidores</td></tr>
     <tr><td><b>Conteúdo:</b> mensagens, mensagens privadas (DMs), posts e respostas em fóruns, stickers, sons e imagens que você envia</td><td>Entregar e exibir o que você publica para quem deve ver</td></tr>
@@ -52,7 +54,7 @@
 </ul>
 
 <h3>O que não coletamos</h3>
-<p>Não pedimos e-mail, telefone, documento ou localização. Não usamos cookies de rastreamento, pixels de anúncio nem ferramentas de analytics. O servidor do Concord não registra o seu endereço IP. As métricas de funcionamento (quantas salas abertas, uso de CPU etc.) são só contagens, sem nada que identifique alguém.</p>
+<p>Não exigimos e-mail (ele é opcional, só para recuperar a senha) e não pedimos telefone, documento ou localização. Não usamos cookies de rastreamento, pixels de anúncio nem ferramentas de analytics. O servidor do Concord não registra o seu endereço IP. As métricas de funcionamento (quantas salas abertas, uso de CPU etc.) são só contagens, sem nada que identifique alguém.</p>
 <p>No seu navegador ou no app, guardamos localmente o token de acesso e algumas preferências (<i>localStorage</i>). Isso serve só para manter você conectado e não é usado para rastreamento.</p>
 
 <h2>3. Com quem compartilhamos</h2>
@@ -60,6 +62,7 @@
 <ul>
   <li><b>Cloudflare:</b> proteção e entrega do site. Como todo serviço desse tipo, processa o seu endereço IP e dados técnicos da conexão.</li>
   <li><b>Provedor da hospedagem (VPS):</b> onde ficam o servidor e o banco de dados.</li>
+  <li><b>Brevo:</b> só se você cadastrar um e-mail de recuperação. É o serviço que entrega os e-mails de confirmação, de "Esqueci minha senha" e de aviso de senha alterada, e por isso recebe o seu endereço e o texto da mensagem.</li>
   <li><b>Google:</b> só se você escolher "Entrar com Google", para confirmar o seu login. Também carregamos as fontes do site pelo Google Fonts, o que envia ao Google o seu IP ao abrir a página.</li>
 </ul>
 <p>O que você publica é visto pelas pessoas que têm acesso: os membros do servidor ou canal, ou quem está na sua DM. Os administradores de cada servidor podem moderar o conteúdo publicado nele.</p>

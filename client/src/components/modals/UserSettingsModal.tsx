@@ -7,8 +7,10 @@ import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
 import { StyleTab } from './StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
+import { EmailSection } from '../EmailRecovery';
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, setToken } from '../../lib/api';
+import { getSocket } from '../../lib/socket';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
 import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
 import { memberName, type Activity, type Me, type ThemeSettings } from '../../lib/types';
@@ -1031,6 +1033,7 @@ function Account() {
     <div className="space-y-5">
       {desktop && <DesktopServer />}
       <GoogleAccountSection />
+      <EmailSection />
       <RecoverySection />
       <div className="space-y-3">
         <h3 className="font-semibold">{noPassword ? 'Criar senha' : 'Alterar senha'}</h3>
@@ -1046,8 +1049,15 @@ function Account() {
           onClick={async () => {
             setSaving(true);
             try {
-              setMe(await api.patch<Me>('/me', { currentPassword: current, newPassword: next }));
-              toast.success(noPassword ? 'Senha criada' : 'Senha alterada');
+              // o servidor devolve um token novo: os outros aparelhos saem da conta, este continua
+              const { token, ...updated } = await api.patch<Me & { token?: string }>('/me', {
+                currentPassword: current,
+                newPassword: next,
+                socketId: getSocket()?.id,
+              });
+              if (token) setToken(token);
+              setMe(updated);
+              toast.success(noPassword ? 'Senha criada' : 'Senha alterada. Os outros aparelhos saíram da conta.');
               setCurrent('');
               setNext('');
             } catch (err) {

@@ -27,6 +27,26 @@ export function temporaryPassword(): string {
   return Array.from({ length: 12 }, () => ALPHABET[randomInt(ALPHABET.length)]).join('').toLowerCase();
 }
 
+/** Limite simples em memória: no máximo `max` usos de cada chave por janela. */
+export function limiter(max: number, windowMs: number) {
+  const hits = new Map<string, number[]>();
+  setInterval(() => {
+    const old = Date.now() - windowMs;
+    for (const [k, v] of hits) if (v.every((t) => t < old)) hits.delete(k);
+  }, windowMs).unref();
+  return (key: string): boolean => {
+    const now = Date.now();
+    const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length >= max) {
+      hits.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    hits.set(key, recent);
+    return true;
+  };
+}
+
 // limite de tentativas por usuário: 5 a cada 15 minutos
 const attempts = new Map<string, number[]>();
 export function allowAttempt(username: string): boolean {

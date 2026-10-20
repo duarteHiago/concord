@@ -67,13 +67,17 @@ jobs:
             --exclude=dist --exclude=.env .
           scp -q /tmp/concord-deploy.tgz "$TARGET:/tmp/concord-deploy.tgz"
 
-      # secret do login com Google: vai pelo stdin do ssh (não aparece em linha de comando nem em log)
+      # secrets do login com Google e do e-mail (Brevo): vão pelo stdin do ssh (não aparecem em linha de comando nem em log)
       - name: Enviar segredos
         env:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
         run: |
           if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
             printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.google.env"
+          fi
+          if [ -n "$BREVO_API_KEY" ]; then
+            printf 'BREVO_API_KEY=%s\n' "$BREVO_API_KEY" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.brevo.env"
           fi
 
       - name: Instalar e reiniciar
@@ -81,7 +85,7 @@ jobs:
           ssh "$TARGET" "mkdir -p /opt/concord \
             && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
             && cd /opt/concord && chmod +x deploy/setup.sh \
-            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} ./deploy/setup.sh"
+            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} ./deploy/setup.sh"
 
       # Verifica de dentro da VPS: a Cloudflare costuma bloquear (403) os runners do GitHub.
       - name: Verificar saúde

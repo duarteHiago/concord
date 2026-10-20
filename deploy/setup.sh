@@ -46,6 +46,20 @@ if [ -f .google.env ]; then
   rm -f .google.env
   unset GSECRET
 fi
+# E-mail de recuperação (Brevo): o remetente vem da variável do CI; a chave chega por .brevo.env, como o secret do Google
+if [ -n "${MAIL_FROM:-}" ]; then
+  if printf '%s' "$MAIL_FROM" | grep -qE '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
+    upsert_env MAIL_FROM "$MAIL_FROM"
+  else
+    echo "!! MAIL_FROM com formato inesperado; ignorado." >&2
+  fi
+fi
+if [ -f .brevo.env ]; then
+  BKEY="$(grep '^BREVO_API_KEY=' .brevo.env | cut -d= -f2-)"
+  if printf '%s' "$BKEY" | grep -qE '^xkeysib-[A-Za-z0-9-]{20,200}$'; then upsert_env BREVO_API_KEY "$BKEY"; else echo "!! BREVO_API_KEY com formato inesperado; ignorada." >&2; fi
+  rm -f .brevo.env
+  unset BKEY
+fi
 chmod 600 .env
 
 # Convite do servidor oficial da comunidade (o app mostra "Entrar na comunidade"). Vem da variável do CI.

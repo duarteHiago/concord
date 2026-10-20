@@ -1,10 +1,12 @@
 import { io, type Socket } from 'socket.io-client';
+import { getToken } from './api';
 
 let socket: Socket | null = null;
 
 export function connectSocket(token: string): Socket {
   socket?.disconnect();
-  socket = io({ path: '/socket.io', auth: { token }, transports: ['websocket'] });
+  // o token é lido a cada reconexão: trocar a senha gera um token novo e o antigo para de valer
+  socket = io({ path: '/socket.io', auth: (cb) => cb({ token: getToken() ?? token }), transports: ['websocket'] });
   return socket;
 }
 

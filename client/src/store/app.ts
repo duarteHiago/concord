@@ -69,6 +69,9 @@ interface AppState {
   pendingInvite: string | null;
   /** cadastro pelo Google esperando a pessoa escolher o nome de usuário */
   googleSignup: string | null;
+  /** link de "esqueci minha senha" aberto do e-mail: a tela pede a senha nova */
+  emailReset: string | null;
+  emailResetSubmit: (newPassword: string) => Promise<void>;
 
   bootstrap: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
@@ -149,6 +152,11 @@ export const useApp = create<AppState>((set, get) => {
     });
     socket.on('connect_error', (err) => {
       if (err.message === 'unauthorized') get().logout();
+    });
+    // o servidor derrubou a conexão (ex.: a senha foi trocada em outro aparelho): se o token ainda
+    // vale, reconecta; se não, a API responde 401 e a sessão é encerrada
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') void api.get<Me>('/me').then(() => socket.connect(), () => {});
     });
     socket.on('server:changed', ({ serverId }: { serverId: string }) => {
       clearTimeout(reloadTimers[serverId]);
@@ -296,6 +304,7 @@ export const useApp = create<AppState>((set, get) => {
     memberListOpen: true,
     pendingInvite: null,
     googleSignup: null,
+    emailReset: null,
 
     bootstrap: async () => {
       setUnauthorizedHandler(() => get().logout());
@@ -315,6 +324,19 @@ export const useApp = create<AppState>((set, get) => {
         const err = hash.get('google-error');
         if (err) googleNote = () => toast.error(err);
         if (hash.get('google-linked')) googleNote = () => toast.success('Conta Google conectada. Agora você também entra com ela.');
+      }
+      // links dos e-mails: trocar a senha ou confirmar o endereço
+      const verifyEmail = hash.get('verify-email');
+      if (hash.get('reset-email') || verifyEmail) {
+        history.replaceState(null, '', location.pathname + location.search);
+        if (hash.get('reset-email')) set({ emailReset: hash.get('reset-email') });
+        if (verifyEmail) {
+          googleNote = () =>
+            void api.post<{ email: string }>('/auth/email/verify', { token: verifyEmail }).then(
+              ({ email }) => toast.success(`E-mail ${email} confirmado. Se esquecer a senha, o link de recuperação vai para ele.`),
+              toast.error,
+            );
+        }
       }
       const token = getToken();
       if (token) {
@@ -358,6 +380,14 @@ export const useApp = create<AppState>((set, get) => {
       startSession(res.token!, res.user!);
       toast.success('Conta Google conectada. Da próxima vez é só usar "Entrar com Google".');
       return 'done';
+    },
+
+    emailResetSubmit: async (newPassword) => {
+      const { token, user } = await api.post<{ token: string; user: Me }>('/auth/reset-email', { token: get().emailReset, newPassword });
+      if (get().me) get().logout();
+      set({ emailReset: null });
+      startSession(token, user);
+      toast.success('Senha nova salva. Os outros aparelhos saíram da conta.');
     },
 
     login: async (username, password) => {

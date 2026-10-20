@@ -16,15 +16,21 @@ export const fail = (status: number, message: string): never => {
   throw new HttpError(status, message);
 };
 
+const tokenVersion = (userId: string) => get<{ token_version: number }>('SELECT token_version FROM users WHERE id = ?', userId)?.token_version;
+
+/** O token leva a "versão" da senha: trocar a senha sobe a versão e derruba os tokens antigos. */
 export function signToken(userId: string): string {
-  return jwt.sign({ sub: userId }, config.jwtSecret, { expiresIn: '30d' });
+  return jwt.sign({ sub: userId, v: tokenVersion(userId) ?? 0 }, config.jwtSecret, { expiresIn: '30d' });
 }
 
 export function verifyToken(token: string | undefined): string | null {
   if (!token) return null;
   try {
     const payload = jwt.verify(token, config.jwtSecret);
-    return typeof payload === 'object' && typeof payload.sub === 'string' ? payload.sub : null;
+    if (typeof payload !== 'object' || typeof payload.sub !== 'string') return null;
+    // tokens de antes dessa checagem não têm "v": valem como versão 0
+    const v = typeof payload.v === 'number' ? payload.v : 0;
+    return tokenVersion(payload.sub) === v ? payload.sub : null;
   } catch {
     return null;
   }

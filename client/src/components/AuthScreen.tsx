@@ -3,15 +3,17 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import type { InvitePreview } from '../lib/types';
 import { useApp } from '../store/app';
+import { ForgotByEmail, useEmailRecovery } from './EmailRecovery';
 import { GoogleButton, GoogleSignupForm } from './GoogleLogin';
 import { Avatar, Button, Input } from './ui';
 
-type Mode = 'login' | 'register' | 'reset';
+type Mode = 'login' | 'register' | 'reset' | 'forgot';
 
 const TITLES: Record<Mode, [string, string]> = {
   login: ['Bem-vindo de volta!', 'Que bom te ver de novo.'],
   register: ['Criar uma conta', 'Leva menos de um minuto.'],
   reset: ['Esqueci minha senha', 'Use o código de recuperação que você guardou ao criar a conta.'],
+  forgot: ['Esqueci minha senha', 'Mandamos um link para o e-mail cadastrado na sua conta.'],
 };
 
 export function AuthScreen() {
@@ -31,6 +33,7 @@ export function AuthScreen() {
   };
   const pendingInvite = useApp((s) => s.pendingInvite);
   const googleSignup = useApp((s) => s.googleSignup);
+  const emailOn = useEmailRecovery();
   const [invite, setInvite] = useState<InvitePreview | null>(null);
 
   useEffect(() => {
@@ -94,6 +97,23 @@ export function AuthScreen() {
 
         {googleSignup ? (
           <GoogleSignupForm />
+        ) : mode === 'forgot' ? (
+          <div className="space-y-4 p-8 md:p-10">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold">{TITLES.forgot[0]}</h2>
+              <p className="mt-1 text-sm text-fg-muted">{TITLES.forgot[1]}</p>
+            </div>
+            <ForgotByEmail login={username} setLogin={setUsername} />
+            <button type="button" onClick={() => switchMode('reset')} className="text-sm font-semibold text-fg-muted hover:text-accent">
+              Não cadastrei e-mail: usar o código de recuperação
+            </button>
+            <p className="text-sm text-fg-muted">
+              Lembrou a senha?{' '}
+              <button type="button" className="font-semibold text-accent hover:underline" onClick={() => switchMode('login')}>
+                Entrar
+              </button>
+            </p>
+          </div>
         ) : (
         <form onSubmit={submit} className="space-y-4 p-8 md:p-10">
           {invite && (
@@ -135,7 +155,7 @@ export function AuthScreen() {
             required
           />
           {mode === 'login' && (
-            <button type="button" onClick={() => switchMode('reset')} className="-mt-2 text-sm font-semibold text-fg-muted hover:text-accent">
+            <button type="button" onClick={() => switchMode(emailOn ? 'forgot' : 'reset')} className="-mt-2 text-sm font-semibold text-fg-muted hover:text-accent">
               Esqueci minha senha
             </button>
           )}
@@ -144,6 +164,11 @@ export function AuthScreen() {
             {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar conta' : 'Redefinir senha'}
           </Button>
           {mode !== 'reset' && <GoogleButton />}
+          {mode === 'reset' && emailOn && (
+            <button type="button" onClick={() => switchMode('forgot')} className="text-sm font-semibold text-fg-muted hover:text-accent">
+              Receber um link por e-mail
+            </button>
+          )}
           {mode === 'reset' && (
             <p className="text-xs text-fg-subtle">
               Sem o código? Peça para quem administra o Concord rodar <code>node src/cli.ts reset-password {username || 'seu-usuario'}</code> no servidor.

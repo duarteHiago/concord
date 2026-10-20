@@ -14,7 +14,8 @@ if (command === 'reset-password' && arg) {
     process.exit(1);
   }
   const password = temporaryPassword();
-  run('UPDATE users SET password_hash = ? WHERE id = ?', await bcrypt.hash(password, 10), user.id);
+  // sobe a versão do token: quem estava logado com a senha antiga sai da conta
+  run('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', await bcrypt.hash(password, 10), user.id);
   console.log(`Senha de @${user.username} redefinida.`);
   console.log(`Senha temporária: ${password}`);
   console.log('Peça para a pessoa trocar em Configurações > Conta assim que entrar.');

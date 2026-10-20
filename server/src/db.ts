@@ -121,6 +121,21 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google ON users(google_sub)
 // (AUTHORITY_SERVER_ID) concede isso, em qualquer servidor ou pessoa — ver access.ts#isInstanceAuthority
 addColumn('users', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('servers', 'verified', 'INTEGER NOT NULL DEFAULT 0');
+// e-mail de recuperação (opcional): só entra aqui depois de confirmado pelo link
+addColumn('users', 'email', 'TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL');
+// sobe a cada troca de senha: tokens de login antigos (outros aparelhos, quem roubou a senha) param de valer
+addColumn('users', 'token_version', 'INTEGER NOT NULL DEFAULT 0');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS email_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    email TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id);
+`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sounds (
@@ -339,7 +354,18 @@ export interface UserRow {
   profile_style: string;
   google_sub?: string | null;
   verified: number;
+  email?: string | null;
+  token_version?: number;
   created_at: number;
+}
+
+/** Link de uso único mandado por e-mail: confirmar o endereço (verify) ou trocar a senha (reset). */
+export interface EmailTokenRow {
+  token_hash: string;
+  user_id: string;
+  kind: 'verify' | 'reset';
+  email: string;
+  expires_at: number;
 }
 
 export interface CustomStickerRow {

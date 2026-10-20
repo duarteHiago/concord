@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { AuthScreen } from './components/AuthScreen';
+import { EmailResetScreen } from './components/EmailRecovery';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
 import { ForumView } from './components/ForumView';
@@ -26,6 +27,7 @@ export default function App() {
   useEffect(() => setMotionPref(motion), [motion]);
   const bootstrap = useApp((s) => s.bootstrap);
   const dropStage = useDrop((s) => s.stage);
+  const emailReset = useApp((s) => s.emailReset);
   useClaimAfterLogin();
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function App() {
 
   return (
     <>
-      {dropStage === 'page' ? <DropPage /> : me ? <Shell /> : <AuthScreen />}
+      {emailReset ? <EmailResetScreen /> : dropStage === 'page' ? <DropPage /> : me ? <Shell /> : <AuthScreen />}
       {me && dropStage === 'claim' && <DropClaimModal />}
       <ModalHost />
       <Toasts />

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import bcrypt from 'bcryptjs';
@@ -30,6 +30,7 @@ import {
   type ChannelRow,
   type CustomStickerRow,
   type DmChannelRow,
+  type EmailTokenRow,
   type PlacedStickerRow,
   type PatchDropRow,
   type ServerPatchRow,
@@ -43,7 +44,8 @@ import {
 import { color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { removeUpload, saveImage, saveSound } from './uploads.ts';
-import { allowAttempt, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
+import { allowAttempt, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
+import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendVerifyEmail } from './mail.ts';
 import { playGame } from './games.ts';
 import { registerForumRoutes } from './forum.ts';
 import * as google from './google.ts';
@@ -70,6 +72,7 @@ import {
   joinServerRoom,
   leaveServerRoom,
   onlineUserIds,
+  revokeSockets,
   serverChanged,
   setServerMute,
   voiceStatesFor,
@@ -156,6 +159,10 @@ const meJson = (u: UserRow) => {
     hasRecoveryCode: !!u.recovery_hash,
     googleLinked: !!u.google_sub,
     hasPassword: !!u.password_hash,
+    // e-mail de recuperação: só o confirmado fica na conta; o pendente espera o clique no link
+    email: u.email ?? null,
+    emailPending:
+      get<{ email: string }>("SELECT email FROM email_tokens WHERE user_id = ? AND kind = 'verify' AND expires_at > ?", u.id, now())?.email ?? null,
     // pode conceder o selo de verificado em qualquer servidor/pessoa (ver access.ts#isInstanceAuthority)
     isAuthority: isInstanceAuthority(u.id),
   };
@@ -213,7 +220,80 @@ api.get('/config', (_req, res) => {
     desktopDownload: existsSync(installer) ? `/downloads/${DESKTOP_INSTALLER}` : null,
     communityInvite: config.communityInvite || null,
     googleLogin: google.googleEnabled(),
+    emailRecovery: mailEnabled(),
   });
+});
+
+// ---- E-mail de recuperação (links de uso único) ----
+
+const hashToken = (t: string) => createHash('sha256').update(t).digest('hex');
+const mailError = (err: unknown) => console.error('[e-mail]', (err as Error).message);
+
+/** Cria o link (guarda só o hash). Só o último link de cada tipo vale. */
+function newEmailToken(userId: string, kind: EmailTokenRow['kind'], email: string, ttl: number) {
+  run('DELETE FROM email_tokens WHERE expires_at < ? OR (user_id = ? AND kind = ?)', now(), userId, kind);
+  const token = randomBytes(32).toString('base64url');
+  run('INSERT INTO email_tokens (token_hash, user_id, kind, email, expires_at) VALUES (?, ?, ?, ?, ?)', hashToken(token), userId, kind, email, now() + ttl);
+  return token;
+}
+
+/** Usa o link: vale uma vez só. */
+function takeEmailToken(token: string, kind: EmailTokenRow['kind']): EmailTokenRow | null {
+  const row = get<EmailTokenRow>('SELECT * FROM email_tokens WHERE token_hash = ? AND kind = ?', hashToken(token), kind);
+  if (!row) return null;
+  run('DELETE FROM email_tokens WHERE token_hash = ?', row.token_hash);
+  return row.expires_at > now() ? row : null;
+}
+
+/** Troca a senha: sobe a versão do token (os outros aparelhos saem da conta) e avisa por e-mail. */
+async function setPassword(user: UserRow, password: string, keepSocketId?: string) {
+  run('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', await bcrypt.hash(password, 10), user.id);
+  void revokeSockets(user.id, keepSocketId);
+  if (user.email && mailEnabled()) sendPasswordChanged(user.email, user.username).catch(mailError);
+}
+
+// por conta: 3 links por hora; no total, um teto para ninguém usar o Concord para mandar e-mail em massa
+const forgotPerAccount = limiter(3, 60 * 60_000);
+const forgotTotal = limiter(200, 60 * 60_000);
+const verifyPerUser = limiter(5, 60 * 60_000);
+
+/** Esqueci a senha (por e-mail): manda o link se a conta tiver e-mail confirmado. */
+api.post('/auth/forgot', (req, res) => {
+  if (!mailEnabled()) fail(404, 'Recuperação por e-mail não está configurada neste servidor');
+  const login = str(req.body?.login, 'usuário ou e-mail', 1, 254);
+  const user = login.includes('@')
+    ? get<UserRow>('SELECT * FROM users WHERE email = ?', login.toLowerCase())
+    : get<UserRow>('SELECT * FROM users WHERE username = ?', login);
+  // a resposta é sempre a mesma: não dá para descobrir quem tem conta ou e-mail cadastrado
+  if (user?.email && !user.is_bot && forgotPerAccount(user.id) && forgotTotal('all')) {
+    const token = newEmailToken(user.id, 'reset', user.email, 30 * 60_000);
+    sendResetEmail(user.email, user.username, `${config.publicUrl}/#reset-email=${token}`).catch(mailError);
+  }
+  res.json({ ok: true });
+});
+
+/** Link do e-mail: escolhe a senha nova e já entra na conta. */
+api.post('/auth/reset-email', async (req, res) => {
+  const password = str(req.body?.newPassword, 'nova senha', 6, 128);
+  const expired = 'Esse link expirou ou já foi usado. Peça outro em "Esqueci minha senha".';
+  const row = takeEmailToken(String(req.body?.token ?? ''), 'reset') ?? fail(400, expired);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', row.user_id) ?? fail(400, expired);
+  // o link só vale enquanto esse ainda for o e-mail da conta
+  if (user.email !== row.email) fail(400, expired);
+  await setPassword(user, password);
+  res.json({ token: signToken(user.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!) });
+});
+
+/** Link de confirmação: o e-mail passa a valer para recuperar a senha. Não precisa estar logado. */
+api.post('/auth/email/verify', (req, res) => {
+  const expired = 'Esse link de confirmação expirou ou já foi usado. Cadastre o e-mail de novo em Configurações > Conta.';
+  const row = takeEmailToken(String(req.body?.token ?? ''), 'verify') ?? fail(400, expired);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', row.user_id) ?? fail(400, expired);
+  if (get('SELECT 1 FROM users WHERE email = ? AND id != ?', row.email, user.id)) fail(409, 'Esse e-mail já está confirmado em outra conta do Concord.');
+  run('UPDATE users SET email = ? WHERE id = ?', row.email, user.id);
+  if (user.email && user.email !== row.email) sendEmailChanged(user.email, user.username, row.email).catch(mailError);
+  emitToUser(user.id, 'me:updated', meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!));
+  res.json({ email: row.email });
 });
 
 api.post('/auth/register', async (req, res) => {
@@ -266,7 +346,7 @@ api.post('/auth/reset', async (req, res) => {
   const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
   const ok = !!user?.recovery_hash && (await bcrypt.compare(normalizeCode(code), user.recovery_hash));
   if (!ok) fail(400, 'Usuário ou código de recuperação incorretos');
-  run('UPDATE users SET password_hash = ? WHERE id = ?', await bcrypt.hash(password, 10), user!.id);
+  await setPassword(user!, password);
   const recoveryCode = await rotateRecoveryCode(user!.id);
   res.json({ token: signToken(user!.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user!.id)!), recoveryCode });
 });
@@ -518,17 +598,21 @@ api.patch('/me', async (req, res) => {
     run('UPDATE users SET settings = ? WHERE id = ?', json, me);
     broadcastStatus(me);
   }
+  // senha trocada: os outros aparelhos saem da conta e este recebe um token novo
+  let token: string | undefined;
   if (req.body?.newPassword !== undefined) {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+    const newPassword = str(req.body.newPassword, 'nova senha', 6, 128);
     // quem entrou pelo Google e ainda não tem senha pode criar uma sem informar a atual
     if (user.password_hash && !(await bcrypt.compare(String(req.body.currentPassword ?? ''), user.password_hash))) fail(400, 'Senha atual incorreta');
-    run('UPDATE users SET password_hash = ? WHERE id = ?', await bcrypt.hash(str(req.body.newPassword, 'nova senha', 6, 128), 10), me);
+    await setPassword(user, newPassword, typeof req.body.socketId === 'string' ? req.body.socketId : undefined);
+    token = signToken(me);
   }
   if (publicChange) profileChanged(me);
   const updated = meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!);
   // os outros aparelhos da pessoa (app desktop + navegador + celular) ficam iguais
   if (req.body?.settings !== undefined || publicChange) emitToUser(me, 'me:updated', updated);
-  res.json(updated);
+  res.json(token ? { ...updated, token } : updated);
 });
 
 /** Gera um novo código de recuperação (o antigo deixa de valer). Pede a senha atual. */
@@ -1934,6 +2018,39 @@ api.delete('/dm-messages/:id', (req, res) => {
   run('DELETE FROM dm_messages WHERE id = ?', req.params.id);
   deliverDm(dm, 'dm:delete', { id: req.params.id, channelId: dm.id });
   res.json({ ok: true });
+});
+
+// ============================================================ E-mail de recuperação
+
+/** Cadastrar ou trocar o e-mail: só passa a valer depois do clique no link de confirmação. */
+api.put('/me/email', humansOnly, async (req, res) => {
+  if (!mailEnabled()) fail(404, 'Recuperação por e-mail não está configurada neste servidor');
+  const me = uid(res);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+  const email = str(req.body?.email, 'e-mail', 3, 254).toLowerCase();
+  if (!isEmail(email)) fail(400, 'E-mail inválido');
+  if (email === user.email) fail(400, 'Esse já é o e-mail confirmado da sua conta');
+  if (!verifyPerUser(me)) fail(429, 'Muitas tentativas. Espere um pouco e tente de novo.');
+  // pede a senha: quem pegou a sessão de alguém não consegue trocar o e-mail e depois a senha
+  if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  const token = newEmailToken(me, 'verify', email, 24 * 60 * 60_000);
+  try {
+    await sendVerifyEmail(email, user.username, `${config.publicUrl}/#verify-email=${token}`);
+  } catch (err) {
+    mailError(err);
+    run('DELETE FROM email_tokens WHERE token_hash = ?', hashToken(token));
+    fail(502, 'Não foi possível enviar o e-mail agora. Tente de novo em instantes.');
+  }
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
+});
+
+api.delete('/me/email', humansOnly, (_req, res) => {
+  const me = uid(res);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+  run('DELETE FROM email_tokens WHERE user_id = ?', me);
+  run('UPDATE users SET email = NULL WHERE id = ?', me);
+  if (user.email && mailEnabled()) sendEmailChanged(user.email, user.username, null).catch(mailError);
+  res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
 });
 
 // ============================================================ Conta Google

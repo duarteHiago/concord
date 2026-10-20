@@ -48,6 +48,12 @@ export function emitToUser(userId: string, event: string, payload: unknown) {
   io.to(`user:${userId}`).emit(event, payload);
 }
 
+/** Senha trocada: derruba as conexões em tempo real da pessoa (menos a do aparelho que trocou). */
+export async function revokeSockets(userId: string, keepSocketId?: string) {
+  if (!io) return;
+  for (const s of await io.in(`user:${userId}`).fetchSockets()) if (s.id !== keepSocketId) s.disconnect(true);
+}
+
 export function emitToServer(serverId: string, event: string, payload: unknown) {
   io.to(`server:${serverId}`).emit(event, payload);
 }

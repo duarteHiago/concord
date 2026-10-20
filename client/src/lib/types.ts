@@ -120,6 +120,10 @@ export interface Me extends User {
   hasRecoveryCode?: boolean;
   googleLinked?: boolean;
   hasPassword?: boolean;
+  /** e-mail de recuperação confirmado */
+  email?: string | null;
+  /** e-mail esperando o clique no link de confirmação */
+  emailPending?: string | null;
   /** pode conceder/revogar o selo de verificado em qualquer servidor ou pessoa */
   isAuthority?: boolean;
 }
