@@ -34,7 +34,7 @@ function html({ subject, lines, button, footer }: Mail) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
 <body style="margin:0;padding:24px 12px;background:#f4f1f6;font-family:Arial,Helvetica,sans-serif">
 <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;padding:32px 28px">
-<img src="${escapeHtml(config.publicUrl)}/brand/concord-logo.png" alt="Concord" height="32" style="display:block;height:32px;margin-bottom:24px">
+<img src="${escapeHtml(config.mail.logoUrl || `${config.publicUrl}/brand/concord-logo.png`)}" alt="Concord" height="32" style="display:block;height:32px;margin-bottom:24px">
 <h1 style="margin:0 0 16px;font-size:20px;color:#1d1722">${escapeHtml(subject)}</h1>
 ${lines.map(p).join('\n')}
 ${btn}

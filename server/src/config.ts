@@ -16,7 +16,7 @@ export const config = {
   publicUrl: (env.PUBLIC_URL ?? '').replace(/\/+$/, ''),
   google: { clientId: env.GOOGLE_CLIENT_ID ?? '', clientSecret: env.GOOGLE_CLIENT_SECRET ?? '' },
   // e-mail de recuperação de senha (opcional), enviado pela API do Brevo. Sem chave, a função some do app.
-  mail: { brevoKey: env.BREVO_API_KEY ?? '', from: (env.MAIL_FROM ?? '').trim(), fromName: env.MAIL_FROM_NAME || 'Concord' },
+  mail: { brevoKey: env.BREVO_API_KEY ?? '', from: (env.MAIL_FROM ?? '').trim(), fromName: env.MAIL_FROM_NAME || 'Concord', logoUrl: env.MAIL_LOGO_URL || '' },
   // código de um convite permanente: o app mostra "Entrar na comunidade" e a landing page ganha o botão
   communityInvite: (env.COMMUNITY_INVITE ?? '').trim().replace(/^.*\/invite\//, ''),
   // servidor cujo cargo "Administrador" vira autoridade da instalação inteira: dá o selo de verificado
