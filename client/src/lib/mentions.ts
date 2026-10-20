@@ -28,7 +28,14 @@ export function receiveDirectMessage(dm: DirectChannel, message: Message) {
   if (prefs.sound) playSound('mention');
   if (!prefs.desktop) return;
   const title = `${dm.user.displayName} (mensagem privada)`;
-  const body = message.kind === 'game' ? message.content : message.content.length > 140 ? `${message.content.slice(0, 140)}…` : message.content;
+  const body =
+    !message.content && message.attachments?.length
+      ? `📎 ${message.attachments.length > 1 ? `${message.attachments.length} arquivos` : message.attachments[0].name}`
+      : message.kind === 'game'
+        ? message.content
+        : message.content.length > 140
+          ? `${message.content.slice(0, 140)}…`
+          : message.content;
   if (desktop?.notify) {
     void desktop.notify({ title, body, data: { dmId: dm.id } });
     return;

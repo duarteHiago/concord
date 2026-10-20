@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { config } from './config.ts';
 import { fail } from './http.ts';
 
-export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds' | 'cards' | 'patches' | 'stickers';
+export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds' | 'cards' | 'patches' | 'stickers' | 'files';
 
 const MB = 1024 * 1024;
 // GIFs animados não são redimensionados no navegador, por isso os limites de foto são folgados
@@ -17,6 +17,8 @@ const LIMITS: Record<UploadKind, number> = {
   cards: 8 * MB,
   patches: 2 * MB,
   stickers: 3 * MB,
+  // anexos das conversas: o mesmo limite do Discord grátis
+  files: 20 * MB,
 };
 
 /** Identifica o formato pelos primeiros bytes (não confia no Content-Type). */
@@ -38,10 +40,10 @@ function detectAudio(buf: Buffer): string | null {
   return null;
 }
 
-function store(kind: UploadKind, owner: string, buf: Buffer, ext: string) {
+function store(kind: UploadKind, owner: string, buf: Buffer, ext: string, randomLen = 6) {
   const dir = join(config.uploadsDir, kind);
   mkdirSync(dir, { recursive: true });
-  const name = `${owner}-${randomBytes(6).toString('hex')}.${ext}`;
+  const name = `${owner}-${randomBytes(randomLen).toString('hex')}.${ext}`;
   writeFileSync(join(dir, name), buf);
   return `/uploads/${kind}/${name}`;
 }
@@ -65,8 +67,39 @@ export function saveSound(owner: string, body: unknown): string {
   return store('sounds', owner, buf, ext);
 }
 
+// Anexos: só tipos comuns de documento, mídia e compactado. Nada que o navegador execute (html, svg, js)
+// nem executáveis. O que não é imagem é baixado (Content-Disposition: attachment, ver index.ts).
+const FILE_EXTS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp',
+  'pdf', 'txt', 'md', 'csv', 'json', 'log',
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf',
+  'zip', 'rar', '7z',
+  'mp3', 'ogg', 'wav', 'm4a', 'flac',
+  'mp4', 'webm', 'mov', 'mkv',
+]);
+export const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+/** Nome que aparece na conversa: sem pastas nem caracteres de controle. */
+export function cleanFileName(raw: unknown) {
+  const name = String(raw ?? '').split(/[\\/]/).pop()!.replace(/[\u0000-\u001f"<>|*?:]/g, '').trim();
+  return name.slice(-120) || 'arquivo';
+}
+
+export function saveAttachment(owner: string, body: unknown, fileName: string): { url: string; image: boolean } {
+  const buf = checkSize('files', body);
+  const ext = (fileName.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? '').toLowerCase();
+  if (!FILE_EXTS.has(ext)) fail(400, 'Tipo de arquivo não permitido');
+  // nome aleatório longo: o endereço do anexo de uma DM não dá para adivinhar
+  if (IMAGE_EXTS.has(ext)) {
+    // imagem de verdade (pela assinatura dos bytes), não só pelo nome
+    const real = detectImage(buf) ?? fail(400, 'Imagem inválida');
+    return { url: store('files', owner, buf, real, 16), image: true };
+  }
+  return { url: store('files', owner, buf, ext, 16), image: false };
+}
+
 export function removeUpload(url: string | null | undefined) {
-  const m = url?.match(/^\/uploads\/(avatars|icons|backgrounds|banners|sounds|cards|patches|stickers)\/([\w.-]+)$/);
+  const m = url?.match(/^\/uploads\/(avatars|icons|backgrounds|banners|sounds|cards|patches|stickers|files)\/([\w.-]+)$/);
   if (!m) return;
   try {
     unlinkSync(join(config.uploadsDir, m[1], basename(m[2])));

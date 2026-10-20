@@ -212,6 +212,15 @@ export type GameData =
   | { type: 'dice'; sides: number; count: number; rolls: number[] }
   | { type: 'coin'; result: 'cara' | 'coroa' };
 
+/** Arquivo anexado a uma mensagem. */
+export interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  url: string;
+  image: boolean;
+}
+
 export interface Message {
   id: string;
   /** id do canal, ou da conversa privada nas DMs */
@@ -219,6 +228,7 @@ export interface Message {
   content: string;
   kind?: 'text' | 'game' | 'clip';
   data?: GameData | null;
+  attachments?: Attachment[];
   createdAt: number;
   editedAt: number | null;
   author: User;

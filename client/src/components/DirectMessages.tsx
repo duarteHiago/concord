@@ -6,6 +6,7 @@ import type { DirectChannel, Message } from '../lib/types';
 import { useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
+import { AttachButton, MessageAttachments, PendingAttachments, useAttachmentDraft } from './Attachments';
 import { RichText } from './ChatView';
 import { GameCard, GameMenuButton } from './Games';
 import { activityLabel } from './MemberList';
@@ -15,6 +16,7 @@ const EMPTY: Message[] = [];
 
 function preview(m: Message | null) {
   if (!m) return 'Nenhuma mensagem ainda';
+  if (!m.content && m.attachments?.length) return m.attachments.length > 1 ? `📎 ${m.attachments.length} arquivos` : `📎 ${m.attachments[0].name}`;
   return m.content.length > 60 ? `${m.content.slice(0, 60)}…` : m.content;
 }
 
@@ -242,7 +244,9 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
 
   async function save() {
     setEditing(false);
-    if (draft.trim() && draft !== message.content) await api.patch(`/dm-messages/${message.id}`, { content: draft }).catch(toast.error);
+    if ((draft.trim() || message.attachments?.length) && draft !== message.content) {
+      await api.patch(`/dm-messages/${message.id}`, { content: draft }).catch(toast.error);
+    }
   }
 
   return (
@@ -281,16 +285,19 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
         ) : message.kind === 'game' && message.data ? (
           <GameCard id={message.id} data={message.data} author={mine ? 'Você' : message.author.displayName} />
         ) : (
-          <div
-            className={cx(
-              'px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap',
-              mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
-            )}
-          >
-            <RichText text={message.content} mine={mine} />
-            {message.editedAt && <span className="ml-1.5 text-[10px] opacity-60">(editada)</span>}
-          </div>
+          message.content && (
+            <div
+              className={cx(
+                'px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap',
+                mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
+              )}
+            >
+              <RichText text={message.content} mine={mine} />
+              {message.editedAt && <span className="ml-1.5 text-[10px] opacity-60">(editada)</span>}
+            </div>
+          )
         )}
+        {!editing && <MessageAttachments items={message.attachments} mine={mine} />}
       </div>
       {mine && !editing && (
         <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
@@ -310,14 +317,22 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
 
 function DmComposer({ dm }: { dm: DirectChannel }) {
   const [text, setText] = useState('');
-  useEffect(() => setText(''), [dm.id]);
+  const files = useAttachmentDraft();
+  useEffect(() => {
+    setText('');
+    files.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dm.id]);
 
   async function send() {
     const content = text.trim();
-    if (!content) return;
+    if (files.uploading) return toast.info('Espere os arquivos terminarem de subir.');
+    const attachments = files.ids;
+    if (!content && !attachments.length) return;
     setText('');
     try {
-      await api.post(`/dms/${dm.id}/messages`, { content });
+      await api.post(`/dms/${dm.id}/messages`, { content, ...(attachments.length ? { attachments } : {}) });
+      files.clear();
     } catch (err) {
       setText(content);
       toast.error(err);
@@ -332,23 +347,28 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
   };
 
   return (
-    <div className="flex shrink-0 items-end gap-2 px-6 pb-5">
-      <GameMenuButton target={{ kind: 'dm', id: dm.id }} />
-      <label className="sr-only" htmlFor="dm-composer">
-        Mensagem para {dm.user.displayName}
-      </label>
-      <textarea
-        id="dm-composer"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        rows={Math.min(6, text.split('\n').length)}
-        placeholder={`Mensagem para ${dm.user.displayName}`}
-        className={cx(
-          'block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 px-5 py-3.5 text-[15px] outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60',
-          text.includes('\n') ? 'rounded-3xl' : 'rounded-full',
-        )}
-      />
+    <div className="shrink-0 px-6 pb-5">
+      <PendingAttachments items={files.items} onRemove={files.remove} />
+      <div className="flex items-end gap-2" onDragOver={(e) => e.preventDefault()} onDrop={files.onDrop}>
+        <GameMenuButton target={{ kind: 'dm', id: dm.id }} />
+        <AttachButton onFiles={files.add} />
+        <label className="sr-only" htmlFor="dm-composer">
+          Mensagem para {dm.user.displayName}
+        </label>
+        <textarea
+          id="dm-composer"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          onPaste={files.onPaste}
+          rows={Math.min(6, text.split('\n').length)}
+          placeholder={`Mensagem para ${dm.user.displayName}`}
+          className={cx(
+            'block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 px-5 py-3.5 text-[15px] outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60',
+            text.includes('\n') ? 'rounded-3xl' : 'rounded-full',
+          )}
+        />
+      </div>
     </div>
   );
 }

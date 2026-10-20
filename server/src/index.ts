@@ -25,7 +25,11 @@ app.use(
     immutable: true,
     index: false,
     fallthrough: false,
-    setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+    setHeaders: (res, path) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // anexos que não são imagem são sempre baixados, nunca abertos como página do site
+      if (/[\\/]files[\\/]/.test(path) && !/\.(png|jpe?g|gif|webp)$/i.test(path)) res.setHeader('Content-Disposition', 'attachment');
+    },
   }),
 );
 // instalador do app desktop (enviado pelo CI)

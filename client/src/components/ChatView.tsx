@@ -1,6 +1,7 @@
 import { ClipCard } from './Clip';
 import { Hash, Pencil, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { AttachButton, MessageAttachments, PendingAttachments, useAttachmentDraft } from './Attachments';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
@@ -166,7 +167,7 @@ function Bubble({
 
   async function saveEdit() {
     setEditing(false);
-    if (draft.trim() && draft !== message.content) {
+    if ((draft.trim() || message.attachments?.length) && draft !== message.content) {
       await api.patch(`/messages/${message.id}`, { content: draft }).catch(toast.error);
     }
   }
@@ -233,24 +234,27 @@ function Bubble({
         ) : message.kind === 'game' && message.data ? (
           <GameCard id={message.id} data={message.data} author={mine ? 'Você' : name} />
         ) : (
-          <div
-            className={cx(
-              'px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap',
-              mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
-              !mine && mentionsMe(message.content, me.username) && 'ring-2 ring-accent',
-              isAction && 'italic',
-            )}
-          >
-            {isAction ? (
-              <>
-                <b className="not-italic">{name}</b> <RichText text={message.content.slice(4)} mine={mine} />
-              </>
-            ) : (
-              <RichText text={message.content} mine={mine} />
-            )}
-            {message.editedAt && <span className="ml-1.5 text-[10px] opacity-60">(editada)</span>}
-          </div>
+          message.content && (
+            <div
+              className={cx(
+                'px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap',
+                mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
+                !mine && mentionsMe(message.content, me.username) && 'ring-2 ring-accent',
+                isAction && 'italic',
+              )}
+            >
+              {isAction ? (
+                <>
+                  <b className="not-italic">{name}</b> <RichText text={message.content.slice(4)} mine={mine} />
+                </>
+              ) : (
+                <RichText text={message.content} mine={mine} />
+              )}
+              {message.editedAt && <span className="ml-1.5 text-[10px] opacity-60">(editada)</span>}
+            </div>
+          )
         )}
+        {!editing && <MessageAttachments items={message.attachments} mine={mine} />}
       </div>
       {actions}
     </div>
@@ -312,6 +316,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   const typing = useApp((s) => s.typing[channel.id]);
   const [, force] = useState(0);
   const canSend = has(channel.permissions, P.SEND_MESSAGES);
+  const files = useAttachmentDraft();
 
   // reavalia a validade do "digitando…" a cada 2s; pausa com a página oculta, sem motivo pra ficar acordando sem ninguém olhando
   useEffect(() => {
@@ -332,7 +337,11 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
     };
   }, []);
 
-  useEffect(() => setText(''), [channel.id]);
+  useEffect(() => {
+    setText('');
+    files.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel.id]);
 
   const typers = Object.entries(typing ?? {})
     .filter(([, until]) => until > Date.now())
@@ -377,12 +386,20 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
 
   async function send() {
     const content = text.trim();
-    if (!content) return;
+    if (files.uploading) return toast.info('Espere os arquivos terminarem de subir.');
+    const attachments = files.ids;
+    if (!content && !attachments.length) return;
     const post = async (c: string) => {
       await api.post(`/channels/${channel.id}/messages`, { content: c });
     };
     setText('');
     try {
+      if (attachments.length) {
+        // se falhar, o texto volta (catch abaixo) e os arquivos continuam na fila
+        await api.post(`/channels/${channel.id}/messages`, { content, attachments });
+        files.clear();
+        return;
+      }
       if (content.startsWith('/')) {
         const handled = await runCommand(content, { detail, channel, send: post });
         if (!handled) {
@@ -465,8 +482,10 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <PendingAttachments items={files.items} onRemove={files.remove} />
+      <div className="flex items-end gap-2" onDragOver={(e) => canSend && e.preventDefault()} onDrop={(e) => canSend && files.onDrop(e)}>
         {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} />}
+        {canSend && <AttachButton onFiles={files.add} />}
         <label className="sr-only" htmlFor={`composer-${channel.id}`}>
           Mensagem
         </label>
@@ -476,6 +495,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
           disabled={!canSend}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={(e) => canSend && files.onPaste(e)}
           rows={Math.min(6, text.split('\n').length)}
           placeholder={placeholder}
           aria-autocomplete="list"

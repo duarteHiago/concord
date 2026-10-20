@@ -121,6 +121,22 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google ON users(google_sub)
 // (AUTHORITY_SERVER_ID) concede isso, em qualquer servidor ou pessoa — ver access.ts#isInstanceAuthority
 addColumn('users', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('servers', 'verified', 'INTEGER NOT NULL DEFAULT 0');
+// anexos das mensagens (lista em JSON) e os arquivos enviados, ainda sem mensagem ou já anexados
+addColumn('messages', 'attachments', 'TEXT');
+addColumn('dm_messages', 'attachments', 'TEXT');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY,
+    uploader_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    image INTEGER NOT NULL DEFAULT 0,
+    message_id TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+`);
 // e-mail de recuperação (opcional): só entra aqui depois de confirmado pelo link
 addColumn('users', 'email', 'TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL');
@@ -359,6 +375,17 @@ export interface UserRow {
   created_at: number;
 }
 
+export interface AttachmentRow {
+  id: string;
+  uploader_id: string;
+  url: string;
+  name: string;
+  size: number;
+  image: number;
+  message_id: string | null;
+  created_at: number;
+}
+
 /** Link de uso único mandado por e-mail: confirmar o endereço (verify) ou trocar a senha (reset). */
 export interface EmailTokenRow {
   token_hash: string;
@@ -452,6 +479,7 @@ export interface MessageRow {
   content: string;
   kind: string;
   data: string | null;
+  attachments?: string | null;
   created_at: number;
   edited_at: number | null;
 }

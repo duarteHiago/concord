@@ -29,6 +29,7 @@ import {
   tx,
   type ChannelRow,
   type CustomStickerRow,
+  type AttachmentRow,
   type DmChannelRow,
   type EmailTokenRow,
   type PlacedStickerRow,
@@ -43,7 +44,7 @@ import {
 } from './db.ts';
 import { color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
-import { removeUpload, saveImage, saveSound } from './uploads.ts';
+import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
 import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendVerifyEmail } from './mail.ts';
 import { playGame } from './games.ts';
@@ -203,6 +204,7 @@ const messageJson = (m: MessageWithAuthor) => ({
   content: m.content,
   kind: m.kind ?? 'text',
   data: parseData(m.data),
+  attachments: (parseData(m.attachments ?? null) as AttachmentJson[] | null) ?? [],
   createdAt: m.created_at,
   editedAt: m.edited_at,
   author: authorJson({ ...m, id: m.author_id }),
@@ -1378,13 +1380,99 @@ api.get('/channels/:id/messages', (req, res) => {
   res.json(rows.reverse().map(messageJson));
 });
 
+// ---- Anexos ----
+
+interface AttachmentJson {
+  id: string;
+  name: string;
+  size: number;
+  url: string;
+  image: boolean;
+}
+const attachmentJson = (a: AttachmentRow): AttachmentJson => ({ id: a.id, name: a.name, size: a.size, url: a.url, image: !!a.image });
+
+const MAX_ATTACHMENTS = 10;
+const attachmentBody = express.raw({ type: () => true, limit: '21mb' });
+const uploadsPerUser = limiter(60, 60 * 60_000);
+
+/** Envia um arquivo; ele só aparece para alguém quando vai junto de uma mensagem. */
+api.post('/attachments', humansOnly, attachmentBody, (req, res) => {
+  const me = uid(res);
+  if (!uploadsPerUser(me)) fail(429, 'Muitos arquivos em pouco tempo. Espere um pouco.');
+  const name = cleanFileName(req.query.name);
+  const { url, image } = saveAttachment(me, req.body, name);
+  const row: AttachmentRow = { id: randomUUID(), uploader_id: me, url, name, size: (req.body as Buffer).length, image: image ? 1 : 0, message_id: null, created_at: now() };
+  run(
+    'INSERT INTO attachments (id, uploader_id, url, name, size, image, message_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)',
+    row.id,
+    row.uploader_id,
+    row.url,
+    row.name,
+    row.size,
+    row.image,
+    row.created_at,
+  );
+  res.json(attachmentJson(row));
+});
+
+/** Confere os anexos de uma mensagem nova: enviados por quem manda e ainda sem mensagem. */
+function pendingAttachments(raw: unknown, me: string): AttachmentRow[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > MAX_ATTACHMENTS || raw.some((x) => typeof x !== 'string')) fail(400, `Até ${MAX_ATTACHMENTS} anexos por mensagem`);
+  const ids = [...new Set(raw as string[])];
+  const rows = ids.map((id) => get<AttachmentRow>('SELECT * FROM attachments WHERE id = ? AND uploader_id = ? AND message_id IS NULL', id, me));
+  if (rows.some((r) => !r)) fail(400, 'Um dos anexos expirou. Envie o arquivo de novo.');
+  return rows as AttachmentRow[];
+}
+
+const attachmentsField = (rows: AttachmentRow[]) => (rows.length ? JSON.stringify(rows.map(attachmentJson)) : null);
+function claimAttachments(rows: AttachmentRow[], messageId: string) {
+  for (const r of rows) run('UPDATE attachments SET message_id = ? WHERE id = ?', messageId, r.id);
+}
+
+/** Mensagem apagada: os arquivos dela também saem do disco. */
+function deleteAttachments(messageId: string) {
+  for (const a of all<AttachmentRow>('SELECT * FROM attachments WHERE message_id = ?', messageId)) removeUpload(a.url);
+  run('DELETE FROM attachments WHERE message_id = ?', messageId);
+}
+
+/** Texto da mensagem: pode ficar vazio quando vai só com anexos. */
+function messageContent(raw: unknown, hasAttachments: boolean) {
+  if (hasAttachments && (raw === undefined || raw === null || (typeof raw === 'string' && !raw.trim()))) return '';
+  return str(raw, 'mensagem', 1, 2000);
+}
+
+// faxina de hora em hora: arquivos enviados e nunca mandados (1 dia), e os de mensagens que sumiram
+// (canal, servidor ou conta apagados levam as mensagens junto, mas não os arquivos)
+setInterval(() => {
+  const orphans = all<AttachmentRow>(
+    `SELECT * FROM attachments WHERE (message_id IS NULL AND created_at < ?)
+       OR (message_id IS NOT NULL AND message_id NOT IN (SELECT id FROM messages) AND message_id NOT IN (SELECT id FROM dm_messages))`,
+    now() - 24 * 60 * 60_000,
+  );
+  for (const a of orphans) {
+    removeUpload(a.url);
+    run('DELETE FROM attachments WHERE id = ?', a.id);
+  }
+}, 60 * 60_000).unref();
+
 api.post('/channels/:id/messages', async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
   if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
-  const content = str(req.body?.content, 'mensagem', 1, 2000);
+  const files = pendingAttachments(req.body?.attachments, me);
+  const content = messageContent(req.body?.content, files.length > 0);
   const id = randomUUID();
-  run('INSERT INTO messages (id, channel_id, author_id, content, created_at) VALUES (?, ?, ?, ?, ?)', id, channel.id, me, content, now());
+  run(
+    'INSERT INTO messages (id, channel_id, author_id, content, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    id,
+    channel.id,
+    me,
+    content,
+    attachmentsField(files),
+    now(),
+  );
+  claimAttachments(files, id);
   const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
   await emitToChannel(channel, 'message:new', msg);
   notifyMentions(channel, me, content, msg);
@@ -1416,7 +1504,7 @@ api.patch('/messages/:id', async (req, res) => {
   if (msg.author_id !== me) fail(403, 'Você só pode editar suas mensagens');
   if (msg.kind !== 'text') fail(400, 'Mensagens de jogo não podem ser editadas');
   const channel = requireChannelPerm(msg.channel_id, me, P.SEND_MESSAGES);
-  run('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?', str(req.body?.content, 'mensagem', 1, 2000), now(), msg.id);
+  run('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?', messageContent(req.body?.content, !!msg.attachments), now(), msg.id);
   const updated = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, msg.id)!);
   await emitToChannel(channel, 'message:update', updated);
   res.json(updated);
@@ -1429,6 +1517,7 @@ api.delete('/messages/:id', async (req, res) => {
     ? requireChannelPerm(msg.channel_id, me, P.VIEW_CHANNEL)
     : requireChannelPerm(msg.channel_id, me, P.MANAGE_MESSAGES);
   run('DELETE FROM messages WHERE id = ?', msg.id);
+  deleteAttachments(msg.id);
   await emitToChannel(channel, 'message:delete', { id: msg.id, channelId: channel.id });
   res.json({ ok: true });
 });
@@ -1884,7 +1973,7 @@ api.post('/voice/clip', humansOnly, async (req, res) => {
 
 // ============================================================ Conversas privadas (DMs)
 
-const DM_SELECT = `SELECT m.id, m.dm_id AS channel_id, m.author_id, m.content, m.kind, m.data, m.created_at, m.edited_at,
+const DM_SELECT = `SELECT m.id, m.dm_id AS channel_id, m.author_id, m.content, m.kind, m.data, m.attachments, m.created_at, m.edited_at,
   u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style
   FROM dm_messages m JOIN users u ON u.id = m.author_id`;
 
@@ -1947,19 +2036,21 @@ api.get('/dms/:id/messages', (req, res) => {
   res.json(rows.reverse().map(messageJson));
 });
 
-function insertDmMessage(dm: DmChannelRow, me: string, content: string, kind = 'text', data: unknown = null) {
+function insertDmMessage(dm: DmChannelRow, me: string, content: string, kind = 'text', data: unknown = null, files: AttachmentRow[] = []) {
   const id = randomUUID();
   const at = now();
   run(
-    'INSERT INTO dm_messages (id, dm_id, author_id, content, kind, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO dm_messages (id, dm_id, author_id, content, kind, data, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     id,
     dm.id,
     me,
     content,
     kind,
     data ? JSON.stringify(data) : null,
+    attachmentsField(files),
     at,
   );
+  claimAttachments(files, id);
   run('UPDATE dm_channels SET last_message_at = ? WHERE id = ?', at, dm.id);
   // quem envia já leu a própria mensagem
   run(
@@ -1977,7 +2068,8 @@ function insertDmMessage(dm: DmChannelRow, me: string, content: string, kind = '
 api.post('/dms/:id/messages', (req, res) => {
   const me = uid(res);
   const dm = requireDm(req.params.id, me);
-  res.json(insertDmMessage(dm, me, str(req.body?.content, 'mensagem', 1, 2000)));
+  const files = pendingAttachments(req.body?.attachments, me);
+  res.json(insertDmMessage(dm, me, messageContent(req.body?.content, files.length > 0), 'text', null, files));
 });
 
 api.post('/dms/:id/games', (req, res) => {
@@ -2001,10 +2093,13 @@ api.post('/dms/:id/read', (req, res) => {
 
 api.patch('/dm-messages/:id', (req, res) => {
   const me = uid(res);
-  const row = get<{ dm_id: string; author_id: string; kind: string }>('SELECT dm_id, author_id, kind FROM dm_messages WHERE id = ?', req.params.id);
+  const row = get<{ dm_id: string; author_id: string; kind: string; attachments: string | null }>(
+    'SELECT dm_id, author_id, kind, attachments FROM dm_messages WHERE id = ?',
+    req.params.id,
+  );
   if (!row || row.author_id !== me || row.kind !== 'text') fail(404, 'Mensagem não encontrada');
   const dm = requireDm(row!.dm_id, me);
-  run('UPDATE dm_messages SET content = ?, edited_at = ? WHERE id = ?', str(req.body?.content, 'mensagem', 1, 2000), now(), req.params.id);
+  run('UPDATE dm_messages SET content = ?, edited_at = ? WHERE id = ?', messageContent(req.body?.content, !!row!.attachments), now(), req.params.id);
   const msg = messageJson(get<MessageWithAuthor>(`${DM_SELECT} WHERE m.id = ?`, req.params.id)!);
   deliverDm(dm, 'dm:update', msg);
   res.json(msg);
@@ -2016,6 +2111,7 @@ api.delete('/dm-messages/:id', (req, res) => {
   if (!row || row.author_id !== me) fail(404, 'Mensagem não encontrada');
   const dm = requireDm(row!.dm_id, me);
   run('DELETE FROM dm_messages WHERE id = ?', req.params.id);
+  deleteAttachments(req.params.id);
   deliverDm(dm, 'dm:delete', { id: req.params.id, channelId: dm.id });
   res.json({ ok: true });
 });
