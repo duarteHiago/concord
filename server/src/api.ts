@@ -2039,7 +2039,7 @@ api.put('/me/email', humansOnly, async (req, res) => {
   } catch (err) {
     mailError(err);
     run('DELETE FROM email_tokens WHERE token_hash = ?', hashToken(token));
-    fail(502, 'Não foi possível enviar o e-mail agora. Tente de novo em instantes.');
+    fail(500, 'Não foi possível enviar o e-mail agora. Tente de novo em instantes.');
   }
   res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
 });
