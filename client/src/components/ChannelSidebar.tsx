@@ -38,7 +38,8 @@ export function ChannelSidebar() {
   const detail = useActiveDetail();
   const home = useApp((s) => s.activeServerId === HOME);
   return (
-    <aside className="panel flex w-[290px] shrink-0 flex-col overflow-hidden">
+    // janelas estreitas (notebooks, app desktop sem maximizar): a barra de canais encolhe um pouco
+    <aside className="panel flex w-[250px] shrink-0 flex-col overflow-hidden lg:w-[290px]">
       <ServerStrip />
       {home ? (
         <DmSidebar />
@@ -323,11 +324,9 @@ function VoiceParticipant({ detail, state, speaking }: { detail: ServerDetail; s
       </span>
       {state.streaming && <MonitorUp size={14} className="text-accent" aria-label="transmitindo" />}
       {state.camera && <Video size={14} className="text-fg-subtle" aria-label="câmera ligada" />}
-      {state.deafened ? (
-        <HeadphoneOff size={14} className="text-danger" aria-label="ensurdecido" />
-      ) : state.muted ? (
-        <MicOff size={14} className={state.serverMuted ? 'text-danger' : 'text-fg-subtle'} aria-label="microfone desligado" />
-      ) : null}
+      {/* mutado e ensurdecido são independentes: quem está com os dois mostra os dois ícones */}
+      {state.muted && <MicOff size={14} className={state.serverMuted ? 'text-danger' : 'text-fg-subtle'} aria-label="microfone desligado" />}
+      {state.deafened && <HeadphoneOff size={14} className="text-danger" aria-label="ensurdecido" />}
     </button>
   );
 }

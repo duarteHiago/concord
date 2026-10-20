@@ -399,6 +399,10 @@ function useMemberInfo(detail: ServerDetail, p: Participant) {
   };
 }
 
+/** Ensurdecido vem do estado de voz do servidor (o LiveKit só sabe do microfone). */
+const useDeafened = (serverId: string, userId: string) =>
+  useApp((s) => !!s.voiceStates[serverId]?.find((v) => v.userId === userId)?.deafened);
+
 /** Participante em bolha (sobre a transmissão em foco). */
 function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
   const p = tile.participant;
@@ -407,6 +411,7 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
   const openPopover = usePopover((s) => s.open);
   const micPub = p.getTrackPublication(Track.Source.Microphone);
   const muted = !micPub || micPub.isMuted;
+  const deafened = useDeafened(detail.server.id, p.identity);
   const camPub = p.getTrackPublication(Track.Source.Camera);
   const camTrack = camPub && !camPub.isMuted ? (camPub.track as LocalTrack | RemoteTrack | undefined) : undefined;
 
@@ -420,6 +425,7 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
       </span>
       <span className="flex max-w-24 items-center gap-1 rounded-full bg-surface-1/85 px-2.5 py-0.5 text-xs font-bold backdrop-blur">
         {muted && <MicOff size={11} className="shrink-0 text-danger" />}
+        {deafened && <HeadphoneOff size={11} className="shrink-0 text-danger" />}
         <span className="truncate">{tile.isLocal ? 'você' : name}</span>
       </span>
     </button>
@@ -446,6 +452,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
   const [isFullscreen, setFullscreen] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const openPopover = usePopover((s) => s.open);
+  const deafened = useDeafened(detail.server.id, p.identity);
 
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === ref.current);
@@ -562,6 +569,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
       )}
       <span className="pointer-events-none absolute bottom-3 left-3 flex max-w-[85%] items-center gap-1.5 rounded-full bg-surface-1/85 px-3 py-1 text-xs font-bold backdrop-blur">
         {muted ? <MicOff size={12} className="shrink-0 text-danger" /> : <Mic size={12} className="shrink-0" />}
+        {deafened && <HeadphoneOff size={12} className="shrink-0 text-danger" />}
         <span className="truncate">{isLocal ? `${name} (você)` : name}</span>
       </span>
     </div>

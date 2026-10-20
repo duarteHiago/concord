@@ -88,8 +88,26 @@ let win = null;
 let pendingSourceId = null;
 let capture = null;
 
+/** Tamanho da janela que cabe na tela: notebooks de 14"/15" (1366x768) têm uns 730px de altura útil. */
+function fitBounds() {
+  const saved = config.bounds;
+  if (!saved) {
+    const area = screen.getPrimaryDisplay().workAreaSize;
+    return { width: Math.min(1360, area.width), height: Math.min(860, area.height) };
+  }
+  // tamanho salvo de um monitor maior (ou que foi desconectado): encolhe e traz para dentro da tela
+  const area = screen.getDisplayMatching(saved).workArea;
+  const width = Math.min(saved.width, area.width);
+  const height = Math.min(saved.height, area.height);
+  const x = Math.min(Math.max(saved.x ?? area.x, area.x), area.x + area.width - width);
+  const y = Math.min(Math.max(saved.y ?? area.y, area.y), area.y + area.height - height);
+  return { x, y, width, height };
+}
+
 function createWindow() {
-  const bounds = config.bounds ?? { width: 1360, height: 860 };
+  const bounds = fitBounds();
+  // primeira abertura numa tela menor que o tamanho padrão: já abre maximizada
+  const smallScreen = !config.bounds && (bounds.width < 1360 || bounds.height < 860);
   win = new BrowserWindow({
     ...bounds,
     minWidth: 960,
@@ -106,7 +124,7 @@ function createWindow() {
       backgroundThrottling: false,
     },
   });
-  if (config.maximized) win.maximize();
+  if (config.maximized || smallScreen) win.maximize();
 
   const remember = () => {
     if (!win || win.isDestroyed()) return;

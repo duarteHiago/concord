@@ -67,6 +67,19 @@ export function MessageFeed({ channel, compact = false }: { channel: Channel; co
     }
   }, [messages]);
 
+  // largura mudou (ex.: painel da call redimensionado): o texto reflui e a altura muda; quem estava
+  // no fim continua no fim, em vez de a rolagem ficar pulando
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [loaded]);
+
   function onScroll() {
     const el = scrollRef.current!;
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -78,7 +91,9 @@ export function MessageFeed({ channel, compact = false }: { channel: Channel; co
   }
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+    // scrollbar-gutter: o espaço da barra fica sempre reservado. Sem isso, em certas larguras a barra
+    // aparece, o texto reflui, a barra some e o ciclo se repete (a rolagem "pisca")
+    <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
       {!loaded ? (
         <div className="flex h-full items-center justify-center">
           <Spinner />

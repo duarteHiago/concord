@@ -171,7 +171,7 @@ export function AuthScreen() {
           )}
           {mode === 'reset' && (
             <p className="text-xs text-fg-subtle">
-              Sem o código? Peça para quem administra o Concord rodar <code>node src/cli.ts reset-password {username || 'seu-usuario'}</code> no servidor.
+              Sem código e sem e-mail cadastrado? Fale com quem administra o Concord.
             </p>
           )}
           {mode === 'register' && (

@@ -8,7 +8,7 @@ import { Avatar, VerifiedBadge, cx } from './ui';
 /** Painel lateral com a lista de membros (canais de texto). */
 export function MemberList() {
   return (
-    <aside aria-label="Membros" className="panel hidden w-64 shrink-0 flex-col overflow-hidden lg:flex">
+    <aside aria-label="Membros" className="panel hidden w-64 shrink-0 flex-col overflow-hidden xl:flex">
       <MemberListBody />
     </aside>
   );
