@@ -147,6 +147,35 @@ Para mudanças que quebram compatibilidade (ex.: exigem mexer no `.env` da VPS o
 - **Corpo explicando o porquê**: qual era o problema, a causa e o que mudou. Quem ler o histórico daqui a meses precisa entender sem abrir o código.
 - **Para fechar uma issue sozinha, use `Closes #N`** no corpo do commit ou na descrição do PR. Escrever só "(issue #N)" cria o link, mas **não fecha** a issue.
 
+### Commits assinados (obrigatório)
+
+O repositório **recusa push de commits sem assinatura verificada**, em qualquer branch. A assinatura prova que o commit foi feito por você, e não por alguém que só colocou o seu nome e e-mail no Git. No GitHub, os commits assinados aparecem com o selo **Verified**.
+
+Configuração (uma vez por computador), com uma chave SSH só para assinar:
+
+```bash
+# 1. Crie a chave (use o e-mail da sua conta do GitHub)
+ssh-keygen -t ed25519 -C "seu@email.com" -f ~/.ssh/github_signing
+
+# 2. Faça o Git assinar tudo com ela
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/github_signing.pub
+git config --global commit.gpgsign true
+git config --global tag.gpgsign true
+
+# 3. Cadastre a chave no GitHub como chave de ASSINATURA
+gh auth refresh -h github.com -s admin:ssh_signing_key
+gh ssh-key add ~/.ssh/github_signing.pub --type signing --title "Meu PC - assinatura"
+```
+
+Pelo site, o passo 3 é: *Settings → SSH and GPG keys → New SSH key* → em *Key type*, **Signing Key**. Uma chave cadastrada só como *Authentication* não serve para assinar.
+
+Confira: faça um commit e rode `git log --show-signature -1`. Depois do push, o commit deve aparecer como **Verified** no GitHub.
+
+- O e-mail do commit (`git config user.email`) precisa ser um e-mail **verificado na sua conta do GitHub**. Se for outro, o commit aparece como *Unverified* e o push é recusado.
+- Se o push for recusado por um commit antigo sem assinatura, assine de novo os commits da sua branch com `git rebase --exec "git commit --amend --no-edit -S" main` e suba com `git push --force-with-lease`.
+- Os merges feitos pelo botão do PR ("Squash and merge") o próprio GitHub assina.
+
 ## O que acontece depois do merge
 
 O pipeline (`.github/workflows/ci-cd.yml`) roda em todo PR e em todo push na `main`:
