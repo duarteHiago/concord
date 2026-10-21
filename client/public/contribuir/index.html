@@ -210,6 +210,25 @@ gh pr create</pre>
 <p>Escopos do projeto (opcionais): <code>client</code>, <code>server</code>, <code>desktop</code>, <code>voice</code>, <code>chat</code>, <code>auth</code>, <code>deploy</code>, <code>db</code>. Quebrou compatibilidade? Use <code>!</code> (ex.: <code>feat(auth)!:</code>) e explique no rodapé <code>BREAKING CHANGE:</code>.</p>
 <div class="warn">✅ Para a issue fechar sozinha, escreva <code>Closes #6</code> no corpo do commit ou na descrição do PR. Só "(issue #6)" cria o link, mas <b>não fecha</b>.</div>
 
+<h3>Commits assinados (obrigatório)</h3>
+<p>O repositório <b>recusa push de commits sem assinatura verificada</b>. A assinatura prova que o commit é seu, e não de alguém que só usou o seu nome no Git. No GitHub, eles aparecem com o selo <span class="chip" style="background:#1f883d;color:#fff">Verified</span>.</p>
+<ol class="flow">
+  <li><span class="ico">🔑</span><b>Crie uma chave</b><small><span class="mono">ssh-keygen -t ed25519 -f ~/.ssh/github_signing</span></small></li>
+  <li><span class="ico">⚙️</span><b>Configure o Git</b><small>para assinar todo commit com ela</small></li>
+  <li><span class="ico">☁️</span><b>Cadastre no GitHub</b><small>como <b>Signing Key</b>, não Authentication</small></li>
+  <li class="prod"><span class="ico">✔️</span><b>Verified</b><small>todo commit seu passa a ser aceito</small></li>
+</ol>
+<pre><span class="c"># uma vez por computador</span>
+ssh-keygen -t ed25519 -C "seu@email.com" -f ~/.ssh/github_signing
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/github_signing.pub
+git config --global commit.gpgsign true
+
+<span class="c"># cadastra a chave no GitHub como chave de assinatura</span>
+gh auth refresh -h github.com -s admin:ssh_signing_key
+gh ssh-key add ~/.ssh/github_signing.pub --type signing</pre>
+<p>O e-mail dos seus commits precisa ser um e-mail verificado na sua conta do GitHub. Os merges pelo botão do PR o GitHub assina sozinho.</p>
+
 <h2>Rodando na sua máquina</h2>
 <p class="section-sub">Precisa de Node 24 e Docker Desktop.</p>
 <pre><span class="c"># voz e vídeo (LiveKit)</span>

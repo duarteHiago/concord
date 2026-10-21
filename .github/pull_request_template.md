@@ -11,6 +11,7 @@ Closes #
 ## Checklist
 
 - [ ] Título no formato Conventional Commits (`fix(voice): ...`, `feat(chat): ...`)
+- [ ] Commits assinados (aparecem como **Verified**)
 - [ ] `server`: `npx tsc --noEmit` passa
 - [ ] `client`: `npm run build` passa
 - [ ] Testei o fluxo na mão (com duas contas, se envolve outra pessoa)
