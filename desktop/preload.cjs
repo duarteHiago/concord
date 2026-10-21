@@ -10,6 +10,7 @@ const listen = (channel) => (callback) => {
 contextBridge.exposeInMainWorld('concordDesktop', {
   info: () => ipcRenderer.invoke('concord:info'),
   devInfo: () => ipcRenderer.invoke('concord:dev-info'),
+  openDevWindow: () => ipcRenderer.invoke('concord:open-dev-window'),
   getSources: () => ipcRenderer.invoke('concord:sources'),
   selectSource: (id) => ipcRenderer.invoke('concord:select-source', id),
   startAudio: (sourceId) => ipcRenderer.invoke('concord:audio-start', { sourceId }),

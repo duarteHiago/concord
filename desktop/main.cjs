@@ -286,6 +286,33 @@ handle('concord:dev-info', async () => {
   };
 });
 
+let devWin = null;
+
+/** Janela independente de diagnóstico (/diagnostico) — não recebe o preload: só mostra o que
+ * a janela principal transmite pelo BroadcastChannel, não precisa da ponte do desktop. */
+handle('concord:open-dev-window', () => {
+  if (devWin && !devWin.isDestroyed()) {
+    devWin.focus();
+    return;
+  }
+  const area = screen.getPrimaryDisplay().workAreaSize;
+  devWin = new BrowserWindow({
+    width: Math.min(840, area.width),
+    height: Math.min(680, area.height),
+    minWidth: 480,
+    minHeight: 420,
+    title: 'Concord · Diagnóstico',
+    backgroundColor: '#120e16',
+    autoHideMenuBar: true,
+    icon: APP_ICON,
+    webPreferences: { contextIsolation: true, sandbox: true },
+  });
+  devWin.loadURL(`${config.server}/diagnostico`);
+  devWin.on('closed', () => {
+    devWin = null;
+  });
+});
+
 handle('concord:sources', async () => {
   const sources = await desktopCapturer.getSources({
     types: ['screen', 'window'],

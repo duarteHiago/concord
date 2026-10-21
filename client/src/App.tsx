@@ -3,6 +3,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { EmailResetScreen, useEmailPrompt } from './components/EmailRecovery';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
+import { DevWindow } from './components/DevWindow';
 import { ForumView } from './components/ForumView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
@@ -17,10 +18,20 @@ import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
 import { HOME, useActiveDetail, useApp } from './store/app';
 import { DmView } from './components/DirectMessages';
+import { useDevStatsPublisher } from './lib/devStats';
 import { setMotionPref } from './lib/motion';
+import { useVoice } from './store/voice';
 import './lib/visibility';
 
+/** /diagnostico abre como janela/aba independente — ver lib/desktop.ts e lib/devStats.ts. */
+const IS_DEV_WINDOW = location.pathname.replace(/\/+$/, '') === '/diagnostico';
+
 export default function App() {
+  if (IS_DEV_WINDOW) return <DevWindow />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const ready = useApp((s) => s.ready);
   const me = useApp((s) => s.me);
   const motion = me?.settings.motion;
@@ -28,7 +39,9 @@ export default function App() {
   const bootstrap = useApp((s) => s.bootstrap);
   const dropStage = useDrop((s) => s.stage);
   const emailReset = useApp((s) => s.emailReset);
+  const room = useVoice((s) => s.room);
   useClaimAfterLogin();
+  useDevStatsPublisher(me ? room : null);
 
   useEffect(() => {
     void bootstrap();

@@ -3,13 +3,12 @@ import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { clipSettings } from '../../lib/clip';
 import { NOISE_MODES, micLevels, preloadDfn, type GateMode, type MicLevel } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
-import { useDevSnapshot, type DevTrackStat } from '../../lib/devStats';
 import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
 import { StyleTab } from './StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, setToken } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
@@ -1082,177 +1081,18 @@ function Account() {
 
 // ------------------------------------------------------------------ Modo desenvolvedor
 
-function InfoGrid({ rows }: { rows: [string, string][] }) {
-  return (
-    <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1">
-      {rows.map(([label, value]) => (
-        <Fragment key={label}>
-          <span className="text-fg-muted">{label}</span>
-          <span className="truncate font-mono text-xs text-fg">{value}</span>
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
-/** Electron devolve o GPUInfo com formato solto; pega só o que interessa pro diagnóstico (decode/encode/compositing). */
-function gpuFeatureRows(gpu: unknown): [string, string][] {
-  if (!gpu || typeof gpu !== 'object') return [];
-  const featureStatus = (gpu as { featureStatus?: Record<string, string> }).featureStatus;
-  if (!featureStatus) return [];
-  return Object.entries(featureStatus)
-    .filter(([k]) => /video|gpu_compositing|webgl/.test(k))
-    .map(([k, v]): [string, string] => [k, v]);
-}
-
-function formatUptime(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  return h > 0 ? `${h}h ${m}min` : `${m}min`;
-}
-
-function TrackRow({ t }: { t: DevTrackStat }) {
-  return (
-    <div className="rounded-xl bg-surface-3 px-3 py-2">
-      <div className="flex items-center justify-between gap-2 font-semibold">
-        <span className="truncate">
-          {t.participant} · {t.source} ({t.kind === 'video' ? 'vídeo' : 'áudio'})
-        </span>
-        <span className="shrink-0 font-mono text-xs text-fg-muted uppercase">{t.codec}</span>
-      </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-fg-muted">
-        {!!t.width && !!t.height && (
-          <span>
-            {t.width}x{t.height}
-            {t.fps ? `@${t.fps}fps` : ''}
-          </span>
-        )}
-        <span>{t.bitrateKbps} kbps</span>
-        {t.hardwareAccelerated !== null && <span>{t.hardwareAccelerated ? 'GPU (hardware)' : 'CPU (software)'}</span>}
-        {!!t.encoderImpl && <span>{t.encoderImpl}</span>}
-        {t.jitterMs !== undefined && <span>jitter {t.jitterMs}ms</span>}
-        {t.roundTripMs !== undefined && <span>RTT {t.roundTripMs}ms</span>}
-        {t.packetsLost !== undefined && <span>{t.packetsLost} perdido(s)</span>}
-        {!!t.qualityLimitation && t.qualityLimitation !== 'none' && <span className="text-danger">limitado por {t.qualityLimitation}</span>}
-        {!!t.protocol && (
-          <span>
-            {t.protocol.toUpperCase()}
-            {t.candidateType ? ` (${t.candidateType})` : ''}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function DevTab() {
-  const room = useVoice((s) => s.room);
-  const audioSettings = useVoice((s) => s.audioSettings);
-  const snapshot = useDevSnapshot(room, true);
-  const noiseLabel = NOISE_MODES.find((m) => m.id === audioSettings.noiseMode)?.label ?? audioSettings.noiseMode;
-
-  if (!snapshot) return <p className="text-sm text-fg-muted">Carregando diagnóstico…</p>;
-
-  const envRows: [string, string][] = [
-    ['Modo', snapshot.mode === 'desktop' ? 'App desktop' : 'Navegador (web)'],
-    ['Build do cliente', new Date(snapshot.clientBuildTime).toLocaleString('pt-BR')],
-  ];
-  if (snapshot.desktop) envRows.push(['Versão do app', snapshot.desktop.version], ['Plataforma', snapshot.desktop.platform]);
-  envRows.push(['Navegador/engine', snapshot.userAgent]);
-  if (snapshot.desktopInfo) {
-    envRows.push(
-      ['Electron', snapshot.desktopInfo.versions.electron ?? '?'],
-      ['Chromium', snapshot.desktopInfo.versions.chrome ?? '?'],
-      ['Node.js (app)', snapshot.desktopInfo.versions.node ?? '?'],
-    );
-  }
-
-  const serverRows: [string, string][] = [
-    ['Latência HTTP', snapshot.health.latencyMs !== null ? `${snapshot.health.latencyMs} ms` : 'falhou ao medir'],
-    ['Versão do servidor', snapshot.health.version ?? '?'],
-    ['Node.js (servidor)', snapshot.health.nodeVersion ?? '?'],
-    ['No ar há', snapshot.health.uptimeSec !== undefined ? formatUptime(snapshot.health.uptimeSec) : '?'],
-  ];
-
-  const perfRows: [string, string][] = [];
-  if (snapshot.performance.jsHeapUsedMB !== undefined) {
-    perfRows.push(['Memória JS (heap)', `${snapshot.performance.jsHeapUsedMB} MB de ${snapshot.performance.jsHeapTotalMB} MB`]);
-  }
-  perfRows.push(['Elementos na tela (DOM)', String(snapshot.performance.domNodes)], ['Núcleos de CPU', String(snapshot.cpuCores)]);
-
-  const systemRows: [string, string][] = snapshot.desktopInfo
-    ? [
-        ['Processador', snapshot.desktopInfo.cpuModel ?? '?'],
-        ['RAM total', `${(snapshot.desktopInfo.totalMemMB / 1024).toFixed(1)} GB`],
-        ['RAM livre', `${(snapshot.desktopInfo.freeMemMB / 1024).toFixed(1)} GB`],
-        ['Alimentação', snapshot.desktopInfo.onBattery ? 'bateria' : 'energia'],
-      ]
-    : [];
-
+  const open = () => {
+    if (desktop?.openDevWindow) void desktop.openDevWindow();
+    else window.open('/diagnostico', 'concord-diagnostico', 'width=840,height=680,menubar=no,toolbar=no');
+  };
   return (
-    <div className="max-h-[60vh] space-y-5 overflow-y-auto pr-1 text-sm">
-      <p className="text-xs text-fg-subtle">Diagnóstico e desempenho do próprio Concord. Nada daqui sai da sua máquina.</p>
-
-      <section>
-        <SectionTitle>Ambiente</SectionTitle>
-        <InfoGrid rows={envRows} />
-      </section>
-
-      <section>
-        <SectionTitle>Servidor</SectionTitle>
-        <InfoGrid rows={serverRows} />
-      </section>
-
-      <section>
-        <SectionTitle>Supressão de ruído</SectionTitle>
-        <InfoGrid rows={[['Motor ativo', noiseLabel], ['Portão de voz', audioSettings.gate.mode === 'off' ? 'desligado' : 'ligado']]} />
-      </section>
-
-      <section>
-        <SectionTitle>Áudio e vídeo ativos</SectionTitle>
-        {snapshot.tracks.length === 0 ? (
-          <p className="text-fg-muted">Nenhuma faixa ativa agora — entre numa sala de voz pra ver esses dados.</p>
-        ) : (
-          <div className="space-y-2">
-            {snapshot.tracks.map((t, i) => (
-              <TrackRow key={i} t={t} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <SectionTitle>Desempenho</SectionTitle>
-        <InfoGrid rows={perfRows} />
-        {snapshot.desktopInfo && snapshot.desktopInfo.appMetrics.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {snapshot.desktopInfo.appMetrics.map((m) => (
-              <div key={m.pid} className="flex justify-between font-mono text-xs text-fg-muted">
-                <span>
-                  {m.type} (pid {m.pid})
-                </span>
-                <span>
-                  {m.cpuPercent !== null ? `${m.cpuPercent.toFixed(1)}% CPU` : '?'} · {m.memoryMB !== null ? `${m.memoryMB} MB` : '?'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {snapshot.desktopInfo && (
-        <section>
-          <SectionTitle>Sistema</SectionTitle>
-          <InfoGrid rows={systemRows} />
-        </section>
-      )}
-
-      {snapshot.desktopInfo && gpuFeatureRows(snapshot.desktopInfo.gpu).length > 0 && (
-        <section>
-          <SectionTitle>Aceleração de GPU</SectionTitle>
-          <InfoGrid rows={gpuFeatureRows(snapshot.desktopInfo.gpu)} />
-        </section>
-      )}
+    <div className="space-y-4">
+      <p className="text-sm text-fg-muted">
+        Abre uma janela separada mostrando o que está acontecendo dentro do Concord em tempo real — ambiente, conexão com o servidor, áudio/vídeo ativo, CPU, GPU e rede — com gráficos que
+        atualizam enquanto você usa o app normalmente na janela principal. Nada daqui sai da sua máquina.
+      </p>
+      <Button onClick={open}>Abrir janela de diagnóstico</Button>
     </div>
   );
 }

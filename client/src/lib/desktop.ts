@@ -43,8 +43,9 @@ export interface DesktopDevInfo {
 
 interface DesktopBridge {
   info(): Promise<DesktopInfo>;
-  // ausente em versões antigas do app desktop
+  // ausentes em versões antigas do app desktop
   devInfo?(): Promise<DesktopDevInfo>;
+  openDevWindow?(): Promise<void>;
   getSources(): Promise<DesktopSource[]>;
   selectSource(id: string): Promise<void>;
   startAudio(sourceId: string): Promise<void>;
