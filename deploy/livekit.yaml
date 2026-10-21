@@ -26,5 +26,12 @@ room:
     - mime: video/AV1
     - mime: video/H265
     - mime: video/rtx
+# Quem está falando (o destaque no avatar). O padrão avisa a cada 400 ms e ainda faz média de 2
+# leituras, então o destaque acendia quase 1 s depois da pessoa começar a falar. Com 150 ms e sem
+# média ele acompanha a voz; o app segura o destaque ~350 ms antes de apagar, então não pisca
+# entre uma palavra e outra (client/src/store/voice.ts).
+audio:
+  update_interval: 150
+  smooth_intervals: 1
 logging:
   level: info

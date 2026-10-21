@@ -18,7 +18,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { closePopout } from '../lib/popout';
-import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, updateNoiseStrength, EFFECTS, updateGate, voiceNotices, type EffectId, type GateSettings, type NoiseMode } from '../lib/voiceEffects';
+import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, updateNoiseStrength, EFFECTS, updateGate, micLevels, voiceNotices, type EffectId, type GateSettings, type MicLevel, type NoiseMode } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -257,6 +257,50 @@ export const useVoice = create<VoiceStore>((set, get) => {
     publishState();
   }
 
+  // ---- quem está falando
+  // Os outros: o servidor (ActiveSpeakersChanged). Eu: o nível do meu microfone, medido aqui mesmo a
+  // cada 50 ms, sem esperar a ida e volta até o servidor. Acender é imediato; apagar espera um
+  // pouco, para o destaque não piscar entre uma palavra e outra.
+  const SPEAK_RELEASE_MS = 350;
+  const offTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let selfLevelAt = 0;
+  let selfWatchdog: ReturnType<typeof setTimeout> | undefined;
+
+  function setSpeaking(id: string, on: boolean) {
+    const timer = offTimers.get(id);
+    if (on) {
+      if (timer) {
+        clearTimeout(timer);
+        offTimers.delete(id);
+      }
+      if (!get().speaking[id]) set({ speaking: { ...get().speaking, [id]: true } });
+      return;
+    }
+    if (!get().speaking[id] || timer) return;
+    offTimers.set(
+      id,
+      setTimeout(() => {
+        offTimers.delete(id);
+        const { [id]: _gone, ...rest } = get().speaking;
+        set({ speaking: rest });
+      }, SPEAK_RELEASE_MS),
+    );
+  }
+
+  // nível acima do limite do portão = falando. Não dá para usar o "aberto" do portão: com ele
+  // desligado, fica aberto o tempo todo
+  micLevels.addEventListener('level', (e) => {
+    const room = get().room;
+    if (!room) return;
+    const { level, threshold } = (e as CustomEvent<MicLevel>).detail;
+    const self = room.localParticipant.identity;
+    selfLevelAt = Date.now();
+    setSpeaking(self, get().micOn && level > threshold);
+    // o microfone parou de mandar nível (mutou, saiu da sala): apaga
+    clearTimeout(selfWatchdog);
+    selfWatchdog = setTimeout(() => setSpeaking(self, false), 300);
+  });
+
   function applyVolumes() {
     const { room, deafened, volumes, streamVolumes, localMuted } = get();
     if (!room) return;
@@ -385,7 +429,13 @@ export const useVoice = create<VoiceStore>((set, get) => {
         bump();
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-        set({ speaking: Object.fromEntries(speakers.map((p) => [p.identity, true as const])) });
+        const self = room.localParticipant.identity;
+        // o meu destaque vem do microfone local; o do servidor só vale se o local não estiver medindo
+        const localActive = Date.now() - selfLevelAt < 1000;
+        const counts = (id: string) => id !== self || !localActive;
+        const now = new Set(speakers.map((p) => p.identity).filter(counts));
+        for (const id of now) setSpeaking(id, true);
+        for (const id of Object.keys(get().speaking)) if (!now.has(id) && counts(id)) setSpeaking(id, false);
       })
       .on(RoomEvent.ConnectionStateChanged, (state) => {
         if (state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting) set({ status: 'reconnecting' });
