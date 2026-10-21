@@ -104,6 +104,8 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 Abra http://localhost:3000, crie uma conta e um servidor. Para simular outra pessoa, use uma janela anônima e entre pelo convite.
 
+Vai contribuir? Veja o [guia de contribuição](CONTRIBUTING.md): desenvolvimento com recarga automática, convenções, checklist antes de subir e como funcionam o CI e o deploy.
+
 ## Hospedar na VPS
 
 1. Aponte um domínio (registro **A**) para o IP da VPS.

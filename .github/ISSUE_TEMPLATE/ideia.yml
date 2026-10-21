@@ -1,0 +1,33 @@
+name: ✨ Ideia
+description: Sugira uma funcionalidade nova ou uma melhoria.
+labels: [enhancement, triagem]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de enviar, [procure se a ideia já foi sugerida](https://github.com/duarteHiago/concord/issues?q=is%3Aissue). Se já existe, deixe um 👍 e comente lá.
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve?
+      description: Conte a situação em que você sentiu falta disso. O "porquê" importa mais que o "como".
+      placeholder: Quero mandar um PDF pra galera na call, mas hoje só dá pra colar link.
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Como você imagina que funcione
+      description: Descreva a ideia. Pode ser um rascunho, um print de outro app, um desenho.
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas (opcional)
+      description: Outros jeitos de resolver que você pensou, ou como resolve hoje.
+  - type: textarea
+    id: onde
+    attributes:
+      label: Onde mexer (opcional)
+      description: Se já olhou o código, quais partes isso tocaria.

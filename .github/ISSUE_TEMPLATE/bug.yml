@@ -1,0 +1,56 @@
+name: 🐞 Bug
+description: Algo não funciona como deveria.
+labels: [bug, triagem]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Valeu por reportar! Antes de enviar, [procure se já existe uma issue](https://github.com/duarteHiago/concord/issues?q=is%3Aissue) sobre isso.
+        **Falha de segurança não vai aqui:** use o relato privado descrito no [SECURITY.md](https://github.com/duarteHiago/concord/blob/main/SECURITY.md).
+  - type: textarea
+    id: relato
+    attributes:
+      label: Relato
+      description: O que aconteceu e o que você esperava que acontecesse. Prints e vídeos ajudam muito.
+      placeholder: Ao entrar na call com o microfone mutado e ensurdecido, só o ícone de ensurdecido aparece na lista lateral.
+    validations:
+      required: true
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como repetir
+      description: Passo a passo para fazer o problema acontecer de novo.
+      placeholder: |
+        1. Entrar numa sala de voz
+        2. Mutar o microfone
+        3. Ensurdecer
+        4. Olhar a lista de participantes na barra lateral
+    validations:
+      required: true
+  - type: dropdown
+    id: onde
+    attributes:
+      label: Onde acontece
+      multiple: true
+      options:
+        - App desktop (Windows)
+        - Navegador
+        - Não sei
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão / navegador
+      description: No app desktop, a versão aparece em Configurações → Modo desenvolvedor. No navegador, diga qual (Chrome, Edge…).
+      placeholder: Desktop 1.0.22 / Chrome 152
+  - type: textarea
+    id: diagnostico
+    attributes:
+      label: Gravação de diagnóstico (opcional)
+      description: Para travadas, ping alto, áudio picotando ou consumo alto. Configurações → Modo desenvolvedor → janela de diagnóstico → Gravar. Arraste o .json para cá.
+  - type: textarea
+    id: causa
+    attributes:
+      label: Causa / onde mexer (opcional)
+      description: Se você já investigou no código, conte o que achou (arquivo, linha, hipótese).
