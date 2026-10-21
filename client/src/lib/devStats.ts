@@ -39,6 +39,11 @@ export interface DevHealth {
   uptimeSec?: number;
 }
 
+export interface GpuAdapter {
+  vendor: string;
+  renderer: string;
+}
+
 export interface DevSnapshot {
   mode: 'web' | 'desktop';
   userAgent: string;
@@ -54,6 +59,26 @@ export interface DevSnapshot {
   cpuCores: number;
   desktopInfo?: DesktopDevInfo;
   voice?: { noiseMode: string; gateOn: boolean };
+  gpuAdapter: GpuAdapter | null;
+}
+
+// o adaptador de vídeo em uso (nome real da GPU, ou "SwiftShader"/"software" quando não há uma):
+// funciona em qualquer navegador via WEBGL_debug_renderer_info, não só no app desktop. Não muda
+// durante a sessão, então só precisa ler uma vez.
+let gpuAdapterCache: GpuAdapter | null | undefined;
+function getGpuAdapter(): GpuAdapter | null {
+  if (gpuAdapterCache !== undefined) return gpuAdapterCache;
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+    if (!gl || !ext) return (gpuAdapterCache = null);
+    const vendor = String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL));
+    const renderer = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL));
+    return (gpuAdapterCache = { vendor, renderer });
+  } catch {
+    return (gpuAdapterCache = null);
+  }
 }
 
 async function fetchHealth(): Promise<DevHealth> {
@@ -159,6 +184,7 @@ async function collectSnapshot(room: Room | null): Promise<DevSnapshot> {
     },
     cpuCores: navigator.hardwareConcurrency ?? 0,
     desktopInfo: extra,
+    gpuAdapter: getGpuAdapter(),
   };
 }
 
@@ -262,13 +288,14 @@ export interface ProcessHistory {
 export interface DevHistory {
   latencyMs: number[];
   jsHeapUsedMB: number[];
+  concordMemoryMB: number[];
   tracks: Record<string, TrackHistory>;
   processes: Record<string, ProcessHistory>;
 }
 
 /** Acumula uma janela deslizante de cada métrica numérica a cada nova leitura, pros gráficos. */
 export function useDevHistory(snapshot: DevSnapshot | null): DevHistory {
-  const ref = useRef<DevHistory>({ latencyMs: [], jsHeapUsedMB: [], tracks: {}, processes: {} });
+  const ref = useRef<DevHistory>({ latencyMs: [], jsHeapUsedMB: [], concordMemoryMB: [], tracks: {}, processes: {} });
   const [, bump] = useState(0);
   useEffect(() => {
     if (!snapshot) return;
@@ -290,6 +317,7 @@ export function useDevHistory(snapshot: DevSnapshot | null): DevHistory {
 
     if (snapshot.desktopInfo) {
       const seenPids = new Set<string>();
+      let totalMemoryMB = 0;
       for (const m of snapshot.desktopInfo.appMetrics) {
         const pidKey = String(m.pid);
         seenPids.add(pidKey);
@@ -297,8 +325,10 @@ export function useDevHistory(snapshot: DevSnapshot | null): DevHistory {
         entry.meta = m;
         push(entry.cpuPercent, m.cpuPercent);
         push(entry.memoryMB, m.memoryMB);
+        totalMemoryMB += m.memoryMB ?? 0;
       }
       for (const key of Object.keys(h.processes)) if (!seenPids.has(key)) delete h.processes[key];
+      push(h.concordMemoryMB, totalMemoryMB);
     }
     bump((x) => x + 1);
   }, [snapshot]);

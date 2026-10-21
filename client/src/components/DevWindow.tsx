@@ -57,6 +57,11 @@ function SectionTitle({ children }: { children: ReactNode }) {
   return <h2 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">{children}</h2>;
 }
 
+/** Legenda curta explicando o que a seção mostra — sempre antes do gráfico/dado em si. */
+function Caption({ children }: { children: ReactNode }) {
+  return <p className="mb-2 text-xs text-fg-subtle">{children}</p>;
+}
+
 function InfoGrid({ rows }: { rows: [string, string][] }) {
   return (
     <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1">
@@ -100,6 +105,24 @@ function gpuFeatureRows(gpu: unknown): [string, string][] {
     .map(([k, v]): [string, string] => [k, v]);
 }
 
+/** Fabricante/modelo/driver, só disponíveis no app desktop (a web não expõe isso). */
+function gpuDriverRows(gpu: unknown): [string, string][] {
+  if (!gpu || typeof gpu !== 'object') return [];
+  const g = gpu as { gpuDevice?: unknown; auxAttributes?: unknown };
+  const rows: [string, string][] = [];
+  const devices = Array.isArray(g.gpuDevice) ? (g.gpuDevice as Record<string, unknown>[]) : [];
+  const active = devices.find((d) => d.active) ?? devices[0];
+  if (active) {
+    if (typeof active.vendorString === 'string' && active.vendorString) rows.push(['Fabricante', active.vendorString]);
+    if (typeof active.deviceString === 'string' && active.deviceString) rows.push(['Modelo', active.deviceString]);
+    if (typeof active.driverVendor === 'string' && active.driverVendor) rows.push(['Driver', active.driverVendor]);
+    if (typeof active.driverVersion === 'string' && active.driverVersion) rows.push(['Versão do driver', active.driverVersion]);
+  }
+  const aux = g.auxAttributes as Record<string, unknown> | undefined;
+  if (aux && typeof aux.softwareRendering === 'boolean') rows.push(['Renderização', aux.softwareRendering ? 'por software (sem GPU dedicada)' : 'por hardware']);
+  return rows;
+}
+
 // ------------------------------------------------------------------ Geral
 
 function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHistory }) {
@@ -112,17 +135,34 @@ function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHi
   if (snapshot.desktopInfo) envRows.push(['Electron', snapshot.desktopInfo.versions.electron ?? '?'], ['Chromium', snapshot.desktopInfo.versions.chrome ?? '?']);
   envRows.push(['Servidor', snapshot.health.version ? `v${snapshot.health.version}` : '?'], ['No ar há', snapshot.health.uptimeSec !== undefined ? formatUptime(snapshot.health.uptimeSec) : '?']);
 
+  const concordMemoryMB = history.concordMemoryMB.length ? history.concordMemoryMB[history.concordMemoryMB.length - 1] : undefined;
+
   return (
     <div className="space-y-6">
+      <Caption>Visão geral de agora; os gráficos pequenos mostram a tendência dos últimos ~2 minutos.</Caption>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Latência com o servidor" value={snapshot.health.latencyMs !== null ? `${snapshot.health.latencyMs} ms` : '?'} trend={history.latencyMs} unit="ms" />
         <StatTile label="Memória do cliente" value={snapshot.performance.jsHeapUsedMB !== undefined ? `${snapshot.performance.jsHeapUsedMB} MB` : '?'} trend={history.jsHeapUsedMB} unit="MB" />
-        <StatTile label="Faixas de áudio/vídeo ativas" value={String(snapshot.tracks.length)} />
+        {snapshot.desktopInfo ? (
+          <StatTile label="RAM usada pelo Concord" value={concordMemoryMB !== undefined ? `${Math.round(concordMemoryMB)} MB` : '?'} trend={history.concordMemoryMB} unit="MB" />
+        ) : (
+          <StatTile label="Faixas de áudio/vídeo ativas" value={String(snapshot.tracks.length)} />
+        )}
         <StatTile
           label="Codificação de vídeo"
           value={videoTrack ? (videoTrack.hardwareAccelerated ? 'GPU' : videoTrack.hardwareAccelerated === false ? 'CPU' : '?') : '— nenhuma —'}
         />
       </div>
+
+      <section>
+        <SectionTitle>Placa/adaptador de vídeo</SectionTitle>
+        <Caption>O que o navegador/app está de fato usando pra desenhar e codificar vídeo nesta máquina.</Caption>
+        {snapshot.gpuAdapter ? (
+          <InfoGrid rows={[['Fornecedor', snapshot.gpuAdapter.vendor], ['Adaptador', snapshot.gpuAdapter.renderer]]} />
+        ) : (
+          <p className="text-sm text-fg-muted">Não foi possível identificar — o navegador não expôs essa informação.</p>
+        )}
+      </section>
 
       <section>
         <SectionTitle>Supressão de ruído</SectionTitle>
@@ -141,15 +181,19 @@ function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHi
 
 function CpuTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHistory }) {
   const procs = Object.values(history.processes);
+  const concordMemoryMB = history.concordMemoryMB.length ? history.concordMemoryMB[history.concordMemoryMB.length - 1] : undefined;
+
   return (
     <div className="space-y-6">
       <section>
         <SectionTitle>Memória JS do cliente (heap)</SectionTitle>
+        <Caption>Memória que o motor do JavaScript usa pra rodar a interface do Concord. Sobe com o uso e cai de vez em quando quando o navegador limpa o que não usa mais (coleta de lixo) — isso é normal, não é vazamento.</Caption>
         <LiveChart data={history.jsHeapUsedMB} formatValue={(v) => `${Math.round(v)}`} unit=" MB" height={72} />
       </section>
 
       <section>
         <SectionTitle>Processos do Concord</SectionTitle>
+        <Caption>Cada processo que o Chromium/Electron abre pro Concord (o principal, a tela que você vê, a GPU, utilitários) e o quanto de CPU cada um está usando agora.</Caption>
         {snapshot.mode !== 'desktop' ? (
           <p className="text-sm text-fg-muted">CPU por processo só está disponível no app desktop — na web o navegador não expõe isso pra uma página.</p>
         ) : procs.length === 0 ? (
@@ -164,12 +208,35 @@ function CpuTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHist
                   </span>
                   <span className="font-mono text-xs text-fg-muted">{p.meta.memoryMB !== null ? `${p.meta.memoryMB} MB` : '?'}</span>
                 </div>
-                <LiveChart data={p.cpuPercent} formatValue={(v) => v.toFixed(1)} unit="%" height={44} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="mb-1 text-xs text-fg-muted">CPU</div>
+                    <LiveChart data={p.cpuPercent} formatValue={(v) => v.toFixed(1)} unit="%" height={40} />
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-fg-muted">RAM</div>
+                    <LiveChart data={p.memoryMB} formatValue={(v) => String(Math.round(v))} unit=" MB" height={40} color="var(--color-accent-2)" />
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         )}
       </section>
+
+      {snapshot.desktopInfo && (
+        <section>
+          <SectionTitle>Memória do sistema</SectionTitle>
+          <Caption>RAM realmente ocupada na sua máquina pelos processos do Concord, e quanto sobra no total do sistema.</Caption>
+          <InfoGrid
+            rows={[
+              ['RAM usada pelo Concord', concordMemoryMB !== undefined ? `${Math.round(concordMemoryMB)} MB` : '?'],
+              ['RAM total do sistema', `${(snapshot.desktopInfo.totalMemMB / 1024).toFixed(1)} GB`],
+              ['RAM livre no sistema', `${(snapshot.desktopInfo.freeMemMB / 1024).toFixed(1)} GB`],
+            ]}
+          />
+        </section>
+      )}
 
       <section>
         <SectionTitle>Outros números</SectionTitle>
@@ -183,10 +250,28 @@ function CpuTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHist
 
 function GpuTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHistory }) {
   const videoTracks = snapshot.tracks.filter((t) => t.kind === 'video');
+  const driverRows = snapshot.desktopInfo ? gpuDriverRows(snapshot.desktopInfo.gpu) : [];
   return (
     <div className="space-y-6">
       <section>
+        <SectionTitle>Placa/adaptador de vídeo</SectionTitle>
+        <Caption>
+          Qual placa de vídeo (ou emulação por software, se não houver uma disponível) o navegador está realmente usando. Se aparecer algo como "SwiftShader" ou "software" no nome, não há
+          aceleração de GPU nesta máquina — tudo é desenhado pelo processador.
+        </Caption>
+        {snapshot.gpuAdapter ? (
+          <InfoGrid rows={[['Fornecedor', snapshot.gpuAdapter.vendor], ['Adaptador', snapshot.gpuAdapter.renderer], ...driverRows]} />
+        ) : (
+          <p className="text-sm text-fg-muted">Não foi possível identificar — o navegador não expôs essa informação.</p>
+        )}
+      </section>
+
+      <section>
         <SectionTitle>Codificação / decodificação de vídeo</SectionTitle>
+        <Caption>
+          Enquanto você transmite tela ou recebe vídeo de alguém, mostra se a placa de vídeo está fazendo o trabalho pesado (GPU/hardware, ideal) ou se sobrou pro processador (CPU/software — mais
+          lento e esquenta mais a máquina).
+        </Caption>
         {videoTracks.length === 0 ? (
           <p className="text-sm text-fg-muted">Nenhuma faixa de vídeo ativa agora — entre numa chamada com câmera ou transmita a tela.</p>
         ) : (
@@ -226,14 +311,15 @@ function GpuTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHist
       {snapshot.desktopInfo && gpuFeatureRows(snapshot.desktopInfo.gpu).length > 0 && (
         <section>
           <SectionTitle>Aceleração de GPU do sistema</SectionTitle>
+          <Caption>Por recurso (decodificação de vídeo, composição da tela, WebGL): "enabled" é acelerado pela GPU, "disabled"/"software" caiu pro processador.</Caption>
           <InfoGrid rows={gpuFeatureRows(snapshot.desktopInfo.gpu)} />
         </section>
       )}
 
       {snapshot.desktopInfo && (
         <section>
-          <SectionTitle>Hardware</SectionTitle>
-          <InfoGrid rows={[['Processador', snapshot.desktopInfo.cpuModel ?? '?'], ['Núcleos', String(snapshot.desktopInfo.cpuCores)]]} />
+          <SectionTitle>Processador</SectionTitle>
+          <InfoGrid rows={[['Modelo', snapshot.desktopInfo.cpuModel ?? '?'], ['Núcleos', String(snapshot.desktopInfo.cpuCores)]]} />
         </section>
       )}
     </div>
@@ -283,11 +369,16 @@ function RedeTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHis
     <div className="space-y-6">
       <section>
         <SectionTitle>Latência com o servidor</SectionTitle>
+        <Caption>Tempo de ida e volta de uma requisição simples até o servidor do Concord — não é o ping de nenhum jogo, é só a conexão com o Concord em si.</Caption>
         <LiveChart data={history.latencyMs} formatValue={(v) => String(Math.round(v))} unit="ms" height={64} />
       </section>
 
       <section>
         <SectionTitle>Faixas de áudio/vídeo</SectionTitle>
+        <Caption>
+          <b>Bitrate</b>: quanto está sendo enviado/recebido por segundo. <b>Jitter</b>: variação no tempo entre pacotes — quanto menor, melhor. <b>RTT</b>: tempo de ida e volta da conexão de
+          voz/vídeo (diferente da latência HTTP acima).
+        </Caption>
         {snapshot.tracks.length === 0 ? (
           <p className="text-sm text-fg-muted">Nenhuma chamada ativa agora.</p>
         ) : (
