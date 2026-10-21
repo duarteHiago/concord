@@ -4,5 +4,6 @@ server/data/
 data/
 data-dev/
 .env
+client/build-commit.txt
 *.tgz
 deploy/monitoring/prometheus.yml

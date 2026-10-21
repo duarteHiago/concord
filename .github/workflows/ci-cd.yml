@@ -62,6 +62,8 @@ jobs:
 
       - name: Enviar projeto
         run: |
+          # a VPS não recebe o .git: o commit vai num arquivo para aparecer no diagnóstico do app
+          echo "${GITHUB_SHA::7}" > client/build-commit.txt
           tar -czf /tmp/concord-deploy.tgz \
             --exclude=.git --exclude=node_modules --exclude=./data --exclude=./data-dev \
             --exclude=dist --exclude=.env .

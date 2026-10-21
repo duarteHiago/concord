@@ -197,7 +197,7 @@ export function liveStats() {
   };
 }
 
-const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'reaction', 'activity:set', 'typing']);
+const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'reaction', 'activity:set', 'typing', 'dev:ping']);
 
 export function setupRealtime(httpServer: HttpServer) {
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
@@ -300,6 +300,11 @@ export function setupRealtime(httpServer: HttpServer) {
       if (activity) activities.set(userId, current?.name === activity.name ? { ...activity, since: current.since } : activity);
       else activities.delete(userId);
       io.emit('presence', presenceOf(userId));
+    });
+
+    // janela de diagnóstico: mede a latência da conexão em tempo real (ida e volta pelo próprio socket)
+    socket.on('dev:ping', (ack: unknown) => {
+      if (typeof ack === 'function') ack();
     });
 
     socket.on('typing', (data: { channelId: string }) => {
