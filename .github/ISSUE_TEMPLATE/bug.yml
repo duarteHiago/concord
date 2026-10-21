@@ -48,7 +48,7 @@ body:
     id: diagnostico
     attributes:
       label: Gravação de diagnóstico (opcional)
-      description: Para travadas, ping alto, áudio picotando ou consumo alto. Configurações → Desenvolvedor → janela de diagnóstico → Gravar. Arraste o .json para cá.
+      description: Para travadas, ping alto, áudio picotando ou consumo alto. Configurações → Desenvolvedor → Gravar, Ctrl+Shift+F9 para marcar o momento do problema, depois "Parar e salvar". Arraste o .json para cá.
   - type: textarea
     id: causa
     attributes:

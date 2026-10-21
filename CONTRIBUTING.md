@@ -202,7 +202,7 @@ Todo trabalho começa numa issue: bug, ideia ou investigação. Assim ninguém f
    - **Causa encontrada** (se souber): arquivo e linha.
    - **Onde mexer / possíveis correções.**
    - **Próximo passo:** o que falta confirmar.
-6. Para problemas de **desempenho ou rede**, anexe uma **gravação de diagnóstico**: Configurações → Desenvolvedor → janela de diagnóstico → **Gravar**. Use "Marcar momento" quando o problema acontecer e anexe o `.json` salvo.
+6. Para problemas de **desempenho ou rede**, anexe uma **gravação de diagnóstico**: Configurações → Desenvolvedor → **Gravar**. Não precisa deixar nenhuma janela aberta: um aviso fica embaixo da tela enquanto grava. Quando o problema acontecer, aperte o atalho **Marcar momento** (`Ctrl+Shift+F9` por padrão; no app desktop funciona até com o jogo aberto). Depois clique em **Parar e salvar** e anexe o `.json`.
 
 ### Ciclo de vida
 

@@ -12,6 +12,7 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard } from './components/NudgeCard';
 import { GameOverlay } from './components/GameOverlay';
 import { ClipToast } from './components/Clip';
+import { RecordingPill } from './components/RecordControls';
 import { PatchInspectorHost } from './components/PatchInspector';
 import { DropClaimModal, DropPage, useClaimAfterLogin, useDrop } from './components/PatchDrop';
 import { VoiceView } from './components/VoiceView';
@@ -65,6 +66,7 @@ function MainApp() {
       {me && <NudgeCard />}
       {me && <GameOverlay />}
       {me && <ClipToast />}
+      {me && <RecordingPill />}
       {me && <PatchInspectorHost />}
     </>
   );
