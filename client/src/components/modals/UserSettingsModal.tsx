@@ -8,6 +8,7 @@ import { ShortcutsTab } from './ShortcutsTab';
 import { StyleTab } from './StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
+import { LocalRecordControls } from '../RecordControls';
 import { useEffect, useRef, useState } from 'react';
 import { api, setToken } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
@@ -1094,6 +1095,15 @@ function DevTab() {
         atualizam enquanto você usa o app normalmente na janela principal. Nada daqui sai da sua máquina.
       </p>
       <Button onClick={open}>Abrir janela de diagnóstico</Button>
+      <div className="h-px bg-line" />
+      <div className="space-y-2">
+        <h3 className="font-semibold">Gravação de diagnóstico</h3>
+        <p className="text-sm text-fg-muted">
+          Grava os mesmos dados da janela de diagnóstico, sem precisar deixá-la aberta. Enquanto grava, um aviso aparece embaixo da tela. Use o atalho "Marcar momento" (em Atalhos) para marcar
+          a hora exata de um problema, até com o jogo aberto. Ao parar, um arquivo .json é salvo para anexar numa issue.
+        </p>
+        <LocalRecordControls className="rounded-2xl bg-surface-0 p-3" />
+      </div>
     </div>
   );
 }

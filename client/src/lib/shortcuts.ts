@@ -3,8 +3,9 @@ import { HOME, useApp } from '../store/app';
 import { useVoice } from '../store/voice';
 import { desktop } from './desktop';
 import { toast } from '../store/toast';
+import { useDevRecording } from './devRecording';
 
-export type ShortcutAction = 'toggleMute' | 'toggleDeafen' | 'toggleCamera' | 'toggleShare' | 'leaveRoom' | 'quickSwitch' | 'openMessages';
+export type ShortcutAction = 'toggleMute' | 'toggleDeafen' | 'toggleCamera' | 'toggleShare' | 'leaveRoom' | 'quickSwitch' | 'openMessages' | 'devMark';
 
 export const SHORTCUTS: { id: ShortcutAction; label: string; global: boolean }[] = [
   { id: 'toggleMute', label: 'Silenciar / ativar microfone', global: true },
@@ -14,6 +15,8 @@ export const SHORTCUTS: { id: ShortcutAction; label: string; global: boolean }[]
   { id: 'leaveRoom', label: 'Sair da sala de voz', global: false },
   { id: 'quickSwitch', label: 'Busca rápida (canais, servidores e conversas)', global: false },
   { id: 'openMessages', label: 'Abrir mensagens privadas', global: false },
+  // global: dá para marcar o instante de um problema sem sair do jogo
+  { id: 'devMark', label: 'Marcar momento na gravação de diagnóstico', global: true },
 ];
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
@@ -24,6 +27,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
   leaveRoom: 'Ctrl+Shift+E',
   quickSwitch: 'Ctrl+K',
   openMessages: 'Ctrl+Shift+H',
+  devMark: 'Ctrl+Shift+F9',
 };
 
 export function currentShortcuts(): Record<ShortcutAction, string> {
@@ -77,6 +81,15 @@ export function runShortcut(action: ShortcutAction) {
     case 'openMessages':
       app.openServer(HOME);
       break;
+    case 'devMark': {
+      const rec = useDevRecording.getState();
+      if (!rec.recording) toast.info('Nenhuma gravação de diagnóstico em andamento (Configurações → Desenvolvedor).');
+      else {
+        rec.mark('marcado pelo atalho');
+        toast.success('Momento marcado na gravação.');
+      }
+      break;
+    }
   }
 }
 

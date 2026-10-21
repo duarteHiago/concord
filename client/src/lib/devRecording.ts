@@ -1,11 +1,23 @@
-// Gravação da janela de diagnóstico: guarda cada leitura (a cada 2 s) enquanto estiver gravando e,
-// ao parar, baixa um .json para mandar a quem vai analisar. O que não muda durante a sessão
-// (versões, GPU, processador) vai uma vez só no cabeçalho, para o arquivo não inchar.
-import { useEffect, useRef, useState } from 'react';
+// Gravação de diagnóstico: guarda cada leitura (a cada 2 s) enquanto estiver gravando e, ao parar,
+// baixa um .json para mandar a quem vai analisar. Roda na janela principal (o app), então não
+// depende da janela de diagnóstico ficar aberta; ela só mostra e controla esta mesma gravação
+// pelo BroadcastChannel (ver devStats.ts). O que não muda durante a sessão (versões, GPU,
+// processador) vai uma vez só no cabeçalho, para o arquivo não inchar.
+import { create } from 'zustand';
 import type { DevSnapshot } from './devStats';
 
 // 3 horas de leituras a cada 2 s; passou disso, para sozinho e salva
 const MAX_SAMPLES = 5400;
+
+export interface RecordingState {
+  recording: boolean;
+  /** início da gravação (ms) */
+  startedAt: number | null;
+  /** leituras gravadas */
+  count: number;
+  /** momentos marcados */
+  markers: number;
+}
 
 interface Marker {
   t: string;
@@ -53,57 +65,63 @@ function download(name: string, data: unknown) {
 const stamp = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
 
-export function useDevRecording(snapshot: DevSnapshot | null) {
-  const [recording, setRecording] = useState(false);
-  const [count, setCount] = useState(0);
-  const started = useRef<Date | null>(null);
-  const header = useRef<ReturnType<typeof headerOf> | null>(null);
-  const samples = useRef<ReturnType<typeof sampleOf>[]>([]);
-  const markers = useRef<Marker[]>([]);
+// as leituras ficam fora do estado do React: só os contadores precisam redesenhar a tela
+let header: ReturnType<typeof headerOf> | null = null;
+let samples: ReturnType<typeof sampleOf>[] = [];
+let markers: Marker[] = [];
 
-  function stop() {
-    if (!started.current) return;
-    const end = new Date();
-    download(`concord-diagnostico_${stamp(started.current)}.json`, {
-      format: 'concord-diagnostico/1',
-      startedAt: started.current.toISOString(),
-      endedAt: end.toISOString(),
-      intervalSec: 2,
-      environment: header.current,
-      markers: markers.current,
-      samples: samples.current,
-    });
-    started.current = null;
-    setRecording(false);
+export const useDevRecording = create<
+  RecordingState & {
+    start: () => void;
+    stop: () => void;
+    mark: (note: string) => void;
+    /** chamado pelo coletor (devStats.ts) a cada leitura nova */
+    add: (snapshot: DevSnapshot) => void;
   }
+>((set, get) => ({
+  recording: false,
+  startedAt: null,
+  count: 0,
+  markers: 0,
 
-  // cada leitura nova entra na gravação
-  useEffect(() => {
-    if (!recording || !snapshot) return;
-    header.current ??= headerOf(snapshot);
-    samples.current.push(sampleOf(snapshot));
-    setCount(samples.current.length);
-    if (samples.current.length >= MAX_SAMPLES) stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot]);
+  start() {
+    if (get().recording) return;
+    header = null;
+    samples = [];
+    markers = [];
+    set({ recording: true, startedAt: Date.now(), count: 0, markers: 0 });
+  },
 
-  return {
-    recording,
-    count,
-    /** duração em segundos */
-    elapsed: started.current ? Math.round((Date.now() - started.current.getTime()) / 1000) : 0,
-    start() {
-      started.current = new Date();
-      header.current = null;
-      samples.current = [];
-      markers.current = [];
-      setCount(0);
-      setRecording(true);
-    },
-    stop,
-    mark(note: string) {
-      markers.current.push({ t: new Date().toISOString(), note: note.trim() || 'marcado' });
-    },
-    markerCount: () => markers.current.length,
-  };
-}
+  stop() {
+    const { recording, startedAt } = get();
+    if (!recording || !startedAt) return;
+    const start = new Date(startedAt);
+    download(`concord-diagnostico_${stamp(start)}.json`, {
+      format: 'concord-diagnostico/1',
+      startedAt: start.toISOString(),
+      endedAt: new Date().toISOString(),
+      intervalSec: 2,
+      environment: header,
+      markers,
+      samples,
+    });
+    header = null;
+    samples = [];
+    markers = [];
+    set({ recording: false, startedAt: null, count: 0, markers: 0 });
+  },
+
+  mark(note) {
+    if (!get().recording) return;
+    markers.push({ t: new Date().toISOString(), note: note.trim() || 'marcado' });
+    set({ markers: markers.length });
+  },
+
+  add(snapshot) {
+    if (!get().recording) return;
+    header ??= headerOf(snapshot);
+    samples.push(sampleOf(snapshot));
+    set({ count: samples.length });
+    if (samples.length >= MAX_SAMPLES) get().stop();
+  },
+}));

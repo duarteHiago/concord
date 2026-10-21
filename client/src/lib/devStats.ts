@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Track, type Participant, type Room } from 'livekit-client';
 import { desktop, desktopInfo, type DesktopAppMetric, type DesktopDevInfo, type DesktopDevInfoStatic, type DesktopInfo } from './desktop';
 import { useVoice } from '../store/voice';
+import { useDevRecording, type RecordingState } from './devRecording';
 
 export interface DevTrackStat {
   key: string;
@@ -220,32 +221,85 @@ export function useDevSnapshot(room: Room | null, enabled: boolean): DevSnapshot
 // ------------------------------------------------------------------ janela independente
 
 const CHANNEL = 'concord-dev-stats';
-type ChannelMsg = { kind: 'subscribe' } | { kind: 'unsubscribe' } | { kind: 'snapshot'; data: DevSnapshot };
+type ChannelMsg =
+  | { kind: 'subscribe' }
+  | { kind: 'unsubscribe' }
+  | { kind: 'snapshot'; data: DevSnapshot }
+  // gravação: a janela de diagnóstico manda comandos, a principal responde com o estado
+  | { kind: 'record-start' }
+  | { kind: 'record-stop' }
+  | { kind: 'record-mark'; note: string }
+  | { kind: 'record-state'; state: RecordingState };
 
-/** Roda na janela principal: só coleta e transmite enquanto a janela de diagnóstico estiver pedindo. */
+const recordingState = (): RecordingState => {
+  const { recording, startedAt, count, markers } = useDevRecording.getState();
+  return { recording, startedAt, count, markers };
+};
+
+/** Roda na janela principal: coleta enquanto a janela de diagnóstico estiver pedindo ou enquanto houver gravação. */
 export function useDevStatsPublisher(room: Room | null) {
   const [subscribed, setSubscribed] = useState(false);
+  const recording = useDevRecording((s) => s.recording);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const audioSettings = useVoice((s) => s.audioSettings);
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') return;
     const bc = new BroadcastChannel(CHANNEL);
     channelRef.current = bc;
+    const rec = useDevRecording.getState();
     bc.onmessage = (e: MessageEvent<ChannelMsg>) => {
-      if (e.data.kind === 'subscribe') setSubscribed(true);
-      if (e.data.kind === 'unsubscribe') setSubscribed(false);
+      const msg = e.data;
+      if (msg.kind === 'subscribe') {
+        setSubscribed(true);
+        bc.postMessage({ kind: 'record-state', state: recordingState() } satisfies ChannelMsg);
+      }
+      if (msg.kind === 'unsubscribe') setSubscribed(false);
+      if (msg.kind === 'record-start') rec.start();
+      if (msg.kind === 'record-stop') rec.stop();
+      if (msg.kind === 'record-mark') rec.mark(msg.note);
+    };
+    // qualquer mudança na gravação (começou, nova leitura, marcação, parou) vai para a janela de diagnóstico
+    const unsub = useDevRecording.subscribe(() => bc.postMessage({ kind: 'record-state', state: recordingState() } satisfies ChannelMsg));
+    return () => {
+      unsub();
+      bc.close();
+      channelRef.current = null;
+    };
+  }, []);
+  const snapshot = useDevSnapshot(room, subscribed || recording);
+  useEffect(() => {
+    if (!snapshot) return;
+    const data: DevSnapshot = { ...snapshot, voice: { noiseMode: audioSettings.noiseMode, gateOn: audioSettings.gate.mode !== 'off' } };
+    useDevRecording.getState().add(data);
+    channelRef.current?.postMessage({ kind: 'snapshot', data } satisfies ChannelMsg);
+    // só a leitura nova entra na gravação; mudar o áudio sozinho não conta como leitura
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot]);
+}
+
+/** Roda na janela de diagnóstico: mostra e controla a gravação, que acontece na janela principal. */
+export function useRemoteRecording() {
+  const [state, setState] = useState<RecordingState>({ recording: false, startedAt: null, count: 0, markers: 0 });
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const bc = new BroadcastChannel(CHANNEL);
+    channelRef.current = bc;
+    bc.onmessage = (e: MessageEvent<ChannelMsg>) => {
+      if (e.data.kind === 'record-state') setState(e.data.state);
     };
     return () => {
       bc.close();
       channelRef.current = null;
     };
   }, []);
-  const snapshot = useDevSnapshot(room, subscribed);
-  useEffect(() => {
-    if (!snapshot) return;
-    const data: DevSnapshot = { ...snapshot, voice: { noiseMode: audioSettings.noiseMode, gateOn: audioSettings.gate.mode !== 'off' } };
-    channelRef.current?.postMessage({ kind: 'snapshot', data } satisfies ChannelMsg);
-  }, [snapshot, audioSettings]);
+  const send = (msg: ChannelMsg) => channelRef.current?.postMessage(msg);
+  return {
+    ...state,
+    start: () => send({ kind: 'record-start' }),
+    stop: () => send({ kind: 'record-stop' }),
+    mark: (note: string) => send({ kind: 'record-mark', note }),
+  };
 }
 
 /** Roda na janela de diagnóstico: pede pra janela principal começar a transmitir e escuta. */
