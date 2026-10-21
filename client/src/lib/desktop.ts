@@ -29,22 +29,30 @@ export interface DesktopAppMetric {
   memoryMB: number | null;
 }
 
-export interface DesktopDevInfo {
+// não muda durante a sessão: pede só uma vez e guarda em cache (getGPUInfo é lento)
+export interface DesktopDevInfoStatic {
   versions: Record<string, string>;
   osRelease: string;
   cpuModel: string | null;
   cpuCores: number;
   totalMemMB: number;
+  gpu: unknown;
+}
+
+// muda a cada leitura: livre pra pedir com frequência
+export interface DesktopDevInfoLive {
   freeMemMB: number;
   onBattery: boolean;
   appMetrics: DesktopAppMetric[];
-  gpu: unknown;
 }
+
+export type DesktopDevInfo = DesktopDevInfoStatic & DesktopDevInfoLive;
 
 interface DesktopBridge {
   info(): Promise<DesktopInfo>;
   // ausentes em versões antigas do app desktop
-  devInfo?(): Promise<DesktopDevInfo>;
+  devInfoStatic?(): Promise<DesktopDevInfoStatic>;
+  devInfoLive?(): Promise<DesktopDevInfoLive>;
   openDevWindow?(): Promise<void>;
   getSources(): Promise<DesktopSource[]>;
   selectSource(id: string): Promise<void>;

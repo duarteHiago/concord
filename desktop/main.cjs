@@ -264,9 +264,11 @@ handle('concord:info', () => ({
   server: config.server,
 }));
 
-/** Dados pro "Modo desenvolvedor" das configurações: só métricas agregadas dos próprios
- * processos do Concord e do hardware — nada de arquivos, DLLs ou registro de terceiros. */
-handle('concord:dev-info', async () => {
+/** Dados pro "Modo desenvolvedor" das configurações, que não mudam durante a sessão — pede
+ * só uma vez (o lado do cliente guarda em cache). `getGPUInfo('complete')` em especial é
+ * lento (pede pro processo da GPU levantar os dados) e NÃO pode entrar no polling: já
+ * aconteceu de travar a transmissão de tela chamando isso a cada poucos segundos. */
+handle('concord:dev-info-static', async () => {
   const gpu = await app.getGPUInfo('complete').catch(() => null);
   return {
     versions: process.versions,
@@ -274,17 +276,21 @@ handle('concord:dev-info', async () => {
     cpuModel: os.cpus()[0]?.model ?? null,
     cpuCores: os.cpus().length,
     totalMemMB: Math.round(os.totalmem() / (1024 * 1024)),
-    freeMemMB: Math.round(os.freemem() / (1024 * 1024)),
-    onBattery: powerMonitor.isOnBatteryPower(),
-    appMetrics: app.getAppMetrics().map((m) => ({
-      type: m.type,
-      pid: m.pid,
-      cpuPercent: m.cpu?.percentCPUUsage ?? null,
-      memoryMB: m.memory?.workingSetSize ? Math.round(m.memory.workingSetSize / 1024) : null,
-    })),
     gpu,
   };
 });
+
+/** A parte que de fato muda a cada leitura (livre pra chamar com frequência). */
+handle('concord:dev-info-live', () => ({
+  freeMemMB: Math.round(os.freemem() / (1024 * 1024)),
+  onBattery: powerMonitor.isOnBatteryPower(),
+  appMetrics: app.getAppMetrics().map((m) => ({
+    type: m.type,
+    pid: m.pid,
+    cpuPercent: m.cpu?.percentCPUUsage ?? null,
+    memoryMB: m.memory?.workingSetSize ? Math.round(m.memory.workingSetSize / 1024) : null,
+  })),
+}));
 
 let devWin = null;
 

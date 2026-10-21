@@ -7,7 +7,7 @@
 // diretamente — ela recebe cada leitura pelo BroadcastChannel abaixo.
 import { useEffect, useRef, useState } from 'react';
 import { Track, type Participant, type Room } from 'livekit-client';
-import { desktop, desktopInfo, type DesktopAppMetric, type DesktopDevInfo, type DesktopInfo } from './desktop';
+import { desktop, desktopInfo, type DesktopAppMetric, type DesktopDevInfo, type DesktopDevInfoStatic, type DesktopInfo } from './desktop';
 import { useVoice } from '../store/voice';
 
 export interface DevTrackStat {
@@ -162,12 +162,21 @@ async function collectTrackStats(room: Room | null): Promise<DevTrackStat[]> {
   return out;
 }
 
+// as partes estáticas (sobretudo getGPUInfo, que é lenta) só são pedidas uma vez e ficam em
+// cache — chamar isso a cada poucos segundos foi o que derrubou o fps de quem jogava com a
+// janela de diagnóstico aberta
+let devInfoStaticCache: Promise<DesktopDevInfoStatic | undefined> | null = null;
+function getDevInfoStatic(): Promise<DesktopDevInfoStatic | undefined> {
+  return (devInfoStaticCache ??= (desktop?.devInfoStatic?.() ?? Promise.resolve(undefined)).catch(() => undefined));
+}
+
 async function collectSnapshot(room: Room | null): Promise<DevSnapshot> {
-  const [health, tracks, info, extra] = await Promise.all([
+  const [health, tracks, info, devStatic, devLive] = await Promise.all([
     fetchHealth(),
     collectTrackStats(room),
     desktop ? desktopInfo().catch(() => undefined) : Promise.resolve(undefined),
-    (desktop?.devInfo?.() ?? Promise.resolve(undefined)).catch(() => undefined),
+    getDevInfoStatic(),
+    (desktop?.devInfoLive?.() ?? Promise.resolve(undefined)).catch(() => undefined),
   ]);
   const mem = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory;
   return {
@@ -183,7 +192,7 @@ async function collectSnapshot(room: Room | null): Promise<DevSnapshot> {
       domNodes: document.getElementsByTagName('*').length,
     },
     cpuCores: navigator.hardwareConcurrency ?? 0,
-    desktopInfo: extra,
+    desktopInfo: devStatic && devLive ? { ...devStatic, ...devLive } : undefined,
     gpuAdapter: getGpuAdapter(),
   };
 }
