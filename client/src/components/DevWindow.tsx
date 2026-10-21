@@ -2,6 +2,7 @@
 // App.tsx e lib/desktop.ts) e só recebe dados pelo BroadcastChannel de lib/devStats.ts — a
 // Room do LiveKit e a ponte do desktop só existem na janela principal.
 import { Fragment, useState, type ReactNode } from 'react';
+import { useDevRecording } from '../lib/devRecording';
 import { type DevHistory, type DevSnapshot, type DevTrackStat, useDevHistory, useDevStatsSubscriber } from '../lib/devStats';
 import { LiveChart } from './LiveChart';
 import { cx } from './ui';
@@ -35,6 +36,7 @@ export function DevWindow() {
         ))}
         <span className={cx('ml-auto mb-2 h-2 w-2 rounded-full', snapshot ? 'bg-ok' : 'bg-fg-subtle')} title={snapshot ? 'Recebendo dados' : 'Sem dados'} />
       </header>
+      <RecordBar snapshot={snapshot} />
       <main className="flex-1 overflow-y-auto p-5">
         {!snapshot ? (
           <p className="text-sm text-fg-muted">Aguardando dados do Concord — deixe a janela principal aberta e com a sua conta conectada.</p>
@@ -47,6 +49,67 @@ export function DevWindow() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ gravação
+
+const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+
+/** Gravar tudo o que a janela mostra num arquivo .json, para mandar a quem vai analisar. */
+function RecordBar({ snapshot }: { snapshot: DevSnapshot | null }) {
+  const rec = useDevRecording(snapshot);
+  const [note, setNote] = useState('');
+  const [marked, setMarked] = useState(0);
+
+  if (!rec.recording) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 border-b border-line bg-surface-1 px-4 py-2 text-xs text-fg-muted">
+        <button
+          onClick={() => {
+            rec.start();
+            setMarked(0);
+          }}
+          disabled={!snapshot}
+          className="flex items-center gap-1.5 rounded-full bg-danger/15 px-3 py-1 font-bold text-danger hover:bg-danger/25 disabled:opacity-40"
+        >
+          <span className="h-2 w-2 rounded-full bg-danger" /> Gravar
+        </button>
+        <span>Grava tudo o que aparece aqui (a cada 2 s) e, ao parar, salva um arquivo .json para enviar e analisar.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-line bg-danger/10 px-4 py-2 text-xs">
+      <span className="flex items-center gap-1.5 font-bold text-danger">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-danger" /> Gravando {mmss(rec.elapsed)}
+      </span>
+      <span className="text-fg-muted">
+        {rec.count} leitura(s) · {marked} marcação(ões)
+      </span>
+      <form
+        className="ml-auto flex items-center gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          rec.mark(note);
+          setNote('');
+          setMarked(rec.markerCount());
+        }}
+      >
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="O que aconteceu? (ex.: travou agora)"
+          className="w-56 rounded-full bg-surface-3 px-3 py-1 outline-none focus:ring-2 focus:ring-accent/60"
+        />
+        <button type="submit" className="rounded-full bg-surface-3 px-3 py-1 font-bold hover:bg-surface-4" title="Marca este instante na gravação">
+          Marcar momento
+        </button>
+      </form>
+      <button onClick={rec.stop} className="rounded-full bg-danger px-3 py-1 font-bold text-white hover:opacity-90">
+        Parar e salvar
+      </button>
     </div>
   );
 }
