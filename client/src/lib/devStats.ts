@@ -9,6 +9,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Track, type Participant, type Room } from 'livekit-client';
 import { desktop, desktopInfo, type DesktopAppMetric, type DesktopDevInfo, type DesktopDevInfoStatic, type DesktopInfo } from './desktop';
 import { useVoice } from '../store/voice';
+import { getSocket } from './socket';
+import { micLevels, voiceNotices, type MicLevel } from './voiceEffects';
 import { useDevRecording, type RecordingState } from './devRecording';
 
 export interface DevTrackStat {
@@ -45,10 +47,40 @@ export interface GpuAdapter {
   renderer: string;
 }
 
+export interface DevConnection {
+  state: 'conectado' | 'reconectando' | 'desconectado';
+  /** websocket ou polling */
+  transport?: string;
+  /** ida e volta pelo próprio Socket.io (não é o HTTP do /health) */
+  latencyMs: number | null;
+}
+
+export interface DevUi {
+  /** quadros por segundo da interface desde a leitura anterior */
+  fps: number | null;
+  /** travamentos (tarefas acima de 50 ms) desde a leitura anterior */
+  longTasks: number;
+  longTaskMs: number;
+}
+
+export interface DevDevice {
+  kind: 'audioinput' | 'audiooutput' | 'videoinput';
+  label: string;
+}
+
 export interface DevSnapshot {
   mode: 'web' | 'desktop';
   userAgent: string;
   clientBuildTime: string;
+  /** commit do build do cliente (ou "dev" fora do CI) */
+  clientCommit: string;
+  connection: DevConnection;
+  ui: DevUi;
+  /** nível do microfone agora (só com o microfone ligado numa sala) */
+  mic: MicLevel | null;
+  /** o supressor de ruído caiu para outro motor nesta sessão */
+  noiseFallback: { at: number; reason: string } | null;
+  devices: DevDevice[];
   desktop?: DesktopInfo;
   health: DevHealth;
   tracks: DevTrackStat[];
@@ -79,6 +111,96 @@ function getGpuAdapter(): GpuAdapter | null {
     return (gpuAdapterCache = { vendor, renderer });
   } catch {
     return (gpuAdapterCache = null);
+  }
+}
+
+// ---- sondas: só ficam ligadas enquanto alguém está olhando ou gravando (startProbes/stopProbes)
+
+let fallback: { at: number; reason: string } | null = null;
+// a troca do supressor costuma acontecer ao entrar na sala, antes de alguém abrir o diagnóstico:
+// por isso esta escuta fica sempre ligada (é só um evento, sem custo)
+voiceNotices.addEventListener('fallback', (e) => {
+  fallback = { at: Date.now(), reason: String((e as CustomEvent).detail ?? '') };
+});
+
+let lastMic: { level: MicLevel; at: number } | null = null;
+const onMic = (e: Event) => {
+  lastMic = { level: (e as CustomEvent<MicLevel>).detail, at: Date.now() };
+};
+
+let frames = 0;
+let framesSince = 0;
+let rafId = 0;
+const countFrame = () => {
+  frames++;
+  rafId = requestAnimationFrame(countFrame);
+};
+
+let longTasks = 0;
+let longTaskMs = 0;
+let longTaskObserver: PerformanceObserver | null = null;
+
+let probes = 0;
+function startProbes() {
+  if (probes++ > 0) return;
+  micLevels.addEventListener('level', onMic);
+  frames = 0;
+  framesSince = performance.now();
+  rafId = requestAnimationFrame(countFrame);
+  try {
+    longTaskObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        longTasks++;
+        longTaskMs += entry.duration;
+      }
+    });
+    longTaskObserver.observe({ type: 'longtask', buffered: false });
+  } catch {
+    longTaskObserver = null; // navegador sem suporte a longtask
+  }
+}
+function stopProbes() {
+  if (--probes > 0) return;
+  micLevels.removeEventListener('level', onMic);
+  cancelAnimationFrame(rafId);
+  longTaskObserver?.disconnect();
+  longTaskObserver = null;
+}
+
+/** FPS e travamentos desde a leitura anterior (e zera para a próxima). */
+function readUi(): DevUi {
+  const now = performance.now();
+  const elapsed = (now - framesSince) / 1000;
+  // com a janela minimizada o navegador para de desenhar: aí não faz sentido falar em FPS
+  const fps = document.hidden || elapsed <= 0 ? null : Math.round(frames / elapsed);
+  frames = 0;
+  framesSince = now;
+  const ui: DevUi = { fps, longTasks, longTaskMs: Math.round(longTaskMs) };
+  longTasks = 0;
+  longTaskMs = 0;
+  return ui;
+}
+
+async function readConnection(): Promise<DevConnection> {
+  const socket = getSocket();
+  if (!socket) return { state: 'desconectado', latencyMs: null };
+  const state = socket.connected ? 'conectado' : socket.active ? 'reconectando' : 'desconectado';
+  const transport = socket.io.engine?.transport?.name;
+  if (!socket.connected) return { state, transport, latencyMs: null };
+  const t0 = performance.now();
+  const latencyMs = await new Promise<number | null>((resolve) => {
+    socket.timeout(3000).emit('dev:ping', (err: unknown) => resolve(err ? null : Math.round(performance.now() - t0)));
+  });
+  return { state, transport, latencyMs };
+}
+
+async function readDevices(): Promise<DevDevice[]> {
+  try {
+    const list = await navigator.mediaDevices.enumerateDevices();
+    // sem permissão de microfone/câmera o navegador esconde os nomes
+    return list.map((d) => ({ kind: d.kind, label: d.label || '(nome oculto até permitir o microfone)' }));
+  } catch {
+    return [];
   }
 }
 
@@ -172,18 +294,27 @@ function getDevInfoStatic(): Promise<DesktopDevInfoStatic | undefined> {
 }
 
 async function collectSnapshot(room: Room | null): Promise<DevSnapshot> {
-  const [health, tracks, info, devStatic, devLive] = await Promise.all([
+  const [health, tracks, info, devStatic, devLive, connection, devices] = await Promise.all([
     fetchHealth(),
     collectTrackStats(room),
     desktop ? desktopInfo().catch(() => undefined) : Promise.resolve(undefined),
     getDevInfoStatic(),
     (desktop?.devInfoLive?.() ?? Promise.resolve(undefined)).catch(() => undefined),
+    readConnection(),
+    readDevices(),
   ]);
   const mem = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory;
   return {
     mode: desktop ? 'desktop' : 'web',
     userAgent: navigator.userAgent,
     clientBuildTime: __BUILD_TIME__,
+    clientCommit: __COMMIT__,
+    connection,
+    ui: readUi(),
+    // nível de mais de 3 s atrás = microfone parado (fora da sala ou mutado)
+    mic: lastMic && Date.now() - lastMic.at < 3000 ? lastMic.level : null,
+    noiseFallback: fallback,
+    devices,
     desktop: info,
     health,
     tracks,
@@ -204,6 +335,7 @@ export function useDevSnapshot(room: Room | null, enabled: boolean): DevSnapshot
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
+    startProbes();
     const tick = async () => {
       const snap = await collectSnapshot(room);
       if (alive) setSnapshot(snap);
@@ -213,6 +345,7 @@ export function useDevSnapshot(room: Room | null, enabled: boolean): DevSnapshot
     return () => {
       alive = false;
       clearInterval(id);
+      stopProbes();
     };
   }, [room, enabled]);
   return snapshot;
@@ -350,6 +483,10 @@ export interface ProcessHistory {
 
 export interface DevHistory {
   latencyMs: number[];
+  socketMs: number[];
+  uiFps: number[];
+  longTaskMs: number[];
+  micLevel: number[];
   jsHeapUsedMB: number[];
   concordMemoryMB: number[];
   tracks: Record<string, TrackHistory>;
@@ -358,12 +495,16 @@ export interface DevHistory {
 
 /** Acumula uma janela deslizante de cada métrica numérica a cada nova leitura, pros gráficos. */
 export function useDevHistory(snapshot: DevSnapshot | null): DevHistory {
-  const ref = useRef<DevHistory>({ latencyMs: [], jsHeapUsedMB: [], concordMemoryMB: [], tracks: {}, processes: {} });
+  const ref = useRef<DevHistory>({ latencyMs: [], socketMs: [], uiFps: [], longTaskMs: [], micLevel: [], jsHeapUsedMB: [], concordMemoryMB: [], tracks: {}, processes: {} });
   const [, bump] = useState(0);
   useEffect(() => {
     if (!snapshot) return;
     const h = ref.current;
     push(h.latencyMs, snapshot.health.latencyMs);
+    push(h.socketMs, snapshot.connection.latencyMs);
+    push(h.uiFps, snapshot.ui.fps);
+    push(h.longTaskMs, snapshot.ui.longTaskMs);
+    push(h.micLevel, snapshot.mic?.level);
     push(h.jsHeapUsedMB, snapshot.performance.jsHeapUsedMB);
 
     const seenTracks = new Set<string>();

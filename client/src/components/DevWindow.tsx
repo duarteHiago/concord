@@ -149,9 +149,13 @@ function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHi
   const envRows: [string, string][] = [
     ['Modo', snapshot.mode === 'desktop' ? 'App desktop' : 'Navegador (web)'],
     ['Build do cliente', new Date(snapshot.clientBuildTime).toLocaleString('pt-BR')],
+    ['Commit', snapshot.clientCommit],
   ];
   if (snapshot.desktop) envRows.push(['Versão do app', snapshot.desktop.version], ['Plataforma', snapshot.desktop.platform]);
-  if (snapshot.desktopInfo) envRows.push(['Electron', snapshot.desktopInfo.versions.electron ?? '?'], ['Chromium', snapshot.desktopInfo.versions.chrome ?? '?']);
+  if (snapshot.desktopInfo) {
+    envRows.push(['Electron', snapshot.desktopInfo.versions.electron ?? '?'], ['Chromium', snapshot.desktopInfo.versions.chrome ?? '?']);
+    envRows.push(['Energia', snapshot.desktopInfo.onBattery ? 'na bateria (o Windows pode reduzir o desempenho)' : 'na tomada']);
+  }
   envRows.push(['Servidor', snapshot.health.version ? `v${snapshot.health.version}` : '?'], ['No ar há', snapshot.health.uptimeSec !== undefined ? formatUptime(snapshot.health.uptimeSec) : '?']);
 
   const concordMemoryMB = history.concordMemoryMB.length ? history.concordMemoryMB[history.concordMemoryMB.length - 1] : undefined;
@@ -184,8 +188,44 @@ function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHi
       </section>
 
       <section>
-        <SectionTitle>Supressão de ruído</SectionTitle>
-        <InfoGrid rows={[['Motor ativo', snapshot.voice?.noiseMode ?? '?'], ['Portão de voz', snapshot.voice?.gateOn ? 'ligado' : 'desligado']]} />
+        <SectionTitle>Microfone e supressão de ruído</SectionTitle>
+        <Caption>O nível é o volume que chega depois da supressão de ruído. "Aberto" quer dizer que o portão de voz está deixando o som passar.</Caption>
+        <InfoGrid
+          rows={[
+            ['Motor ativo', snapshot.voice?.noiseMode ?? '?'],
+            [
+              'Troca automática',
+              snapshot.noiseFallback
+                ? `caiu para outro motor às ${new Date(snapshot.noiseFallback.at).toLocaleTimeString('pt-BR')} (${snapshot.noiseFallback.reason || 'sem detalhe'})`
+                : 'não aconteceu',
+            ],
+            ['Portão de voz', snapshot.voice?.gateOn ? 'ligado' : 'desligado'],
+            [
+              'Nível agora',
+              snapshot.mic ? `${Math.round(snapshot.mic.level)} dB (limite ${Math.round(snapshot.mic.threshold)} dB) · ${snapshot.mic.open ? 'aberto' : 'fechado'}` : 'sem microfone ativo',
+            ],
+          ]}
+        />
+        {history.micLevel.length > 1 && (
+          <div className="mt-2">
+            <LiveChart data={history.micLevel} formatValue={(v) => String(Math.round(v))} unit=" dB" height={44} color="var(--color-accent-2)" />
+          </div>
+        )}
+      </section>
+
+      <section>
+        <SectionTitle>Dispositivos de áudio e vídeo</SectionTitle>
+        <Caption>O que o sistema mostra como conectado agora. Só os nomes, nada sai da sua máquina.</Caption>
+        {snapshot.devices.length === 0 ? (
+          <p className="text-sm text-fg-muted">Nenhum dispositivo encontrado.</p>
+        ) : (
+          <InfoGrid
+            rows={snapshot.devices.map((d, i): [string, string] => [
+              `${d.kind === 'audioinput' ? 'Microfone' : d.kind === 'audiooutput' ? 'Saída de áudio' : 'Câmera'} ${i + 1}`,
+              d.label,
+            ])}
+          />
+        )}
       </section>
 
       <section>
@@ -208,6 +248,26 @@ function CpuTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHist
         <SectionTitle>Memória JS do cliente (heap)</SectionTitle>
         <Caption>Memória que o motor do JavaScript usa pra rodar a interface do Concord. Sobe com o uso e cai de vez em quando quando o navegador limpa o que não usa mais (coleta de lixo) — isso é normal, não é vazamento.</Caption>
         <LiveChart data={history.jsHeapUsedMB} formatValue={(v) => `${Math.round(v)}`} unit=" MB" height={72} />
+      </section>
+
+      <section>
+        <SectionTitle>Fluidez da interface</SectionTitle>
+        <Caption>
+          FPS é quantas vezes por segundo a janela do Concord é redesenhada: ~60 (ou a taxa do seu monitor) é o normal, e ela cai sozinha quando nada está mudando na tela. Travamento é qualquer
+          tarefa que segurou a interface por mais de 50 ms. Se aparecerem vários seguidos, a tela "engasga".
+        </Caption>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-1 text-xs text-fg-muted">FPS da interface</div>
+            <LiveChart data={history.uiFps} formatValue={(v) => String(Math.round(v))} unit=" fps" height={44} />
+          </div>
+          <div>
+            <div className="mb-1 text-xs text-fg-muted">
+              Travamentos ({snapshot.ui.longTasks} na última leitura)
+            </div>
+            <LiveChart data={history.longTaskMs} formatValue={(v) => String(Math.round(v))} unit=" ms" height={44} color="var(--color-accent-2)" />
+          </div>
+        </div>
       </section>
 
       <section>
@@ -390,6 +450,26 @@ function RedeTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHis
         <SectionTitle>Latência com o servidor</SectionTitle>
         <Caption>Tempo de ida e volta de uma requisição simples até o servidor do Concord — não é o ping de nenhum jogo, é só a conexão com o Concord em si.</Caption>
         <LiveChart data={history.latencyMs} formatValue={(v) => String(Math.round(v))} unit="ms" height={64} />
+      </section>
+
+      <section>
+        <SectionTitle>Conexão em tempo real</SectionTitle>
+        <Caption>
+          É por ela que chegam mensagens, quem entrou na sala, "digitando…". Se ficar "reconectando", o app perdeu o contato com o servidor e está tentando voltar. A latência aqui é medida pela
+          própria conexão, e não pela requisição de cima.
+        </Caption>
+        <InfoGrid
+          rows={[
+            ['Estado', snapshot.connection.state],
+            ['Transporte', snapshot.connection.transport ?? '?'],
+            ['Latência', snapshot.connection.latencyMs !== null ? `${snapshot.connection.latencyMs} ms` : '?'],
+          ]}
+        />
+        {history.socketMs.length > 1 && (
+          <div className="mt-2">
+            <LiveChart data={history.socketMs} formatValue={(v) => String(Math.round(v))} unit="ms" height={44} />
+          </div>
+        )}
       </section>
 
       <section>
