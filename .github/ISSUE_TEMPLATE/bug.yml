@@ -42,13 +42,13 @@ body:
     id: versao
     attributes:
       label: Versão / navegador
-      description: No app desktop, a versão aparece em Configurações → Modo desenvolvedor. No navegador, diga qual (Chrome, Edge…).
+      description: No app desktop, a versão aparece em Configurações → Desenvolvedor. No navegador, diga qual (Chrome, Edge…).
       placeholder: Desktop 1.0.22 / Chrome 152
   - type: textarea
     id: diagnostico
     attributes:
       label: Gravação de diagnóstico (opcional)
-      description: Para travadas, ping alto, áudio picotando ou consumo alto. Configurações → Modo desenvolvedor → janela de diagnóstico → Gravar. Arraste o .json para cá.
+      description: Para travadas, ping alto, áudio picotando ou consumo alto. Configurações → Desenvolvedor → janela de diagnóstico → Gravar. Arraste o .json para cá.
   - type: textarea
     id: causa
     attributes:

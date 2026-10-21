@@ -28,8 +28,9 @@ export function UserSettingsModal() {
   const close = useApp((s) => s.closeModal);
   const [tab, setTab] = useState<Tab>('profile');
   return (
-    <Modal title="Configurações de usuário" onClose={close} width={720}>
-      <div className="mb-5 flex gap-1 border-b border-line">
+    <Modal title="Configurações de usuário" onClose={close} width={860}>
+      {/* rótulos nunca quebram linha (desalinhava a barra); se a janela for estreita, a barra rola na horizontal */}
+      <div className="mb-5 flex gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:none]">
         {(
           [
             ['profile', 'Perfil'],
@@ -40,13 +41,13 @@ export function UserSettingsModal() {
             ['shortcuts', 'Atalhos'],
             ['bots', 'Bots'],
             ['account', 'Conta'],
-            ['dev', 'Modo desenvolvedor'],
+            ['dev', 'Desenvolvedor'],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={cx('-mb-px border-b-2 px-3 pb-2 text-sm font-semibold', tab === id ? 'border-accent text-fg' : 'border-transparent text-fg-muted hover:text-fg')}
+            className={cx('shrink-0 border-b-2 px-3 pb-2 text-sm font-semibold whitespace-nowrap', tab === id ? 'border-accent text-fg' : 'border-transparent text-fg-muted hover:text-fg')}
           >
             {label}
           </button>
