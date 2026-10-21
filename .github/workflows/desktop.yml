@@ -64,7 +64,7 @@ jobs:
           ls release
           cat release/latest.yml
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: concord-desktop
           path: |
