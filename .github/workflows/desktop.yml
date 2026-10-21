@@ -81,7 +81,7 @@ jobs:
     env:
       TARGET: ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: concord-desktop
 
