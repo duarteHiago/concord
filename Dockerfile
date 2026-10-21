@@ -1,5 +1,5 @@
 # ---------- build do frontend ----------
-FROM node:24-alpine AS client
+FROM node:26-alpine AS client
 WORKDIR /app
 COPY shared ./shared
 COPY client/package.json client/package-lock.json ./client/
@@ -8,7 +8,7 @@ COPY client ./client
 RUN cd client && npm run build
 
 # ---------- imagem final ----------
-FROM node:24-alpine
+FROM node:26-alpine
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
