@@ -350,7 +350,7 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
   };
 
   return (
-    <div className="shrink-0 px-6 pb-5">
+    <div className="relative shrink-0 px-6 pb-5">
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => e.preventDefault()} onDrop={files.onDrop}>
         <GameMenuButton target={{ kind: 'dm', id: dm.id }} />
