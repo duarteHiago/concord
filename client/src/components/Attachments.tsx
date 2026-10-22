@@ -97,6 +97,19 @@ export function useAttachmentDraft() {
 }
 
 /** Botão de clipe ao lado do campo de mensagem. */
+/** Abre o seletor de arquivos para anexar (usado pelo menu + do chat estreito, que não tem o botão de clipe). */
+export function pickAttachments(): Promise<FileList | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = ACCEPT;
+    input.onchange = () => resolve(input.files);
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
 export function AttachButton({ onFiles, disabled }: { onFiles: (files: FileList) => void; disabled?: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   return (

@@ -1,4 +1,4 @@
-import { Coins, Dices, Disc3, Plus, Trash2, X } from 'lucide-react';
+import { Coins, Dices, Disc3, Paperclip, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import type { GameData } from '../lib/types';
@@ -93,7 +93,8 @@ export function GameResult({ data, big }: { data: GameData; big?: boolean }) {
 }
 
 /** Botão "+" do campo de mensagem com os minigames. */
-export function GameMenuButton({ target }: { target: GameTarget }) {
+/** Menu + do chat: minigames e, no chat estreito (onAttach), também o anexo, que lá não tem botão próprio. */
+export function GameMenuButton({ target, compact = false, onAttach }: { target: GameTarget; compact?: boolean; onAttach?: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const openModal = useApp((s) => s.openModal);
@@ -122,18 +123,20 @@ export function GameMenuButton({ target }: { target: GameTarget }) {
   );
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    // no chat estreito o menu se prende ao campo de mensagem (pai com "relative") e ocupa a largura dele
+    <div ref={ref} className={cx('shrink-0', !compact && 'relative')}>
       <button
-        aria-label="Minigames"
-        title="Minigames"
+        aria-label={onAttach ? 'Anexar e minigames' : 'Minigames'}
+        title={onAttach ? 'Anexar e minigames' : 'Minigames'}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={cx('flex h-[50px] w-[50px] items-center justify-center rounded-full transition-colors', open ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
+        className={cx('flex items-center justify-center rounded-full transition-colors', compact ? 'h-10 w-10' : 'h-[50px] w-[50px]', open ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
       >
         <Plus size={20} className={cx('transition-transform', open && 'rotate-45')} />
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 w-64 animate-pop-in rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
+        <div className={cx('absolute bottom-full z-30 mb-2 animate-pop-in rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line', compact ? 'inset-x-3' : 'left-0 w-64')}>
+          {onAttach && item(<Paperclip size={18} />, 'Anexar arquivo', 'Até 20 MB', onAttach)}
           <div className="px-3 pt-1 pb-1.5 text-xs font-bold text-fg-subtle">Minigames</div>
           {item(<Disc3 size={18} />, 'Roleta', 'Monte as opções e gire', () => openModal({ type: 'roulette', target }))}
           {item(<Dices size={18} />, 'Rolar dado', '1d6 (ou /dado 2d20)', () => void playGame(target, { type: 'dice', sides: 6, count: 1 }))}

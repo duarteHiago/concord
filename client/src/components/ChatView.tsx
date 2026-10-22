@@ -1,7 +1,7 @@
 import { ClipCard } from './Clip';
 import { Hash, Pencil, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { AttachButton, MessageAttachments, PendingAttachments, useAttachmentDraft } from './Attachments';
+import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
@@ -453,11 +453,16 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
     }
   }
 
+  // no chat estreito da sala o texto tem que caber numa linha ao lado dos botões
   const placeholder = !canSend
-    ? 'Você não pode enviar mensagens aqui'
-    : channel.type === 'voice'
-      ? 'Fala com a galera…'
-      : `Mensagem em #${channel.name} (/ para comandos)`;
+    ? compact
+      ? 'Você não pode escrever aqui'
+      : 'Você não pode enviar mensagens aqui'
+    : compact
+      ? 'Mensagem…'
+      : channel.type === 'voice'
+        ? 'Fala com a galera…'
+        : `Mensagem em #${channel.name} (/ para comandos)`;
 
   return (
     <div className={cx('relative shrink-0', compact ? 'px-3 pb-3' : 'px-6 pb-5')}>
@@ -487,9 +492,9 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
       )}
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => canSend && e.preventDefault()} onDrop={(e) => canSend && files.onDrop(e)}>
-        {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} />}
-        {canSend && <StickerButton target={{ kind: 'channel', id: channel.id }} />}
-        {canSend && <AttachButton onFiles={files.add} />}
+        {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} compact={compact} onAttach={compact ? () => void pickAttachments().then((f) => f && files.add(f)) : undefined} />}
+        {canSend && <StickerButton target={{ kind: 'channel', id: channel.id }} compact={compact} />}
+        {canSend && !compact && <AttachButton onFiles={files.add} />}
         <label className="sr-only" htmlFor={`composer-${channel.id}`}>
           Mensagem
         </label>
@@ -505,7 +510,8 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
           aria-autocomplete="list"
           aria-expanded={open}
           className={cx(
-            'block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 px-5 py-3.5 text-[15px] outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed',
+            'block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed',
+            compact ? 'px-4 py-2.5 text-sm' : 'px-5 py-3.5 text-[15px]',
             text.includes('\n') ? 'rounded-3xl' : 'rounded-full',
           )}
         />

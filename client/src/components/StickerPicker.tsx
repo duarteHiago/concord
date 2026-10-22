@@ -45,7 +45,12 @@ function pickFiles(): Promise<File[]> {
 
 const skippedNote = (n: number) => (n ? ` (${n} ${n === 1 ? 'ficou' : 'ficaram'} de fora: animada grande demais ou formato inválido)` : '');
 
-export function StickerButton({ target }: { target: StickerTarget }) {
+/**
+ * O painel se prende ao campo de mensagem (o elemento posicionado mais próximo), não ao botão: assim, no chat
+ * estreito da sala de voz ele ocupa a largura do campo em vez de vazar para fora. Quem usa precisa de um pai
+ * com "relative" em volta do campo.
+ */
+export function StickerButton({ target, compact = false }: { target: StickerTarget; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -62,18 +67,23 @@ export function StickerButton({ target }: { target: StickerTarget }) {
   }, [open]);
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div ref={ref} className="shrink-0">
       <button
         aria-label="Figurinhas"
         title="Figurinhas"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={cx('flex h-[50px] w-[50px] items-center justify-center rounded-full transition-colors', open ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
+        className={cx('flex items-center justify-center rounded-full transition-colors', compact ? 'h-10 w-10' : 'h-[50px] w-[50px]', open ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
       >
-        <Sticker size={20} />
+        <Sticker size={compact ? 18 : 20} />
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 flex h-[420px] w-[min(380px,calc(100vw-32px))] animate-pop-in flex-col overflow-hidden rounded-3xl bg-popover shadow-2xl ring-1 ring-line">
+        <div
+          className={cx(
+            'absolute bottom-full z-30 mb-2 flex h-[min(420px,60vh)] animate-pop-in flex-col overflow-hidden rounded-3xl bg-popover shadow-2xl ring-1 ring-line',
+            compact ? 'inset-x-3' : 'left-6 w-[min(380px,calc(100%-48px))]',
+          )}
+        >
           <StickerPanel target={target} />
         </div>
       )}
