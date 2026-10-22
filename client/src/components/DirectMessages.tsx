@@ -2,13 +2,14 @@ import { Gamepad2, Headphones, MessageCircle, Pencil, Search, Trash2, Zap } from
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
-import type { DirectChannel, Message } from '../lib/types';
+import type { DirectChannel, GameData, Message, StickerMessageData } from '../lib/types';
 import { useApp } from '../store/app';
 import { usePopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { AttachButton, MessageAttachments, PendingAttachments, useAttachmentDraft } from './Attachments';
 import { RichText } from './ChatView';
 import { GameCard, GameMenuButton } from './Games';
+import { StickerButton, StickerMessage } from './StickerPicker';
 import { activityLabel } from './MemberList';
 import { Avatar, IconButton, Spinner, cx } from './ui';
 
@@ -283,7 +284,9 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
             className="w-[min(520px,60vw)] resize-none rounded-2xl bg-surface-3 p-3 text-[15px] outline-none ring-2 ring-accent"
           />
         ) : message.kind === 'game' && message.data ? (
-          <GameCard id={message.id} data={message.data} author={mine ? 'Você' : message.author.displayName} />
+          <GameCard id={message.id} data={message.data as GameData} author={mine ? 'Você' : message.author.displayName} />
+        ) : message.kind === 'sticker' && message.data ? (
+          <StickerMessage data={message.data as StickerMessageData} mine={mine} />
         ) : (
           message.content && (
             <div
@@ -301,7 +304,7 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
       </div>
       {mine && !editing && (
         <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          {message.kind !== 'game' && (
+          {(message.kind ?? 'text') === 'text' && (
             <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
               <Pencil size={14} />
             </IconButton>
@@ -351,6 +354,7 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => e.preventDefault()} onDrop={files.onDrop}>
         <GameMenuButton target={{ kind: 'dm', id: dm.id }} />
+        <StickerButton target={{ kind: 'dm', id: dm.id }} />
         <AttachButton onFiles={files.add} />
         <label className="sr-only" htmlFor="dm-composer">
           Mensagem para {dm.user.displayName}

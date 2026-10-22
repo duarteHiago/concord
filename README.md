@@ -40,6 +40,7 @@ O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, ge
 
 - **Reações flutuantes:** escolha um emoji no botão de coração e clique na tela. Uma rajada sobe a partir do ponto clicado, para todos da sala.
 - **Minigames:** roleta, dado e cara ou coroa, pelo botão **+** do chat ou por `/roleta a, b, c`, `/dado 2d6` e `/moeda`. O servidor sorteia o resultado, então todo mundo vê a mesma roleta parar no mesmo lugar.
+- **Figurinhas no chat:** importe packs do WhatsApp (arquivo `.wastickers`/`.zip` de apps como o Sticker Maker, ou as imagens soltas da pasta "WhatsApp Stickers" do Android e do "Salvar imagem" do WhatsApp Web) pelo botão de figurinha do chat. As animadas continuam animadas. Os packs são seus: valem em qualquer servidor e nas mensagens privadas, e quem recebe uma figurinha pode salvar o pack com um clique.
 - **Mensagens privadas:** pelo botão de balão no topo da barra de servidores, ou por "Mensagem" no perfil de alguém de um servidor em comum.
 - **Supressão de ruído por IA:** GTCRN (padrão, "IA natural": melhor preservação da voz nos testes com voz real), [DeepFilterNet 3](https://github.com/Rikorose/DeepFilterNet) ("IA máxima", com controle de intensidade; servido pelo próprio Concord) ou RNNoise, todas rodando no seu PC. Opcionais: portão de voz (sensibilidade automática ou manual, com medidor) e nivelador de volume depois da limpeza.
 - **Trocar microfone, saída e câmera** pela setinha ao lado de cada ícone, na barra de baixo.

@@ -75,3 +75,8 @@ export type StickerFinish = (typeof STICKER_FINISHES)[number];
 
 export const MAX_PLACED_STICKERS = 40;
 export const MAX_CUSTOM_STICKERS = 60;
+
+/** Figurinhas do chat: packs por pessoa, figurinhas por pack e tamanho de cada uma. */
+export const MAX_STICKER_PACKS = 30;
+export const MAX_PACK_STICKERS = 120;
+export const PACK_STICKER_MAX_BYTES = 1024 * 1024;

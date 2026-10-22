@@ -5,7 +5,7 @@ import { AttachButton, MessageAttachments, PendingAttachments, useAttachmentDraf
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
-import { memberName, type Channel, type Message, type ServerDetail } from '../lib/types';
+import { memberName, type Channel, type GameData, type Message, type ServerDetail, type StickerMessageData } from '../lib/types';
 import { onVisibilityChange } from '../lib/visibility';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { usePopover } from '../store/popover';
@@ -14,6 +14,7 @@ import { Avatar, IconButton, Spinner, VerifiedBadge, cx } from './ui';
 import { mentionsMe } from '../lib/mentions';
 import { availableCommands, runCommand } from '../lib/commands';
 import { GameCard, GameMenuButton } from './Games';
+import { StickerButton, StickerMessage } from './StickerPicker';
 
 const EMPTY: Message[] = [];
 
@@ -174,7 +175,7 @@ function Bubble({
 
   const actions = !editing && (mine || canDelete) && (
     <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-      {mine && (
+      {mine && (message.kind ?? 'text') === 'text' && (
         <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
           <Pencil size={14} />
         </IconButton>
@@ -232,7 +233,9 @@ function Bubble({
         ) : message.kind === 'clip' ? (
           <ClipCard text={message.content} author={mine ? 'Você' : name} />
         ) : message.kind === 'game' && message.data ? (
-          <GameCard id={message.id} data={message.data} author={mine ? 'Você' : name} />
+          <GameCard id={message.id} data={message.data as GameData} author={mine ? 'Você' : name} />
+        ) : message.kind === 'sticker' && message.data ? (
+          <StickerMessage data={message.data as StickerMessageData} mine={mine} />
         ) : (
           message.content && (
             <div
@@ -485,6 +488,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => canSend && e.preventDefault()} onDrop={(e) => canSend && files.onDrop(e)}>
         {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} />}
+        {canSend && <StickerButton target={{ kind: 'channel', id: channel.id }} />}
         {canSend && <AttachButton onFiles={files.add} />}
         <label className="sr-only" htmlFor={`composer-${channel.id}`}>
           Mensagem

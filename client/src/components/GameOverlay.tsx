@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { markPlayed, type LiveGameEvent } from '../lib/liveGames';
 import { playWin } from '../lib/sounds';
+import type { GameData } from '../lib/types';
 import { HOME, useApp } from '../store/app';
 import { Coin3D, Confetti, DiceSet, Wheel } from './GameVisuals';
 import { GameResult } from './Games';
@@ -49,7 +50,7 @@ export function GameOverlay() {
 
   if (!current) return null;
   const { message } = current;
-  const data = message.data!;
+  const data = message.data as GameData;
   const me = useApp.getState().me;
   const who = message.author.id === me?.id ? 'Você' : message.author.displayName;
   const action = data.type === 'roulette' ? 'girou a roleta' : data.type === 'dice' ? `rolou ${data.count}d${data.sides}` : 'jogou cara ou coroa';
