@@ -327,23 +327,41 @@ function stmt(sql: string): StatementSync {
   return s;
 }
 
+// O SQLite aqui é síncrono: enquanto uma consulta roda, o app inteiro espera. O metrics.ts liga este
+// observador para medir quanto cada consulta segura o servidor (painel de gargalos).
+let onQuery: ((sql: string, seconds: number) => void) | undefined;
+export function observeQueries(fn: (sql: string, seconds: number) => void) {
+  onQuery = fn;
+}
+
+function timed<T>(sql: string, fn: () => T): T {
+  if (!onQuery) return fn();
+  const start = performance.now();
+  try {
+    return fn();
+  } finally {
+    onQuery(sql, (performance.now() - start) / 1000);
+  }
+}
+
 export function get<T>(sql: string, ...params: SQLInputValue[]): T | undefined {
-  return stmt(sql).get(...params) as T | undefined;
+  return timed(sql, () => stmt(sql).get(...params) as T | undefined);
 }
 
 export function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return stmt(sql).all(...params) as T[];
+  return timed(sql, () => stmt(sql).all(...params) as T[]);
 }
 
 export function run(sql: string, ...params: SQLInputValue[]) {
-  return stmt(sql).run(...params);
+  return timed(sql, () => stmt(sql).run(...params));
 }
 
 export function tx<T>(fn: () => T): T {
   db.exec('BEGIN');
   try {
     const result = fn();
-    db.exec('COMMIT');
+    // no COMMIT o SQLite grava no disco: é onde um disco lento aparece
+    timed('COMMIT', () => db.exec('COMMIT'));
     return result;
   } catch (err) {
     db.exec('ROLLBACK');

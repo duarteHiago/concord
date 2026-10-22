@@ -25,6 +25,8 @@ export const config = {
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
   metricsPort: Number(env.METRICS_PORT ?? 9464),
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',
+  // requisição, evento do socket ou consulta acima disto (ms) vai para o log como "[lento]"
+  slowMs: Number(env.SLOW_MS ?? 100),
   livekit: {
     // URL que o navegador usa. Vazio = mesmo domínio do app em /livekit (via proxy reverso).
     publicUrl: env.LIVEKIT_PUBLIC_URL ?? '',

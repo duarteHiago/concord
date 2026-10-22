@@ -1102,7 +1102,7 @@
   },
   {
    "type": "row",
-   "title": "CPU",
+   "title": "Onde o app gasta o tempo",
    "id": 17,
    "collapsed": false,
    "gridPos": {
@@ -1115,8 +1115,720 @@
   },
   {
    "type": "timeseries",
-   "title": "Média x núcleo mais ocupado",
+   "title": "Do que é feito o tempo do app",
    "id": 18,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "O SQLite é síncrono: enquanto uma consulta roda, nada mais anda. O que sobra entre as áreas e a linha da CPU total é o tratamento das requisições HTTP, JSON e o envio pelos sockets. Para ver função por função: deploy/monitoring/perfil.sh.",
+   "gridPos": {
+    "x": 0,
+    "y": 26,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * sum(rate(concord_db_query_duration_seconds_sum[1m]))",
+     "legendFormat": "consultas ao banco",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * sum(rate(concord_socket_handler_duration_seconds_sum[1m]))",
+     "legendFormat": "eventos do socket",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * sum(rate(nodejs_gc_duration_seconds_sum{job=\"concord\"}[1m]))",
+     "legendFormat": "coleta de lixo",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * rate(process_cpu_seconds_total{job=\"concord\"}[1m])",
+     "legendFormat": "CPU total do app",
+     "refId": "D",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 20,
+      "gradientMode": "opacity",
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "axisSoftMin": 0
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "CPU total do app"
+      },
+      "properties": [
+       {
+        "id": "custom.fillOpacity",
+        "value": 0
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          6,
+          4
+         ]
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#f85149"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "mean",
+      "max",
+      "lastNotNull"
+     ],
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Operações lentas",
+   "id": 19,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Requisições, eventos e consultas acima de SLOW_MS (padrão 100 ms) no período. O nome exato de cada uma fica no log do app: docker compose logs app | grep lento",
+   "gridPos": {
+    "x": 12,
+    "y": 26,
+    "w": 4,
+    "h": 8
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(increase(concord_slow_total[$__range]))",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#3fb950",
+        "value": null
+       },
+       {
+        "color": "#f5c451",
+        "value": 1
+       },
+       {
+        "color": "#f85149",
+        "value": 50
+       }
+      ]
+     },
+     "mappings": [],
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Operações lentas por tipo",
+   "id": 20,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Por minuto. http = requisição; socket = evento; db = consulta.",
+   "gridPos": {
+    "x": 16,
+    "y": 26,
+    "w": 8,
+    "h": 8
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (kind) (rate(concord_slow_total[1m])) * 60",
+     "legendFormat": "{{kind}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "gradientMode": "opacity",
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "axisSoftMin": 0
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "mean",
+      "max",
+      "lastNotNull"
+     ],
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "bargauge",
+   "title": "Consultas que mais seguram o app",
+   "id": 21,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "% do tempo do app gasto em cada consulta (últimos 5 min). Uma consulta pode pesar por ser lenta ou por ser chamada demais: veja a tabela abaixo.",
+   "gridPos": {
+    "x": 0,
+    "y": 34,
+    "w": 12,
+    "h": 10
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "topk(10, 100 * sum by (query) (rate(concord_db_query_duration_seconds_sum[5m])))",
+     "legendFormat": "{{query}}",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#3fb950",
+        "value": null
+       },
+       {
+        "color": "#f5c451",
+        "value": 10
+       },
+       {
+        "color": "#f85149",
+        "value": 30
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "gradient",
+    "showUnfilled": true,
+    "valueMode": "color",
+    "namePlacement": "left",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   }
+  },
+  {
+   "type": "bargauge",
+   "title": "Eventos do socket que mais seguram o app",
+   "id": 22,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Inclui reenviar para todo mundo (presença, voz, digitando...). \"connection\" = alguém entrando: muita gente junto pesa.",
+   "gridPos": {
+    "x": 12,
+    "y": 34,
+    "w": 12,
+    "h": 10
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "topk(10, 100 * sum by (event) (rate(concord_socket_handler_duration_seconds_sum[5m])))",
+     "legendFormat": "{{event}}",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#3fb950",
+        "value": null
+       },
+       {
+        "color": "#f5c451",
+        "value": 10
+       },
+       {
+        "color": "#f85149",
+        "value": 30
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "gradient",
+    "showUnfilled": true,
+    "valueMode": "color",
+    "namePlacement": "left",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   }
+  },
+  {
+   "type": "table",
+   "title": "Consultas ao banco (últimos 5 min)",
+   "id": 23,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Média alta = a consulta é lenta (falta índice?). Vezes/s alto com média baixa = está sendo chamada demais (cache? juntar em uma?).",
+   "gridPos": {
+    "x": 0,
+    "y": 44,
+    "w": 24,
+    "h": 12
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "topk(25, 100 * sum by (query) (rate(concord_db_query_duration_seconds_sum[5m])))",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (query) (rate(concord_db_query_duration_seconds_count[5m]))",
+     "legendFormat": "__auto",
+     "refId": "B",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "1000 * sum by (query) (rate(concord_db_query_duration_seconds_sum[5m])) / sum by (query) (rate(concord_db_query_duration_seconds_count[5m]))",
+     "legendFormat": "__auto",
+     "refId": "C",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "1000 * histogram_quantile(0.99, sum by (le, query) (rate(concord_db_query_duration_seconds_bucket[5m])))",
+     "legendFormat": "__auto",
+     "refId": "D",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "job": true,
+       "instance": true,
+       "app": true,
+       "image": true,
+       "compose_project": true,
+       "compose_service": true
+      },
+      "renameByName": {
+       "query": "Consulta",
+       "Value #A": "% do app",
+       "Value #B": "Vezes/s",
+       "Value #C": "Média (ms)",
+       "Value #D": "p99 (ms)"
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "% do app"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Vezes/s"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Média (ms)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "ms"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "p99 (ms)"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "ms"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "sortBy": [
+     {
+      "displayName": "% do app",
+      "desc": true
+     }
+    ]
+   }
+  },
+  {
+   "type": "bargauge",
+   "title": "Rotas que mais ocupam o app",
+   "id": 24,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Tempo de resposta somado de cada rota. Inclui espera (disco, bcrypt, outras requisições na frente), então pode passar de 100%.",
+   "gridPos": {
+    "x": 0,
+    "y": 56,
+    "w": 12,
+    "h": 10
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "topk(10, 100 * sum by (method, route) (rate(concord_http_request_duration_seconds_sum[1m])))",
+     "legendFormat": "{{method}} {{route}}",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#3fb950",
+        "value": null
+       },
+       {
+        "color": "#f5c451",
+        "value": 50
+       },
+       {
+        "color": "#f85149",
+        "value": 100
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "gradient",
+    "showUnfilled": true,
+    "valueMode": "color",
+    "namePlacement": "left",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Média por evento do socket",
+   "id": 25,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Quanto cada evento demora, em média. Subindo com o número de pessoas = o custo cresce com quem está online (ex.: avisar todos).",
+   "gridPos": {
+    "x": 12,
+    "y": 56,
+    "w": 12,
+    "h": 10
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "1000 * sum by (event) (rate(concord_socket_handler_duration_seconds_sum[1m])) / sum by (event) (rate(concord_socket_handler_duration_seconds_count[1m]))",
+     "legendFormat": "{{event}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "gradientMode": "opacity",
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "axisSoftMin": 0
+     },
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "mean",
+      "max",
+      "lastNotNull"
+     ],
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "type": "row",
+   "title": "CPU",
+   "id": 26,
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 66,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "Média x núcleo mais ocupado",
+   "id": 27,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1124,7 +1836,7 @@
    "description": "Núcleo mais ocupado em 100% com a média baixa = algo de uma thread só no limite (normalmente o app).",
    "gridPos": {
     "x": 0,
-    "y": 26,
+    "y": 67,
     "w": 8,
     "h": 8
    },
@@ -1205,7 +1917,7 @@
   {
    "type": "timeseries",
    "title": "Quem usa a CPU (% de um núcleo)",
-   "id": 19,
+   "id": 28,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1213,7 +1925,7 @@
    "description": "",
    "gridPos": {
     "x": 8,
-    "y": 26,
+    "y": 67,
     "w": 8,
     "h": 8
    },
@@ -1306,7 +2018,7 @@
   {
    "type": "timeseries",
    "title": "Fila de processos",
-   "id": 20,
+   "id": 29,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1314,7 +2026,7 @@
    "description": "Mais processos querendo CPU que núcleos = fila. Travados em disco subindo = disco lento.",
    "gridPos": {
     "x": 16,
-    "y": 26,
+    "y": 67,
     "w": 8,
     "h": 8
    },
@@ -1396,11 +2108,11 @@
   {
    "type": "row",
    "title": "Pressão ao longo do tempo",
-   "id": 21,
+   "id": 30,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 34,
+    "y": 75,
     "w": 24,
     "h": 1
    },
@@ -1409,7 +2121,7 @@
   {
    "type": "timeseries",
    "title": "Esperando por recurso (PSI)",
-   "id": 22,
+   "id": 31,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1417,7 +2129,7 @@
    "description": "\"Todos travados\" = nenhum processo andou naquele tempo: é o pior caso.",
    "gridPos": {
     "x": 0,
-    "y": 35,
+    "y": 76,
     "w": 12,
     "h": 8
    },
@@ -1520,7 +2232,7 @@
   {
    "type": "timeseries",
    "title": "CPU roubada e esperando disco",
-   "id": 23,
+   "id": 32,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1528,7 +2240,7 @@
    "description": "softirq alto = o kernel está gastando CPU só para processar pacotes de rede.",
    "gridPos": {
     "x": 12,
-    "y": 35,
+    "y": 76,
     "w": 12,
     "h": 8
    },
@@ -1609,11 +2321,11 @@
   {
    "type": "row",
    "title": "Memória",
-   "id": 24,
+   "id": 33,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 43,
+    "y": 84,
     "w": 24,
     "h": 1
    },
@@ -1622,7 +2334,7 @@
   {
    "type": "timeseries",
    "title": "Memória disponível",
-   "id": 25,
+   "id": 34,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1630,7 +2342,7 @@
    "description": "",
    "gridPos": {
     "x": 0,
-    "y": 44,
+    "y": 85,
     "w": 8,
     "h": 8
    },
@@ -1700,7 +2412,7 @@
   {
    "type": "timeseries",
    "title": "Troca com o disco",
-   "id": 26,
+   "id": 35,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1708,7 +2420,7 @@
    "description": "Tudo aqui deveria ficar perto de 0.",
    "gridPos": {
     "x": 8,
-    "y": 44,
+    "y": 85,
     "w": 8,
     "h": 8
    },
@@ -1789,7 +2501,7 @@
   {
    "type": "timeseries",
    "title": "Containers perto do limite de memória",
-   "id": 27,
+   "id": 36,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1797,7 +2509,7 @@
    "description": "Só containers com limite definido. Perto de 100% o Docker mata e reinicia o container.",
    "gridPos": {
     "x": 16,
-    "y": 44,
+    "y": 85,
     "w": 8,
     "h": 8
    },
@@ -1856,11 +2568,11 @@
   {
    "type": "row",
    "title": "Disco",
-   "id": 28,
+   "id": 37,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 52,
+    "y": 93,
     "w": 24,
     "h": 1
    },
@@ -1869,7 +2581,7 @@
   {
    "type": "timeseries",
    "title": "Operações por segundo",
-   "id": 29,
+   "id": 38,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1877,7 +2589,7 @@
    "description": "",
    "gridPos": {
     "x": 0,
-    "y": 53,
+    "y": 94,
     "w": 8,
     "h": 8
    },
@@ -1947,7 +2659,7 @@
   {
    "type": "timeseries",
    "title": "Tempo por operação",
-   "id": 30,
+   "id": 39,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1955,7 +2667,7 @@
    "description": "SSD bom fica abaixo de 5 ms. Subindo junto com a carga = o disco é o gargalo (o banco SQLite grava aqui).",
    "gridPos": {
     "x": 8,
-    "y": 53,
+    "y": 94,
     "w": 8,
     "h": 8
    },
@@ -2025,7 +2737,7 @@
   {
    "type": "timeseries",
    "title": "Fila do disco",
-   "id": 31,
+   "id": 40,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2033,7 +2745,7 @@
    "description": "Quantas operações, em média, estão esperando o disco.",
    "gridPos": {
     "x": 16,
-    "y": 53,
+    "y": 94,
     "w": 8,
     "h": 8
    },
@@ -2093,11 +2805,11 @@
   {
    "type": "row",
    "title": "Rede",
-   "id": 32,
+   "id": 41,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 61,
+    "y": 102,
     "w": 24,
     "h": 1
    },
@@ -2106,7 +2818,7 @@
   {
    "type": "timeseries",
    "title": "Uso da banda",
-   "id": 33,
+   "id": 42,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2114,7 +2826,7 @@
    "description": "Cada espectador de uma transmissão puxa vários Mbps de upload da VPS.",
    "gridPos": {
     "x": 0,
-    "y": 62,
+    "y": 103,
     "w": 8,
     "h": 8
    },
@@ -2236,7 +2948,7 @@
   {
    "type": "timeseries",
    "title": "UDP (mídia de voz e vídeo)",
-   "id": 34,
+   "id": 43,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2244,7 +2956,7 @@
    "description": "",
    "gridPos": {
     "x": 8,
-    "y": 62,
+    "y": 103,
     "w": 8,
     "h": 8
    },
@@ -2381,7 +3093,7 @@
   {
    "type": "timeseries",
    "title": "Descartes e retransmissões",
-   "id": 35,
+   "id": 44,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2389,7 +3101,7 @@
    "description": "",
    "gridPos": {
     "x": 16,
-    "y": 62,
+    "y": 103,
     "w": 8,
     "h": 8
    },
@@ -2492,7 +3204,7 @@
   {
    "type": "timeseries",
    "title": "Conexões",
-   "id": 36,
+   "id": 45,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2500,7 +3212,7 @@
    "description": "",
    "gridPos": {
     "x": 0,
-    "y": 70,
+    "y": 111,
     "w": 12,
     "h": 8
    },
@@ -2615,7 +3327,7 @@
   {
    "type": "timeseries",
    "title": "Rede por pacote",
-   "id": 37,
+   "id": 46,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2623,7 +3335,7 @@
    "description": "VPS costuma ter limite de pacotes por segundo além da banda. Muito pacote pequeno (voz) pesa mais que poucos grandes.",
    "gridPos": {
     "x": 12,
-    "y": 70,
+    "y": 111,
     "w": 12,
     "h": 8
    },
@@ -2693,11 +3405,11 @@
   {
    "type": "row",
    "title": "Voz e vídeo (LiveKit)",
-   "id": 38,
+   "id": 47,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 78,
+    "y": 119,
     "w": 24,
     "h": 1
    },
@@ -2706,7 +3418,7 @@
   {
    "type": "stat",
    "title": "Salas",
-   "id": 39,
+   "id": 48,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2714,7 +3426,7 @@
    "description": "",
    "gridPos": {
     "x": 0,
-    "y": 79,
+    "y": 120,
     "w": 4,
     "h": 4
    },
@@ -2765,7 +3477,7 @@
   {
    "type": "stat",
    "title": "Participantes",
-   "id": 40,
+   "id": 49,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2773,7 +3485,7 @@
    "description": "",
    "gridPos": {
     "x": 4,
-    "y": 79,
+    "y": 120,
     "w": 4,
     "h": 4
    },
@@ -2824,7 +3536,7 @@
   {
    "type": "stat",
    "title": "Faixas publicadas",
-   "id": 41,
+   "id": 50,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2832,7 +3544,7 @@
    "description": "Microfones, câmeras e telas enviados ao servidor.",
    "gridPos": {
     "x": 8,
-    "y": 79,
+    "y": 120,
     "w": 4,
     "h": 4
    },
@@ -2883,7 +3595,7 @@
   {
    "type": "stat",
    "title": "Faixas recebidas",
-   "id": 42,
+   "id": 51,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2891,7 +3603,7 @@
    "description": "Quantas faixas o servidor está reenviando: é isso que pesa no upload.",
    "gridPos": {
     "x": 12,
-    "y": 79,
+    "y": 120,
     "w": 4,
     "h": 4
    },
@@ -2942,7 +3654,7 @@
   {
    "type": "stat",
    "title": "CPU do LiveKit",
-   "id": 43,
+   "id": 52,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -2950,7 +3662,7 @@
    "description": "Em % da VPS inteira (o LiveKit usa vários núcleos).",
    "gridPos": {
     "x": 16,
-    "y": 79,
+    "y": 120,
     "w": 4,
     "h": 4
    },
@@ -3010,7 +3722,7 @@
   {
    "type": "stat",
    "title": "Memória do LiveKit",
-   "id": 44,
+   "id": 53,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -3018,7 +3730,7 @@
    "description": "",
    "gridPos": {
     "x": 20,
-    "y": 79,
+    "y": 120,
     "w": 4,
     "h": 4
    },
@@ -3069,7 +3781,7 @@
   {
    "type": "timeseries",
    "title": "Mídia que passa pelo LiveKit",
-   "id": 45,
+   "id": 54,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -3077,7 +3789,7 @@
    "description": "incoming = chegando dos participantes; outgoing = reenviado para quem assiste.",
    "gridPos": {
     "x": 0,
-    "y": 83,
+    "y": 124,
     "w": 8,
     "h": 8
    },
@@ -3136,7 +3848,7 @@
   {
    "type": "timeseries",
    "title": "Perda, NACK e pedidos de quadro",
-   "id": 46,
+   "id": 55,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -3144,7 +3856,7 @@
    "description": "NACK = pedido de reenvio de pacote perdido. Pedido de quadro (PLI) = o vídeo travou e precisa de um quadro completo. Subindo com a carga = rede ou CPU no limite.",
    "gridPos": {
     "x": 8,
-    "y": 83,
+    "y": 124,
     "w": 8,
     "h": 8
    },
@@ -3225,7 +3937,7 @@
   {
    "type": "timeseries",
    "title": "RTT e jitter (p95)",
-   "id": 47,
+   "id": 56,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -3233,7 +3945,7 @@
    "description": "",
    "gridPos": {
     "x": 16,
-    "y": 83,
+    "y": 124,
     "w": 8,
     "h": 8
    },
@@ -3303,11 +4015,11 @@
   {
    "type": "row",
    "title": "App (Node.js)",
-   "id": 48,
+   "id": 57,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 91,
+    "y": 132,
     "w": 24,
     "h": 1
    },
@@ -3316,7 +4028,7 @@
   {
    "type": "timeseries",
    "title": "CPU do app e coleta de lixo",
-   "id": 49,
+   "id": 58,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -3324,7 +4036,7 @@
    "description": "Perto de 100% = o app é o gargalo, mesmo que a VPS tenha núcleos livres.",
    "gridPos": {
     "x": 0,
-    "y": 92,
+    "y": 133,
     "w": 8,
     "h": 8
    },
@@ -3394,7 +4106,7 @@
   {
    "type": "timeseries",
    "title": "Atraso do event loop",
-   "id": 50,
+   "id": 59,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -3402,7 +4114,7 @@
    "description": "",
    "gridPos": {
     "x": 8,
-    "y": 92,
+    "y": 133,
     "w": 8,
     "h": 8
    },
@@ -3483,7 +4195,7 @@
   {
    "type": "timeseries",
    "title": "Memória do app",
-   "id": 51,
+   "id": 60,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -3491,7 +4203,7 @@
    "description": "",
    "gridPos": {
     "x": 16,
-    "y": 92,
+    "y": 133,
     "w": 8,
     "h": 8
    },

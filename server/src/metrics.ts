@@ -5,7 +5,8 @@ import { createServer } from 'node:http';
 import type { NextFunction, Request, Response } from 'express';
 import client from 'prom-client';
 import { config } from './config.ts';
-import { get } from './db.ts';
+import { get, observeQueries } from './db.ts';
+import { cpuProfile } from './profile.ts';
 
 export const registry = new client.Registry();
 registry.setDefaultLabels({ app: 'concord' });
@@ -40,6 +41,72 @@ export const socketEvents = new client.Counter({
   help: 'Eventos recebidos pelo Socket.io',
   labelNames: ['event'] as const,
   registers: [registry],
+});
+
+// ---- onde o app gasta o tempo (painel de gargalos) ----
+const FAST_BUCKETS = [0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1];
+
+const slowOps = new client.Counter({
+  name: 'concord_slow_total',
+  help: `Operações acima de SLOW_MS (${config.slowMs} ms)`,
+  labelNames: ['kind'] as const,
+  registers: [registry],
+});
+
+/** Conta e escreve no log o que passou do limite, com o nome exato (rota, evento ou SQL). */
+function slow(kind: 'http' | 'socket' | 'db', name: string, seconds: number) {
+  const ms = seconds * 1000;
+  if (ms < config.slowMs) return;
+  slowOps.inc({ kind });
+  console.warn(`[lento] ${kind} ${ms.toFixed(0)} ms: ${name}`);
+}
+
+const socketDuration = new client.Histogram({
+  name: 'concord_socket_handler_duration_seconds',
+  help: 'Quanto cada evento do Socket.io segurou o servidor',
+  labelNames: ['event'] as const,
+  buckets: FAST_BUCKETS,
+  registers: [registry],
+});
+
+/** Envolve um handler do Socket.io medindo quanto ele segura o servidor. */
+export function timedSocket<A extends unknown[]>(event: string, fn: (...args: A) => void) {
+  return (...args: A) => {
+    const start = performance.now();
+    try {
+      fn(...args);
+    } finally {
+      const seconds = (performance.now() - start) / 1000;
+      socketDuration.observe({ event }, seconds);
+      slow('socket', event, seconds);
+    }
+  };
+}
+
+const queryDuration = new client.Histogram({
+  name: 'concord_db_query_duration_seconds',
+  help: 'Quanto cada consulta ao banco segurou o servidor (o SQLite é síncrono)',
+  labelNames: ['query'] as const,
+  buckets: FAST_BUCKETS,
+  registers: [registry],
+});
+
+// SQL vira o nome da série: espaços colapsados, listas "IN (?, ?, ?)" de tamanho variável juntadas,
+// e um teto de nomes diferentes para SQL montado dinamicamente não explodir a quantidade de séries
+const queryNames = new Map<string, string>();
+function queryName(sql: string): string {
+  let name = queryNames.get(sql);
+  if (name) return name;
+  name = sql.replace(/\s+/g, ' ').replace(/\(\s*\?(?:\s*,\s*\?)+\s*\)/g, '(?…)').trim().slice(0, 160);
+  if (queryNames.size >= 400) return 'outras';
+  queryNames.set(sql, name);
+  return name;
+}
+
+observeQueries((sql, seconds) => {
+  const name = queryName(sql);
+  queryDuration.observe({ query: name }, seconds);
+  slow('db', name, seconds);
 });
 
 /** Rota sem ids (ex.: /api/channels/:id/messages), para não explodir a quantidade de séries. */
@@ -84,7 +151,8 @@ export function httpMetrics(req: Request, res: Response, next: NextFunction) {
   const end = httpDuration.startTimer();
   res.on('finish', () => {
     const route = routeOf(req);
-    end({ method: req.method, route, status: String(res.statusCode) });
+    const seconds = end({ method: req.method, route, status: String(res.statusCode) });
+    if (route !== '/uploads' && route !== '/downloads') slow('http', `${req.method} ${route}`, seconds);
     const event = res.statusCode < 400 ? EVENTS[`${req.method} ${route}`] : undefined;
     if (event) appEvents.inc({ event });
     if (res.statusCode >= 500) appEvents.inc({ event: 'erro_500' });
@@ -145,6 +213,17 @@ export function registerLiveGauges(read: {
 export function startMetricsServer() {
   if (!config.metricsPort) return;
   createServer(async (req, res) => {
+    // perfil de CPU sob demanda (deploy/monitoring/perfil.sh): quais funções do código gastam o tempo
+    if (req.url?.startsWith('/debug/perfil')) {
+      const seconds = Number(new URL(req.url, 'http://x').searchParams.get('segundos') ?? 30);
+      try {
+        const report = await cpuProfile(seconds);
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' }).end(report);
+      } catch (err) {
+        res.writeHead(409, { 'Content-Type': 'text/plain; charset=utf-8' }).end(`${(err as Error).message}\n`);
+      }
+      return;
+    }
     if (req.url !== '/metrics') {
       res.writeHead(404).end();
       return;

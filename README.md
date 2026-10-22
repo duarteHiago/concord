@@ -147,6 +147,12 @@ Para marcar um teste de carga nos gráficos, na VPS:
 ./deploy/monitoring/marcar.sh fim                          # fecha a faixa
 ```
 
+Para saber **o que no código** não aguenta a carga, o painel Gargalos tem a seção "Onde o app gasta o tempo": quanto cada consulta ao banco, evento do Socket.io e rota segura o servidor (o SQLite é síncrono, então uma consulta lenta trava todo mundo). O que passar de `SLOW_MS` (padrão 100 ms) vai para o log com o nome exato: `docker compose logs app | grep lento`. E, com a carga rodando, um perfil de CPU mostra função por função onde o tempo vai e quanto a thread do app ficou livre (folga):
+
+```bash
+./deploy/monitoring/perfil.sh 30   # resumo na tela; o .cpuprofile completo fica em data/perfis/
+```
+
 Coleta: Prometheus (a cada 10 s, guarda 15 dias), node-exporter, um coletor próprio do `docker stats` (`deploy/monitoring/docker-exporter.mjs`), blackbox (latência), as métricas do LiveKit (`127.0.0.1:16789`) e as do próprio app (`127.0.0.1:9464`). Tudo escuta só em `127.0.0.1`; o único acesso de fora é o Grafana, com login. Para desligar: `MONITORING=off ./deploy/setup.sh`. Os painéis são gerados por `python deploy/monitoring/dashboards.py`.
 
 ## Roadmap
