@@ -611,6 +611,25 @@
   "list": []
  },
  "annotations": {
-  "list": []
+  "list": [
+   {
+    "name": "Marcações (teste de carga)",
+    "enable": true,
+    "hide": false,
+    "iconColor": "#ff8a6b",
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "target": {
+     "type": "tags",
+     "tags": [
+      "teste-de-carga"
+     ],
+     "matchAny": true,
+     "limit": 200
+    }
+   }
+  ]
  }
 }
