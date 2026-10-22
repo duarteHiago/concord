@@ -61,6 +61,8 @@ services:
       - --path.rootfs=/host
       - --web.listen-address=127.0.0.1:19100
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/snap/.+)($$|/)
+      # processos e threads por estado (rodando, bloqueados em disco...) para o painel de gargalos
+      - --collector.processes
     volumes:
       - /:/host:ro,rslave
     mem_limit: 128m

@@ -137,8 +137,17 @@ O deploy sobe junto um monitoramento ao vivo em `https://SEU_DOMINIO/grafana` (u
 - **VPS**: CPU por núcleo e por tipo, carga, memória, swap, disco (uso, leitura/escrita), rede, conexões.
 - **Containers**: CPU, memória, disco e reinícios de cada container da VPS.
 - **App e rede**: rotas da API (req/s e p95), eventos (mensagens, logins, uploads...), Socket.io, salas de voz, Node.js (event loop, heap), Caddy, túnel da Cloudflare, ping e disponibilidade.
+- **Gargalos (teste de carga)**: para cada recurso, quanto está em uso e quanto tem processo *esperando* por ele (pressão do kernel), mais os sinais que deveriam ficar em zero (swap, OOM, UDP descartado, retransmissão TCP, perda de mídia). Mostra carga aplicada x tempo de resposta, disco (IOPS, latência, fila), rede contra a banda da VPS (escolha a banda no topo do painel), pacotes por segundo, conntrack e o LiveKit por dentro (salas, faixas, perda, NACK, RTT, jitter).
 
-Coleta: Prometheus (a cada 10 s, guarda 15 dias), node-exporter, um coletor próprio do `docker stats` (`deploy/monitoring/docker-exporter.mjs`), blackbox (latência) e as métricas do próprio app (`127.0.0.1:9464`). Tudo escuta só em `127.0.0.1`; o único acesso de fora é o Grafana, com login. Para desligar: `MONITORING=off ./deploy/setup.sh`. Os painéis são gerados por `python deploy/monitoring/dashboards.py`.
+Para marcar um teste de carga nos gráficos, na VPS:
+
+```bash
+./deploy/monitoring/marcar.sh inicio "50 pessoas em voz"   # abre uma faixa sombreada
+./deploy/monitoring/marcar.sh "subi para 100"              # marca um instante
+./deploy/monitoring/marcar.sh fim                          # fecha a faixa
+```
+
+Coleta: Prometheus (a cada 10 s, guarda 15 dias), node-exporter, um coletor próprio do `docker stats` (`deploy/monitoring/docker-exporter.mjs`), blackbox (latência), as métricas do LiveKit (`127.0.0.1:16789`) e as do próprio app (`127.0.0.1:9464`). Tudo escuta só em `127.0.0.1`; o único acesso de fora é o Grafana, com login. Para desligar: `MONITORING=off ./deploy/setup.sh`. Os painéis são gerados por `python deploy/monitoring/dashboards.py`.
 
 ## Roadmap
 

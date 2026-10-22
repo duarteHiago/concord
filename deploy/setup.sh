@@ -165,11 +165,12 @@ if [ "${FIREWALL:-on}" != "off" ]; then
   ufw allow "${SSH_PORT:-22}/tcp" >/dev/null
   ufw allow 7881/tcp >/dev/null
   ufw allow 7882/udp >/dev/null
-  # 7880 (sinalização/API do LiveKit) e 3000 (app): só pelo proxy local, nunca de fora
-  for p in 80 443 3000 7880; do
+  # 7880 (sinalização/API do LiveKit) e 3000 (app): só pelo proxy local, nunca de fora; 16789 (métricas do LiveKit): só local
+  for p in 80 443 3000 7880 16789; do
     ufw delete allow "$p/tcp" >/dev/null 2>&1 || true
   done
   ufw deny 7880/tcp >/dev/null
+  ufw deny 16789/tcp >/dev/null
   if [ "$MODE" != "tunnel" ]; then
     # lista oficial da Cloudflare; regras antigas com o comentário "cloudflare" são trocadas pelas atuais
     CF_IPS="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4; echo; curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6)"
@@ -191,11 +192,11 @@ fi
 
 if [ -z "$("${COMPOSE[@]}" ps -q 2>/dev/null)" ]; then
   BUSY=""
-  for p in 3000 7880 7881; do ss -ltnH "sport = :$p" | grep -q . && BUSY="$BUSY $p/tcp"; done
+  for p in 3000 7880 7881 16789; do ss -ltnH "sport = :$p" | grep -q . && BUSY="$BUSY $p/tcp"; done
   ss -lunH "sport = :7882" | grep -q . && BUSY="$BUSY 7882/udp"
   if [ -n "$BUSY" ]; then
     echo "!! Portas já em uso por outro serviço:$BUSY"
-    echo "!! Veja quem está usando com: ss -ltnup | grep -E ':(3000|7880|7881|7882)'"
+    echo "!! Veja quem está usando com: ss -ltnup | grep -E ':(3000|7880|7881|7882|16789)'"
     exit 1
   fi
 fi

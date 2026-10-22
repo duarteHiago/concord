@@ -15,6 +15,15 @@ class Board:
     def __init__(self, uid, title, description, refresh='10s', time='now-1h'):
         self.uid, self.title, self.description, self.refresh, self.time = uid, title, description, refresh, time
         self.panels, self.y, self.x, self.row_h, self.next_id = [], 0, 0, 0, 1
+        self.variables = []
+
+    def choice(self, name, label, values, default, description=''):
+        """Lista de opções no topo do painel; use $nome nas consultas."""
+        self.variables.append({
+            'type': 'custom', 'name': name, 'label': label, 'description': description, 'hide': 0,
+            'query': ','.join(values), 'current': {'text': default, 'value': default},
+            'options': [{'text': v, 'value': v, 'selected': v == default} for v in values],
+        })
 
     def _place(self, w, h):
         if self.x + w > 24:
@@ -74,10 +83,12 @@ class Board:
         })
 
     def bars(self, title, query, unit='percent', w=8, h=8, max_=100, thresholds=None, legend='', description=''):
+        """query: uma consulta (uma barra por série) ou uma lista de (consulta, nome), uma barra por item."""
         steps = [{'color': c, 'value': v} for v, c in (thresholds or [(None, GREEN), (70, YELLOW), (90, RED)])]
+        queries = [(query, legend)] if isinstance(query, str) else query
         self.panels.append({
             'type': 'bargauge', 'title': title, 'id': self._id(), 'datasource': DS, 'description': description,
-            'gridPos': self._place(w, h), 'targets': [{**t, 'instant': True, 'range': False} for t in self._targets([(query, legend)])],
+            'gridPos': self._place(w, h), 'targets': [{**t, 'instant': True, 'range': False} for t in self._targets(queries)],
             'fieldConfig': {'defaults': {'unit': unit, 'min': 0, **({'max': max_} if max_ is not None else {}), 'thresholds': {'mode': 'absolute', 'steps': steps}, 'color': {'mode': 'thresholds'}}, 'overrides': []},
             'options': {'orientation': 'horizontal', 'displayMode': 'gradient', 'showUnfilled': True, 'valueMode': 'color', 'namePlacement': 'left', 'reduceOptions': {'calcs': ['lastNotNull'], 'fields': '', 'values': False}},
         })
@@ -100,11 +111,16 @@ class Board:
             'time': {'from': self.time, 'to': 'now'},
             'timepicker': {'refresh_intervals': ['5s', '10s', '30s', '1m', '5m']},
             'links': [{'title': 'Painéis do Concord', 'type': 'dashboards', 'tags': ['concord'], 'asDropdown': True, 'icon': 'external link'}],
-            'panels': self.panels, 'templating': {'list': []}, 'annotations': {'list': []},
+            'panels': self.panels, 'templating': {'list': self.variables}, 'annotations': {'list': MARKS},
         }
         OUT.mkdir(parents=True, exist_ok=True)
         (OUT / f'{self.uid}.json').write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf-8')
 
+
+# marcações feitas com deploy/monitoring/marcar.sh (início/fim de teste de carga) aparecem em todos os painéis
+MARKS = [{'name': 'Marcações (teste de carga)', 'enable': True, 'hide': False, 'iconColor': ORANGE,
+          'datasource': {'type': 'grafana', 'uid': '-- Grafana --'},
+          'target': {'type': 'tags', 'tags': ['teste-de-carga'], 'matchAny': True, 'limit': 200}}]
 
 UP_DOWN = [{'type': 'value', 'options': {'0': {'text': 'FORA DO AR', 'color': RED}, '1': {'text': 'NO AR', 'color': GREEN}}}]
 EXT = 'probe="site (de fora, pela Cloudflare)"'
@@ -231,6 +247,110 @@ b.stat('App por dentro', [('avg_over_time(probe_success{probe="app (por dentro)"
 b.stat('LiveKit', [('avg_over_time(probe_success{probe="LiveKit (voz e vídeo)"}[24h]) * 100', '')], unit='percent', decimals=2, w=6, thresholds=[(None, RED), (99, YELLOW), (99.9, GREEN)])
 b.stat('Certificado vence em', [(f'(probe_ssl_earliest_cert_expiry{{{EXT}}} - time()) / 86400', '')], unit='d', decimals=0, w=6, thresholds=[(None, RED), (7, YELLOW), (20, GREEN)], graph=False)
 b.table('Coletas', [('up', '')], h=8, columns={'job': 'Fonte', 'instance': 'Endereço', 'probe': 'Checagem', 'Value': 'Funcionando (1 = sim)'}, hide=('Time', '__name__', 'app'), description='Se algo aparecer 0, aquele coletor não está respondendo. No cloudflared é normal só uma das portas responder.')
+b.save()
+
+# ------------------------------------------------------------------ gargalos (teste de carga)
+# Método USE: para cada recurso, quanto está em uso, quanto tem gente esperando por ele (saturação) e se há erros.
+# "Em uso" alto com "esperando" baixo = ainda tem folga; "esperando" subindo = é ali o gargalo.
+CORES = 'count(count by (cpu) (node_cpu_seconds_total))'
+DEV = 'device!~"loop.*|ram.*|sr.*|fd.*"'
+LK = 'compose_service="livekit"'
+MODE = lambda m: f'100 * avg(rate(node_cpu_seconds_total{{mode="{m}"}}[1m]))'
+PSI = lambda r, k='waiting': f'100 * rate(node_pressure_{r}_{k}_seconds_total[1m])'
+TX = f'sum(rate(node_network_transmit_bytes_total{{{NET_IF}}}[1m])) * 8'
+RX = f'sum(rate(node_network_receive_bytes_total{{{NET_IF}}}[1m])) * 8'
+UDP_ERR = 'sum(rate({__name__=~"node_netstat_Udp6?_(RcvbufErrors|SndbufErrors)"}[1m]))'
+APP_CPU = '100 * rate(process_cpu_seconds_total{job="concord"}[1m])'
+HOT_CORE = 'max(100 * (1 - rate(node_cpu_seconds_total{mode="idle"}[1m])))'
+RIGHT = lambda name: {'matcher': {'id': 'byName', 'options': name}, 'properties': [{'id': 'custom.axisPlacement', 'value': 'right'}, {'id': 'custom.lineStyle', 'value': {'fill': 'dash', 'dash': [6, 4]}}]}
+# banda contratada da VPS (Mbps): só serve de régua para a rede; dá para trocar na lista do topo do painel
+BANDA_MBPS = '1000'
+
+b = Board('gargalos', 'Concord — Gargalos (teste de carga)', 'Onde a VPS está apertando e onde ainda tem folga. Marque o teste com deploy/monitoring/marcar.sh.', refresh='5s', time='now-30m')
+b.choice('banda', 'Banda da VPS (Mbps)', ['100', '200', '300', '500', '1000', '2500', '10000'], BANDA_MBPS,
+         description='Velocidade do plano da VPS. Só serve de régua para a porcentagem de rede.')
+b.row('Agora: o que está apertando')
+b.bars('Em uso (100% = esgotado)', [
+    (CPU, 'CPU (média dos núcleos)'),
+    (HOT_CORE, 'núcleo mais ocupado'),
+    (APP_CPU, 'app Node.js (usa 1 núcleo só)'),
+    (RAM, 'RAM'),
+    (f'max(100 * rate(node_disk_io_time_seconds_total{{{DEV}}}[1m]))', 'disco ocupado'),
+    (f'100 * {TX} / ($banda * 1e6)', 'upload (da banda)'),
+    (f'100 * {RX} / ($banda * 1e6)', 'download (da banda)'),
+    ('100 * node_nf_conntrack_entries / node_nf_conntrack_entries_limit', 'conexões rastreadas (conntrack)'),
+    ('100 * process_open_fds{job="concord"} / process_max_fds{job="concord"}', 'arquivos e sockets do app'),
+], w=12, h=10, description='O app é Node.js: a lógica roda num núcleo só. Ele pode chegar a 100% de um núcleo com a CPU média da VPS ainda folgada.')
+b.bars('Esperando por recurso (pressão)', [
+    (PSI('cpu'), 'CPU'),
+    (PSI('memory'), 'memória'),
+    (PSI('io'), 'disco'),
+    (MODE('steal'), 'CPU roubada pelo provedor (steal)'),
+    (MODE('iowait'), 'CPU parada esperando disco (iowait)'),
+], w=12, h=10, thresholds=[(None, GREEN), (5, YELLOW), (20, RED)],
+       description='Pressão (PSI do kernel): % do tempo em que algum processo ficou parado esperando aquele recurso. É o melhor sinal de gargalo: uso alto com pressão perto de 0 ainda tem folga. Steal alto = vizinhos da VPS estão pegando a sua CPU.')
+b.row('Sinais de problema (o normal é 0)')
+b.stat('Swap (páginas/s)', [('rate(node_vmstat_pswpin[1m]) + rate(node_vmstat_pswpout[1m])', '')], w=3, decimals=0, thresholds=[(None, GREEN), (1, YELLOW), (100, RED)], description='Acabou a RAM e o kernel está usando o disco como memória.')
+b.stat('Processos mortos (OOM)', [('increase(node_vmstat_oom_kill[$__range])', '')], w=3, decimals=0, thresholds=[(None, GREEN), (1, RED)], graph=False, description='Processos que o kernel matou por falta de memória no período mostrado.')
+b.stat('UDP descartado/s', [(UDP_ERR, '')], w=3, decimals=1, thresholds=[(None, GREEN), (0.1, YELLOW), (10, RED)], description='Pacotes de mídia (voz e vídeo) jogados fora por buffer cheio antes do LiveKit ler. Se subir: aumentar net.core.rmem_max/wmem_max.')
+b.stat('TCP retransmitido', [('100 * rate(node_netstat_Tcp_RetransSegs[1m]) / clamp_min(rate(node_netstat_Tcp_OutSegs[1m]), 1)', '')], unit='percent', w=3, decimals=2, thresholds=[(None, GREEN), (1, YELLOW), (5, RED)], description='Pacotes TCP que precisaram ser reenviados: rede congestionada ou com perda.')
+b.stat('Kernel descartou/s', [('sum(rate(node_softnet_dropped_total[1m])) + (rate(node_netstat_TcpExt_ListenDrops[1m]) or vector(0))', '')], w=3, decimals=1, thresholds=[(None, GREEN), (0.1, YELLOW), (10, RED)], description='Pacotes que chegaram mas o kernel não deu conta de processar, ou conexões novas recusadas por fila cheia.')
+b.stat('Erros 5xx', [(ERR5, '')], unit='percent', w=3, decimals=2, thresholds=[(None, GREEN), (0.5, YELLOW), (2, RED)])
+b.stat('Event loop p99', [('nodejs_eventloop_lag_p99_seconds{job="concord"}', '')], unit='s', w=3, decimals=3, thresholds=[(None, GREEN), (0.05, YELLOW), (0.1, RED)], description='Quanto o app demora para atender algo novo por estar ocupado.')
+b.stat('Perda de mídia', [('100 * sum(rate(livekit_packet_loss_total[1m])) / clamp_min(sum(rate(livekit_packet_total[1m])), 1)', '')], unit='percent', w=3, decimals=2, thresholds=[(None, GREEN), (1, YELLOW), (5, RED)], description='Pacotes de voz e vídeo perdidos, segundo o LiveKit.')
+b.row('Carga x resposta')
+b.series('Carga aplicada', [(REQS, 'requisições/s'), ('concord_sockets', 'sockets abertos'), ('sum(rate(concord_socket_events_total[1m]))', 'eventos socket/s'), ('livekit_participant_total', 'participantes no LiveKit'), ('sum(livekit_track_subscribed_total)', 'faixas recebidas (LiveKit)')], fill=0,
+         description='O que o teste está jogando no servidor. Compare com o gráfico ao lado: enquanto a resposta não sobe, ainda tem folga.')
+b.series('Como o servidor responde', [(P(0.95), 'API p95'), ('histogram_quantile(0.95, sum by (le) (rate(caddy_http_request_duration_seconds_bucket[5m])))', 'Caddy p95'), ('nodejs_eventloop_lag_p99_seconds{job="concord"}', 'event loop p99'), ('probe_duration_seconds{probe="app (por dentro)"}', 'checagem /health')], unit='s', fill=0)
+b.row('CPU')
+b.series('Média x núcleo mais ocupado', [(CPU, 'média'), (HOT_CORE, 'núcleo mais ocupado'), (APP_CPU, 'app Node.js (% de 1 núcleo)')], unit='percent', w=8, fill=0,
+         description='Núcleo mais ocupado em 100% com a média baixa = algo de uma thread só no limite (normalmente o app).')
+b.series('Quem usa a CPU (% de um núcleo)', [('topk(6, sum by (name) (rate(container_cpu_usage_seconds_total{name!=""}[1m])) * 100)', '{{name}}'), (f'{CORES} * 100', 'limite (todos os núcleos)')], unit='percent', w=8, fill=0,
+         overrides=[RIGHT('limite (todos os núcleos)')])
+b.series('Fila de processos', [('node_procs_running', 'querendo CPU'), ('node_procs_blocked', 'travados esperando disco'), (CORES, 'núcleos')], w=8, fill=0, decimals=0,
+         description='Mais processos querendo CPU que núcleos = fila. Travados em disco subindo = disco lento.')
+b.row('Pressão ao longo do tempo')
+b.series('Esperando por recurso (PSI)', [(PSI('cpu'), 'CPU (algum processo esperando)'), (PSI('memory'), 'memória (algum esperando)'), (PSI('memory', 'stalled'), 'memória (todos travados)'), (PSI('io'), 'disco (algum esperando)'), (PSI('io', 'stalled'), 'disco (todos travados)')], unit='percent', fill=0,
+         description='"Todos travados" = nenhum processo andou naquele tempo: é o pior caso.')
+b.series('CPU roubada e esperando disco', [(MODE('steal'), 'steal (provedor)'), (MODE('iowait'), 'iowait (disco)'), (MODE('softirq'), 'softirq (rede)')], unit='percent', fill=0,
+         description='softirq alto = o kernel está gastando CPU só para processar pacotes de rede.')
+b.row('Memória')
+b.series('Memória disponível', [('node_memory_MemAvailable_bytes', 'disponível'), ('node_memory_MemTotal_bytes', 'total')], unit='bytes', w=8, fill=0)
+b.series('Troca com o disco', [('rate(node_vmstat_pswpin[1m])', 'swap: lendo'), ('rate(node_vmstat_pswpout[1m])', 'swap: gravando'), ('rate(node_vmstat_pgmajfault[1m])', 'page faults graves')], w=8, fill=0, description='Tudo aqui deveria ficar perto de 0.')
+b.series('Containers perto do limite de memória', [('topk(6, 100 * container_memory_working_set_bytes{name!=""} / (container_spec_memory_limit_bytes{name!=""} > 0))', '{{name}}')], unit='percent', w=8, fill=0,
+         description='Só containers com limite definido. Perto de 100% o Docker mata e reinicia o container.')
+b.row('Disco')
+b.series('Operações por segundo', [(f'rate(node_disk_reads_completed_total{{{DEV}}}[1m])', 'leituras {{device}}'), (f'-rate(node_disk_writes_completed_total{{{DEV}}}[1m])', 'escritas {{device}}')], unit='iops', w=8, min_=-1)
+b.series('Tempo por operação', [(f'rate(node_disk_read_time_seconds_total{{{DEV}}}[1m]) / rate(node_disk_reads_completed_total{{{DEV}}}[1m])', 'leitura {{device}}'), (f'rate(node_disk_write_time_seconds_total{{{DEV}}}[1m]) / rate(node_disk_writes_completed_total{{{DEV}}}[1m])', 'escrita {{device}}')], unit='s', w=8, fill=0,
+         description='SSD bom fica abaixo de 5 ms. Subindo junto com a carga = o disco é o gargalo (o banco SQLite grava aqui).')
+b.series('Fila do disco', [(f'rate(node_disk_io_time_weighted_seconds_total{{{DEV}}}[1m])', '{{device}}')], w=8, fill=0, decimals=2, description='Quantas operações, em média, estão esperando o disco.')
+b.row('Rede')
+b.series('Uso da banda', [(RX, 'download'), (f'-{TX}', 'upload (para baixo)'), ('$banda * 1e6', 'limite'), ('-$banda * 1e6', 'limite ')], unit='bps', w=8, min_=-1, fill=8,
+         overrides=[{'matcher': {'id': 'byRegexp', 'options': 'limite ?'}, 'properties': [{'id': 'color', 'value': {'mode': 'fixed', 'fixedColor': RED}}, {'id': 'custom.fillOpacity', 'value': 0}, {'id': 'custom.lineStyle', 'value': {'fill': 'dash', 'dash': [6, 4]}}]}],
+         description='Cada espectador de uma transmissão puxa vários Mbps de upload da VPS.')
+b.series('UDP (mídia de voz e vídeo)', [('rate(node_netstat_Udp_InDatagrams[1m])', 'recebidos/s'), ('rate(node_netstat_Udp_OutDatagrams[1m])', 'enviados/s'), (UDP_ERR, 'descartados por buffer cheio/s'), ('rate(node_netstat_Udp_InErrors[1m])', 'erros ao receber/s')], unit='pps', w=8, fill=0,
+         overrides=[RIGHT('descartados por buffer cheio/s'), RIGHT('erros ao receber/s')])
+b.series('Descartes e retransmissões', [('rate(node_netstat_Tcp_RetransSegs[1m])', 'TCP retransmitido/s'), ('sum(rate(node_softnet_dropped_total[1m]))', 'kernel descartou/s'), ('sum(rate(node_softnet_times_squeezed_total[1m]))', 'kernel sem tempo para a rede/s'), ('rate(node_netstat_TcpExt_ListenDrops[1m])', 'conexões recusadas (fila cheia)/s'), (f'sum(rate(node_network_receive_drop_total{{{NET_IF}}}[1m]))', 'placa descartou/s')], w=8, fill=0)
+b.series('Conexões', [('node_netstat_Tcp_CurrEstab', 'TCP abertas'), ('concord_sockets', 'sockets do app'), ('node_nf_conntrack_entries', 'rastreadas (conntrack)'), ('node_nf_conntrack_entries_limit', 'limite do conntrack')], w=12, fill=0,
+         overrides=[RIGHT('limite do conntrack')])
+b.series('Rede por pacote', [(f'sum(rate(node_network_receive_packets_total{{{NET_IF}}}[1m]))', 'recebe'), (f'-sum(rate(node_network_transmit_packets_total{{{NET_IF}}}[1m]))', 'envia')], unit='pps', w=12, min_=-1,
+         description='VPS costuma ter limite de pacotes por segundo além da banda. Muito pacote pequeno (voz) pesa mais que poucos grandes.')
+b.row('Voz e vídeo (LiveKit)')
+b.stat('Salas', [('livekit_room_total', '')], w=4, thresholds=[(None, PURPLE)])
+b.stat('Participantes', [('livekit_participant_total', '')], w=4, thresholds=[(None, PURPLE)])
+b.stat('Faixas publicadas', [('sum(livekit_track_published_total)', '')], w=4, thresholds=[(None, PURPLE)], description='Microfones, câmeras e telas enviados ao servidor.')
+b.stat('Faixas recebidas', [('sum(livekit_track_subscribed_total)', '')], w=4, thresholds=[(None, PURPLE)], description='Quantas faixas o servidor está reenviando: é isso que pesa no upload.')
+b.stat('CPU do LiveKit', [(f'sum(rate(container_cpu_usage_seconds_total{{{LK}}}[1m])) * 100 / scalar({CORES})', '')], unit='percent', w=4, decimals=0, thresholds=[(None, GREEN), (60, YELLOW), (85, RED)], description='Em % da VPS inteira (o LiveKit usa vários núcleos).')
+b.stat('Memória do LiveKit', [(f'sum(container_memory_working_set_bytes{{{LK}}})', '')], unit='bytes', w=4, thresholds=[(None, BLUE)])
+b.series('Mídia que passa pelo LiveKit', [('sum by (direction) (rate(livekit_packet_bytes[1m])) * 8', '{{direction}}')], unit='bps', w=8, fill=8, description='incoming = chegando dos participantes; outgoing = reenviado para quem assiste.')
+b.series('Perda, NACK e pedidos de quadro', [('100 * sum by (direction) (rate(livekit_packet_loss_total[1m])) / clamp_min(sum by (direction) (rate(livekit_packet_total[1m])), 1)', 'perda % {{direction}}'), ('sum by (direction) (rate(livekit_nack_total[1m]))', 'NACK/s {{direction}}'), ('sum by (direction) (rate(livekit_pli_total[1m]))', 'pedido de quadro/s {{direction}}')], w=8, fill=0,
+         description='NACK = pedido de reenvio de pacote perdido. Pedido de quadro (PLI) = o vídeo travou e precisa de um quadro completo. Subindo com a carga = rede ou CPU no limite.')
+b.series('RTT e jitter (p95)', [('histogram_quantile(0.95, sum by (le) (rate(livekit_rtt_ms_bucket[5m])))', 'RTT'), ('histogram_quantile(0.95, sum by (le) (rate(livekit_jitter_us_bucket[5m]))) / 1000', 'jitter')], unit='ms', w=8, fill=0)
+b.row('App (Node.js)')
+b.series('CPU do app e coleta de lixo', [(APP_CPU, 'CPU (% de 1 núcleo)'), ('100 * sum(rate(nodejs_gc_duration_seconds_sum{job="concord"}[1m]))', 'coleta de lixo')], unit='percent', w=8, fill=0,
+         description='Perto de 100% = o app é o gargalo, mesmo que a VPS tenha núcleos livres.')
+b.series('Atraso do event loop', [('nodejs_eventloop_lag_p50_seconds{job="concord"}', 'mediana'), ('nodejs_eventloop_lag_p99_seconds{job="concord"}', 'p99'), ('nodejs_eventloop_lag_max_seconds{job="concord"}', 'máximo')], unit='s', w=8, fill=0)
+b.series('Memória do app', [('process_resident_memory_bytes{job="concord"}', 'RSS'), ('nodejs_heap_size_used_bytes{job="concord"}', 'heap usado'), ('nodejs_heap_size_total_bytes{job="concord"}', 'heap total')], unit='bytes', w=8, fill=0)
 b.save()
 
 print('painéis gerados em', OUT)
