@@ -212,6 +212,24 @@ export type GameData =
   | { type: 'dice'; sides: number; count: number; rolls: number[] }
   | { type: 'coin'; result: 'cara' | 'coroa' };
 
+/** Figurinha mandada no chat: guarda o endereço, então continua aparecendo mesmo se o pack for apagado. */
+export interface StickerMessageData {
+  stickerId: string;
+  packId: string;
+  packName: string;
+  url: string;
+}
+
+/** Pack de figurinhas do chat, na biblioteca da pessoa. */
+export interface StickerPack {
+  id: string;
+  name: string;
+  author: string;
+  /** foi a pessoa que importou (só ela edita) */
+  mine: boolean;
+  stickers: { id: string; url: string }[];
+}
+
 /** Arquivo anexado a uma mensagem. */
 export interface Attachment {
   id: string;
@@ -226,8 +244,9 @@ export interface Message {
   /** id do canal, ou da conversa privada nas DMs */
   channelId: string;
   content: string;
-  kind?: 'text' | 'game' | 'clip';
-  data?: GameData | null;
+  kind?: 'text' | 'game' | 'clip' | 'sticker';
+  /** jogo (kind "game") ou figurinha (kind "sticker") */
+  data?: GameData | StickerMessageData | null;
   attachments?: Attachment[];
   createdAt: number;
   editedAt: number | null;

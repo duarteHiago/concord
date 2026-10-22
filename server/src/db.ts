@@ -199,6 +199,31 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_custom_stickers ON custom_stickers(server_id);
+  -- figurinhas do chat (packs importados do WhatsApp etc.): o pack é de quem importou e fica na
+  -- biblioteca de cada pessoa que o salvou; salvar o pack de alguém não copia arquivo nenhum
+  CREATE TABLE IF NOT EXISTS sticker_packs (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    author TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS pack_stickers (
+    id TEXT PRIMARY KEY,
+    pack_id TEXT NOT NULL REFERENCES sticker_packs(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    -- já foi mandada em alguma conversa: o arquivo fica mesmo se o pack for apagado
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_pack_stickers ON pack_stickers(pack_id, position);
+  CREATE TABLE IF NOT EXISTS user_sticker_packs (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pack_id TEXT NOT NULL REFERENCES sticker_packs(id) ON DELETE CASCADE,
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, pack_id)
+  );
   -- stickers colados no palco das salas de voz (todo mundo vê)
   CREATE TABLE IF NOT EXISTS placed_stickers (
     id TEXT PRIMARY KEY,
@@ -420,6 +445,23 @@ export interface CustomStickerRow {
   name: string;
   url: string;
   uploader_id: string | null;
+  created_at: number;
+}
+
+export interface StickerPackRow {
+  id: string;
+  owner_id: string | null;
+  name: string;
+  author: string;
+  created_at: number;
+}
+
+export interface PackStickerRow {
+  id: string;
+  pack_id: string;
+  url: string;
+  position: number;
+  used: number;
   created_at: number;
 }
 

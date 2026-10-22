@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { PACK_STICKER_MAX_BYTES } from '../../shared/cosmetics.ts';
 import { config } from './config.ts';
 import { fail } from './http.ts';
 
-export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds' | 'cards' | 'patches' | 'stickers' | 'files';
+export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds' | 'cards' | 'patches' | 'stickers' | 'packs' | 'files';
 
 const MB = 1024 * 1024;
 // GIFs animados não são redimensionados no navegador, por isso os limites de foto são folgados
@@ -17,6 +18,8 @@ const LIMITS: Record<UploadKind, number> = {
   cards: 8 * MB,
   patches: 2 * MB,
   stickers: 3 * MB,
+  // figurinhas do chat: sobem como estão (animadas não passam pelo navegador), o WhatsApp usa até 500 KB
+  packs: PACK_STICKER_MAX_BYTES,
   // anexos das conversas: o mesmo limite do Discord grátis
   files: 20 * MB,
 };
@@ -99,7 +102,7 @@ export function saveAttachment(owner: string, body: unknown, fileName: string): 
 }
 
 export function removeUpload(url: string | null | undefined) {
-  const m = url?.match(/^\/uploads\/(avatars|icons|backgrounds|banners|sounds|cards|patches|stickers|files)\/([\w.-]+)$/);
+  const m = url?.match(/^\/uploads\/(avatars|icons|backgrounds|banners|sounds|cards|patches|stickers|packs|files)\/([\w.-]+)$/);
   if (!m) return;
   try {
     unlinkSync(join(config.uploadsDir, m[1], basename(m[2])));

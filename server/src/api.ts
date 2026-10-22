@@ -49,6 +49,7 @@ import { allowAttempt, limiter, loginWaitMinutes, normalize as normalizeCode, re
 import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendVerifyEmail } from './mail.ts';
 import { playGame } from './games.ts';
 import { registerForumRoutes } from './forum.ts';
+import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
 import * as google from './google.ts';
 import {
   ART_OFFSET,
@@ -1932,6 +1933,28 @@ api.post('/channels/:id/games', async (req, res) => {
   res.json(msg);
 });
 
+// ============================================================ Figurinhas no chat (os packs ficam em stickerPacks.ts)
+
+api.post('/channels/:id/sticker-messages', async (req, res) => {
+  const me = uid(res);
+  const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
+  if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
+  const data = stickerMessageData(req.body?.stickerId, me);
+  const id = randomUUID();
+  run(
+    "INSERT INTO messages (id, channel_id, author_id, content, kind, data, created_at) VALUES (?, ?, ?, ?, 'sticker', ?, ?)",
+    id,
+    channel.id,
+    me,
+    STICKER_MESSAGE_TEXT,
+    JSON.stringify(data),
+    now(),
+  );
+  const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
+  await emitToChannel(channel, 'message:new', msg);
+  res.json(msg);
+});
+
 // ============================================================ Código compartilhado
 // "Clipboard da sala": manda um texto (código de sala do jogo etc.) que aparece por cima da tela de
 // quem está na mesma sala de voz, para copiar sem sair do jogo. Também fica no papo da sala.
@@ -2077,6 +2100,12 @@ api.post('/dms/:id/games', (req, res) => {
   const dm = requireDm(req.params.id, me);
   const { content, data } = playGame(req.body);
   res.json(insertDmMessage(dm, me, content, 'game', data));
+});
+
+api.post('/dms/:id/sticker-messages', (req, res) => {
+  const me = uid(res);
+  const dm = requireDm(req.params.id, me);
+  res.json(insertDmMessage(dm, me, STICKER_MESSAGE_TEXT, 'sticker', stickerMessageData(req.body?.stickerId, me)));
 });
 
 api.post('/dms/:id/read', (req, res) => {
@@ -2266,3 +2295,4 @@ api.get('/me/claimed-patches', (_req, res) => {
 // ============================================================ Fórum
 
 registerForumRoutes(api, authorJson);
+registerStickerPackRoutes(api);
