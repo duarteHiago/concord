@@ -4,7 +4,7 @@ import { P, has } from '../../shared/permissions.ts';
 import { channelPermissions, getChannel } from './access.ts';
 import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, verifyToken } from './http.ts';
-import { socketEvents } from './metrics.ts';
+import { socketEvents, timedSocket } from './metrics.ts';
 
 export interface VoiceState {
   userId: string;
@@ -209,10 +209,14 @@ export function setupRealtime(httpServer: HttpServer) {
     next();
   });
 
-  io.on('connection', (socket) => {
+  // "connection" também é medido: num teste de carga, muita gente entrando junto pesa (consultas + presença para todos)
+  io.on('connection', timedSocket('connection', (socket: Socket) => {
     const userId = socket.data.userId as string;
     socket.join(`user:${userId}`);
     socket.onAny((event: string) => socketEvents.inc({ event: KNOWN_SOCKET_EVENTS.has(event) ? event : 'outro' }));
+    // todo handler registrado abaixo passa a medir quanto segura o servidor (painel de gargalos)
+    const on = socket.on.bind(socket);
+    socket.on = ((event: string, fn: (...args: unknown[]) => void) => on(event, timedSocket(event, fn))) as typeof socket.on;
 
     const servers = all<{ server_id: string }>('SELECT server_id FROM members WHERE user_id = ?', userId);
     for (const { server_id } of servers) {
@@ -332,5 +336,5 @@ export function setupRealtime(httpServer: HttpServer) {
         online.set(userId, left);
       }
     });
-  });
+  }));
 }

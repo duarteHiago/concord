@@ -93,7 +93,7 @@ class Board:
             'options': {'orientation': 'horizontal', 'displayMode': 'gradient', 'showUnfilled': True, 'valueMode': 'color', 'namePlacement': 'left', 'reduceOptions': {'calcs': ['lastNotNull'], 'fields': '', 'values': False}},
         })
 
-    def table(self, title, queries, w=24, h=8, columns=None, description='', hide=('Time', '__name__', 'job', 'instance', 'app', 'image', 'compose_project', 'compose_service'), overrides=()):
+    def table(self, title, queries, w=24, h=8, columns=None, description='', hide=('Time', '__name__', 'job', 'instance', 'app', 'image', 'compose_project', 'compose_service'), overrides=(), sort=None):
         targets = [{**t, 'instant': True, 'range': False, 'format': 'table'} for t in self._targets(queries)]
         organize = {'excludeByName': {k: True for k in hide}, 'renameByName': columns or {}}
         self.panels.append({
@@ -101,7 +101,7 @@ class Board:
             'gridPos': self._place(w, h), 'targets': targets,
             'transformations': [{'id': 'merge', 'options': {}}, {'id': 'organize', 'options': organize}],
             'fieldConfig': {'defaults': {}, 'overrides': [{'matcher': {'id': 'byName', 'options': n}, 'properties': [{'id': 'unit', 'value': u}]} for n, u in overrides]},
-            'options': {'showHeader': True, 'cellHeight': 'sm', 'sortBy': [{'displayName': columns and list(columns.values())[0] or '', 'desc': False}]},
+            'options': {'showHeader': True, 'cellHeight': 'sm', 'sortBy': [{'displayName': sort[0], 'desc': sort[1]} if sort else {'displayName': columns and list(columns.values())[0] or '', 'desc': False}]},
         })
 
     def save(self):
@@ -302,6 +302,35 @@ b.row('Carga x resposta')
 b.series('Carga aplicada', [(REQS, 'requisições/s'), ('concord_sockets', 'sockets abertos'), ('sum(rate(concord_socket_events_total[1m]))', 'eventos socket/s'), ('livekit_participant_total', 'participantes no LiveKit'), ('sum(livekit_track_subscribed_total)', 'faixas recebidas (LiveKit)')], fill=0,
          description='O que o teste está jogando no servidor. Compare com o gráfico ao lado: enquanto a resposta não sobe, ainda tem folga.')
 b.series('Como o servidor responde', [(P(0.95), 'API p95'), ('histogram_quantile(0.95, sum by (le) (rate(caddy_http_request_duration_seconds_bucket[5m])))', 'Caddy p95'), ('nodejs_eventloop_lag_p99_seconds{job="concord"}', 'event loop p99'), ('probe_duration_seconds{probe="app (por dentro)"}', 'checagem /health')], unit='s', fill=0)
+# o app mede quanto cada rota, evento do socket e consulta ao banco segura o servidor (server/src/metrics.ts).
+# "% do app" = segundos gastos por segundo: 100% = aquilo sozinho ocupou o app o tempo todo.
+DBQ = 'concord_db_query_duration_seconds'
+SOCK = 'concord_socket_handler_duration_seconds'
+HTTP = 'concord_http_request_duration_seconds'
+SHARE = lambda m, by, w='1m': f'100 * sum by ({by}) (rate({m}_sum[{w}]))'
+b.row('Onde o app gasta o tempo')
+b.series('Do que é feito o tempo do app', [(f'100 * sum(rate({DBQ}_sum[1m]))', 'consultas ao banco'), (f'100 * sum(rate({SOCK}_sum[1m]))', 'eventos do socket'), ('100 * sum(rate(nodejs_gc_duration_seconds_sum{job="concord"}[1m]))', 'coleta de lixo'), (APP_CPU, 'CPU total do app')], unit='percent', stack=False, fill=20,
+         overrides=[{'matcher': {'id': 'byName', 'options': 'CPU total do app'}, 'properties': [{'id': 'custom.fillOpacity', 'value': 0}, {'id': 'custom.lineStyle', 'value': {'fill': 'dash', 'dash': [6, 4]}}, {'id': 'color', 'value': {'mode': 'fixed', 'fixedColor': RED}}]}],
+         description='O SQLite é síncrono: enquanto uma consulta roda, nada mais anda. O que sobra entre as áreas e a linha da CPU total é o tratamento das requisições HTTP, JSON e o envio pelos sockets. Para ver função por função: deploy/monitoring/perfil.sh.')
+b.stat('Operações lentas', [('sum(increase(concord_slow_total[$__range]))', '')], w=4, h=8, decimals=0, thresholds=[(None, GREEN), (1, YELLOW), (50, RED)], graph=False,
+       description='Requisições, eventos e consultas acima de SLOW_MS (padrão 100 ms) no período. O nome exato de cada uma fica no log do app: docker compose logs app | grep lento')
+b.series('Operações lentas por tipo', [('sum by (kind) (rate(concord_slow_total[1m])) * 60', '{{kind}}')], unit='short', w=8, h=8, fill=0, description='Por minuto. http = requisição; socket = evento; db = consulta.')
+b.bars('Consultas que mais seguram o app', f'topk(10, {SHARE(DBQ, "query", "5m")})', legend='{{query}}', max_=None, w=12, h=10, thresholds=[(None, GREEN), (10, YELLOW), (30, RED)],
+       description='% do tempo do app gasto em cada consulta (últimos 5 min). Uma consulta pode pesar por ser lenta ou por ser chamada demais: veja a tabela abaixo.')
+b.bars('Eventos do socket que mais seguram o app', f'topk(10, {SHARE(SOCK, "event", "5m")})', legend='{{event}}', max_=None, w=12, h=10, thresholds=[(None, GREEN), (10, YELLOW), (30, RED)],
+       description='Inclui reenviar para todo mundo (presença, voz, digitando...). "connection" = alguém entrando: muita gente junto pesa.')
+b.table('Consultas ao banco (últimos 5 min)', [
+    (f'topk(25, {SHARE(DBQ, "query", "5m")})', ''),
+    (f'sum by (query) (rate({DBQ}_count[5m]))', ''),
+    (f'1000 * sum by (query) (rate({DBQ}_sum[5m])) / sum by (query) (rate({DBQ}_count[5m]))', ''),
+    (f'1000 * histogram_quantile(0.99, sum by (le, query) (rate({DBQ}_bucket[5m])))', ''),
+], h=12, columns={'query': 'Consulta', 'Value #A': '% do app', 'Value #B': 'Vezes/s', 'Value #C': 'Média (ms)', 'Value #D': 'p99 (ms)'},
+        overrides=[('% do app', 'percent'), ('Vezes/s', 'short'), ('Média (ms)', 'ms'), ('p99 (ms)', 'ms')], sort=('% do app', True),
+        description='Média alta = a consulta é lenta (falta índice?). Vezes/s alto com média baixa = está sendo chamada demais (cache? juntar em uma?).')
+b.bars('Rotas que mais ocupam o app', f'topk(10, {SHARE(HTTP, "method, route")})', legend='{{method}} {{route}}', max_=None, w=12, h=10, thresholds=[(None, GREEN), (50, YELLOW), (100, RED)],
+       description='Tempo de resposta somado de cada rota. Inclui espera (disco, bcrypt, outras requisições na frente), então pode passar de 100%.')
+b.series('Média por evento do socket', [(f'1000 * sum by (event) (rate({SOCK}_sum[1m])) / sum by (event) (rate({SOCK}_count[1m]))', '{{event}}')], unit='ms', w=12, h=10, fill=0,
+         description='Quanto cada evento demora, em média. Subindo com o número de pessoas = o custo cresce com quem está online (ex.: avisar todos).')
 b.row('CPU')
 b.series('Média x núcleo mais ocupado', [(CPU, 'média'), (HOT_CORE, 'núcleo mais ocupado'), (APP_CPU, 'app Node.js (% de 1 núcleo)')], unit='percent', w=8, fill=0,
          description='Núcleo mais ocupado em 100% com a média baixa = algo de uma thread só no limite (normalmente o app).')
