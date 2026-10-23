@@ -1,5 +1,5 @@
-import { BadgeCheck, X } from 'lucide-react';
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { BadgeCheck, Eye, EyeOff, X } from 'lucide-react';
+import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useToasts } from '../store/toast';
 
 export function cx(...parts: (string | false | null | undefined)[]) {
@@ -182,17 +182,38 @@ export function IconButton({
   );
 }
 
-export function Input({ label, hint, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: string; hint?: string }) {
+export function Input({ label, hint, className, type, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: string; hint?: string }) {
+  const [revealed, setRevealed] = useState(false);
+  const isPassword = type === 'password';
   return (
     <label className="block">
       {label && <span className="mb-1.5 block text-xs font-bold text-fg-muted">{label}</span>}
-      <input
-        {...props}
-        className={cx(
-          'h-11 w-full rounded-2xl border border-transparent bg-surface-3 px-4 text-sm text-fg outline-none transition-colors placeholder:text-fg-subtle focus:border-accent',
-          className,
+      <span className="relative block">
+        <input
+          {...props}
+          type={isPassword && revealed ? 'text' : type}
+          className={cx(
+            'h-11 w-full rounded-2xl border border-transparent bg-surface-3 px-4 text-sm text-fg outline-none transition-colors placeholder:text-fg-subtle focus:border-accent',
+            // Edge draws its own reveal button; ours replaces it
+            isPassword && 'pr-11 [&::-ms-reveal]:hidden',
+            className,
+          )}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            // keep focus (and the caret) in the field while toggling
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setRevealed((v) => !v)}
+            aria-label={revealed ? 'Ocultar senha' : 'Mostrar senha'}
+            aria-pressed={revealed}
+            title={revealed ? 'Ocultar senha' : 'Mostrar senha'}
+            className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-2xl text-fg-subtle transition-colors hover:text-fg"
+          >
+            {revealed ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
         )}
-      />
+      </span>
       {hint && <span className="mt-1 block text-xs text-fg-subtle">{hint}</span>}
     </label>
   );
