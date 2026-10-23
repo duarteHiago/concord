@@ -255,6 +255,9 @@ export function registerSupportWebhook(api: Router) {
   });
 }
 
+/** Para a landing page (sem login): se o apoio está ligado e os acabamentos. */
+export const supportPublicConfig = () => ({ enabled: !!provider(), minCents: SUPPORT_MIN_CENTS, tiers: SUPPORTER_TIERS });
+
 export function registerSupportRoutes(api: Router) {
   /** O que o app precisa para mostrar (ou esconder) o apoio. */
   api.get('/support', (_req, res) => {

@@ -317,6 +317,36 @@ body.shaking { animation: shake .62s cubic-bezier(.36, .07, .19, .97); }
 .community p { color: var(--muted); }
 
 /* final */
+/* ------------------------------------------------ apoie (patch de apoiador; mesmo desenho do app: SupporterPatch.tsx) */
+.support { position: relative; overflow: hidden; border-radius: 34px; padding: clamp(28px, 5vw, 56px); background: radial-gradient(520px 300px at 85% 0%, rgb(245 196 81 / .14), transparent 70%), radial-gradient(520px 320px at 0% 100%, rgb(196 165 255 / .14), transparent 70%), var(--plum); box-shadow: inset 0 0 0 1px var(--line); }
+.support .band-head { margin-bottom: 30px; }
+.tiers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+.tier { display: grid; justify-items: center; gap: 8px; padding: 18px 8px 16px; border-radius: 24px; background: rgb(20 15 25 / .55); box-shadow: inset 0 0 0 1px var(--line); text-align: center; transition: transform .2s ease; }
+.tier:hover { transform: translateY(-6px) rotate(-1.5deg); }
+.tier svg { width: min(120px, 100%); height: auto; overflow: visible; }
+.tier b { font-family: var(--display); font-size: 19px; }
+.tier small { font: 700 12px var(--mono); color: var(--muted); }
+.tier:nth-child(odd) svg { rotate: -4deg; }
+.tier:nth-child(even) svg { rotate: 4deg; }
+.support-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 22px; margin-top: 34px; }
+.support-cta p { color: var(--muted); font-size: 15px; max-width: 46ch; }
+@media (max-width: 860px) { .tiers { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 520px) { .tiers { grid-template-columns: repeat(2, 1fr); } .tier:last-child { grid-column: 1 / -1; } }
+.sp-glow { filter: drop-shadow(0 0 3px var(--sp-glow)); }
+@media (prefers-reduced-motion: no-preference) {
+  .sp-glow { animation: sp-glow 3.2s ease-in-out infinite; }
+  .sp-sheen { animation: sp-sheen 3.8s ease-in-out infinite; }
+  .sp-hue { animation: sp-hue 6s linear infinite; }
+  .sp-hue-soft { animation: sp-hue-soft 7s ease-in-out infinite alternate; }
+  .sp-twinkle { transform-box: fill-box; transform-origin: center; animation: sp-twinkle 2.6s ease-in-out infinite; }
+}
+@media (prefers-reduced-motion: reduce) { .sp-sheen { display: none; } }
+@keyframes sp-glow { 50% { filter: drop-shadow(0 0 9px var(--sp-glow)); } }
+@keyframes sp-sheen { 0% { transform: translateX(-10px); } 55%, 100% { transform: translateX(150px); } }
+@keyframes sp-hue { to { filter: hue-rotate(360deg); } }
+@keyframes sp-hue-soft { from { filter: hue-rotate(-20deg); } to { filter: hue-rotate(40deg); } }
+@keyframes sp-twinkle { 0%, 100% { opacity: .15; scale: .5; } 50% { opacity: 1; scale: 1; } }
+
 .final { text-align: center; padding-block: 110px 80px; position: relative; overflow: hidden; }
 .final-mark { display: block; margin: 0 auto 18px; width: 150px; height: 150px; }
 @media (prefers-reduced-motion: no-preference) { .final-mark { animation: hop 2.4s cubic-bezier(.3, 1.6, .5, 1) infinite; } }
@@ -349,6 +379,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
       <a href="#perfil">Perfil</a>
       <a href="#brincadeiras">Brincadeiras</a>
       <a href="#seu-servidor">Seu servidor</a>
+      <a href="#apoiar" id="nav-apoiar" hidden>Apoiar</a>
       <a href="/contribuir/">Contribuir</a>
     </nav>
     <a class="btn btn-ghost nav-login" href="/?entrar">Entrar</a>
@@ -602,6 +633,24 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
     </div>
   </section>
 
+  <!-- APOIE (só aparece se o apoio por Pix estiver ligado no servidor) -->
+  <section class="band" id="apoiar" hidden>
+    <div class="wrap">
+      <div class="support">
+        <div class="band-head">
+          <span class="eyebrow">apoie o concord</span>
+          <h2>Grátis pra sempre. Apoia quem puder.</h2>
+          <p class="lede">Sem anúncio e sem plano pago. Se o Concord faz parte das suas noites, manda um Pix de qualquer valor e ganhe o patch de apoiador no perfil. Quanto mais você apoia no total, mais raro fica o acabamento.</p>
+        </div>
+        <div class="tiers" id="tiers"></div>
+        <div class="support-cta">
+          <a class="btn btn-primary" id="support-link" href="/?entrar&amp;apoiar">💛 Apoiar com Pix</a>
+          <p>A partir de R$ 3. O apoio não libera funções: tudo continua grátis pra todo mundo. Pix processado pelo Mercado Pago.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- FINAL -->
   <section class="final">
     <div class="wrap">
@@ -625,8 +674,57 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
 </footer>
 
 <script>
+// ---------------------------------------------------------- patch de apoiador (o mesmo desenho do app: SupporterPatch.tsx)
+function supporterSvg(tier, uid) {
+  const F = {
+    aurora: { border: ['#ff8a6b', '#ff6fae', '#c4a5ff', '#5eead4', '#ff8a6b'], bg: ['#33203f', '#17121c'], ribbon: '#ff8a6b', text: '#2a1410', glow: 'rgb(255 138 107 / .75)', label: 'APOIADOR', sheen: .28, hue: 'soft' },
+    gold: { border: ['#7a5410', '#f7d77c', '#fff6d6', '#d9a52c', '#8a5f12', '#f7d77c'], bg: ['#3d2c0c', '#160f04'], ribbon: '#efc354', text: '#3a2600', glow: 'rgb(245 196 81 / .7)', label: 'OURO', sheen: .55, sparkles: 2 },
+    holo: { border: ['#ff6ec7', '#ffd36e', '#7afcff', '#a0ff8f', '#c48bff', '#ff6ec7'], bg: ['#2c2547', '#120f22'], ribbon: '#f1ecff', text: '#3a2b6b', glow: 'rgb(196 165 255 / .75)', label: 'HOLOGRÁFICO', sheen: .5, sparkles: 3, hue: 'full' },
+    diamond: { border: ['#f2fbff', '#9fd8ff', '#ffffff', '#6fbdf2', '#dff3ff', '#ffffff'], bg: ['#163d5c', '#061522'], ribbon: '#e6f6ff', text: '#0c3550', glow: 'rgb(159 216 255 / .85)', label: 'DIAMANTE', sheen: .7, sparkles: 5 },
+    cosmic: { border: ['#2a0d4d', '#8a2be2', '#ff4fd8', '#4b1fa0', '#ff8a6b', '#2a0d4d'], bg: ['#40207a', '#07031a'], ribbon: '#1c0b3a', text: '#ffc2f2', glow: 'rgb(255 79 216 / .7)', label: 'CÓSMICO', sheen: .4, sparkles: 3, hue: 'soft', stars: true },
+  }[tier];
+  if (!F) return '';
+  const pts = [];
+  for (let i = 0; i < 32; i++) {
+    const a = (Math.PI * i) / 16 - Math.PI / 2, r = i % 2 ? 37 : 41;
+    pts.push(`${(50 + r * Math.cos(a)).toFixed(2)},${(42 + r * Math.sin(a)).toFixed(2)}`);
+  }
+  const ROS = `M${pts.join('L')}Z`, RIB = 'M4 64 H96 L90 73 L96 82 H4 L10 73 Z';
+  const stops = (c) => c.map((x, i) => `<stop offset="${i / (c.length - 1)}" stop-color="${x}"/>`).join('');
+  const hue = F.hue === 'full' ? 'sp-hue' : F.hue === 'soft' ? 'sp-hue-soft' : '';
+  const stars = F.stars ? [[36, 30, .9], [62, 26, .7], [44, 52, .6], [66, 48, .8], [30, 44, .5], [56, 36, .5]].map(([x, y, r], i) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" class="sp-twinkle" style="animation-delay:${i * .37}s"/>`).join('') : '';
+  const sparkles = [[80, 14], [18, 22], [84, 52], [24, 58], [50, 6]].slice(0, F.sparkles || 0).map(([x, y], i) => `<path d="M0 -5 L1.2 -1.2 L5 0 L1.2 1.2 L0 5 L-1.2 1.2 L-5 0 L-1.2 -1.2 Z" transform="translate(${x} ${y})" fill="#fff" class="sp-twinkle" style="animation-delay:${i * .55}s"/>`).join('');
+  const fs = Math.min(11, 70 / (F.label.length * .68)).toFixed(2);
+  return `<svg viewBox="0 0 100 100" class="sp-glow" style="--sp-glow:${F.glow}" role="img" aria-label="Patch de apoiador: ${F.label.toLowerCase()}">`
+    + `<defs><linearGradient id="b${uid}" x1="0" y1="0" x2="1" y2="1">${stops(F.border)}</linearGradient>`
+    + `<radialGradient id="f${uid}" cx="40%" cy="30%" r="75%"><stop offset="0" stop-color="${F.bg[0]}"/><stop offset="1" stop-color="${F.bg[1]}"/></radialGradient>`
+    + `<linearGradient id="s${uid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity="${F.sheen}"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>`
+    + `<clipPath id="c${uid}"><path d="${ROS}"/><path d="${RIB}"/></clipPath></defs>`
+    + `<g class="${hue}"><path d="${ROS}" fill="url(#b${uid})"/></g>`
+    + `<circle cx="50" cy="42" r="31" fill="url(#f${uid})"/><circle cx="50" cy="42" r="31" fill="none" stroke="url(#b${uid})" stroke-width="2.2"/>`
+    + `<circle cx="50" cy="42" r="27.5" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width=".8" stroke-dasharray="2 2"/>${stars}`
+    + `<image href="/brand/concord-simbolo.svg" x="33" y="25" width="34" height="34" style="filter:drop-shadow(0 1.5px 0 rgba(0,0,0,.5))"/>`
+    + `<path d="${RIB}" fill="${F.ribbon}"/><path d="${RIB}" fill="none" stroke="#000" stroke-opacity=".25" stroke-width="1"/>`
+    + `<text x="50" y="73.5" text-anchor="middle" dominant-baseline="central" fill="${F.text}" font-family="Outfit, Arial Black, system-ui, sans-serif" font-weight="900" font-size="${fs}" letter-spacing=".6">${F.label}</text>`
+    + `<g clip-path="url(#c${uid})"><g transform="rotate(20 50 50)"><rect class="sp-sheen" x="-30" y="-20" width="26" height="140" fill="url(#s${uid})"/></g></g>${sparkles}</svg>`;
+}
+
+function showSupport(support) {
+  const brl = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace(',00', '');
+  document.getElementById('tiers').innerHTML = support.tiers
+    .map((t, i) => `<div class="tier">${supporterSvg(t.id, 'lp' + i)}<b>${t.name}</b><small>${i ? brl(t.min) + ' no total' : 'a partir de ' + brl(t.min)}</small></div>`)
+    .join('');
+  // o app abre a janela do Pix depois do login (a marca sobrevive ao login com Google, que volta sem a query)
+  document.getElementById('support-link').addEventListener('click', () => {
+    try { localStorage.setItem('concord.openSupport', '1'); } catch {}
+  });
+  document.getElementById('apoiar').hidden = false;
+  document.getElementById('nav-apoiar').hidden = false;
+}
+
 // servidor oficial da comunidade: o botão só aparece se o servidor tiver um convite configurado
 fetch('/api/config').then((r) => r.json()).then((c) => {
+  if (c.support && c.support.enabled) showSupport(c.support);
   if (!c.communityInvite) return;
   document.getElementById('community-link').href = '/invite/' + encodeURIComponent(c.communityInvite);
   document.getElementById('community').hidden = false;
