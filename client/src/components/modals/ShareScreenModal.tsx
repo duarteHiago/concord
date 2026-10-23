@@ -2,6 +2,7 @@ import { AppWindow, Gamepad2, Info, Monitor, MonitorUp, RefreshCw, Type } from '
 import { useEffect, useState } from 'react';
 import type { VideoCodec } from 'livekit-client';
 import { desktop, desktopInfo, type DesktopSource } from '../../lib/desktop';
+import { h265Support } from '../../lib/h265';
 import { useApp } from '../../store/app';
 import { estimateBitrate, FPS_OPTIONS, SHARE_PRESETS, screenShareSupport, useVoice, type ShareSettings } from '../../store/voice';
 import { Button, Modal, Spinner, Toggle, cx } from '../ui';
@@ -13,6 +14,11 @@ const CODECS: { id: VideoCodec | 'auto'; label: string; hint: string }[] = [
     hint: 'H.264 pela placa de vídeo (NVIDIA, AMD ou Intel), sem pesar no processador. Recomendado.',
   },
   { id: 'h264', label: 'H.264', hint: 'Normalmente codificado pela placa de vídeo. Compatível com tudo.' },
+  {
+    id: 'h265',
+    label: 'H.265',
+    hint: 'Também pela placa de vídeo, com imagem mais nítida que o H.264 no mesmo upload. Nem todo computador consegue assistir: veja a opção abaixo.',
+  },
   { id: 'vp9', label: 'VP9', hint: 'Codificado pelo processador: mais qualidade por bit, mas pesa bastante.' },
   { id: 'av1', label: 'AV1', hint: 'Codificado pelo processador aqui (o navegador ainda não usa a placa para AV1): pesa muito.' },
   { id: 'vp8', label: 'VP8', hint: 'Sempre codificado pelo processador: em 1080p60 pesa bastante no PC.' },
@@ -29,6 +35,8 @@ export function ShareScreenModal() {
   const preset = SHARE_PRESETS.find((p) => p.id === settings.presetId) ?? SHARE_PRESETS[1];
   const unsupported = screenShareSupport();
   const canStart = !unsupported && (!desktop || !!source);
+  // no Chromium o H.265 só existe pela placa de vídeo: se o navegador anuncia, a placa codifica
+  const [canH265] = useState(() => h265Support().encode);
 
   return (
     <Modal
@@ -135,23 +143,48 @@ export function ShareScreenModal() {
         <div>
           <h3 className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Codec de vídeo</h3>
           <div className="flex flex-wrap gap-2">
-            {CODECS.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => update({ codec: c.id })}
-                className={cx(
-                  'flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors',
-                  settings.codec === c.id ? 'border-accent bg-accent/10 text-fg' : 'border-line text-fg-muted hover:text-fg',
-                )}
-              >
-                {c.label}
-              </button>
-            ))}
+            {CODECS.map((c) => {
+              const off = c.id === 'h265' && !canH265;
+              return (
+                <button
+                  key={c.id}
+                  disabled={off}
+                  title={off ? 'Sua placa de vídeo ou navegador não codifica H.265' : undefined}
+                  onClick={() => update({ codec: c.id })}
+                  className={cx(
+                    'flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                    settings.codec === c.id ? 'border-accent bg-accent/10 text-fg' : 'border-line text-fg-muted enabled:hover:text-fg',
+                  )}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
           </div>
           <p className="mt-2 flex items-start gap-1.5 text-xs text-fg-subtle">
             <Info size={13} className="mt-0.5 shrink-0" />
-            {CODECS.find((c) => c.id === settings.codec)?.hint}
+            {settings.codec === 'h265' && !canH265
+              ? 'Este computador não codifica H.265 pela placa de vídeo, então a transmissão vai sair em H.264.'
+              : CODECS.find((c) => c.id === settings.codec)?.hint}
           </p>
+          {!canH265 && settings.codec !== 'h265' && (
+            <p className="mt-1 text-xs text-fg-subtle">
+              H.265 indisponível aqui: precisa de uma placa de vídeo com codificador H.265 e de Chrome, Edge ou o app do Concord atualizados.
+            </p>
+          )}
+          {settings.codec === 'h265' && canH265 && (
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-surface-0 p-3">
+              <div>
+                <div className="text-sm font-semibold">Voltar para H.264 se alguém não conseguir assistir</div>
+                <div className="text-xs text-fg-muted">
+                  {settings.allowFallback
+                    ? 'Recomendado. Se entrar alguém cujo computador não reproduz H.265, a transmissão passa para H.264 para todos, e ninguém fica sem ver.'
+                    : 'Desligado: a transmissão fica sempre em H.265. Quem não consegue reproduzir vê uma explicação de como resolver e pode pedir para você liberar o H.264.'}
+                </div>
+              </div>
+              <Toggle checked={settings.allowFallback} onChange={(allowFallback) => update({ allowFallback })} />
+            </div>
+          )}
         </div>
       </div>
     </Modal>

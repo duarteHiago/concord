@@ -1,5 +1,6 @@
 import {
   AudioPresets,
+  BackupCodecPolicy,
   ConnectionState,
   DisconnectReason,
   Room,
@@ -9,7 +10,11 @@ import {
   VideoPresets,
   type LocalAudioTrack,
   type LocalTrack,
+  type LocalVideoTrack,
+  type RemoteParticipant,
   type RemoteTrack,
+  type RemoteTrackPublication,
+  type TrackPublishOptions,
   type VideoCodec,
 } from 'livekit-client';
 import type { Socket } from 'socket.io-client';
@@ -21,6 +26,7 @@ import { closePopout } from '../lib/popout';
 import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, updateNoiseStrength, EFFECTS, updateGate, micLevels, voiceNotices, type EffectId, type GateSettings, type MicLevel, type NoiseMode } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
+import { diagnoseH265, h265Support, type H265Diagnosis } from '../lib/h265';
 import { toast } from './toast';
 
 export interface SharePreset {
@@ -58,8 +64,16 @@ export interface ShareSettings {
   mode: 'motion' | 'detail';
   /** 'auto' = o codec que a placa de vídeo codifica (escolhido na hora de transmitir) */
   codec: VideoCodec | 'auto';
+  /** H.265: se alguém não conseguir assistir, a transmissão inteira passa para H.264 (senão, essa pessoa vê o tutorial) */
+  allowFallback: boolean;
   /** versão das preferências (para migrações) */
   v?: number;
+}
+
+/** Quem pediu ao host para liberar o H.264 (o host recusou a troca automática). */
+export interface CodecRequest {
+  identity: string;
+  name: string;
 }
 
 export interface AudioSettings {
@@ -102,6 +116,12 @@ interface VoiceStore {
   shareSettings: ShareSettings;
   audioSettings: AudioSettings;
   tick: number;
+  /** codec em que a minha tela está saindo agora ('h264-backup': era H.265 e o servidor passou todos para H.264) */
+  shareCodec: VideoCodec | 'h264-backup' | null;
+  /** pedidos de "liberar H.264" para a minha transmissão em H.265 */
+  codecRequests: CodecRequest[];
+  /** transmissões que eu não consigo assistir (H.265 sem troca para H.264), com o motivo provável */
+  h265Blocked: Record<string, H265Diagnosis>;
 
   join: (serverId: string, channelId: string) => Promise<void>;
   leave: () => Promise<void>;
@@ -111,6 +131,10 @@ interface VoiceStore {
   /** sourceId: fonte escolhida no seletor do app desktop (no navegador, o próprio navegador pergunta). */
   startShare: (settings: ShareSettings, sourceId?: string) => Promise<void>;
   stopShare: () => Promise<void>;
+  /** passa a minha transmissão H.265 para H.264 sem parar a captura */
+  fallbackToH264: () => Promise<void>;
+  /** espectador: pede ao host para liberar o H.264 */
+  requestH264: (identity: string) => void;
   setWatching: (identity: string, on: boolean) => void;
   setFocus: (key: string | null) => void;
   setVolume: (identity: string, volume: number, stream?: boolean) => void;
@@ -151,7 +175,7 @@ voiceNotices.addEventListener('fallback', () => {
   save('concord.audio', audioSettings);
 });
 
-const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'auto', v: 2 };
+const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'auto', allowFallback: true, v: 2 };
 
 /** Carrega as preferências salvas, migrando o formato antigo (fps embutido no id do preset, ex.: "1080p60"). */
 function loadShareSettings(): ShareSettings {
@@ -171,6 +195,7 @@ function loadShareSettings(): ShareSettings {
     mode: raw.mode ?? DEFAULT_SHARE.mode,
     // v2: codec automático (quem ficou em VP8 codificava a tela pelo processador e travava o PC)
     codec: raw.v === 2 ? (raw.codec ?? DEFAULT_SHARE.codec) : 'auto',
+    allowFallback: raw.allowFallback ?? DEFAULT_SHARE.allowFallback,
     v: 2,
   };
 }
@@ -181,6 +206,34 @@ function loadShareSettings(): ShareSettings {
  * quando não existe. AV1/VP9 ficam no processador no Chromium mesmo com placa que suporte (testado).
  */
 const AUTO_CODEC: VideoCodec = 'h264';
+
+/** Nome da faixa de tela em H.265 sem troca para H.264: quem assiste sabe que não vai ter reserva. */
+const H265_ONLY_TRACK = 'screen:h265-only';
+
+const isH265 = (mime: string | undefined) => !!mime && /h265/i.test(mime);
+
+/** Opções de publicação da tela (usadas ao começar e ao trocar o codec no meio da transmissão). */
+function screenPublishOptions(settings: ShareSettings, preset: SharePreset, codec: VideoCodec): TrackPublishOptions {
+  const fps = settings.fps;
+  return {
+    videoCodec: codec,
+    screenShareEncoding: { maxBitrate: estimateBitrate(preset, fps), maxFramerate: fps, priority: 'high' },
+    screenShareSimulcastLayers: preset.height > 720 ? [new VideoPreset(1280, 720, 2_000_000, 30)] : [],
+    simulcast: true,
+    degradationPreference: settings.mode === 'motion' ? 'maintain-framerate' : 'maintain-resolution',
+    audioPreset: AudioPresets.musicHighQualityStereo,
+    dtx: false,
+    red: false,
+    // H.265: quem não decodifica faz o servidor pedir H.264, e a transmissão inteira passa para H.264
+    // (REGRESSION: o host codifica uma vez só; SIMULCAST dobraria o trabalho da placa de quem já está jogando).
+    // Sem a troca, quem não decodifica não recebe vídeo e vê o tutorial (o nome da faixa avisa).
+    ...(codec === 'h265' && {
+      backupCodec: settings.allowFallback ? { codec: 'h264' as const } : false,
+      backupCodecPolicy: BackupCodecPolicy.REGRESSION,
+      name: settings.allowFallback ? undefined : H265_ONLY_TRACK,
+    }),
+  };
+}
 
 /** Alguns segundos depois de começar: avisa se a tela está sendo codificada pelo processador. */
 async function warnIfSoftwareEncoding(track: LocalTrack | undefined, heavy: boolean) {
@@ -358,8 +411,90 @@ export const useVoice = create<VoiceStore>((set, get) => {
     await audio.stop();
   }
 
+  // ---- H.265 ----
+  // Host: troca o codec da tela sem parar a captura. Enquanto isso, despublicar a faixa não pode
+  // parecer "parou de transmitir" (áudio, foco, aviso de transmissão para a sala).
+  let republishing = false;
+  let codecPoll: ReturnType<typeof setInterval> | undefined;
+
+  /** Host em H.265 com troca permitida: o servidor pode ter passado todos para H.264 (alguém sem suporte entrou). */
+  function watchShareCodec() {
+    clearInterval(codecPoll);
+    if (get().shareCodec !== 'h265' || !get().shareSettings.allowFallback) return;
+    codecPoll = setInterval(async () => {
+      const track = get().room?.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track as LocalVideoTrack | undefined;
+      if (!track || !get().sharing) return clearInterval(codecPoll);
+      const sender = track.simulcastCodecs.get('h264')?.sender;
+      const backupActive = !!sender?.getParameters().encodings?.some((e) => e.active);
+      const next = backupActive ? 'h264-backup' : 'h265';
+      if (get().shareCodec !== next) set({ shareCodec: next });
+    }, 4000);
+  }
+
+  // Espectador: algumas placas/drivers dizem que decodificam H.265 e não decodificam. Nos primeiros
+  // segundos de cada transmissão H.265 assistida, confere se algum quadro saiu do decodificador.
+  const decodeChecks = new Set<string>();
+
+  async function watchScreenDecode(track: RemoteTrack, pub: RemoteTrackPublication, p: RemoteParticipant) {
+    if (!isH265(pub.mimeType) || decodeChecks.has(pub.trackSid)) return;
+    decodeChecks.add(pub.trackSid);
+    try {
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (pub.track !== track || !get().watching[p.identity]) return;
+        const report = await track.getRTCStatsReport?.().catch(() => undefined);
+        let inbound: Record<string, unknown> | undefined;
+        report?.forEach((s: Record<string, unknown>) => {
+          if (s.type === 'inbound-rtp' && s.kind === 'video') inbound = s;
+        });
+        if (!inbound) continue;
+        const mime = (report?.get(String(inbound.codecId)) as { mimeType?: string } | undefined)?.mimeType;
+        // recebendo a reserva em H.264: está tudo certo
+        if (mime && !isH265(mime)) return;
+        if (Number(inbound.framesDecoded ?? 0) > 0) return;
+        // chegou vídeo (não é só a transmissão pausada por ninguém estar olhando) e nada decodificou
+        if (i >= 2 && Number(inbound.packetsReceived ?? 0) > 50) return h265Failed(pub, p);
+      }
+    } finally {
+      decodeChecks.delete(pub.trackSid);
+    }
+  }
+
+  function h265Failed(pub: RemoteTrackPublication, p: RemoteParticipant) {
+    if (pub.trackName === H265_ONLY_TRACK) return markBlocked(p.identity, true);
+    // o host aceita a troca: pede o H.264. Se em alguns segundos a faixa não mudou (app do host
+    // antigo, por exemplo), mostra o tutorial mesmo assim
+    getSocket()?.emit('voice:codec-fail', { streamerId: p.identity });
+    setTimeout(() => {
+      if (p.getTrackPublication(Track.Source.ScreenShare) === pub && get().watching[p.identity]) markBlocked(p.identity, true);
+    }, 10_000);
+  }
+
+  function markBlocked(identity: string, failed: boolean) {
+    set({ h265Blocked: { ...get().h265Blocked, [identity]: diagnoseH265(failed) } });
+  }
+
+  function clearBlocked(identity: string) {
+    if (!get().h265Blocked[identity]) return;
+    const { [identity]: _b, ...rest } = get().h265Blocked;
+    set({ h265Blocked: rest });
+  }
+
+  /** Ao começar a assistir: H.265 sem reserva num navegador que nem anuncia H.265 → tutorial direto. */
+  function checkScreenCodec(identity: string) {
+    const pub = get().room?.remoteParticipants.get(identity)?.getTrackPublication(Track.Source.ScreenShare);
+    if (pub && isH265(pub.mimeType) && pub.trackName === H265_ONLY_TRACK && !h265Support().decode) markBlocked(identity, false);
+  }
+
+  // Quem assiste continua assistindo quando a tela é republicada (troca de codec, troca de janela):
+  // a faixa some e volta em seguida. Só para de assistir se ela não voltar.
+  const pendingUnwatch = new Map<string, ReturnType<typeof setTimeout>>();
+
   function cleanup() {
     void stopDesktopShareAudio();
+    clearInterval(codecPoll);
+    for (const t of pendingUnwatch.values()) clearTimeout(t);
+    pendingUnwatch.clear();
     audioContainer?.replaceChildren();
     set({
       room: null,
@@ -373,6 +508,9 @@ export const useVoice = create<VoiceStore>((set, get) => {
       speaking: {},
       watching: {},
       focus: null,
+      shareCodec: null,
+      codecRequests: [],
+      h265Blocked: {},
     });
   }
 
@@ -385,29 +523,56 @@ export const useVoice = create<VoiceStore>((set, get) => {
       })
       .on(RoomEvent.ParticipantDisconnected, (p) => {
         playSound('peerLeave');
+        clearTimeout(pendingUnwatch.get(p.identity));
+        pendingUnwatch.delete(p.identity);
+        clearBlocked(p.identity);
         const { [p.identity]: _w, ...watching } = get().watching;
         const focus = get().focus?.startsWith(`${p.identity}:`) ? null : get().focus;
         set({ watching, focus });
         bump();
       })
-      .on(RoomEvent.TrackPublished, (pub) => {
-        if (pub.source === Track.Source.ScreenShare) playSound('stream');
+      .on(RoomEvent.TrackPublished, (pub, p) => {
+        if (pub.source === Track.Source.ScreenShare) {
+          // a tela voltou logo depois de sumir (troca de codec ou de janela): segue assistindo, sem tocar o aviso de novo
+          const pending = pendingUnwatch.get(p.identity);
+          if (pending) {
+            clearTimeout(pending);
+            pendingUnwatch.delete(p.identity);
+            checkScreenCodec(p.identity);
+          } else {
+            playSound('stream');
+          }
+        }
         syncSubscriptions();
         bump();
       })
       .on(RoomEvent.TrackUnpublished, (pub, p) => {
         if (pub.source === Track.Source.ScreenShare) {
-          const { [p.identity]: _w, ...watching } = get().watching;
-          set({ watching, focus: get().focus === `${p.identity}:screen` ? null : get().focus });
+          clearBlocked(p.identity);
+          clearTimeout(pendingUnwatch.get(p.identity));
+          pendingUnwatch.set(
+            p.identity,
+            setTimeout(() => {
+              pendingUnwatch.delete(p.identity);
+              const { [p.identity]: _w, ...watching } = get().watching;
+              set({ watching, focus: get().focus === `${p.identity}:screen` ? null : get().focus });
+            }, 5000),
+          );
         }
         bump();
       })
-      .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+      .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub: RemoteTrackPublication, p: RemoteParticipant) => {
         if (track.kind === Track.Kind.Audio) {
           audioHost().appendChild(track.attach());
           applyVolumes();
         }
+        if (pub.source === Track.Source.ScreenShare) void watchScreenDecode(track, pub, p);
         bump();
+      })
+      .on(RoomEvent.TrackSubscriptionFailed, (trackSid: string, p: RemoteParticipant) => {
+        // H.265 sem reserva e o servidor não tem como entregar para este navegador
+        const pub = p.getTrackPublication(Track.Source.ScreenShare);
+        if (pub?.trackSid === trackSid && isH265(pub.mimeType)) markBlocked(p.identity, false);
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
         if (track.kind === Track.Kind.Video) closePopout(track.sid);
@@ -422,8 +587,14 @@ export const useVoice = create<VoiceStore>((set, get) => {
       })
       .on(RoomEvent.LocalTrackUnpublished, (pub) => {
         closePopout(pub.trackSid);
+        // trocando o codec: a mesma captura volta a ser publicada em seguida
+        if (republishing && pub.source === Track.Source.ScreenShare) return bump();
         // transmissão encerrada por fora (ex.: janela capturada fechou): para o áudio junto
-        if (pub.source === Track.Source.ScreenShare) void stopDesktopShareAudio();
+        if (pub.source === Track.Source.ScreenShare) {
+          void stopDesktopShareAudio();
+          clearInterval(codecPoll);
+          set({ shareCodec: null, codecRequests: [] });
+        }
         if (pub.source === Track.Source.ScreenShare && get().focus === `${room.localParticipant.identity}:screen`) set({ focus: null });
         syncLocalFlags();
         bump();
@@ -520,6 +691,9 @@ export const useVoice = create<VoiceStore>((set, get) => {
     shareSettings: loadShareSettings(),
     audioSettings: loadAudioSettings(),
     tick: 0,
+    shareCodec: null,
+    codecRequests: [],
+    h265Blocked: {},
 
     join: async (serverId, channelId) => {
       if (get().channelId === channelId && get().status !== 'idle') return;
@@ -656,13 +830,17 @@ export const useVoice = create<VoiceStore>((set, get) => {
       if (support) return toast.error(support);
       const preset = SHARE_PRESETS.find((p) => p.id === settings.presetId) ?? SHARE_PRESETS[1];
       const fps = settings.fps;
-      const bitrate = estimateBitrate(preset, fps);
       const lp = s.room.localParticipant;
       const startedAt = performance.now();
       // No app desktop o áudio vem do capturador por processo (sem as vozes da sala),
       // então o getDisplayMedia pede só o vídeo da fonte escolhida no seletor do Concord.
       const desktopShare = !!desktop && !!sourceId;
-      const codec: VideoCodec = settings.codec === 'auto' ? AUTO_CODEC : settings.codec;
+      let codec: VideoCodec = settings.codec === 'auto' ? AUTO_CODEC : settings.codec;
+      // preferência salva de outro PC, ou a placa/driver mudou
+      if (codec === 'h265' && !h265Support().encode) {
+        toast.info('Este computador não codifica H.265 pela placa de vídeo. Transmitindo em H.264.');
+        codec = 'h264';
+      }
       try {
         if (lp.isScreenShareEnabled) await get().stopShare();
         if (desktopShare) await desktop!.selectSource(sourceId!);
@@ -677,17 +855,10 @@ export const useVoice = create<VoiceStore>((set, get) => {
             systemAudio: 'include',
             suppressLocalAudioPlayback: true,
           },
-          {
-            videoCodec: codec,
-            screenShareEncoding: { maxBitrate: bitrate, maxFramerate: fps, priority: 'high' },
-            screenShareSimulcastLayers: preset.height > 720 ? [new VideoPreset(1280, 720, 2_000_000, 30)] : [],
-            simulcast: true,
-            degradationPreference: settings.mode === 'motion' ? 'maintain-framerate' : 'maintain-resolution',
-            audioPreset: AudioPresets.musicHighQualityStereo,
-            dtx: false,
-            red: false,
-          },
+          screenPublishOptions(settings, preset, codec),
         );
+        set({ shareCodec: codec, codecRequests: [] });
+        watchShareCodec();
         syncLocalFlags();
         void warnIfSoftwareEncoding(lp.getTrackPublication(Track.Source.ScreenShare)?.track, preset.height > 720 || fps > 30);
         set({ focus: `${lp.identity}:screen` });
@@ -712,7 +883,37 @@ export const useVoice = create<VoiceStore>((set, get) => {
       if (!room) return;
       await stopDesktopShareAudio();
       await room.localParticipant.setScreenShareEnabled(false);
+      clearInterval(codecPoll);
+      set({ shareCodec: null, codecRequests: [] });
       syncLocalFlags();
+    },
+
+    fallbackToH264: async () => {
+      const { room, shareSettings, shareCodec } = get();
+      const lp = room?.localParticipant;
+      const pub = lp?.getTrackPublication(Track.Source.ScreenShare);
+      const track = pub?.track as LocalVideoTrack | undefined;
+      if (!lp || !track || shareCodec === 'h264' || republishing) return;
+      const preset = SHARE_PRESETS.find((p) => p.id === shareSettings.presetId) ?? SHARE_PRESETS[1];
+      // republica a mesma captura em H.264: não pede a tela de novo (no navegador abriria o seletor)
+      republishing = true;
+      try {
+        await lp.unpublishTrack(track, false);
+        await lp.publishTrack(track, { ...screenPublishOptions(shareSettings, preset, 'h264'), source: Track.Source.ScreenShare });
+        clearInterval(codecPoll);
+        set({ shareCodec: 'h264', codecRequests: [] });
+      } catch (err) {
+        toast.error(err);
+      } finally {
+        republishing = false;
+        syncLocalFlags();
+        bump();
+      }
+    },
+
+    requestH264: (identity) => {
+      getSocket()?.emit('voice:codec-request', { streamerId: identity });
+      toast.info('Pedido enviado. Quando o host liberar, a transmissão aparece aqui.');
     },
 
     setWatching: (identity, on) => {
@@ -720,6 +921,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
       if (on) watching[identity] = true;
       else delete watching[identity];
       set({ watching, focus: on ? `${identity}:screen` : get().focus === `${identity}:screen` ? null : get().focus });
+      if (on) checkScreenCodec(identity);
+      else clearBlocked(identity);
       syncSubscriptions();
       bump();
     },
@@ -793,6 +996,19 @@ export const useVoice = create<VoiceStore>((set, get) => {
       socket.on('voice:stop-stream', ({ reason }: { reason: string }) => {
         void get().stopShare();
         toast.info(reason);
+      });
+      const viewerName = (id: string) => get().room?.remoteParticipants.get(id)?.name || 'Alguém';
+      // alguém diz que recebe H.265 e não decodificou: com a troca permitida, passa todos para H.264
+      socket.on('voice:codec-fail', ({ viewerId }: { viewerId: string }) => {
+        const { shareCodec, shareSettings } = get();
+        if (shareCodec !== 'h265' || !shareSettings.allowFallback) return;
+        toast.info(`Sua transmissão passou para H.264: ${viewerName(viewerId)} não conseguia assistir em H.265.`);
+        void get().fallbackToH264();
+      });
+      socket.on('voice:codec-request', ({ viewerId }: { viewerId: string }) => {
+        if (get().shareCodec !== 'h265') return;
+        if (get().codecRequests.some((r) => r.identity === viewerId)) return;
+        set({ codecRequests: [...get().codecRequests, { identity: viewerId, name: viewerName(viewerId) }] });
       });
     },
 

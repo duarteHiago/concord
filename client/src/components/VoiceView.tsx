@@ -36,6 +36,7 @@ import { ReactionLayer, ReactionsButton } from './Reactions';
 import { VoiceEffectsButton } from './VoiceEffectsButton';
 import { StickerButton, StickerLayer } from './Stickers';
 import { ClipButton } from './Clip';
+import { CodecRequests, H265Help, ShareCodecBadge } from './H265Help';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
 import { onVisibilityChange } from '../lib/visibility';
@@ -446,6 +447,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
   const { name, color, avatarUrl, frame } = useMemberInfo(detail, p);
   const speaking = useVoice((s) => !!s.speaking[p.identity]);
   const watching = useVoice((s) => !!s.watching[p.identity]);
+  const blocked = useVoice((s) => s.h265Blocked[p.identity]);
   const setWatching = useVoice((s) => s.setWatching);
   const shareFps = useVoice((s) => s.shareSettings.fps);
   const ref = useRef<HTMLDivElement>(null);
@@ -479,7 +481,9 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
         onClick={canView && !focused && !isFullscreen ? onClick : undefined}
         className={cx('group relative overflow-hidden bg-black', shape, !focused && canView && 'cursor-pointer')}
       >
-        {canView && track ? (
+        {!isLocal && watching && blocked ? (
+          <H265Help identity={p.identity} diagnosis={blocked} compact={!focused} onExpand={onClick} />
+        ) : canView && track ? (
           <ZoomableVideo track={track} />
         ) : canView ? (
           <div className="flex h-full items-center justify-center">
@@ -502,8 +506,11 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
 
         <div className="pointer-events-none absolute top-5 left-5 flex items-center gap-2">
           <LivePill className="px-3 py-1 text-xs">ao vivo</LivePill>
+          {isLocal && <ShareCodecBadge />}
           {showStats && track && <StatsBadge track={track} targetFps={isLocal ? shareFps : undefined} />}
         </div>
+
+        {isLocal && <CodecRequests />}
 
         {!focused && (
           <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-surface-1/85 px-3 py-1 text-xs font-bold backdrop-blur">
