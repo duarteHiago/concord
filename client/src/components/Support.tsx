@@ -14,6 +14,7 @@ import { api } from '../lib/api';
 import type { Me } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
+import { GiftReveal } from './GiftReveal';
 import { SupporterPatch } from './SupporterPatch';
 import { Button, Modal, Spinner, cx } from './ui';
 
@@ -123,10 +124,7 @@ export function SupportModal() {
     const upgraded = tier !== hadBefore;
     return (
       <Modal onClose={close} width={440}>
-        <div className="flex flex-col items-center gap-4 py-2 text-center">
-          <div className="animate-pop-in">
-            <SupporterPatch tier={tier} size={150} />
-          </div>
+        <GiftReveal tier={tier}>
           <div>
             <h2 className="font-display text-2xl font-bold">Valeu demais! 💛</h2>
             <p className="mt-1 text-sm text-fg-muted">
@@ -146,7 +144,7 @@ export function SupportModal() {
               <Sparkles size={16} /> Ver meus acabamentos
             </Button>
           </div>
-        </div>
+        </GiftReveal>
       </Modal>
     );
   }

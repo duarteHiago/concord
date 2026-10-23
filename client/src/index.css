@@ -583,7 +583,50 @@ video::-webkit-media-controls {
   0%, 100% { opacity: 0.15; scale: 0.5; }
   50% { opacity: 1; scale: 1; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .sp-glow, .sp-hue, .sp-hue-soft, .sp-twinkle { animation: none; }
-  .sp-sheen { display: none; }
+:root[data-motion='reduce'] :is(.sp-glow, .sp-hue, .sp-hue-soft, .sp-twinkle) { animation: none; }
+:root[data-motion='reduce'] .sp-sheen { display: none; }
+
+/* Comemoração do apoio (components/GiftReveal.tsx): caixa chacoalha, tampa voa, confete, patch sobe */
+.gift-box { overflow: visible; filter: drop-shadow(0 10px 18px rgb(0 0 0 / 0.45)); }
+.gift-shake { animation: gift-pop 0.35s cubic-bezier(0.2, 1.4, 0.3, 1) both, gift-shake 0.8s 0.35s ease-in both; transform-origin: 50% 90%; }
+@keyframes gift-pop { from { transform: scale(0.4) translateY(30px); opacity: 0; } }
+@keyframes gift-shake {
+  0% { transform: rotate(0); }
+  15% { transform: rotate(-4deg); }
+  30% { transform: rotate(5deg); }
+  45% { transform: rotate(-7deg) scale(1.03); }
+  60% { transform: rotate(8deg) scale(1.05); }
+  75% { transform: rotate(-10deg) scale(1.07); }
+  90% { transform: rotate(10deg) scale(1.09); }
+  100% { transform: rotate(0) scale(1.1); }
 }
+.gift-lid-off { transform-box: fill-box; transform-origin: center; animation: gift-lid 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) forwards; }
+@keyframes gift-lid { to { transform: translate(40px, -120px) rotate(35deg); opacity: 0; } }
+.gift-drop { animation: gift-drop 0.8s 0.15s ease-in forwards; }
+@keyframes gift-drop { to { transform: translateY(70px) scale(0.85); opacity: 0; } }
+.gift-rise { animation: gift-rise 0.9s cubic-bezier(0.2, 1.3, 0.3, 1) both; }
+@keyframes gift-rise {
+  from { transform: translateY(40px) scale(0.2) rotate(-25deg); opacity: 0; }
+  60% { opacity: 1; }
+}
+.gift-rays {
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgb(255 210 140 / 0.32) 0deg 10deg, transparent 10deg 24deg);
+  mask: radial-gradient(circle, #000 18%, transparent 68%);
+  animation: gift-rays-in 0.6s ease-out both, gift-spin 14s linear infinite;
+}
+@keyframes gift-rays-in { from { opacity: 0; scale: 0.3; } }
+@keyframes gift-spin { to { rotate: 360deg; } }
+.gift-confetti {
+  left: 0;
+  top: 0;
+  animation: gift-confetti 1.6s var(--delay) cubic-bezier(0.15, 0.7, 0.4, 1) both;
+}
+@keyframes gift-confetti {
+  0% { transform: translate(-50%, -50%) scale(0.3); opacity: 1; }
+  35% { transform: translate(var(--dx), var(--dy)) rotate(calc(var(--rot) * 0.4)); opacity: 1; }
+  100% { transform: translate(calc(var(--dx) * 1.15), calc(var(--dy) + 170px)) rotate(var(--rot)); opacity: 0; }
+}
+.gift-text-in { animation: gift-text 0.5s ease-out both; }
+@keyframes gift-text { from { opacity: 0; transform: translateY(10px); } }
+:root[data-motion='reduce'] :is(.gift-rays, .gift-text-in) { animation: none; }
