@@ -567,6 +567,8 @@ video::-webkit-media-controls {
   0% { transform: translateX(-10px); }
   55%, 100% { transform: translateX(150px); }
 }
+.sp-run { animation: sp-run 3.4s linear infinite; }
+@keyframes sp-run { to { stroke-dashoffset: -100; } }
 .sp-hue { animation: sp-hue 6s linear infinite; }
 @keyframes sp-hue { to { filter: hue-rotate(360deg); } }
 .sp-hue-soft { animation: sp-hue-soft 7s ease-in-out infinite alternate; }
@@ -583,7 +585,7 @@ video::-webkit-media-controls {
   0%, 100% { opacity: 0.15; scale: 0.5; }
   50% { opacity: 1; scale: 1; }
 }
-:root[data-motion='reduce'] :is(.sp-glow, .sp-hue, .sp-hue-soft, .sp-twinkle) { animation: none; }
+:root[data-motion='reduce'] :is(.sp-glow, .sp-hue, .sp-hue-soft, .sp-twinkle, .sp-run) { animation: none; }
 :root[data-motion='reduce'] .sp-sheen { display: none; }
 
 /* Comemoração do apoio (components/GiftReveal.tsx): caixa chacoalha, tampa voa, confete, patch sobe */
