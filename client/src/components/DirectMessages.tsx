@@ -291,7 +291,7 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
           message.content && (
             <div
               className={cx(
-                'px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap',
+                'px-4 py-2.5 text-[15px] leading-relaxed wrap-anywhere whitespace-pre-wrap',
                 mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
               )}
             >
