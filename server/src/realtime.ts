@@ -197,7 +197,7 @@ export function liveStats() {
   };
 }
 
-const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'reaction', 'activity:set', 'typing', 'dev:ping']);
+const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping']);
 
 export function setupRealtime(httpServer: HttpServer) {
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
@@ -277,6 +277,27 @@ export function setupRealtime(httpServer: HttpServer) {
       voice.delete(userId);
       broadcastVoice(v.serverId);
     });
+
+    // H.265 na transmissão de tela: quem assiste avisa o host que não conseguiu decodificar
+    // ("codec-fail": o app do host troca para H.264 sozinho, se ele permitiu) ou pede a troca
+    // ("codec-request": o host recusou a troca automática e decide). Só entre pessoas da mesma sala.
+    let codecNotices = 0;
+    let codecNoticesAt = 0;
+    for (const event of ['voice:codec-fail', 'voice:codec-request'] as const) {
+      socket.on(event, (raw: { streamerId?: unknown }) => {
+        const v = voice.get(userId);
+        if (!v || v.socketId !== socket.id || typeof raw?.streamerId !== 'string' || raw.streamerId === userId) return;
+        const streamer = voice.get(raw.streamerId);
+        if (!streamer || streamer.channelId !== v.channelId || !streamer.streaming) return;
+        const nowMs = Date.now();
+        if (nowMs - codecNoticesAt > 10_000) {
+          codecNoticesAt = nowMs;
+          codecNotices = 0;
+        }
+        if (++codecNotices > 5) return; // no máximo 5 a cada 10 s
+        io.to(streamer.socketId).emit(event, { viewerId: userId });
+      });
+    }
 
     // reações flutuantes (estilo TikTok): só para quem está na mesma sala de voz
     const reactionTimes: number[] = [];

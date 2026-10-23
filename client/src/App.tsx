@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { EmailResetScreen, useEmailPrompt } from './components/EmailRecovery';
 import { ChannelSidebar } from './components/ChannelSidebar';
@@ -24,11 +24,22 @@ import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import './lib/visibility';
 
+const PATH = location.pathname.replace(/\/+$/, '');
 /** /diagnostico abre como janela/aba independente — ver lib/desktop.ts e lib/devStats.ts. */
-const IS_DEV_WINDOW = location.pathname.replace(/\/+$/, '') === '/diagnostico';
+const IS_DEV_WINDOW = PATH === '/diagnostico';
+/** /compatibilidade: página pública (sem login) sobre H.265 — ver components/CompatibilityPage.tsx. */
+const IS_COMPATIBILITY = PATH === '/compatibilidade';
+const CompatibilityPage = lazy(() => import('./components/CompatibilityPage'));
 
 export default function App() {
   if (IS_DEV_WINDOW) return <DevWindow />;
+  if (IS_COMPATIBILITY) {
+    return (
+      <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner size={36} /></div>}>
+        <CompatibilityPage />
+      </Suspense>
+    );
+  }
   return <MainApp />;
 }
 
