@@ -125,13 +125,13 @@ export function MemberPopover() {
             <div aria-label="Patches" className="flex flex-wrap justify-end pb-0.5 pl-2">
               {member.supporter && (
                 <button
-                  aria-label="Patch de apoiador do Concord"
-                  title="Apoiador do Concord: clique para saber como ganhar o seu"
+                  aria-label="Ver de perto o patch de apoiador do Concord"
+                  title="Apoiador do Concord: clique para ver de perto"
                   onClick={() => {
                     close();
-                    openModal({ type: 'support' });
+                    usePatchInspect.getState().openSupporter(member.supporter!.tier, `no perfil de ${name}`);
                   }}
-                  className="-ml-1.5 rounded-full"
+                  className="-ml-1.5 cursor-zoom-in rounded-full"
                 >
                   <SupporterPatch tier={member.supporter.tier} size={member.patches && member.patches.length > 3 ? 38 : 44} />
                 </button>

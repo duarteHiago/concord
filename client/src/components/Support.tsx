@@ -13,6 +13,7 @@ import {
 import { api } from '../lib/api';
 import type { Me } from '../lib/types';
 import { useApp } from '../store/app';
+import { usePatchInspect } from '../store/patchInspect';
 import { toast } from '../store/toast';
 import { GiftReveal } from './GiftReveal';
 import { SupporterPatch } from './SupporterPatch';
@@ -329,7 +330,13 @@ export function SupportTab() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center gap-5 rounded-[24px] bg-surface-0 p-5 sm:flex-row">
-        {shown ? <SupporterPatch tier={shown} size={128} /> : <SupporterPatch tier={topTier(total) ?? 'aurora'} size={128} locked={!unlocked.length} />}
+        {shown ? (
+          <button title="Ver de perto" className="cursor-zoom-in" onClick={() => usePatchInspect.getState().openSupporter(shown, 'no seu perfil')}>
+            <SupporterPatch tier={shown} size={128} />
+          </button>
+        ) : (
+          <SupporterPatch tier={topTier(total) ?? 'aurora'} size={128} locked={!unlocked.length} />
+        )}
         <div className="min-w-0 flex-1 text-center sm:text-left">
           <h3 className="font-display text-xl font-bold">{unlocked.length ? 'Você apoia o Concord 💛' : 'Patch de apoiador'}</h3>
           <p className="mt-1 text-sm text-fg-muted">

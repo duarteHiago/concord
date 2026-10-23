@@ -1,8 +1,10 @@
 import { useEffect, useRef, type CSSProperties, type RefObject } from 'react';
+import type { SupporterTier } from '../../../shared/supporter.ts';
 import { reduceMotion } from '../lib/motion';
 import type { Patch } from '../lib/types';
 import { onVisibilityChange } from '../lib/visibility';
 import { PatchBadge, patchShapePath } from './PatchBadge';
+import { SUPPORTER_SILHOUETTE, SupporterPatch, supporterEdge } from './SupporterPatch';
 
 const LAYERS = 9; // camadas da espessura do tecido (px)
 
@@ -22,7 +24,7 @@ function Silhouette({ d, fill, size, style }: { d: string; fill: string; size: n
 }
 
 /** Verso do patch: tecido de fundo (entretela) com a costura aparente. */
-function Back({ patch, d, size }: { patch: Patch; d: string; size: number }) {
+function Back({ border, d, size }: { border: string; d: string; size: number }) {
   const grow = (k: number) => `translate(50 50) scale(${k}) translate(-50 -50)`;
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true">
@@ -32,9 +34,9 @@ function Back({ patch, d, size }: { patch: Patch; d: string; size: number }) {
           <circle cx="1" cy="1" r="0.5" fill="#d3cbbb" />
         </pattern>
       </defs>
-      <path d={d} fill={shade(patch.border, 0.8)} />
+      <path d={d} fill={shade(border, 0.8)} />
       <path d={d} fill="url(#felt)" transform={grow(0.9)} />
-      <path d={d} fill="none" stroke={patch.border} strokeWidth="1.4" strokeDasharray="3 2.5" transform={grow(0.8)} opacity="0.8" />
+      <path d={d} fill="none" stroke={border} strokeWidth="1.4" strokeDasharray="3 2.5" transform={grow(0.8)} opacity="0.8" />
       <rect x="34" y="44" width="32" height="12" rx="2" fill="#fff" stroke="#bdb4a3" strokeWidth="0.6" />
       <text x="50" y="50.5" textAnchor="middle" dominantBaseline="central" fontFamily="Outfit, system-ui, sans-serif" fontWeight="800" fontSize="5" fill="#6b5f7a" letterSpacing="0.6">
         CONCORD
@@ -50,23 +52,27 @@ export interface Patch3DControls {
 /**
  * Patch em 3D com espessura, verso e reflexo: arraste para girar (com inércia), role para aproximar.
  * `showcase` faz o patch girar sozinho devagar (vitrine), parando enquanto a pessoa arrasta.
+ * Com `supporter`, mostra o patch de apoiador (desenho fixo) em vez de `patch`.
  */
 export function Patch3D({
   patch,
+  supporter,
   size = 340,
   showcase = false,
   zoomable = false,
   onZoom,
   controls,
 }: {
-  patch: Patch;
+  patch?: Patch;
+  supporter?: SupporterTier;
   size?: number;
   showcase?: boolean;
   zoomable?: boolean;
   onZoom?: (zoom: number) => void;
   controls?: RefObject<Patch3DControls | null>;
 }) {
-  const d = patchShapePath(patch.shape);
+  const d = supporter ? SUPPORTER_SILHOUETTE : patchShapePath(patch!.shape);
+  const edge = supporter ? supporterEdge(supporter) : patch!.border;
   const item = useRef<HTMLDivElement>(null);
   const glare = useRef<HTMLDivElement>(null);
   const state = useRef({ rx: -8, ry: -18, vx: 0, vy: 0, dragging: false, lastX: 0, lastY: 0, idle: 0, zoom: 1 });
@@ -172,16 +178,16 @@ export function Patch3D({
       <div ref={item} className="relative" style={{ width: size, height: size, transformStyle: 'preserve-3d', animation: 'patch-enter 0.5s cubic-bezier(0.2, 1.3, 0.4, 1)' }}>
         {/* espessura: camadas do contorno, mais escuras na lateral */}
         {Array.from({ length: LAYERS }, (_, i) => (
-          <Silhouette key={i} d={d} size={size} fill={shade(patch.border, 0.55 + (i % 2) * 0.08)} style={{ transform: `translateZ(${-i - 1}px)` }} />
+          <Silhouette key={i} d={d} size={size} fill={shade(edge, 0.55 + (i % 2) * 0.08)} style={{ transform: `translateZ(${-i - 1}px)` }} />
         ))}
         {/* frente */}
         <div className="absolute inset-0" style={{ transform: 'translateZ(0.5px)', backfaceVisibility: 'hidden' }}>
-          <PatchBadge patch={patch} size={size} plain title={patch.text || 'Patch'} />
+          {supporter ? <SupporterPatch tier={supporter} size={size} plain /> : <PatchBadge patch={patch!} size={size} plain title={patch!.text || 'Patch'} />}
           <div ref={glare} className="pointer-events-none absolute inset-0 mix-blend-soft-light" style={{ maskImage: mask, WebkitMaskImage: mask }} />
         </div>
         {/* verso */}
         <div className="absolute inset-0" style={{ transform: `translateZ(${-LAYERS - 0.5}px) rotateY(180deg)`, backfaceVisibility: 'hidden' }}>
-          <Back patch={patch} d={d} size={size} />
+          <Back border={edge} d={d} size={size} />
         </div>
       </div>
     </div>
