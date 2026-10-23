@@ -1,8 +1,8 @@
 // H.265 na sala de voz: o tutorial de quem não consegue assistir (transmissão em H.265 sem troca
 // para H.264), o selo do codec e os pedidos de "liberar H.264" na tela de quem transmite.
-import { ExternalLink, MonitorX, RefreshCw, Send } from 'lucide-react';
+import { Download, ExternalLink, MonitorX, RefreshCw, Send } from 'lucide-react';
 import { desktop } from '../lib/desktop';
-import { DRIVER_LINKS, causeText, compatibilityUrl, type H265Cause, type H265Diagnosis } from '../lib/h265';
+import { APP_DOWNLOAD_URL, DRIVER_LINKS, appHelps, causeText, compatibilityUrl, type H265Cause, type H265Diagnosis } from '../lib/h265';
 import { useVoice } from '../store/voice';
 import { Button, cx } from './ui';
 
@@ -12,7 +12,7 @@ const DRIVER_CAUSES: H265Cause[] = ['hwaccel', 'driver', 'ok'];
 export function H265Help({ identity, diagnosis, compact, onExpand }: { identity: string; diagnosis: H265Diagnosis; compact?: boolean; onExpand: () => void }) {
   const requestH264 = useVoice((s) => s.requestH264);
   const setWatching = useVoice((s) => s.setWatching);
-  const { title, body, steps } = causeText(diagnosis.cause, diagnosis.gpu.name);
+  const { title, body, steps } = causeText(diagnosis.cause, diagnosis.gpu.name, !!desktop);
   const vendor = diagnosis.gpu.vendor;
   const driver = vendor && vendor !== 'apple' && DRIVER_CAUSES.includes(diagnosis.cause) ? DRIVER_LINKS[vendor] : null;
   const retry = () => {
@@ -53,6 +53,11 @@ export function H265Help({ identity, diagnosis, compact, onExpand }: { identity:
           </ol>
         )}
         <div className="flex flex-wrap gap-2">
+          {appHelps(diagnosis.cause) && (
+            <a href={APP_DOWNLOAD_URL} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-accent px-3 text-sm font-bold text-on-accent transition-colors hover:bg-accent-hover">
+              <Download size={15} /> Baixar o app do Concord
+            </a>
+          )}
           {driver && (
             <a href={driver.url} target="_blank" rel="noreferrer" className={linkButton}>
               <ExternalLink size={15} /> {driver.label}

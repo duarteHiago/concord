@@ -174,26 +174,48 @@ export function diagnoseH265(failed = false): H265Diagnosis {
   return { cause, gpu, verdict, decode };
 }
 
-/** Texto de cada motivo, em linguagem de quem não é da área. Usado pelo tutorial da sala e pela página /compatibilidade. */
-export function causeText(cause: H265Cause, gpuName: string | null): { title: string; body: string; steps?: string[] } {
+/** Instalador do app desktop (Windows), publicado pelo CI. */
+export const APP_DOWNLOAD_URL = '/downloads/Concord-Setup.exe';
+
+/**
+ * O app do Concord resolve: ele traz o próprio Chromium, com H.265 e aceleração por hardware ligados.
+ * Só faz sentido oferecer fora do app e no Windows (o instalador é só para Windows).
+ */
+export function appHelps(cause: H265Cause): boolean {
+  const ua = navigator.userAgent;
+  const inApp = /Electron\//.test(ua);
+  return !inApp && /Windows/.test(ua) && (cause === 'firefox' || cause === 'hwaccel');
+}
+
+/**
+ * Texto de cada motivo, em linguagem de quem não é da área. Usado pelo tutorial da sala e pela página
+ * /compatibilidade. `inApp`: quem lê já está no app desktop (não manda baixar o app nem mexer no navegador).
+ */
+export function causeText(cause: H265Cause, gpuName: string | null, inApp = false): { title: string; body: string; steps?: string[] } {
   const placa = gpuName ? `Sua placa de vídeo (${gpuName})` : 'Sua placa de vídeo';
   switch (cause) {
     case 'firefox':
       return {
         title: 'O Firefox não reproduz este formato',
         body: 'Esta transmissão usa o H.265, um formato de vídeo de alta qualidade que o Firefox não reproduz em chamadas, em nenhum computador.',
-        steps: ['Abra o Concord no Google Chrome ou no Microsoft Edge, ou use o app do Concord para computador.'],
+        steps: ['Baixe o app do Concord para computador (já vem pronto para o H.265), ou abra o Concord no Google Chrome ou no Microsoft Edge.'],
       };
     case 'hwaccel':
-      return {
-        title: 'O navegador está sem a placa de vídeo',
-        body: 'A "aceleração por hardware" está desligada, ou o driver da placa de vídeo não está instalado. Sem ela, vídeos em H.265 não rodam.',
-        steps: [
-          'No Chrome ou no Edge, abra as Configurações e procure por "aceleração".',
-          'Ligue "Usar aceleração gráfica quando disponível" e clique em Reiniciar.',
-          'Se já estava ligada, instale o driver da sua placa de vídeo pelo botão abaixo.',
-        ],
-      };
+      return inApp
+        ? {
+            title: 'O app está sem a placa de vídeo',
+            body: 'O driver da placa de vídeo não está instalado ou não está funcionando. Sem ele, vídeos em H.265 não rodam.',
+            steps: ['Instale o driver da sua placa de vídeo pelo botão abaixo.', 'Reinicie o computador e abra o Concord de novo.'],
+          }
+        : {
+            title: 'O navegador está sem a placa de vídeo',
+            body: 'A "aceleração por hardware" está desligada, ou o driver da placa de vídeo não está instalado. Sem ela, vídeos em H.265 não rodam.',
+            steps: [
+              'No Chrome ou no Edge, abra as Configurações e procure por "aceleração".',
+              'Ligue "Usar aceleração gráfica quando disponível" e clique em Reiniciar.',
+              'Se já estava ligada, instale o driver da sua placa de vídeo pelo botão abaixo. Outra saída: o app do Concord, que já vem com a aceleração ligada.',
+            ],
+          };
     case 'old-gpu':
       return {
         title: `${placa} não reproduz H.265`,
@@ -209,7 +231,7 @@ export function causeText(cause: H265Cause, gpuName: string | null): { title: st
       return {
         title: `${placa} deveria reproduzir H.265`,
         body: 'Mas o vídeo não abriu aqui. Normalmente é o driver da placa de vídeo ou o navegador desatualizado.',
-        steps: ['Atualize o driver da placa de vídeo pelo botão abaixo.', 'Atualize o navegador (ou o app do Concord) e reinicie o computador.'],
+        steps: ['Atualize o driver da placa de vídeo pelo botão abaixo.', inApp ? 'Atualize o app do Concord e reinicie o computador.' : 'Atualize o navegador e reinicie o computador.'],
       };
   }
 }
