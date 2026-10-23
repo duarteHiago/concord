@@ -17,6 +17,9 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
+      # apoio por Pix (Mercado Pago). Vazio: o botão de apoiar não aparece
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Concord}
       # o logo dos e-mails vem do GitHub: o Gmail busca imagens por servidores do Google, que a proteção anti-bot do site pode barrar

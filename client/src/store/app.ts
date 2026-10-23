@@ -39,7 +39,8 @@ export type Modal =
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
   | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum' }
-  | { type: 'userSettings' }
+  | { type: 'userSettings'; tab?: 'support' }
+  | { type: 'support' }
   | { type: 'shareScreen' }
   | { type: 'nickname'; serverId: string; userId: string }
   | { type: 'recoveryCode'; code: string; next?: Modal; afterReset?: boolean }

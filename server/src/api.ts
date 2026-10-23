@@ -50,6 +50,7 @@ import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetE
 import { playGame } from './games.ts';
 import { registerForumRoutes } from './forum.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
+import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supporterJson } from './support.ts';
 import * as google from './google.ts';
 import {
   ART_OFFSET,
@@ -129,6 +130,8 @@ const styleJson = (st: ProfileStyle) => ({
 
 const userJson = (u: PublicUser) => ({
   ...styleJson(parseStyle(u.profile_style)),
+  // patch de apoiador (só o servidor grava; ver support.ts)
+  supporter: supporterJson(u.profile_style),
   id: u.id,
   username: u.username,
   displayName: u.display_name,
@@ -167,6 +170,15 @@ const meJson = (u: UserRow) => {
       get<{ email: string }>("SELECT email FROM email_tokens WHERE user_id = ? AND kind = 'verify' AND expires_at > ?", u.id, now())?.email ?? null,
     // pode conceder o selo de verificado em qualquer servidor/pessoa (ver access.ts#isInstanceAuthority)
     isAuthority: isInstanceAuthority(u.id),
+    // apoio: o total decide quais acabamentos estão liberados; supportTier é o escolhido (null = escondido)
+    supportTotal: u.support_total_cents ?? 0,
+    supportTier: (() => {
+      try {
+        return (JSON.parse(u.profile_style || '{}') as { supporter?: { tier?: string | null } }).supporter?.tier ?? null;
+      } catch {
+        return null;
+      }
+    })(),
   };
 };
 
@@ -559,6 +571,9 @@ api.get('/drops/:code', (req, res) => {
     claimed: !!viewer && !!get('SELECT 1 FROM patch_claims WHERE drop_id = ? AND user_id = ?', drop.id, viewer),
   });
 });
+
+// Pix do apoio: quem chama o webhook é o Mercado Pago, sem login
+registerSupportWebhook(api);
 
 api.use(requireAuth);
 
@@ -2296,3 +2311,11 @@ api.get('/me/claimed-patches', (_req, res) => {
 
 registerForumRoutes(api, authorJson);
 registerStickerPackRoutes(api);
+registerSupportRoutes(api);
+setSupportHooks({
+  meUpdated: (userId) => {
+    const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
+    if (user) emitToUser(userId, 'me:updated', meJson(user));
+  },
+  profileChanged: (userId) => profileChanged(userId),
+});

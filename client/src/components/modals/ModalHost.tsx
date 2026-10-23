@@ -14,6 +14,7 @@ import { EmailPromptModal } from '../EmailRecovery';
 import { ServerSettingsModal } from './ServerSettingsModal';
 import { ShareScreenModal } from './ShareScreenModal';
 import { UserSettingsModal } from './UserSettingsModal';
+import { SupportModal } from '../Support';
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
@@ -39,7 +40,9 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
     case 'channelSettings':
       return <ChannelSettingsModal serverId={modal.serverId} channelId={modal.channelId} />;
     case 'userSettings':
-      return <UserSettingsModal />;
+      return <UserSettingsModal initialTab={modal.tab} />;
+    case 'support':
+      return <SupportModal />;
     case 'shareScreen':
       return <ShareScreenModal />;
     case 'confirm':

@@ -327,6 +327,27 @@ db.exec(`
 // o link sai em nome de um servidor (quem cria precisa ser admin dele)
 addColumn('patch_drops', 'server_id', 'TEXT REFERENCES servers(id) ON DELETE SET NULL');
 
+// Apoio voluntário por Pix (ver support.ts). O total apoiado decide o acabamento do patch de apoiador.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    provider_id TEXT,
+    amount_cents INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    qr_code TEXT,
+    qr_base64 TEXT,
+    expires_at INTEGER NOT NULL,
+    checked_at INTEGER,
+    created_at INTEGER NOT NULL,
+    paid_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider, provider_id) WHERE provider_id IS NOT NULL;
+`);
+addColumn('users', 'support_total_cents', 'INTEGER NOT NULL DEFAULT 0');
+
 // (depois do CREATE TABLE de dm_messages: num banco novo a tabela ainda não existe lá em cima)
 addColumn('dm_messages', 'attachments', 'TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
@@ -416,6 +437,7 @@ export interface UserRow {
   verified: number;
   email?: string | null;
   token_version?: number;
+  support_total_cents?: number;
   created_at: number;
 }
 
@@ -599,4 +621,19 @@ export interface PatchDropRow {
   uses: number;
   expires_at: number | null;
   created_at: number;
+}
+
+export interface PaymentRow {
+  id: string;
+  user_id: string;
+  provider: string;
+  provider_id: string | null;
+  amount_cents: number;
+  status: 'pending' | 'paid' | 'expired' | 'refunded';
+  qr_code: string | null;
+  qr_base64: string | null;
+  expires_at: number;
+  checked_at: number | null;
+  created_at: number;
+  paid_at: number | null;
 }

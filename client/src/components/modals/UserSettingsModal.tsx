@@ -6,6 +6,7 @@ import { systemReducesMotion } from '../../lib/motion';
 import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
 import { StyleTab } from './StyleTab';
+import { SupportTab } from '../Support';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
 import { LocalRecordControls } from '../RecordControls';
@@ -23,11 +24,11 @@ import { Avatar, Button, ImageHint, Input, Modal, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
-type Tab = 'profile' | 'style' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'account' | 'dev';
+type Tab = 'profile' | 'style' | 'support' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'account' | 'dev';
 
-export function UserSettingsModal() {
+export function UserSettingsModal({ initialTab }: { initialTab?: Tab }) {
   const close = useApp((s) => s.closeModal);
-  const [tab, setTab] = useState<Tab>('profile');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'profile');
   return (
     <Modal title="Configurações de usuário" onClose={close} width={860}>
       {/* rótulos nunca quebram linha (desalinhava a barra); se a janela for estreita, a barra rola na horizontal */}
@@ -36,6 +37,7 @@ export function UserSettingsModal() {
           [
             ['profile', 'Perfil'],
             ['style', 'Estilo'],
+            ['support', 'Apoiar 💛'],
             ['appearance', 'Aparência'],
             ['notifications', 'Notificações'],
             ['audio', 'Voz e vídeo'],
@@ -56,6 +58,7 @@ export function UserSettingsModal() {
       </div>
       {tab === 'profile' && <Profile />}
       {tab === 'style' && <StyleTab />}
+      {tab === 'support' && <SupportTab />}
       {tab === 'appearance' && <Appearance />}
       {tab === 'notifications' && <Notifications />}
       {tab === 'shortcuts' && <ShortcutsTab />}
