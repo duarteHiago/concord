@@ -59,6 +59,25 @@ function MainApp() {
     void bootstrap();
   }, [bootstrap]);
 
+  // veio do botão "Apoiar" da landing: abre a janela do Pix assim que a pessoa estiver logada
+  // (a marca fica também no localStorage, porque o login com Google volta sem a query)
+  const openModal = useApp((s) => s.openModal);
+  useEffect(() => {
+    if (!me) return;
+    let flagged = false;
+    try {
+      flagged = localStorage.getItem('concord.openSupport') === '1';
+      localStorage.removeItem('concord.openSupport');
+    } catch {
+      // ignorado
+    }
+    const q = new URLSearchParams(location.search);
+    if (!flagged && !q.has('apoiar')) return;
+    q.delete('apoiar');
+    history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
+    openModal({ type: 'support' });
+  }, [me, openModal]);
+
   if (!ready) {
     return (
       <div className="flex h-full items-center justify-center">

@@ -50,7 +50,7 @@ import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetE
 import { playGame } from './games.ts';
 import { registerForumRoutes } from './forum.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
-import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supporterJson } from './support.ts';
+import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
 import * as google from './google.ts';
 import {
   ART_OFFSET,
@@ -236,6 +236,8 @@ api.get('/config', (_req, res) => {
     communityInvite: config.communityInvite || null,
     googleLogin: google.googleEnabled(),
     emailRecovery: mailEnabled(),
+    // seção "apoie" da landing page
+    support: supportPublicConfig(),
   });
 });
 
