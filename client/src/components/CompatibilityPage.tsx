@@ -5,7 +5,7 @@
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Cpu, Download, ExternalLink, Gauge, HelpCircle, Search, Smartphone, Terminal, X, XCircle } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { APP_DOWNLOAD_URL, DRIVER_LINKS, GPU_TABLE, causeText, classifyGpu, diagnoseH265, type H265Cause, type H265Diagnosis } from '../lib/h265';
-import { ChromeLogo, ConcordLogo, EdgeLogo, FirefoxLogo, OperaLogo, SafariLogo } from './BrowserLogos';
+import { BraveLogo, ChromeLogo, ConcordLogo, EdgeLogo, FirefoxLogo, OperaLogo, SafariLogo } from './BrowserLogos';
 import './CompatibilityPage.css';
 
 const CAUSES: H265Cause[] = ['ok', 'firefox', 'hwaccel', 'old-gpu', 'linux', 'driver'];
@@ -37,7 +37,12 @@ const BROWSERS: { id: BrowserId; name: string; logo: ReactNode; status: 'yes' | 
   { id: 'chrome', name: 'Google Chrome', logo: <ChromeLogo />, status: 'yes', label: 'Funciona', note: 'No Windows e no Mac, atualizado e com uma placa de vídeo compatível.' },
   { id: 'edge', name: 'Microsoft Edge', logo: <EdgeLogo />, status: 'yes', label: 'Funciona', note: 'Igual ao Chrome: atualizado e com uma placa compatível.' },
   { id: 'safari', name: 'Safari', logo: <SafariLogo />, status: 'yes', label: 'Funciona', note: 'Nos Macs e iPhones com o sistema atualizado.' },
-  { id: 'opera', name: 'Opera, Brave e outros', logo: <OperaLogo />, status: 'maybe', label: 'Costuma funcionar', note: 'São feitos a partir do Chrome, mas cada um liga ou desliga recursos. Faça o teste.' },
+  { id: 'opera', name: 'Opera, Brave e outros', logo: (
+      <span className="cp-duo">
+        <OperaLogo size={32} />
+        <BraveLogo size={32} />
+      </span>
+    ), status: 'maybe', label: 'Costuma funcionar', note: 'São feitos a partir do Chrome, mas cada um liga ou desliga recursos. Faça o teste.' },
   { id: 'linux', name: 'Chrome no Linux', logo: <ChromeLogo />, status: 'maybe', label: 'Precisa de ajuste', note: 'A reprodução pela placa vem desligada. Veja como ligar em "Como resolver".' },
   { id: 'mobile', name: 'Celular', logo: <Smartphone size={40} strokeWidth={1.6} />, status: 'maybe', label: 'Depende do aparelho', note: 'Varia entre modelos. Faça o teste pelo próprio celular.' },
   { id: 'firefox', name: 'Firefox', logo: <FirefoxLogo />, status: 'no', label: 'Não funciona', note: 'Não reproduz H.265 em chamadas, em nenhum computador.' },
