@@ -1,3 +1,4 @@
+import type { SupporterTier } from '../../../shared/supporter.ts';
 import type { Overwrite } from '../../../shared/permissions.ts';
 import type { Patch, StickerFinish } from '../../../shared/cosmetics.ts';
 
@@ -21,6 +22,8 @@ export interface User {
   cardBgUrl?: string | null;
   /** patches costurados no cartão (não vêm junto das mensagens) */
   patches?: Patch[];
+  /** patch de apoiador: o acabamento que a pessoa escolheu mostrar (só o servidor grava) */
+  supporter?: { tier: SupporterTier } | null;
 }
 
 /** Patch compartilhado num servidor. */
@@ -128,6 +131,10 @@ export interface Me extends User {
   emailPending?: string | null;
   /** pode conceder/revogar o selo de verificado em qualquer servidor ou pessoa */
   isAuthority?: boolean;
+  /** total já apoiado (centavos): decide os acabamentos liberados */
+  supportTotal?: number;
+  /** acabamento escolhido para o perfil (null = escondido ou ainda não apoiou) */
+  supportTier?: SupporterTier | null;
 }
 
 export interface NudgeEvent {

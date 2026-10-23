@@ -553,3 +553,37 @@ video::-webkit-media-controls {
     display: none;
   }
 }
+
+/* Patch de apoiador (components/SupporterPatch.tsx): brilho, cores e faíscas */
+.sp-glow {
+  filter: drop-shadow(0 0 2px var(--sp-glow));
+  animation: sp-glow 3.2s ease-in-out infinite;
+}
+@keyframes sp-glow {
+  50% { filter: drop-shadow(0 0 7px var(--sp-glow)); }
+}
+.sp-sheen { animation: sp-sheen 3.8s ease-in-out infinite; }
+@keyframes sp-sheen {
+  0% { transform: translateX(-10px); }
+  55%, 100% { transform: translateX(150px); }
+}
+.sp-hue { animation: sp-hue 6s linear infinite; }
+@keyframes sp-hue { to { filter: hue-rotate(360deg); } }
+.sp-hue-soft { animation: sp-hue-soft 7s ease-in-out infinite alternate; }
+@keyframes sp-hue-soft {
+  from { filter: hue-rotate(-20deg); }
+  to { filter: hue-rotate(40deg); }
+}
+.sp-twinkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sp-twinkle 2.6s ease-in-out infinite;
+}
+@keyframes sp-twinkle {
+  0%, 100% { opacity: 0.15; scale: 0.5; }
+  50% { opacity: 1; scale: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-glow, .sp-hue, .sp-hue-soft, .sp-twinkle { animation: none; }
+  .sp-sheen { display: none; }
+}

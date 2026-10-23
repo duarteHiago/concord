@@ -10,6 +10,7 @@ import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { Avatar, RoleDot, VerifiedBadge, cx } from './ui';
 import { PATCH_TILTS, PatchBadge } from './PatchBadge';
+import { SupporterPatch } from './SupporterPatch';
 import { usePatchInspect } from '../store/patchInspect';
 
 export function MemberPopover() {
@@ -120,9 +121,22 @@ export function MemberPopover() {
           >
             <Avatar name={name} color={member.avatarColor} src={member.avatarUrl} frame={member.frame} size={72} status={presence ?? 'offline'} className="rounded-full ring-[6px] ring-surface-1" />
           </button>
-          {!!member.patches?.length && (
+          {(!!member.patches?.length || member.supporter) && (
             <div aria-label="Patches" className="flex flex-wrap justify-end pb-0.5 pl-2">
-              {member.patches.map((p, i) => (
+              {member.supporter && (
+                <button
+                  aria-label="Patch de apoiador do Concord"
+                  title="Apoiador do Concord: clique para saber como ganhar o seu"
+                  onClick={() => {
+                    close();
+                    openModal({ type: 'support' });
+                  }}
+                  className="-ml-1.5 rounded-full"
+                >
+                  <SupporterPatch tier={member.supporter.tier} size={member.patches && member.patches.length > 3 ? 38 : 44} />
+                </button>
+              )}
+              {(member.patches ?? []).map((p, i) => (
                 <button
                   key={p.id}
                   aria-label={`Ver o patch ${p.text || ''} de perto`}
@@ -133,7 +147,7 @@ export function MemberPopover() {
                   }}
                   className="-ml-1.5 cursor-zoom-in rounded-full"
                 >
-                  <PatchBadge patch={p} size={member.patches!.length > 4 ? 34 : 40} tilt={PATCH_TILTS[i % PATCH_TILTS.length]} />
+                  <PatchBadge patch={p} size={member.patches!.length > 3 ? 34 : 40} tilt={PATCH_TILTS[i % PATCH_TILTS.length]} />
                 </button>
               ))}
             </div>

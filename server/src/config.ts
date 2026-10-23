@@ -27,6 +27,14 @@ export const config = {
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',
   // requisição, evento do socket ou consulta acima disto (ms) vai para o log como "[lento]"
   slowMs: Number(env.SLOW_MS ?? 100),
+  // apoio voluntário por Pix (ver support.ts). Sem token, o botão de apoiar some do app.
+  // PAYMENTS_FAKE=true (só fora de produção): QR de teste e botão "simular pagamento", sem dinheiro de verdade.
+  payments: {
+    mpAccessToken: (env.MP_ACCESS_TOKEN ?? '').trim(),
+    // "assinatura secreta" do webhook, no painel do Mercado Pago (Suas integrações → Webhooks)
+    mpWebhookSecret: (env.MP_WEBHOOK_SECRET ?? '').trim(),
+    fake: env.PAYMENTS_FAKE === 'true' && env.NODE_ENV !== 'production',
+  },
   livekit: {
     // URL que o navegador usa. Vazio = mesmo domínio do app em /livekit (via proxy reverso).
     publicUrl: env.LIVEKIT_PUBLIC_URL ?? '',
