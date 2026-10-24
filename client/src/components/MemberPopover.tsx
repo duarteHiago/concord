@@ -1,7 +1,7 @@
 import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { memberPosition, useApp } from '../store/app';
@@ -17,7 +17,17 @@ export function MemberPopover() {
   const { userId, serverId, x, y, close } = usePopover();
   const ref = useRef<HTMLDivElement>(null);
   const [addingRole, setAddingRole] = useState(false);
+  // altura real do cartão (muda com capa, patches, atividade, cargos...), para ele nunca passar da tela
+  const [height, setHeight] = useState(0);
   const detail = useApp((s) => (serverId ? s.details[serverId] : undefined));
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setHeight(el.offsetHeight);
+    const ro = new ResizeObserver(() => setHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [userId, detail]);
   const me = useApp((s) => s.me);
   const presenceInfo = useApp((s) => (userId ? s.online[userId] : undefined));
   const presence = presenceInfo?.status;
@@ -92,7 +102,8 @@ export function MemberPopover() {
       className="fixed z-40 max-h-[calc(100vh-16px)] w-80 animate-pop-in overflow-y-auto rounded-[24px] bg-popover bg-cover bg-center shadow-2xl ring-1 ring-line"
       style={{
         left: x,
-        top: Math.max(8, y),
+        // abre na altura do clique, mas sobe o quanto precisar para caber inteiro na tela
+        top: Math.max(8, Math.min(y, window.innerHeight - height - 8)),
         ...(member.cardBgUrl ? { backgroundImage: `linear-gradient(rgb(0 0 0 / 0.15), rgb(0 0 0 / 0.45)), url("${member.cardBgUrl}")` } : {}),
       }}
     >

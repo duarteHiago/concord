@@ -179,7 +179,14 @@ function Bubble({
   }
 
   const actions = !editing && (mine || canDelete) && (
-    <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+    // barrinha flutuante no canto de cima da mensagem: não ocupa espaço na linha, então não fica espremida
+    // nem por cima de cartões largos (Jam, clipe) no chat estreito da sala
+    <div
+      className={cx(
+        'absolute -top-4 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100',
+        mine ? 'left-0' : 'right-0',
+      )}
+    >
       {mine && (message.kind ?? 'text') === 'text' && (
         <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
           <Pencil size={14} />
@@ -205,7 +212,8 @@ function Bubble({
           </button>
         )}
       </div>
-      <div className={cx('flex min-w-0 flex-col', mine ? 'items-end' : 'items-start', compact ? 'max-w-[82%]' : 'max-w-[70%]')}>
+      <div className={cx('relative flex min-w-0 flex-col', mine ? 'items-end' : 'items-start', compact ? 'max-w-[82%]' : 'max-w-[70%]')}>
+        {actions}
         {!grouped && (
           <div className={cx('mb-1 flex items-baseline gap-2 px-1', mine && 'flex-row-reverse')}>
             {!mine && (
@@ -267,7 +275,6 @@ function Bubble({
         {!editing && jamLink && !onlyJamLink && <JamCard url={jamLink.url} jam={jamLink.jam} authorName={name} mine={mine} />}
         {!editing && <MessageAttachments items={message.attachments} mine={mine} />}
       </div>
-      {actions}
     </div>
   );
 }
