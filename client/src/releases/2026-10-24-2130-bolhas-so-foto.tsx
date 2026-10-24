@@ -13,7 +13,7 @@ function WatchersArt() {
           <div className="-ml-1.5 h-5 w-5 rounded-full bg-accent-2 ring-2 ring-surface-1" />
         </div>
       </div>
-      <Tag className="top-3 right-3">Sem nome</Tag>
+      <Tag className="top-3 right-3">Passe o mouse</Tag>
     </Frame>
   );
 }
@@ -40,7 +40,7 @@ export default {
     {
       kicker: 'Transmissão de tela',
       title: 'Veja quem mais está assistindo, do lado do selo "ao vivo"',
-      text: 'Ao assistir a tela de alguém, um grupinho de fotos aparece no canto superior esquerdo, do lado do selo "ao vivo" e do codec: são as outras pessoas vendo aquela transmissão com você. É só a foto (sem nome), e se for um GIF animado, fica parada num quadro só. As bolhas dos participantes, embaixo, continuam do jeito que sempre foram.',
+      text: 'Ao assistir a tela de alguém, um grupinho de fotos aparece no canto superior esquerdo, do lado do selo "ao vivo" e do codec: são as outras pessoas vendo aquela transmissão com você. Recolhido, mostra só uma lasca de cada foto (parada, mesmo se for GIF); passe o mouse por cima para elas se separarem em ordem alfabética, cada uma com o nome do lado. As bolhas dos participantes, embaixo, continuam do jeito que sempre foram.',
       art: WatchersArt,
     },
     {

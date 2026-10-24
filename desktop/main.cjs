@@ -658,8 +658,8 @@ function nudgeMsgHtml(text, from) {
   @keyframes pop{from{transform:translateY(-14px) scale(.96);opacity:0}}
   .top{font-size:12px;color:#b3a6c2;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .top b{color:#f3ecf7}
-  .msg{font:700 20px "Segoe UI",sans-serif;color:#c4a5ff;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .bar{position:absolute;left:0;bottom:0;height:3px;background:#c4a5ff;animation:shrink ${NUDGE_MSG_SHOW_MS}ms linear forwards}
+  .msg{font:700 26px Consolas,"Cascadia Mono",monospace;color:#ff8a6b;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .bar{position:absolute;left:0;bottom:0;height:3px;background:#ff8a6b;animation:shrink ${NUDGE_MSG_SHOW_MS}ms linear forwards}
   @keyframes shrink{from{width:100%}to{width:0}}
   </style></head><body><div class="card">
   <div class="top">⚡ <b>${escapeHtml(from)}</b> chamou sua atenção!</div>

@@ -81,7 +81,7 @@ export function NudgeMessageToast() {
           <Zap size={12} className="-mt-0.5 mr-1 inline text-accent" />
           <b className="text-fg">{msg.from}</b> chamou sua atenção!
         </div>
-        <p className="mt-1 line-clamp-3 max-w-full break-words font-display text-xl font-bold text-accent">{msg.text}</p>
+        <p className="mt-1 line-clamp-2 max-w-full break-words font-mono text-2xl font-bold text-accent">{msg.text}</p>
         <button aria-label="Fechar" onClick={() => setMsg(null)} className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-fg-muted hover:bg-surface-3 hover:text-fg">
           <X size={16} />
         </button>

@@ -44,15 +44,39 @@ import { toast } from '../store/toast';
 import { onVisibilityChange } from '../lib/visibility';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
 
-/** Fotos (sem nome, GIF parado) de quem mais está vendo essa transmissão com você. */
+/**
+ * Fotos (sem movimento de GIF) de quem mais está vendo essa transmissão com você: recolhidas,
+ * mostrando só uma lasca de cada uma; ao passar o mouse, se separam em fileira (ordem alfabética)
+ * e cada uma mostra o nome da pessoa do lado.
+ */
 function WatchersBadge({ people }: { people: { id: string; name: string; color: string; src: string | null }[] }) {
+  const [hover, setHover] = useState(false);
+  const sorted = [...people].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const max = 5;
+  const shown = sorted.slice(0, max);
+  const extra = sorted.length - shown.length;
   return (
-    <span
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       className="pointer-events-auto flex items-center rounded-full bg-surface-1/80 py-1 pr-2 pl-1 backdrop-blur"
-      title={`Também assistindo: ${people.map((p) => p.name).join(', ')}`}
     >
-      <AvatarStack people={people} size={22} max={4} freeze />
-    </span>
+      {shown.map((p, i) => (
+        <div
+          key={p.id}
+          className="flex shrink-0 items-center overflow-hidden transition-[margin-left,max-width] duration-200 ease-out"
+          style={{ marginLeft: i === 0 ? 0 : hover ? 4 : -10, maxWidth: hover ? 130 : 22, zIndex: shown.length - i }}
+        >
+          <Avatar name={p.name} color={p.color} src={p.src} size={22} freeze className="shrink-0 ring-2 ring-surface-1" />
+          <span className={cx('ml-1.5 truncate text-[11px] font-bold whitespace-nowrap text-fg transition-opacity', hover ? 'opacity-100 duration-150 delay-100' : 'opacity-0')}>
+            {p.name}
+          </span>
+        </div>
+      ))}
+      {extra > 0 && (
+        <span className="ml-1 flex h-[22px] shrink-0 items-center justify-center rounded-full bg-surface-4 px-1.5 text-[10px] font-bold text-fg-muted">+{extra}</span>
+      )}
+    </div>
   );
 }
 
