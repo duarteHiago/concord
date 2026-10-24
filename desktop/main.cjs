@@ -134,6 +134,11 @@ function createWindow() {
   };
   win.on('close', remember);
   win.on('focus', () => win?.flashFrame(false));
+  // a janelinha da mensagem da tremida (escondida, pronta pra uso) é "filha" da janela principal: sem
+  // isso, ela continuaria aberta (só escondida) depois de fechar o Concord, e o app nunca terminaria
+  win.on('closed', () => {
+    if (nudgeMsgWin && !nudgeMsgWin.isDestroyed()) nudgeMsgWin.destroy();
+  });
 
   // links externos abrem no navegador padrão; janelas em branco (about:blank) são a
   // transmissão aberta em outra janela, montada pela própria página do Concord
@@ -667,10 +672,38 @@ function nudgeMsgHtml(text, from) {
   <div class="bar"></div></div></body></html>`;
 }
 
+// Criar uma BrowserWindow (ainda mais transparente/sem moldura) na hora atrasa a janela em relação à
+// tremida, que é instantânea — por isso ela é preparada (escondida) assim que o app abre, e só escondida
+// de novo (não fechada) depois de cada mensagem: a próxima já aparece pronta, junto com a tremida.
+function ensureNudgeMsgWin() {
+  if (nudgeMsgWin && !nudgeMsgWin.isDestroyed()) return nudgeMsgWin;
+  nudgeMsgWin = new BrowserWindow({
+    width: 440,
+    height: 132,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false,
+    show: false,
+    alwaysOnTop: true,
+    webPreferences: { sandbox: true, contextIsolation: true },
+  });
+  nudgeMsgWin.setAlwaysOnTop(true, 'screen-saver');
+  nudgeMsgWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  nudgeMsgWin.on('closed', () => {
+    nudgeMsgWin = null;
+  });
+  return nudgeMsgWin;
+}
+
 function closeNudgeMsg() {
   clearTimeout(nudgeMsgTimer);
-  if (nudgeMsgWin && !nudgeMsgWin.isDestroyed()) nudgeMsgWin.close();
-  nudgeMsgWin = null;
+  if (nudgeMsgWin && !nudgeMsgWin.isDestroyed()) nudgeMsgWin.hide();
 }
 
 function showNudgeMessage({ text, from }) {
@@ -683,35 +716,10 @@ function showNudgeMessage({ text, from }) {
   const height = 132;
   const x = Math.round(display.workArea.x + (display.workArea.width - width) / 2);
   const y = display.workArea.y + 24;
-  if (!nudgeMsgWin || nudgeMsgWin.isDestroyed()) {
-    nudgeMsgWin = new BrowserWindow({
-      width,
-      height,
-      x,
-      y,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      focusable: false,
-      show: false,
-      alwaysOnTop: true,
-      webPreferences: { sandbox: true, contextIsolation: true },
-    });
-    nudgeMsgWin.setAlwaysOnTop(true, 'screen-saver');
-    nudgeMsgWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    nudgeMsgWin.on('closed', () => {
-      nudgeMsgWin = null;
-    });
-  } else {
-    nudgeMsgWin.setBounds({ x, y, width, height });
-  }
-  void nudgeMsgWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(nudgeMsgHtml(text, from))}`);
-  nudgeMsgWin.showInactive();
+  const w = ensureNudgeMsgWin();
+  w.setBounds({ x, y, width, height });
+  void w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(nudgeMsgHtml(text, from))}`);
+  w.showInactive();
   clearTimeout(nudgeMsgTimer);
   nudgeMsgTimer = setTimeout(closeNudgeMsg, NUDGE_MSG_SHOW_MS);
   return true;
@@ -963,6 +971,8 @@ app.whenReady().then(() => {
   setupSession();
   createWindow();
   setupAutoUpdate();
+  // prepara (escondida) a janelinha da mensagem da tremida, pra ela já aparecer junto na primeira vez
+  ensureNudgeMsgWin();
   setTimeout(() => void pollActivity(), 4_000);
   setInterval(() => void pollActivity(), 15_000);
 });
