@@ -14,6 +14,7 @@ import { desktop } from '../lib/desktop';
 import { playSoundboard } from '../lib/soundboard';
 import type {
   DirectChannel,
+  Jam,
   Me,
   Message,
   NudgeEvent,
@@ -64,6 +65,8 @@ interface AppState {
   messages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
   voiceStates: Record<string, VoiceState[]>;
+  /** Jams do Spotify fixadas nas salas, por servidor */
+  jams: Record<string, Jam[]>;
   online: Record<string, Presence>;
   sounds: Record<string, Sound[]>;
   loadSounds: (serverId: string) => Promise<void>;
@@ -201,6 +204,9 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('voice:states', ({ serverId, states }: { serverId: string; states: VoiceState[] }) => {
       set({ voiceStates: { ...get().voiceStates, [serverId]: states } });
     });
+    socket.on('voice:jams', ({ serverId, jams }: { serverId: string; jams: Jam[] }) => {
+      set({ jams: { ...get().jams, [serverId]: jams } });
+    });
     type PresencePayload = Partial<Presence> & { userId: string; online?: boolean };
     const toPresence = (p: PresencePayload): Presence => ({
       status: p.status === 'dnd' ? 'dnd' : 'online',
@@ -312,6 +318,7 @@ export const useApp = create<AppState>((set, get) => {
     messages: {},
     hasMore: {},
     voiceStates: {},
+    jams: {},
     online: {},
     nudge: null,
     sounds: {},
@@ -528,6 +535,7 @@ export const useApp = create<AppState>((set, get) => {
           // mantém a barra de servidores em dia (nome e ícone mudam sem precisar recarregar)
           servers: get().servers.map((s) => (s.id === serverId ? detail.server : s)),
           voiceStates: { ...get().voiceStates, [serverId]: detail.voiceStates },
+          jams: { ...get().jams, [serverId]: detail.jams ?? [] },
         });
         // canal ativo sumiu (apagado ou sem permissão)? escolhe outro
         const active = get().activeChannels[serverId];
