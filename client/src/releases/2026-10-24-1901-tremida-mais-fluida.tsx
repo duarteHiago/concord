@@ -1,7 +1,7 @@
 import type { Release } from './index';
 
 export default {
-  id: '2026-10-24-1833',
+  id: '2026-10-24-1901',
   title: 'Chamar atenção mais forte',
   highlights: [],
   also: [
