@@ -1,9 +1,9 @@
-import { Gamepad2, Music2 } from 'lucide-react';
+import { Gamepad2, Shirt } from 'lucide-react';
 import { Frame, Tag } from '../components/modals/OnboardingArt';
 import { useApp } from '../store/app';
 import type { Release } from './index';
 
-/** a página do perfil: fundo, foto grande e as vitrines da Steam e do Last.fm */
+/** a página do perfil: fundo, foto grande e as vitrines da Steam e dos patches */
 function ProfileArt() {
   return (
     <Frame className="h-[170px] p-0">
@@ -28,14 +28,13 @@ function ProfileArt() {
         </div>
         <div className="rounded-xl bg-surface-1/85 p-2">
           <div className="mb-1 flex items-center gap-1 text-[9px] font-bold text-fg-muted">
-            <Music2 size={9} className="text-accent" /> MAIS OUVIDAS
+            <Shirt size={9} className="text-accent" /> PATCHES
           </div>
-          {[34, 26, 20].map((w, i) => (
-            <div key={w} className="mb-1 flex items-center gap-1">
-              <span className="text-[8px] text-fg-subtle">{i + 1}</span>
-              <div className="h-1.5 rounded-full bg-surface-4" style={{ width: w * 2 }} />
-            </div>
-          ))}
+          <div className="flex gap-1.5">
+            {['#ffd37a', '#c4a5ff', '#7cc7ff'].map((c, i) => (
+              <div key={c} className="h-6 w-6 rounded-full ring-2 ring-white/70" style={{ background: c, transform: `rotate(${(i - 1) * 8}deg)` }} />
+            ))}
+          </div>
         </div>
       </div>
       <Tag className="top-3 right-3">Seu fundo, suas vitrines</Tag>
@@ -50,7 +49,7 @@ export default {
     {
       kicker: 'Perfil',
       title: 'Passe o mouse para o mini perfil, clique para o perfil completo',
-      text: 'Clicar em alguém agora abre a página do perfil, com fundo próprio e vitrines: o que a pessoa está fazendo, a biblioteca da Steam (com os jogos em comum com você), as músicas mais ouvidas pelo Last.fm, os patches e os servidores em comum. No seu perfil, o botão Personalizar troca o fundo, a cor e as vitrines.',
+      text: 'Clicar em alguém agora abre a página do perfil, com fundo próprio e vitrines: o que a pessoa está fazendo, a biblioteca da Steam (com os jogos em comum com você), os patches e os servidores em comum. No seu perfil, o botão Personalizar troca o fundo, a cor e as vitrines.',
       art: ProfileArt,
       action: {
         label: 'Abrir meu perfil',

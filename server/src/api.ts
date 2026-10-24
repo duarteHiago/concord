@@ -123,7 +123,7 @@ interface ProfileStyle {
   page?: ProfilePage;
 }
 
-const SHOWCASES = ['playing', 'steam', 'music', 'patches', 'servers'] as const;
+const SHOWCASES = ['playing', 'steam', 'patches', 'servers'] as const;
 type Showcase = (typeof SHOWCASES)[number];
 interface ProfilePage {
   bg?: string | null;
@@ -210,7 +210,6 @@ const meJson = (u: UserRow) => {
     mecenasPowers: mecenasOfMe(u.id),
     // página do perfil: contas conectadas e o que esta instalação oferece
     steamLinked: !!u.steam_id,
-    lastfmUser: u.lastfm_user ?? null,
     integrations: integrationsStatus(),
     // apoio: o total decide quais acabamentos estão liberados; supportTier é o escolhido (null = escondido)
     supportTotal: u.support_total_cents ?? 0,
@@ -2570,7 +2569,6 @@ api.get('/users/:id/profile', (req, res) => {
     user: { ...userJson(u!), createdAt: u!.created_at },
     page: pageJson(parseStyle(u!.profile_style).page),
     steamLinked: !!u!.steam_id && integrationsStatus().steam,
-    lastfmUser: integrationsStatus().lastfm ? (u!.lastfm_user ?? null) : null,
     mutualServers: me === u!.id ? [] : mutual.map(serverJson),
   });
 });

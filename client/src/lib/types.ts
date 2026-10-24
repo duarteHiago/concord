@@ -152,8 +152,7 @@ export interface Me extends User {
   /** é o Mecenas: o cargo e sobre quem tem os poderes (o selo público é `mecenas`) */
   /** página do perfil: contas conectadas e o que esta instalação oferece */
   steamLinked?: boolean;
-  lastfmUser?: string | null;
-  integrations?: { steam: boolean; lastfm: boolean };
+  integrations?: { steam: boolean };
   mecenasPowers?: { title: string; target: { id: string; username: string; displayName: string } } | null;
   /** total já apoiado (centavos): decide os acabamentos liberados */
   supportTotal?: number;

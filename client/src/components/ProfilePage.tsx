@@ -1,8 +1,8 @@
 // Página do perfil: abre ao clicar em alguém (passar o mouse abre o mini perfil). Inspirada no perfil da Steam:
 // fundo próprio, cor de destaque e vitrines que a pessoa escolhe e ordena: o que está fazendo agora, a
-// biblioteca da Steam, as músicas mais ouvidas (Last.fm), os patches e os servidores em comum.
+// biblioteca da Steam, os patches e os servidores em comum.
 // A personalização fica na própria página (botão "Personalizar"), não nas Configurações.
-import { ArrowDown, ArrowUp, Clock, Gamepad2, Headphones, ImagePlus, MessageCircle, Music2, Paintbrush, Server, Shirt, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Clock, Gamepad2, Headphones, ImagePlus, MessageCircle, Paintbrush, Server, Shirt, Trash2, X } from 'lucide-react';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
@@ -11,13 +11,12 @@ import { useApp } from '../store/app';
 import { toast } from '../store/toast';
 import { PATCH_TILTS, PatchBadge } from './PatchBadge';
 import { SupporterPatch } from './SupporterPatch';
-import { Avatar, Button, IconButton, Input, Spinner, VerifiedBadge, cx, initials } from './ui';
+import { Avatar, Button, IconButton, Spinner, VerifiedBadge, cx, initials } from './ui';
 
-type Showcase = 'playing' | 'steam' | 'music' | 'patches' | 'servers';
+type Showcase = 'playing' | 'steam' | 'patches' | 'servers';
 const SHOWCASES: { id: Showcase; label: string; icon: typeof Server }[] = [
   { id: 'playing', label: 'Agora', icon: Gamepad2 },
   { id: 'steam', label: 'Biblioteca da Steam', icon: Gamepad2 },
-  { id: 'music', label: 'Mais ouvidas (Last.fm)', icon: Music2 },
   { id: 'patches', label: 'Patches', icon: Shirt },
   { id: 'servers', label: 'Servidores em comum', icon: Server },
 ];
@@ -34,7 +33,6 @@ interface ProfileData {
   user: User & { createdAt: number };
   page: PageStyle;
   steamLinked: boolean;
-  lastfmUser: string | null;
   mutualServers: ServerSummary[];
 }
 
@@ -61,7 +59,7 @@ export function ProfilePage() {
   const closeProfile = useApp((s) => s.closeProfile);
   const openDm = useApp((s) => s.openDm);
   const own = view.userId === me.id;
-  // o próprio perfil recarrega quando a conta muda (Steam conectada, Last.fm, patches...)
+  // o próprio perfil recarrega quando a conta muda (Steam conectada, patches...)
   const { data, error } = useJson<ProfileData>(`/users/${view.userId}/profile`, [own ? me : null]);
   const [page, setPage] = useState<PageStyle | null>(null);
   const [editing, setEditing] = useState(false);
@@ -181,8 +179,6 @@ function ShowcaseView({ id, data, own }: { id: Showcase; data: ProfileData; own:
       return <NowShowcase userId={data.user.id} />;
     case 'steam':
       return <SteamShowcase userId={data.user.id} linked={data.steamLinked} own={own} />;
-    case 'music':
-      return <MusicShowcase userId={data.user.id} user={data.lastfmUser} own={own} />;
     case 'patches':
       return <PatchesShowcase user={data.user} />;
     case 'servers':
@@ -373,128 +369,6 @@ function SteamDisconnect() {
     >
       Desconectar a Steam
     </button>
-  );
-}
-
-interface LastfmData {
-  linked: boolean;
-  url?: string;
-  nowPlaying?: { name: string; artist: string; url: string; image: string | null } | null;
-  lastCover?: string | null;
-  topTracks?: { name: string; artist: string; plays: number; url: string; image: string | null }[];
-  topArtists?: { name: string; plays: number; url: string }[];
-}
-
-function MusicShowcase({ userId, user, own }: { userId: string; user: string | null; own: boolean }) {
-  const { data, error } = useJson<LastfmData>(user ? `/users/${userId}/lastfm` : null, [user]);
-  if (!user) {
-    if (!own) return null;
-    return (
-      <Card title="Mais ouvidas" icon={<Music2 size={15} />}>
-        <LastfmConnect current={null} />
-      </Card>
-    );
-  }
-  if (error) return <Card title="Mais ouvidas" icon={<Music2 size={15} />}><p className="text-sm text-fg-muted">{error}</p></Card>;
-  if (!data) return <Card title="Mais ouvidas" icon={<Music2 size={15} />}><Spinner /></Card>;
-
-  return (
-    <Card title="Mais ouvidas no mês" icon={<Music2 size={15} />}>
-      {data.nowPlaying && (
-        <a href={data.nowPlaying.url} target="_blank" rel="noreferrer noopener" className="mb-4 flex items-center gap-3 rounded-2xl bg-accent/12 p-3 hover:bg-accent/20">
-          {data.nowPlaying.image ? <img src={data.nowPlaying.image} alt="" className="h-12 w-12 rounded-lg" /> : <Headphones size={22} className="text-accent" />}
-          <div className="min-w-0">
-            <div className="text-xs font-bold text-accent">Tocando agora</div>
-            <div className="truncate font-semibold">{data.nowPlaying.name}</div>
-            <div className="truncate text-xs text-fg-muted">{data.nowPlaying.artist}</div>
-          </div>
-        </a>
-      )}
-      {data.topTracks?.length ? (
-        <ol className="space-y-1">
-          {data.topTracks.map((t, i) => (
-            <li key={`${t.artist}-${t.name}`}>
-              <a href={t.url} target="_blank" rel="noreferrer noopener" className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-surface-3/70">
-                <span className="w-5 text-right font-display text-sm font-bold text-fg-subtle tabular-nums">{i + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">{t.name}</div>
-                  <div className="truncate text-xs text-fg-muted">{t.artist}</div>
-                </div>
-                <span className="text-xs text-fg-subtle tabular-nums">{t.plays}×</span>
-              </a>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="text-sm text-fg-muted">Nada ouvido neste mês ainda.</p>
-      )}
-      {!!data.topArtists?.length && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {data.topArtists.map((a) => (
-            <a key={a.name} href={a.url} target="_blank" rel="noreferrer noopener" className="rounded-full bg-surface-3 px-2.5 py-1 text-xs font-semibold hover:bg-surface-4">
-              {a.name}
-            </a>
-          ))}
-        </div>
-      )}
-      <div className="mt-3 flex items-center justify-between text-xs text-fg-subtle">
-        <a href={data.url} target="_blank" rel="noreferrer noopener" className="hover:underline">
-          last.fm/{user}
-        </a>
-        {own && <LastfmConnect current={user} compact />}
-      </div>
-    </Card>
-  );
-}
-
-function LastfmConnect({ current, compact }: { current: string | null; compact?: boolean }) {
-  const me = useApp((s) => s.me)!;
-  const [value, setValue] = useState(current ?? '');
-  const [open, setOpen] = useState(!compact);
-  const [saving, setSaving] = useState(false);
-  if (!me.integrations?.lastfm) return <p className="text-sm text-fg-muted">A integração com o Last.fm ainda não foi ligada neste servidor.</p>;
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="font-semibold hover:text-fg">
-        Trocar
-      </button>
-    );
-  }
-  async function save(user: string | null) {
-    setSaving(true);
-    try {
-      await api.put('/me/lastfm', { user });
-      toast.success(user ? 'Last.fm conectado.' : 'Last.fm desconectado.');
-    } catch (err) {
-      toast.error(err);
-    }
-    setSaving(false);
-  }
-  return (
-    <div className={cx('space-y-2', compact && 'mt-2 w-full')}>
-      {!compact && (
-        <p className="text-sm text-fg-muted">
-          Ligue o Spotify ao Last.fm (no Last.fm: Configurações → Aplicativos → Spotify) e coloque seu usuário do Last.fm aqui. Suas músicas mais ouvidas do mês aparecem no perfil.
-        </p>
-      )}
-      <form
-        className="flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save(value.trim() || null);
-        }}
-      >
-        <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="usuário do Last.fm" aria-label="Usuário do Last.fm" className="h-9" />
-        <Button type="submit" loading={saving} className="h-9 shrink-0 px-4">
-          Salvar
-        </Button>
-        {current && (
-          <Button type="button" variant="ghost" className="h-9 shrink-0 px-3" onClick={() => void save(null)}>
-            Remover
-          </Button>
-        )}
-      </form>
-    </div>
   );
 }
 
