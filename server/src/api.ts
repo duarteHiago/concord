@@ -48,6 +48,8 @@ import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } fro
 import { allowAttempt, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
 import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendVerifyEmail } from './mail.ts';
 import { playGame } from './games.ts';
+import { isAdmin, registerAdminRoutes } from './admin.ts';
+import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerForumRoutes } from './forum.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
 import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
@@ -173,6 +175,8 @@ const meJson = (u: UserRow) => {
       get<{ email: string }>("SELECT email FROM email_tokens WHERE user_id = ? AND kind = 'verify' AND expires_at > ?", u.id, now())?.email ?? null,
     // pode conceder o selo de verificado em qualquer servidor/pessoa (ver access.ts#isInstanceAuthority)
     isAuthority: isInstanceAuthority(u.id),
+    // entra no portal da equipe (/admin, ver admin.ts)
+    isAdmin: isAdmin(u.id),
     // apoio: o total decide quais acabamentos estão liberados; supportTier é o escolhido (null = escondido)
     supportTotal: u.support_total_cents ?? 0,
     supportTier: (() => {
@@ -2388,6 +2392,8 @@ api.get('/me/claimed-patches', (_req, res) => {
 registerForumRoutes(api, authorJson);
 registerStickerPackRoutes(api);
 registerSupportRoutes(api);
+registerDiagnosticRoutes(api);
+registerAdminRoutes(api);
 setSupportHooks({
   meUpdated: (userId) => {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);

@@ -1,4 +1,4 @@
-// Controles da gravação de diagnóstico (Gravar · Marcar momento · Parar e salvar). Os mesmos
+// Controles da gravação de diagnóstico (Gravar · Marcar momento · Parar · Enviar para a equipe). Os mesmos
 // botões aparecem na aba Desenvolvedor, na janela de diagnóstico e no indicador do app; a gravação
 // em si roda na janela principal (lib/devRecording.ts).
 import { useEffect, useState } from 'react';
@@ -25,16 +25,64 @@ interface Props {
   onStart: () => void;
   onStop: () => void;
   onMark: (note: string) => void;
+  onSend: (note: string) => void;
+  onDownload: () => void;
+  onDiscard: () => void;
   /** sem dados ainda (ex.: janela de diagnóstico esperando a principal) */
   disabled?: boolean;
   className?: string;
 }
 
-export function RecordControls({ state, onStart, onStop, onMark, disabled, className }: Props) {
+export function RecordControls({ state, onStart, onStop, onMark, onSend, onDownload, onDiscard, disabled, className }: Props) {
   const [note, setNote] = useState('');
+  const [report, setReport] = useState('');
   const elapsed = useElapsed(state.recording ? state.startedAt : null);
   // o atalho só é lido aqui para mostrar na dica; quem reage a ele é lib/shortcuts.ts
   const markKey = useApp((s) => (s.me ? currentShortcuts().devMark : ''));
+
+  if (state.finished) {
+    const f = state.finished;
+    const minutes = Math.max(1, Math.round((f.endedAt - f.startedAt) / 60_000));
+    const error = state.sendResult && !state.sendResult.ok ? state.sendResult.error : null;
+    return (
+      <div className={cx('flex flex-col gap-2 text-xs', className)}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <b className="text-sm">Gravação pronta</b>
+          <span className="text-fg-muted">
+            {minutes} min · {f.count} leitura(s) · {f.markers} marcação(ões)
+          </span>
+        </div>
+        <textarea
+          value={report}
+          onChange={(e) => setReport(e.target.value)}
+          maxLength={1000}
+          rows={2}
+          placeholder="O que estava acontecendo? (ex.: a voz picotava quando a Bea transmitia a tela)"
+          className="w-full resize-none rounded-2xl bg-surface-3 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/60"
+        />
+        {error && <span className="text-danger">{error}</span>}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => onSend(report.trim())}
+            disabled={state.sending}
+            className="rounded-full bg-accent px-3 py-1 font-bold text-on-accent hover:bg-accent-hover disabled:opacity-60"
+          >
+            {state.sending ? 'Enviando…' : 'Enviar para a equipe'}
+          </button>
+          <button onClick={onDownload} className="rounded-full bg-surface-3 px-3 py-1 font-bold hover:bg-surface-4">
+            Baixar .json
+          </button>
+          <button onClick={onDiscard} disabled={state.sending} className="rounded-full px-3 py-1 font-bold text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-60">
+            Descartar
+          </button>
+        </div>
+        <span className="text-fg-subtle">
+          Vai junto: conexão, desempenho do app, nomes dos seus dispositivos de áudio e vídeo, o navegador e o seu usuário. Nada de mensagens ou arquivos. Só a equipe do
+          Concord vê, e é apagado em 90 dias.
+        </span>
+      </div>
+    );
+  }
 
   if (!state.recording) {
     return (
@@ -46,7 +94,11 @@ export function RecordControls({ state, onStart, onStop, onMark, disabled, class
         >
           <span className="h-2 w-2 rounded-full bg-danger" /> Gravar
         </button>
-        <span>Grava os dados de diagnóstico a cada 2 s e, ao parar, salva um arquivo .json para enviar e analisar.</span>
+        <span>
+          {state.sendResult?.ok
+            ? 'Diagnóstico enviado. Obrigado! A equipe vai dar uma olhada.'
+            : 'Grava os dados de diagnóstico a cada 2 s. Ao parar, você escolhe mandar para a equipe do Concord ou baixar o arquivo.'}
+        </span>
       </div>
     );
   }
@@ -81,7 +133,7 @@ export function RecordControls({ state, onStart, onStop, onMark, disabled, class
         </button>
       </form>
       <button onClick={onStop} className="rounded-full bg-danger px-3 py-1 font-bold text-white hover:opacity-90">
-        Parar e salvar
+        Parar
       </button>
     </div>
   );
@@ -90,13 +142,32 @@ export function RecordControls({ state, onStart, onStop, onMark, disabled, class
 /** Controles ligados direto à gravação desta janela (aba Desenvolvedor). */
 export function LocalRecordControls({ className }: { className?: string }) {
   const rec = useDevRecording();
-  return <RecordControls state={rec} onStart={rec.start} onStop={rec.stop} onMark={rec.mark} className={className} />;
+  return (
+    <RecordControls
+      state={rec}
+      onStart={rec.start}
+      onStop={rec.stop}
+      onMark={rec.mark}
+      onSend={(note) => void rec.send(note)}
+      onDownload={rec.download}
+      onDiscard={rec.discard}
+      className={className}
+    />
+  );
 }
 
 /** Indicador no canto do app enquanto grava: dá para marcar e parar sem abrir nada. */
 export function RecordingPill() {
   const rec = useDevRecording();
   const elapsed = useElapsed(rec.recording ? rec.startedAt : null);
+  // parou: o indicador vira um cartão para escolher o que fazer com a gravação
+  if (rec.finished) {
+    return (
+      <div role="dialog" aria-label="Gravação de diagnóstico pronta" className="fixed bottom-4 left-1/2 z-40 w-[min(520px,calc(100%-32px))] -translate-x-1/2 animate-pop-in rounded-3xl bg-popover p-4 shadow-2xl ring-1 ring-line">
+        <LocalRecordControls />
+      </div>
+    );
+  }
   if (!rec.recording) return null;
   return (
     <div role="status" className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 animate-pop-in items-center gap-2 rounded-full bg-popover py-1.5 pr-1.5 pl-4 text-xs shadow-2xl ring-1 ring-line">
@@ -108,7 +179,7 @@ export function RecordingPill() {
         Marcar
       </button>
       <button onClick={rec.stop} className="rounded-full bg-danger px-3 py-1 font-bold text-white hover:opacity-90">
-        Parar e salvar
+        Parar
       </button>
     </div>
   );

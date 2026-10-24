@@ -362,11 +362,14 @@ type ChannelMsg =
   | { kind: 'record-start' }
   | { kind: 'record-stop' }
   | { kind: 'record-mark'; note: string }
+  | { kind: 'record-send'; note: string }
+  | { kind: 'record-download' }
+  | { kind: 'record-discard' }
   | { kind: 'record-state'; state: RecordingState };
 
 const recordingState = (): RecordingState => {
-  const { recording, startedAt, count, markers } = useDevRecording.getState();
-  return { recording, startedAt, count, markers };
+  const { recording, startedAt, count, markers, finished, sending, sendResult } = useDevRecording.getState();
+  return { recording, startedAt, count, markers, finished, sending, sendResult };
 };
 
 /** Roda na janela principal: coleta enquanto a janela de diagnóstico estiver pedindo ou enquanto houver gravação. */
@@ -390,6 +393,10 @@ export function useDevStatsPublisher(room: Room | null) {
       if (msg.kind === 'record-start') rec.start();
       if (msg.kind === 'record-stop') rec.stop();
       if (msg.kind === 'record-mark') rec.mark(msg.note);
+      if (msg.kind === 'record-send') void rec.send(msg.note);
+      // o download acontece na janela principal, que é onde está o arquivo
+      if (msg.kind === 'record-download') rec.download();
+      if (msg.kind === 'record-discard') rec.discard();
     };
     // qualquer mudança na gravação (começou, nova leitura, marcação, parou) vai para a janela de diagnóstico
     const unsub = useDevRecording.subscribe(() => bc.postMessage({ kind: 'record-state', state: recordingState() } satisfies ChannelMsg));
@@ -412,7 +419,7 @@ export function useDevStatsPublisher(room: Room | null) {
 
 /** Roda na janela de diagnóstico: mostra e controla a gravação, que acontece na janela principal. */
 export function useRemoteRecording() {
-  const [state, setState] = useState<RecordingState>({ recording: false, startedAt: null, count: 0, markers: 0 });
+  const [state, setState] = useState<RecordingState>({ recording: false, startedAt: null, count: 0, markers: 0, finished: null, sending: false, sendResult: null });
   const channelRef = useRef<BroadcastChannel | null>(null);
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') return;
@@ -432,6 +439,9 @@ export function useRemoteRecording() {
     start: () => send({ kind: 'record-start' }),
     stop: () => send({ kind: 'record-stop' }),
     mark: (note: string) => send({ kind: 'record-mark', note }),
+    send: (note: string) => send({ kind: 'record-send', note }),
+    download: () => send({ kind: 'record-download' }),
+    discard: () => send({ kind: 'record-discard' }),
   };
 }
 

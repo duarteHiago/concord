@@ -23,6 +23,7 @@ services:
       LIVEKIT_PUBLIC_URL: ws://localhost:7880
       LIVEKIT_API_KEY: devkey
       LIVEKIT_API_SECRET: secret
+      ADMIN_USERS: ${ADMIN_USERS:-}
     volumes:
       - ./data-dev:/data
     depends_on:
