@@ -1,7 +1,7 @@
 import { ArrowRight, Check, History, Plus, Sparkles, Target, Wrench, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { reduceMotion } from '../../lib/motion';
-import { RELEASES, markReleasesSeen, releaseDate, useUnseenReleases, type Release } from '../../releases';
+import { RELEASES, markReleasesSeen, releaseDate, releaseDay, useUnseenReleases, type Release } from '../../releases';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { useVoice } from '../../store/voice';
@@ -21,7 +21,8 @@ export function WhatsNewModal({ ids }: { ids: string[] }) {
   const [step, setStep] = useState(0);
   const [paused, setPaused] = useState(false);
   const recap = step === steps.length;
-  const merged = releases.length > 1;
+  // notas de dias diferentes viram "desde a sua última visita"; várias do mesmo dia são uma edição só
+  const merged = new Set(releases.map((r) => releaseDay(r.id))).size > 1;
   const auto = !reduceMotion();
 
   function finish(then?: () => void) {
@@ -150,10 +151,10 @@ function Recap({ releases, merged }: { releases: Release[]; merged: boolean }) {
       {merged && (
         <div className="flex items-center gap-2.5 rounded-2xl bg-accent-2/12 px-3.5 py-2.5 text-sm">
           <History size={16} className="shrink-0 text-accent-2" />
-          Juntamos {releases.length} atualizações que saíram enquanto você estava fora.
+          Juntamos {new Set(releases.map((r) => releaseDay(r.id))).size} atualizações que saíram enquanto você estava fora.
         </div>
       )}
-      <h2 className="text-xl font-bold text-balance">{merged ? 'E mais um pouco' : releases[0].title}</h2>
+      <h2 className="text-xl font-bold text-balance">{merged || releases.length > 1 ? 'E mais um pouco' : releases[0].title}</h2>
       {(also.length > 0 || extra > 0) && <RecapList icon={Plus} title="Também chegou" items={[...also, ...(extra > 0 ? [`Mais ${extra} destaque(s) na página de Novidades`] : [])]} />}
       {fixes.length > 0 && <RecapList icon={Wrench} title="Consertamos" items={fixes} check />}
     </div>

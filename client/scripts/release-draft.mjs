@@ -1,54 +1,57 @@
-// Rascunho de uma edição de Novidades: lista os feat/fix desde a última edição e cria
-// src/releases/AAAA-MM-DD.tsx (hoje, ou a data passada como argumento) para você escolher os destaques.
-//   npm run release:draft            -> edição de hoje
-//   npm run release:draft 2026-11-02 -> edição com essa data
+// Rascunho da nota de Novidades deste PR: cria src/releases/AAAA-MM-DD-HHMM-<assunto>.tsx (hora de Brasília)
+// com os commits da branch que ainda não estão na main, para escolher os destaques e escrever.
+//   npm run release:draft figurinhas     -> src/releases/2026-10-24-1830-figurinhas.tsx
+// Como escrever: .claude/skills/novidades/SKILL.md
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 
-const dir = new URL('../src/releases/', import.meta.url);
-const id = process.argv[2] ?? new Date().toLocaleDateString('sv-SE'); // AAAA-MM-DD no fuso local
-if (!/^\d{4}-\d{2}-\d{2}$/.test(id)) {
-  console.error(`Data inválida: "${id}". Use AAAA-MM-DD.`);
+const slug = (process.argv[2] ?? '')
+  .normalize('NFD')
+  .replace(/[̀-ͯ]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-|-$/g, '');
+if (!slug) {
+  console.error('Diga o assunto da nota: npm run release:draft figurinhas');
   process.exit(1);
 }
-const file = new URL(`${id}.tsx`, dir);
+
+// AAAA-MM-DD-HHMM no horário de Brasília (UTC-3, sem horário de verão)
+const brt = new Date(Date.now() - 3 * 3_600_000).toISOString();
+const id = `${brt.slice(0, 10)}-${brt.slice(11, 13)}${brt.slice(14, 16)}`;
+const name = `${id}-${slug}.tsx`;
+const file = new URL(`../src/releases/${name}`, import.meta.url);
 if (existsSync(file)) {
-  console.error(`Já existe src/releases/${id}.tsx.`);
+  console.error(`Já existe src/releases/${name}.`);
   process.exit(1);
 }
 
-const previous = readdirSync(dir)
-  .filter((f) => /^\d{4}-\d{2}-\d{2}\.tsx$/.test(f))
-  .map((f) => f.slice(0, 10))
-  .sort()
-  .at(-1);
-
-// depois do dia da última edição (o próprio dia já entrou nela)
-const since = previous ? ['--since', `${previous} 23:59:59`] : [];
-const subjects = execFileSync('git', ['log', '--no-merges', '--format=%s', ...since], { encoding: 'utf8' })
-  .split('\n')
-  .filter(Boolean);
-
+const git = (...args) => {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return '';
+  }
+};
+const base = git('rev-parse', '--verify', '--quiet', 'origin/main') ? 'origin/main' : 'main';
+const subjects = git('log', '--no-merges', '--format=%s', `${base}..HEAD`).split('\n').filter(Boolean);
 const pick = (type) => subjects.filter((s) => new RegExp(`^${type}(\\(.+\\))?!?:`).test(s)).map((s) => s.replace(/^\w+(\(.+\))?!?:\s*/, ''));
-const feats = pick('feat');
-const fixes = pick('fix');
-const comment = (list) => (list.length ? list.map((s) => `    // ${s}`).join('\n') : '    // (nada desde a última edição)');
+const list = (items) => (items.length ? items.map((s) => `// ${s}`).join('\n') : '// (nenhum)');
 
 writeFileSync(
   file,
   `import { Frame, Tag } from '../components/modals/OnboardingArt';
 import type { Release } from './index';
 
-// Escolha até 4 destaques (o que muda como a pessoa usa o app), escreva do ponto de vista de quem usa e apague o que sobrar.
-// Desde ${previous ?? 'o começo'}:
+// Commits desta branch (${base}..HEAD). Escreva do ponto de vista de quem usa o app e apague estes comentários.
 //
 // feat
-${comment(feats).replace(/^ {4}/gm, '')}
+${list(pick('feat'))}
 //
 // fix
-${comment(fixes).replace(/^ {4}/gm, '')}
+${list(pick('fix'))}
 
-function ExampleArt() {
+function Art() {
   return (
     <Frame className="h-[170px]">
       <Tag className="right-3 bottom-3">Troque por uma "foto" do recurso</Tag>
@@ -58,13 +61,13 @@ function ExampleArt() {
 
 export default {
   id: '${id}',
-  title: 'TODO: título curto da edição',
+  title: 'TODO: título curto',
   highlights: [
     {
       kicker: 'TODO',
       title: 'TODO',
       text: 'TODO',
-      art: ExampleArt,
+      art: Art,
     },
   ],
   also: [],
@@ -73,4 +76,4 @@ export default {
 `,
 );
 
-console.log(`Criado src/releases/${id}.tsx com ${feats.length} feat e ${fixes.length} fix desde ${previous ?? 'o começo'}.`);
+console.log(`Criado src/releases/${name}. Preencha seguindo .claude/skills/novidades/SKILL.md.`);

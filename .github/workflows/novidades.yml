@@ -1,0 +1,41 @@
+name: Novidades
+
+# PR com mudança visível (título feat/fix) leva a sua nota em client/src/releases/ (ver CLAUDE.md e
+# .claude/skills/novidades/SKILL.md). Mudança só interna: rótulo "sem-novidade".
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  nota:
+    name: Nota de Novidades
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conferir
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          if ! printf '%s' "$TITLE" | grep -qE '^(feat|fix)(\(.+\))?!?:'; then
+            echo "Título não é feat/fix: não precisa de nota."
+            exit 0
+          fi
+          if printf ',%s,' "$LABELS" | grep -q ',sem-novidade,'; then
+            echo "Rótulo sem-novidade: mudança interna, sem nota."
+            exit 0
+          fi
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[] | select(.status != "removed") | .filename')
+          if printf '%s\n' "$files" | grep -qE '^client/src/releases/[0-9]{4}-[0-9]{2}-[0-9]{2}[^/]*\.tsx$'; then
+            echo "Nota de Novidades encontrada:"
+            printf '%s\n' "$files" | grep -E '^client/src/releases/'
+            exit 0
+          fi
+          echo "::error title=Falta a nota de Novidades::Este PR é feat/fix e não tem nota em client/src/releases/. Rode 'npm run release:draft <assunto>' em client/ e preencha (ver .claude/skills/novidades/SKILL.md). Se a mudança é só interna, ponha o rótulo sem-novidade."
+          exit 1
