@@ -130,17 +130,22 @@ interface ProfilePage {
   /** quanto o fundo escurece para ler o texto, 0 a 80 (%) */
   dim?: number;
   accent?: string | null;
-  layout?: 'one' | 'two';
-  /** vitrines na ordem escolhida (as que não estão aqui ficam escondidas) */
+  /** seções ligadas (as que não estão aqui ficam escondidas) */
   showcases?: Showcase[];
+  /** jogos em destaque, pelo appid da Steam, na ordem: o primeiro é o favorito (até 5) */
+  featured?: number[];
+  /** sem fundo próprio, usa a arte larga do jogo favorito como capa da página */
+  favoriteAsBg?: boolean;
 }
+const MAX_FEATURED = 5;
 
 const pageJson = (p: ProfilePage | undefined) => ({
   bgUrl: p?.bg ?? null,
-  dim: typeof p?.dim === 'number' ? p.dim : 45,
+  dim: typeof p?.dim === 'number' ? p.dim : 25,
   accent: p?.accent ?? null,
-  layout: p?.layout === 'one' ? 'one' : 'two',
   showcases: Array.isArray(p?.showcases) ? p.showcases.filter((s) => (SHOWCASES as readonly string[]).includes(s)) : [...SHOWCASES],
+  featured: Array.isArray(p?.featured) ? p.featured.slice(0, MAX_FEATURED) : [],
+  favoriteAsBg: p?.favoriteAsBg !== false,
 });
 
 function parseStyle(raw: string | null | undefined): ProfileStyle {
@@ -2581,7 +2586,12 @@ api.put('/me/profile-page', (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
   if (b.dim !== undefined) page.dim = Math.max(0, Math.min(80, Math.round(Number(b.dim) || 0)));
   if (b.accent !== undefined) page.accent = b.accent === null ? null : color(b.accent);
-  if (b.layout !== undefined) page.layout = b.layout === 'one' ? 'one' : 'two';
+  if (b.featured !== undefined) {
+    if (!Array.isArray(b.featured)) fail(400, 'Jogos inválidos');
+    const ids = (b.featured as unknown[]).filter((n): n is number => Number.isInteger(n) && (n as number) > 0 && (n as number) < 1e9);
+    page.featured = [...new Set(ids)].slice(0, MAX_FEATURED);
+  }
+  if (b.favoriteAsBg !== undefined) page.favoriteAsBg = b.favoriteAsBg !== false;
   if (b.showcases !== undefined) {
     if (!Array.isArray(b.showcases)) fail(400, 'Vitrines inválidas');
     page.showcases = [...new Set((b.showcases as unknown[]).filter((s): s is Showcase => (SHOWCASES as readonly unknown[]).includes(s)))];
