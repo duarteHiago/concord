@@ -5,7 +5,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import type { Channel, ForumPost, ForumReply, User } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
-import { usePopover } from '../store/popover';
+import { profileTriggers } from '../store/popover';
 import { toast } from '../store/toast';
 import { RichText } from './ChatView';
 import { Avatar, Button, IconButton, Spinner, cx } from './ui';
@@ -387,11 +387,10 @@ function PostEditor({ channel, post, onCancel, onSaved }: { channel: Channel; po
 
 function AuthorLine({ author, at, edited }: { author: User; at: number; edited: number | null }) {
   const detail = useActiveDetail();
-  const openPopover = usePopover((s) => s.open);
   return (
     <button
       className="flex items-center gap-2 text-left text-sm"
-      onClick={(e) => detail && openPopover(author.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
+      {...profileTriggers(author.id, detail?.server.id, () => useApp.getState().openProfile(author.id, detail?.server.id ?? null))}
     >
       <Avatar name={author.displayName} color={author.avatarColor} src={author.avatarUrl} frame={author.frame} size={30} />
       <span className="font-semibold text-fg hover:underline">{author.displayName}</span>

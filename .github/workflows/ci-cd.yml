@@ -78,12 +78,20 @@ jobs:
         env:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
         run: |
           if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
             printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.google.env"
           fi
           if [ -n "$BREVO_API_KEY" ]; then
             printf 'BREVO_API_KEY=%s\n' "$BREVO_API_KEY" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.brevo.env"
+          fi
+          # chaves da página do perfil (biblioteca da Steam, músicas do Last.fm)
+          if [ -n "$STEAM_API_KEY$LASTFM_API_KEY" ]; then
+            { if [ -n "$STEAM_API_KEY" ]; then printf 'STEAM_API_KEY=%s\n' "$STEAM_API_KEY"; fi
+              if [ -n "$LASTFM_API_KEY" ]; then printf 'LASTFM_API_KEY=%s\n' "$LASTFM_API_KEY"; fi; } \
+              | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.integrations.env"
           fi
 
       - name: Instalar e reiniciar

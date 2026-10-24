@@ -34,6 +34,9 @@ export const config = {
     const [holder, target] = (env.MECENAS ?? '').split('>').map((u) => u.trim().replace(/^@/, '').toLowerCase());
     return holder && target ? { holder, target } : null;
   })(),
+  // integrações da página do perfil (ver integrations.ts). Sem chave, a vitrine correspondente some.
+  steamApiKey: (env.STEAM_API_KEY ?? '').trim(),
+  lastfmApiKey: (env.LASTFM_API_KEY ?? '').trim(),
   // diagnósticos enviados ficam ao lado do banco, fora de /uploads (que é público)
   diagnosticsDir: env.DIAGNOSTICS_DIR ?? '',
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.

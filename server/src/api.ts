@@ -49,6 +49,7 @@ import { allowAttempt, limiter, loginWaitMinutes, normalize as normalizeCode, re
 import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendVerifyEmail } from './mail.ts';
 import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
+import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
 import { mecenasBadge, mecenasOfMe, mecenasOver } from './mecenas.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerForumRoutes } from './forum.ts';
@@ -118,7 +119,29 @@ interface ProfileStyle {
   frame?: FrameId | null;
   cardBg?: string | null;
   patches?: Patch[];
+  /** página do perfil (aberta ao clicar em alguém): fundo, escurecimento, cor, colunas e vitrines */
+  page?: ProfilePage;
 }
+
+const SHOWCASES = ['playing', 'steam', 'music', 'patches', 'servers'] as const;
+type Showcase = (typeof SHOWCASES)[number];
+interface ProfilePage {
+  bg?: string | null;
+  /** quanto o fundo escurece para ler o texto, 0 a 80 (%) */
+  dim?: number;
+  accent?: string | null;
+  layout?: 'one' | 'two';
+  /** vitrines na ordem escolhida (as que não estão aqui ficam escondidas) */
+  showcases?: Showcase[];
+}
+
+const pageJson = (p: ProfilePage | undefined) => ({
+  bgUrl: p?.bg ?? null,
+  dim: typeof p?.dim === 'number' ? p.dim : 45,
+  accent: p?.accent ?? null,
+  layout: p?.layout === 'one' ? 'one' : 'two',
+  showcases: Array.isArray(p?.showcases) ? p.showcases.filter((s) => (SHOWCASES as readonly string[]).includes(s)) : [...SHOWCASES],
+});
 
 function parseStyle(raw: string | null | undefined): ProfileStyle {
   try {
@@ -185,6 +208,10 @@ const meJson = (u: UserRow) => {
     isAdmin: isAdmin(u.id),
     // é o Mecenas: o cargo e sobre quem tem os poderes
     mecenasPowers: mecenasOfMe(u.id),
+    // página do perfil: contas conectadas e o que esta instalação oferece
+    steamLinked: !!u.steam_id,
+    lastfmUser: u.lastfm_user ?? null,
+    integrations: integrationsStatus(),
     // apoio: o total decide quais acabamentos estão liberados; supportTier é o escolhido (null = escondido)
     supportTotal: u.support_total_cents ?? 0,
     supportTier: (() => {
@@ -618,6 +645,14 @@ api.get('/drops/:code', (req, res) => {
 
 // Pix do apoio: quem chama o webhook é o Mercado Pago, sem login
 registerSupportWebhook(api);
+
+// a volta do login da Steam chega pelo navegador, sem o token (ver integrations.ts)
+registerPublicIntegrationRoutes(api, {
+  meUpdated: (userId) => {
+    const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
+    if (user) emitToUser(userId, 'me:updated', meJson(user));
+  },
+});
 
 api.use(requireAuth);
 
@@ -2505,6 +2540,78 @@ registerStickerPackRoutes(api);
 registerSupportRoutes(api);
 registerDiagnosticRoutes(api);
 registerAdminRoutes(api);
+registerIntegrationRoutes(api, {
+  meUpdated: (userId) => {
+    const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
+    if (user) emitToUser(userId, 'me:updated', meJson(user));
+  },
+  canSee: canSeeProfile,
+});
+
+// ============================================================ Página do perfil
+
+/** Dá para ver o perfil completo de alguém: o próprio, quem divide servidor ou tem conversa privada com a pessoa. */
+function canSeeProfile(me: string, userId: string): boolean {
+  if (me === userId) return true;
+  if (get('SELECT 1 FROM members a JOIN members b ON a.server_id = b.server_id WHERE a.user_id = ? AND b.user_id = ? LIMIT 1', me, userId)) return true;
+  return !!get('SELECT 1 FROM dm_channels WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?)', me, userId, userId, me);
+}
+
+api.get('/users/:id/profile', (req, res) => {
+  const me = uid(res);
+  if (!canSeeProfile(me, req.params.id)) fail(404, 'Perfil não encontrado');
+  const u = get<UserRow>('SELECT * FROM users WHERE id = ?', req.params.id) ?? fail(404, 'Perfil não encontrado');
+  const mutual = all<ServerRow>(
+    'SELECT s.* FROM servers s JOIN members a ON a.server_id = s.id JOIN members b ON b.server_id = s.id WHERE a.user_id = ? AND b.user_id = ? ORDER BY s.name',
+    me,
+    u!.id,
+  );
+  res.json({
+    user: { ...userJson(u!), createdAt: u!.created_at },
+    page: pageJson(parseStyle(u!.profile_style).page),
+    steamLinked: !!u!.steam_id && integrationsStatus().steam,
+    lastfmUser: integrationsStatus().lastfm ? (u!.lastfm_user ?? null) : null,
+    mutualServers: me === u!.id ? [] : mutual.map(serverJson),
+  });
+});
+
+/** Ajustes da própria página (fundo vai por /me/profile-bg). */
+api.put('/me/profile-page', (req, res) => {
+  const me = uid(res);
+  const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  const page: ProfilePage = { ...style.page };
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  if (b.dim !== undefined) page.dim = Math.max(0, Math.min(80, Math.round(Number(b.dim) || 0)));
+  if (b.accent !== undefined) page.accent = b.accent === null ? null : color(b.accent);
+  if (b.layout !== undefined) page.layout = b.layout === 'one' ? 'one' : 'two';
+  if (b.showcases !== undefined) {
+    if (!Array.isArray(b.showcases)) fail(400, 'Vitrines inválidas');
+    page.showcases = [...new Set((b.showcases as unknown[]).filter((s): s is Showcase => (SHOWCASES as readonly unknown[]).includes(s)))];
+  }
+  style.page = page;
+  saveStyle(me, style);
+  res.json(pageJson(page));
+});
+
+/** Fundo da página do perfil (imagem ou GIF). */
+api.post('/me/profile-bg', imageBody, (req, res) => {
+  const me = uid(res);
+  const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  const old = style.page?.bg;
+  style.page = { ...style.page, bg: saveImage('cards', me, req.body) };
+  saveStyle(me, style);
+  removeUpload(old);
+  res.json(pageJson(style.page));
+});
+
+api.delete('/me/profile-bg', (_req, res) => {
+  const me = uid(res);
+  const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
+  removeUpload(style.page?.bg);
+  style.page = { ...style.page, bg: null };
+  saveStyle(me, style);
+  res.json(pageJson(style.page));
+});
 setSupportHooks({
   meUpdated: (userId) => {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);

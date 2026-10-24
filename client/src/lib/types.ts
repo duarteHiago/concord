@@ -150,6 +150,10 @@ export interface Me extends User {
   /** está em ADMIN_USERS: entra no portal da equipe (/admin) */
   isAdmin?: boolean;
   /** é o Mecenas: o cargo e sobre quem tem os poderes (o selo público é `mecenas`) */
+  /** página do perfil: contas conectadas e o que esta instalação oferece */
+  steamLinked?: boolean;
+  lastfmUser?: string | null;
+  integrations?: { steam: boolean; lastfm: boolean };
   mecenasPowers?: { title: string; target: { id: string; username: string; displayName: string } } | null;
   /** total já apoiado (centavos): decide os acabamentos liberados */
   supportTotal?: number;

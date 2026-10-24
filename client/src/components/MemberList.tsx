@@ -2,7 +2,7 @@ import { Crown, Gamepad2, Headphones, MonitorUp, Search } from 'lucide-react';
 import { useState } from 'react';
 import { memberName, type Activity, type Member, type Presence, type ServerDetail } from '../lib/types';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
-import { usePopover } from '../store/popover';
+import { profileTriggers } from '../store/popover';
 import { Avatar, VerifiedBadge, cx } from './ui';
 
 /** Painel lateral com a lista de membros (canais de texto). */
@@ -78,7 +78,6 @@ export function MemberListBody() {
 }
 
 function MemberRow({ detail, member, presence }: { detail: ServerDetail; member: Member; presence: Presence | undefined }) {
-  const openPopover = usePopover((s) => s.open);
   const streaming = useApp((s) => s.voiceStates[detail.server.id]?.find((v) => v.userId === member.id)?.streaming);
   const online = !!presence;
   // até 2 atividades ao mesmo tempo (ex.: jogando e ouvindo Spotify), já vêm limitadas pelo servidor
@@ -86,7 +85,7 @@ function MemberRow({ detail, member, presence }: { detail: ServerDetail; member:
 
   return (
     <button
-      onClick={(e) => openPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
+      {...profileTriggers(member.id, detail.server.id, () => useApp.getState().openProfile(member.id, detail.server.id))}
       className={cx('flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-surface-3', !online && 'opacity-40 hover:opacity-100')}
     >
       <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} frame={member.frame} size={34} status={presence?.status ?? 'offline'} />

@@ -25,6 +25,8 @@ services:
       LIVEKIT_API_SECRET: secret
       ADMIN_USERS: ${ADMIN_USERS:-}
       MECENAS: ${MECENAS:-}
+      STEAM_API_KEY: ${STEAM_API_KEY:-}
+      LASTFM_API_KEY: ${LASTFM_API_KEY:-}
     volumes:
       - ./data-dev:/data
     depends_on:

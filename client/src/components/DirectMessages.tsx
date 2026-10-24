@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
 import type { DirectChannel, GameData, Message, StickerMessageData } from '../lib/types';
 import { useApp } from '../store/app';
-import { usePopover } from '../store/popover';
+import { profileTriggers } from '../store/popover';
 import { toast } from '../store/toast';
 import { AttachButton, MessageAttachments, PendingAttachments, useAttachmentDraft } from './Attachments';
 import { RichText } from './ChatView';
@@ -14,6 +14,10 @@ import { activityLabel } from './MemberList';
 import { Avatar, IconButton, Spinner, cx } from './ui';
 
 const EMPTY: Message[] = [];
+
+/** Um servidor em comum com a pessoa (o mini perfil mostra cargos e ações de um servidor), ou null. */
+const sharedServerId = (userId: string) =>
+  Object.values(useApp.getState().details).find((d) => d.members.some((m) => m.id === userId))?.server.id ?? null;
 
 function preview(m: Message | null) {
   if (!m) return 'Nenhuma mensagem ainda';
@@ -238,7 +242,6 @@ function DmFeed({ dm }: { dm: DirectChannel }) {
 
 function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) {
   const me = useApp((s) => s.me)!;
-  const openPopover = usePopover((s) => s.open);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const mine = message.author.id === me.id;
@@ -257,11 +260,8 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
         {!grouped && (
           <button
             aria-label={`Perfil de ${message.author.displayName}`}
-            onClick={(e) => {
-              // o perfil completo depende de um servidor em comum
-              const shared = Object.values(useApp.getState().details).find((d) => d.members.some((m) => m.id === message.author.id));
-              if (shared) openPopover(message.author.id, shared.server.id, e.currentTarget.getBoundingClientRect());
-            }}
+            // o mini perfil depende de um servidor em comum; a página do perfil abre de qualquer jeito
+            {...profileTriggers(message.author.id, sharedServerId(message.author.id), () => useApp.getState().openProfile(message.author.id, sharedServerId(message.author.id)))}
           >
             <Avatar name={message.author.displayName} color={message.author.avatarColor} src={message.author.avatarUrl} frame={message.author.frame} size={36} />
           </button>
