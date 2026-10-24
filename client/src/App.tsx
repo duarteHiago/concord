@@ -15,6 +15,7 @@ import { ClipToast } from './components/Clip';
 import { RecordingPill } from './components/RecordControls';
 import { PatchInspectorHost } from './components/PatchInspector';
 import { ReleasesView } from './components/ReleasesView';
+import { ProfilePage } from './components/ProfilePage';
 import { SpotlightHost } from './components/Spotlight';
 import { useMecenasReveal } from './components/Mecenas';
 import { useWhatsNewPrompt } from './components/modals/WhatsNewModal';
@@ -123,6 +124,7 @@ function Shell() {
   useWhatsNewPrompt();
   useMecenasReveal();
   const releasesOpen = useApp((s) => s.releasesOpen);
+  const profileOpen = useApp((s) => !!s.profile);
   const detail = useActiveDetail();
   const activeServerId = useApp((s) => s.activeServerId);
   const channelId = useApp((s) => (s.activeServerId ? s.activeChannels[s.activeServerId] : undefined));
@@ -132,7 +134,9 @@ function Shell() {
   return (
     <div className="flex h-full gap-4 bg-surface-1 p-4">
       <ChannelSidebar />
-      {releasesOpen ? (
+      {profileOpen ? (
+        <ProfilePage />
+      ) : releasesOpen ? (
         <ReleasesView />
       ) : activeServerId === HOME ? (
         <DmView />

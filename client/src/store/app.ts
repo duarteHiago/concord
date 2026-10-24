@@ -79,6 +79,10 @@ interface AppState {
   releasesOpen: boolean;
   openReleases: () => void;
   closeReleases: () => void;
+  /** página do perfil de alguém aberta no lugar da conversa (mesmas regras de fechar que a de Novidades) */
+  profile: { userId: string; serverId: string | null } | null;
+  openProfile: (userId: string, serverId?: string | null) => void;
+  closeProfile: () => void;
   pendingInvite: string | null;
   /** cadastro pelo Google esperando a pessoa escolher o nome de usuário */
   googleSignup: string | null;
@@ -520,9 +524,11 @@ export const useApp = create<AppState>((set, get) => {
           : (servers.find((s) => s.id === current)?.id ?? servers.find((s) => s.id === last)?.id ?? servers[0]?.id);
       // reconectar reabre o servidor atual, mas não deve tirar a pessoa da página de Novidades
       const keepReleases = get().releasesOpen;
+      const keepProfile = get().profile;
       if (target) get().openServer(target);
       else set({ activeServerId: null });
       if (keepReleases) set({ releasesOpen: true });
+      if (keepProfile) set({ profile: keepProfile });
       // recarrega os servidores já abertos (reconexão)
       for (const id of Object.keys(get().details)) if (id !== target) void get().loadDetail(id);
     },
@@ -552,7 +558,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openServer: (serverId) => {
-      set({ activeServerId: serverId, releasesOpen: false });
+      set({ activeServerId: serverId, releasesOpen: false, profile: null });
       saveLast(serverId, get().activeChannels);
       if (serverId === HOME) {
         void get().loadDms();
@@ -584,7 +590,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openDmById: (dmId) => {
-      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false });
+      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false, profile: null });
       saveLast(HOME, get().activeChannels);
       if (!get().messages[dmId]) void get().loadDmMessages(dmId);
       get().markDmRead(dmId);
@@ -613,7 +619,7 @@ export const useApp = create<AppState>((set, get) => {
 
     openChannel: (serverId, channelId) => {
       const activeChannels = { ...get().activeChannels, [serverId]: channelId };
-      set({ activeChannels, releasesOpen: false });
+      set({ activeChannels, releasesOpen: false, profile: null });
       saveLast(serverId, activeChannels);
       const ch = get().details[serverId]?.channels.find((c) => c.id === channelId);
       if (ch?.type === 'text' && !get().messages[channelId]) void get().loadMessages(channelId);
@@ -638,7 +644,10 @@ export const useApp = create<AppState>((set, get) => {
     closeModal: () => set({ modal: null }),
     toggleMemberList: () => set({ memberListOpen: !get().memberListOpen }),
     releasesOpen: false,
-    openReleases: () => set({ releasesOpen: true }),
+    openReleases: () => set({ releasesOpen: true, profile: null }),
+    profile: null,
+    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false }),
+    closeProfile: () => set({ profile: null }),
     closeReleases: () => set({ releasesOpen: false }),
   };
 });

@@ -354,6 +354,9 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider, provider_id) WHERE provider_id IS NOT NULL;
 `);
 addColumn('users', 'support_total_cents', 'INTEGER NOT NULL DEFAULT 0');
+// página do perfil: conta da Steam (SteamID64, confirmada pelo login da Steam) e usuário do Last.fm (ver integrations.ts)
+addColumn('users', 'steam_id', 'TEXT');
+addColumn('users', 'lastfm_user', 'TEXT');
 
 // Links curtos do Spotify (spotify.link/...) já conferidos: para onde levam, se for Jam (ver api.ts). Serve
 // para o chat mostrar o cartão da Jam mesmo depois que ela acabou, sem abrir o link de novo toda vez.
@@ -493,6 +496,8 @@ export interface UserRow {
   totp_backup?: string | null;
   totp_drift?: number;
   support_total_cents?: number;
+  steam_id?: string | null;
+  lastfm_user?: string | null;
   created_at: number;
 }
 

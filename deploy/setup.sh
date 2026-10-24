@@ -60,6 +60,16 @@ if [ -f .brevo.env ]; then
   rm -f .brevo.env
   unset BKEY
 fi
+# chaves da página do perfil (Steam e Last.fm): chegam por .integrations.env, como o secret do Brevo
+if [ -f .integrations.env ]; then
+  for KEY in STEAM_API_KEY LASTFM_API_KEY; do
+    VAL="$(grep "^$KEY=" .integrations.env | cut -d= -f2-)"
+    [ -z "$VAL" ] && continue
+    if printf '%s' "$VAL" | grep -qE '^[A-Fa-f0-9]{32}$'; then upsert_env "$KEY" "$VAL"; else echo "!! $KEY com formato inesperado; ignorada." >&2; fi
+  done
+  rm -f .integrations.env
+  unset VAL
+fi
 chmod 600 .env
 
 # Convite do servidor oficial da comunidade (o app mostra "Entrar na comunidade"). Vem da variável do CI.

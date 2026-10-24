@@ -8,7 +8,7 @@ import { getSocket } from '../lib/socket';
 import { memberName, type Channel, type GameData, type Message, type ServerDetail, type StickerMessageData } from '../lib/types';
 import { onVisibilityChange } from '../lib/visibility';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
-import { usePopover } from '../store/popover';
+import { profileTriggers } from '../store/popover';
 import { toast } from '../store/toast';
 import { Avatar, IconButton, Spinner, VerifiedBadge, cx } from './ui';
 import { mentionsMe } from '../lib/mentions';
@@ -152,7 +152,6 @@ function Bubble({
   compact: boolean;
 }) {
   const me = useApp((s) => s.me)!;
-  const openPopover = usePopover((s) => s.open);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const mine = message.author.id === me.id;
@@ -206,7 +205,7 @@ function Bubble({
         {!grouped && (
           <button
             aria-label={`Perfil de ${name}`}
-            onClick={(e) => openPopover(message.author.id, detail.server.id, e.currentTarget.getBoundingClientRect())}
+            {...profileTriggers(message.author.id, detail.server.id, () => useApp.getState().openProfile(message.author.id, detail.server.id))}
           >
             <Avatar name={name} color={avatarColor} src={avatarUrl} frame={frame} size={size} />
           </button>

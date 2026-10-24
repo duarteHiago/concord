@@ -1,11 +1,11 @@
-import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserX, Volume2, X, Zap } from 'lucide-react';
+import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserRound, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { memberPosition, useApp } from '../store/app';
-import { usePopover } from '../store/popover';
+import { keepPopoverOpen, releasePopover, usePopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { Avatar, RoleDot, VerifiedBadge, cx } from './ui';
@@ -103,6 +103,9 @@ export function MemberPopover() {
   return (
     <div
       ref={ref}
+      // aberto passando o mouse: fica enquanto o mouse está no cartão
+      onPointerEnter={keepPopoverOpen}
+      onPointerLeave={releasePopover}
       className="fixed z-40 max-h-[calc(100vh-16px)] w-80 animate-pop-in overflow-y-auto rounded-[24px] bg-popover bg-cover bg-center shadow-2xl ring-1 ring-line"
       style={{
         left: x,
@@ -304,6 +307,17 @@ export function MemberPopover() {
                 </form>
               )}
               <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    close();
+                    useApp.getState().openProfile(member.id, detail.server.id);
+                  }}
+                  title="Ver o perfil completo"
+                  aria-label={`Ver o perfil completo de ${name}`}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-3 text-fg-muted transition-colors hover:text-fg"
+                >
+                  <UserRound size={16} />
+                </button>
                 <button
                   onClick={() => {
                     close();
