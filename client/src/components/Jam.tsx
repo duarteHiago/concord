@@ -244,7 +244,7 @@ export function JamCard({ url, jam, authorName, mine }: { url: string; jam: Jam 
   const room = jam && detail?.channels.find((c) => c.id === jam.channelId);
   const title = jam ? jamLabel(jam, host ?? undefined, me.id) : mine ? 'Sua Jam' : `Jam de ${authorName}`;
   return (
-    <div className="flex w-[min(340px,70vw)] items-center gap-3 rounded-[22px] bg-[#121212] p-3 text-white ring-1 ring-white/10">
+    <div className="flex w-[min(340px,100%)] items-center gap-3 rounded-[22px] bg-[#121212] p-3 text-white ring-1 ring-white/10">
       <SpotifyLogo size={44} className="shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="text-[10.5px] font-bold tracking-widest text-[#1DB954] uppercase">Jam do Spotify</div>
