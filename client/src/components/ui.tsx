@@ -1,5 +1,5 @@
 import { BadgeCheck, Eye, EyeOff, X } from 'lucide-react';
-import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useToasts } from '../store/toast';
 
 export function cx(...parts: (string | false | null | undefined)[]) {
@@ -20,6 +20,7 @@ export function Avatar({
   speaking,
   frame,
   className,
+  freeze,
 }: {
   name: string;
   color: string;
@@ -30,17 +31,23 @@ export function Avatar({
   /** moldura animada escolhida no perfil */
   frame?: string | null;
   className?: string;
+  /** desenha a foto num canvas (1 frame só): usado pra tirar o movimento de avatares em GIF, ex. nas bolhas de quem assiste a uma transmissão */
+  freeze?: boolean;
 }) {
   return (
     // decorativo: o nome da pessoa sempre aparece ao lado (o leitor de tela não precisa ler a inicial)
     <div aria-hidden="true" className={cx('avatar relative shrink-0', className)} style={{ width: size, height: size }}>
       {src ? (
-        <img
-          src={src}
-          alt=""
-          draggable={false}
-          className={cx('h-full w-full rounded-full object-cover transition-shadow', speaking && 'speaking-ring')}
-        />
+        freeze ? (
+          <FrozenImage src={src} size={size} speaking={speaking} />
+        ) : (
+          <img
+            src={src}
+            alt=""
+            draggable={false}
+            className={cx('h-full w-full rounded-full object-cover transition-shadow', speaking && 'speaking-ring')}
+          />
+        )
       ) : (
         <div
           className={cx(
@@ -67,6 +74,33 @@ export function Avatar({
       )}
     </div>
   );
+}
+
+/** Desenha a imagem num <canvas>, só uma vez: se for GIF animado, fica parado no primeiro quadro. */
+function FrozenImage({ src, size, speaking }: { src: string; size: number; speaking?: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      // corta no quadrado central, igual ao object-cover do <img>
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
+    };
+    img.src = src;
+    return () => {
+      cancelled = true;
+    };
+  }, [src, size]);
+  return <canvas ref={ref} className={cx('h-full w-full rounded-full object-cover transition-shadow', speaking && 'speaking-ring')} style={{ width: size, height: size }} />;
 }
 
 /** Partículas que giram em volta de algumas molduras. */

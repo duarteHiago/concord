@@ -76,9 +76,10 @@ export function goToNudge(n: NudgeEvent) {
   useApp.setState({ nudge: null });
 }
 
-export async function sendNudge(serverId: string, userId: string, name: string) {
+export async function sendNudge(serverId: string, userId: string, name: string, message?: string) {
   try {
-    await api.post(`/servers/${serverId}/members/${userId}/nudge`);
+    const trimmed = message?.trim();
+    await api.post(`/servers/${serverId}/members/${userId}/nudge`, trimmed ? { message: trimmed } : {});
     playSound('nudgeSent');
     toast.success(`Você chamou a atenção de ${name}!`);
   } catch (err) {

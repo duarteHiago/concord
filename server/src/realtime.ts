@@ -178,7 +178,8 @@ export interface Activity {
   since: number;
 }
 
-const activities = new Map<string, Activity>();
+// até 2 por pessoa ao mesmo tempo (ex.: jogando e ouvindo Spotify) — ver desktop/main.cjs: pollActivity
+const activities = new Map<string, Activity[]>();
 
 function sanitizeActivity(raw: unknown): Activity | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -191,7 +192,19 @@ function sanitizeActivity(raw: unknown): Activity | null {
   return { type: a.type, name, details: details || undefined, since };
 }
 
-/** Status, frase personalizada e atividade de um usuário online. */
+function sanitizeActivities(raw: unknown): Activity[] {
+  // compat: app desktop antigo mandava um objeto só, não uma lista
+  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const out: Activity[] = [];
+  for (const item of list) {
+    const a = sanitizeActivity(item);
+    if (a) out.push(a);
+    if (out.length === 2) break;
+  }
+  return out;
+}
+
+/** Status, frase personalizada e atividades (até 2) de um usuário online. */
 export function presenceOf(userId: string) {
   const row = get<{ settings: string }>('SELECT settings FROM users WHERE id = ?', userId);
   let settings: { status?: string; customStatus?: unknown } = {};
@@ -205,7 +218,7 @@ export function presenceOf(userId: string) {
     online: true,
     status: (settings.status === 'dnd' ? 'dnd' : 'online') as PresenceStatus,
     customStatus: typeof settings.customStatus === 'string' ? settings.customStatus.slice(0, 80) : '',
-    activity: activities.get(userId) ?? null,
+    activities: activities.get(userId) ?? [],
   };
 }
 
@@ -362,12 +375,21 @@ export function setupRealtime(httpServer: HttpServer) {
     });
 
     socket.on('activity:set', (raw: unknown) => {
-      const activity = sanitizeActivity(raw);
-      const current = activities.get(userId);
-      if (!activity && !current) return;
-      if (activity && current && activity.type === current.type && activity.name === current.name && activity.details === current.details) return;
-      if (activity) activities.set(userId, current?.name === activity.name ? { ...activity, since: current.since } : activity);
-      else activities.delete(userId);
+      const next = sanitizeActivities(raw);
+      const current = activities.get(userId) ?? [];
+      const strip = (list: Activity[]) => list.map(({ type, name, details }) => ({ type, name, details }));
+      if (JSON.stringify(strip(next)) === JSON.stringify(strip(current))) return;
+      if (next.length) {
+        activities.set(
+          userId,
+          next.map((a) => {
+            const prev = current.find((p) => p.type === a.type && p.name === a.name);
+            return prev ? { ...a, since: prev.since } : a;
+          }),
+        );
+      } else {
+        activities.delete(userId);
+      }
       io.emit('presence', presenceOf(userId));
     });
 

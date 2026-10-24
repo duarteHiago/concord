@@ -30,6 +30,7 @@ export function NudgeCard() {
             <span className="truncate">{name} chamou sua atenção!</span>
           </div>
           <div className="truncate text-xs text-fg-muted">em {nudge.serverName}</div>
+          {nudge.message && <p className="mt-1.5 line-clamp-3 break-words text-sm font-bold text-accent">{nudge.message}</p>}
           <div className="mt-2 flex gap-2">
             <button
               onClick={() => goToNudge(nudge)}

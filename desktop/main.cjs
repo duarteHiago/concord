@@ -418,28 +418,33 @@ async function spotifyTrack() {
   return isTrackTitle(title) ? title.slice(0, 120) : null;
 }
 
-let currentActivity = null;
+// até 2 ao mesmo tempo: o jogo da Steam e o que estiver tocando no Spotify, lado a lado
+let currentActivities = [];
 // a pessoa pode desligar "Mostrar o que estou jogando e ouvindo" nas configurações: enquanto
 // estiver desligado, não vale a pena rodar reg.exe/powershell.exe a cada 15s pra ninguém usar o resultado
 let activitySharingEnabled = true;
 
+/** só pros dois lados do changed/since: ignora o `since`, que muda sozinho sem ser uma atividade nova. */
+const stripSince = (list) => list.map(({ since, ...rest }) => rest);
+
 async function pollActivity() {
   if (process.platform !== 'win32' || !activitySharingEnabled) return;
-  let next = null;
+  let next = [];
   try {
     const game = await steamGame();
-    if (game) next = { type: 'playing', name: game };
-    else {
-      const track = await spotifyTrack();
-      if (track) next = { type: 'listening', name: 'Spotify', details: track };
-    }
+    if (game) next.push({ type: 'playing', name: game });
+    const track = await spotifyTrack();
+    if (track) next.push({ type: 'listening', name: 'Spotify', details: track });
   } catch {
-    next = null;
+    next = [];
   }
-  const changed = JSON.stringify(next) !== JSON.stringify(currentActivity && { ...currentActivity, since: undefined });
+  const changed = JSON.stringify(stripSince(next)) !== JSON.stringify(stripSince(currentActivities));
   if (!changed) return;
-  currentActivity = next && { ...next, since: currentActivity?.name === next.name ? currentActivity.since : Date.now() };
-  win?.webContents.send('concord:activity', currentActivity);
+  currentActivities = next.map((a) => {
+    const prev = currentActivities.find((p) => p.type === a.type && p.name === a.name);
+    return { ...a, since: prev?.since ?? Date.now() };
+  });
+  win?.webContents.send('concord:activity', currentActivities);
 }
 
 // ------------------------------------------------------------------ prioridade durante a transmissão
@@ -474,16 +479,16 @@ function setStreamingPriority(on) {
 handle('concord:streaming', (_e, on) => setStreamingPriority(!!on));
 app.on('will-quit', () => setStreamingPriority(false));
 
-handle('concord:activity', () => currentActivity);
+handle('concord:activity', () => currentActivities);
 handle('concord:activity-refresh', async () => {
   await pollActivity();
-  return currentActivity;
+  return currentActivities;
 });
 handle('concord:activity-sharing', (_e, enabled) => {
   activitySharingEnabled = enabled !== false;
   if (!activitySharingEnabled) {
-    currentActivity = null;
-    win?.webContents.send('concord:activity', null);
+    currentActivities = [];
+    win?.webContents.send('concord:activity', []);
   } else {
     void pollActivity();
   }

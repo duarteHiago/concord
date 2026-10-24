@@ -131,11 +131,12 @@ function DmHeader({ dm }: { dm: DirectChannel }) {
   const presence = useApp((s) => s.online[dm.user.id]);
   // "Chamar atenção" precisa de um servidor em comum já carregado
   const sharedServer = useApp((s) => Object.values(s.details).find((d) => d.members.some((m) => m.id === dm.user.id)));
-  const activity = presence?.activity;
+  // até 2 atividades ao mesmo tempo (ex.: jogando e ouvindo Spotify); aqui cabe só uma linha, então junta as duas
+  const activities = presence?.activities ?? [];
   const subtitle = !presence
     ? 'Offline'
-    : activity
-      ? activityLabel(activity)
+    : activities.length
+      ? activities.map(activityLabel).join(' · ')
       : presence.customStatus || (presence.status === 'dnd' ? 'Não perturbe' : 'Online');
 
   return (
@@ -144,7 +145,7 @@ function DmHeader({ dm }: { dm: DirectChannel }) {
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-xl font-bold">{dm.user.displayName}</h1>
         <p className="flex items-center gap-1 truncate text-sm text-fg-muted">
-          {activity && (activity.type === 'playing' ? <Gamepad2 size={13} /> : <Headphones size={13} />)}
+          {activities[0] && (activities[0].type === 'playing' ? <Gamepad2 size={13} /> : <Headphones size={13} />)}
           {subtitle}
         </p>
       </div>

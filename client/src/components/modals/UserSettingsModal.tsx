@@ -238,27 +238,27 @@ function Profile() {
   );
 }
 
-/** Diagnóstico: o que o app desktop está detectando agora. */
+/** Diagnóstico: o que o app desktop está detectando agora (até 2 atividades ao mesmo tempo). */
 function DetectedActivity() {
-  const [activity, setActivity] = useState<Activity | null | undefined>(undefined);
+  const [activities, setActivities] = useState<Activity[] | undefined>(undefined);
   const [checking, setChecking] = useState(false);
   const supported = !!desktop?.refreshActivity;
 
   useEffect(() => {
     if (!desktop?.getActivity) return;
-    void desktop.getActivity().then((a) => setActivity((a as Activity | null) ?? null));
-    return desktop.onActivity?.((a) => setActivity((a as Activity | null) ?? null));
+    void desktop.getActivity().then((a) => setActivities((a as Activity[] | null) ?? []));
+    return desktop.onActivity?.((a) => setActivities((a as Activity[] | null) ?? []));
   }, []);
 
   if (!supported) return <p className="text-xs text-fg-subtle">Atualize o app desktop para ver o que está sendo detectado.</p>;
+
+  const label = (a: Activity) => (a.type === 'playing' ? `Jogando ${a.name}` : `Ouvindo ${a.details}`);
 
   return (
     <div className="flex items-center justify-between gap-3 border-t border-line pt-3 text-sm">
       <span className="min-w-0 truncate text-fg-muted">
         Detectado agora:{' '}
-        <b className="text-fg">
-          {activity === undefined ? '…' : activity ? (activity.type === 'playing' ? `Jogando ${activity.name}` : `Ouvindo ${activity.details}`) : 'nada'}
-        </b>
+        <b className="text-fg">{activities === undefined ? '…' : activities.length ? activities.map(label).join(' · ') : 'nada'}</b>
       </span>
       <Button
         variant="secondary"
@@ -266,7 +266,7 @@ function DetectedActivity() {
         loading={checking}
         onClick={async () => {
           setChecking(true);
-          setActivity(((await desktop!.refreshActivity!()) as Activity | null) ?? null);
+          setActivities(((await desktop!.refreshActivity!()) as Activity[] | null) ?? []);
           setChecking(false);
         }}
       >

@@ -1,4 +1,4 @@
-import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
+import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -19,6 +19,8 @@ export function MemberPopover() {
   const [addingRole, setAddingRole] = useState(false);
   // altura real do cartão (muda com capa, patches, atividade, cargos...), para ele nunca passar da tela
   const [height, setHeight] = useState(0);
+  const [nudgeMsgOpen, setNudgeMsgOpen] = useState(false);
+  const [nudgeMsg, setNudgeMsg] = useState('');
   const detail = useApp((s) => (serverId ? s.details[serverId] : undefined));
   useLayoutEffect(() => {
     const el = ref.current;
@@ -45,6 +47,8 @@ export function MemberPopover() {
   useEffect(() => {
     if (!userId) return;
     setAddingRole(false);
+    setNudgeMsgOpen(false);
+    setNudgeMsg('');
     const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && close();
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
     window.addEventListener('mousedown', onDown);
@@ -192,16 +196,20 @@ export function MemberPopover() {
             </div>
           )}
           {presenceInfo?.customStatus && <p className="mt-2 text-sm break-words">{presenceInfo.customStatus}</p>}
-          {presenceInfo?.activity && (
-            <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
-                {presenceInfo.activity.type === 'playing' ? <Gamepad2 size={18} /> : <Headphones size={18} />}
-              </span>
-              <div className="min-w-0 text-sm leading-tight">
-                <div className="text-[11px] font-bold text-fg-subtle">{presenceInfo.activity.type === 'playing' ? 'Jogando' : 'Ouvindo no Spotify'}</div>
-                <div className="truncate font-semibold">{presenceInfo.activity.type === 'playing' ? presenceInfo.activity.name : presenceInfo.activity.details}</div>
-                <div className="text-xs text-fg-muted">há {elapsed(presenceInfo.activity.since)}</div>
-              </div>
+          {!!presenceInfo?.activities?.length && (
+            <div className="mt-3 space-y-2">
+              {presenceInfo.activities.map((activity, i) => (
+                <div key={i} className="flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+                    {activity.type === 'playing' ? <Gamepad2 size={18} /> : <Headphones size={18} />}
+                  </span>
+                  <div className="min-w-0 text-sm leading-tight">
+                    <div className="text-[11px] font-bold text-fg-subtle">{activity.type === 'playing' ? 'Jogando' : 'Ouvindo no Spotify'}</div>
+                    <div className="truncate font-semibold">{activity.type === 'playing' ? activity.name : activity.details}</div>
+                    <div className="text-xs text-fg-muted">há {elapsed(activity.since)}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
           {member.bio && (
@@ -263,41 +271,87 @@ export function MemberPopover() {
           </div>
 
           {!isMe && (
-            <div className="mt-3 flex gap-2">
-              <button
-                onClick={() => {
-                  close();
-                  void openDm(member.id);
-                }}
-                title={`Conversa privada com ${name}`}
-                aria-label={`Mensagem para ${name}`}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-3 text-fg-muted transition-colors hover:text-fg"
-              >
-                <MessageCircle size={16} />
-              </button>
-              <button
-                disabled={!online || presence === 'dnd'}
-                onClick={() => void sendNudge(detail.server.id, member.id, name)}
-                title={!online ? `${name} está offline` : presence === 'dnd' ? `${name} está em "Não perturbe"` : 'Faz a tela da pessoa tremer, com som e notificação'}
-                className="flex h-10 flex-1 items-center justify-center gap-2 rounded-full bg-accent font-display text-sm font-bold text-on-accent transition-all hover:bg-accent-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Zap size={16} /> {presence === 'dnd' ? 'Não perturbe' : 'Chamar atenção'}
-              </button>
-              <button
-                onClick={() =>
-                  void saveSettings({
-                    mutedNudges: nudgeMuted ? mutedNudges.filter((id) => id !== member.id) : [...mutedNudges, member.id],
-                  })
-                }
-                title={nudgeMuted ? `Voltar a receber chamadas de atenção de ${name}` : `Não receber chamadas de atenção de ${name}`}
-                aria-label={nudgeMuted ? 'Permitir chamadas de atenção desta pessoa' : 'Silenciar chamadas de atenção desta pessoa'}
-                className={cx(
-                  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors',
-                  nudgeMuted ? 'bg-danger/15 text-danger' : 'bg-surface-3 text-fg-muted hover:text-fg',
-                )}
-              >
-                {nudgeMuted ? <BellOff size={16} /> : <Bell size={16} />}
-              </button>
+            <div className="mt-3 flex flex-col gap-2">
+              {nudgeMsgOpen && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!online || presence === 'dnd') return;
+                    void sendNudge(detail.server.id, member.id, name, nudgeMsg);
+                    setNudgeMsg('');
+                    setNudgeMsgOpen(false);
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    autoFocus
+                    value={nudgeMsg}
+                    maxLength={140}
+                    onChange={(e) => setNudgeMsg(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Escape' && setNudgeMsgOpen(false)}
+                    placeholder="Mensagem (opcional)"
+                    aria-label="Mensagem para enviar junto da chamada de atenção"
+                    className="h-9 min-w-0 flex-1 rounded-full bg-surface-3 px-3.5 text-sm outline-none ring-accent focus:ring-2"
+                  />
+                  <button
+                    type="submit"
+                    title="Chamar atenção com essa mensagem"
+                    aria-label="Enviar"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"
+                  >
+                    <Send size={15} />
+                  </button>
+                </form>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    close();
+                    void openDm(member.id);
+                  }}
+                  title={`Conversa privada com ${name}`}
+                  aria-label={`Mensagem para ${name}`}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-3 text-fg-muted transition-colors hover:text-fg"
+                >
+                  <MessageCircle size={16} />
+                </button>
+                <button
+                  disabled={!online || presence === 'dnd'}
+                  onClick={() => void sendNudge(detail.server.id, member.id, name)}
+                  title={!online ? `${name} está offline` : presence === 'dnd' ? `${name} está em "Não perturbe"` : 'Faz a tela da pessoa tremer, com som e notificação'}
+                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-full bg-accent font-display text-sm font-bold text-on-accent transition-all hover:bg-accent-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Zap size={16} /> {presence === 'dnd' ? 'Não perturbe' : 'Chamar atenção'}
+                </button>
+                <button
+                  disabled={!online || presence === 'dnd'}
+                  onClick={() => setNudgeMsgOpen(!nudgeMsgOpen)}
+                  title="Mandar uma mensagem na tela junto da tremida"
+                  aria-label="Mandar mensagem junto da chamada de atenção"
+                  aria-expanded={nudgeMsgOpen}
+                  className={cx(
+                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                    nudgeMsgOpen ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg',
+                  )}
+                >
+                  <MessageSquarePlus size={16} />
+                </button>
+                <button
+                  onClick={() =>
+                    void saveSettings({
+                      mutedNudges: nudgeMuted ? mutedNudges.filter((id) => id !== member.id) : [...mutedNudges, member.id],
+                    })
+                  }
+                  title={nudgeMuted ? `Voltar a receber chamadas de atenção de ${name}` : `Não receber chamadas de atenção de ${name}`}
+                  aria-label={nudgeMuted ? 'Permitir chamadas de atenção desta pessoa' : 'Silenciar chamadas de atenção desta pessoa'}
+                  className={cx(
+                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors',
+                    nudgeMuted ? 'bg-danger/15 text-danger' : 'bg-surface-3 text-fg-muted hover:text-fg',
+                  )}
+                >
+                  {nudgeMuted ? <BellOff size={16} /> : <Bell size={16} />}
+                </button>
+              </div>
             </div>
           )}
 

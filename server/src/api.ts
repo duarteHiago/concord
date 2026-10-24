@@ -1386,6 +1386,9 @@ api.post('/servers/:id/members/:userId/nudge', (req, res) => {
   if (wait > 0) fail(429, `Calma! Espere ${Math.ceil(wait / 1000)}s para chamar de novo`);
   lastNudge.set(key, now());
 
+  // mensagem opcional junto da tremida (sem opção de copiar do lado de quem recebe, ver NudgeCard.tsx)
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 140) : '';
+
   // quem foi silenciado não fica sabendo: a resposta é a mesma, só não entregamos
   if (!prefs.mutedNudges?.includes(me)) {
     const sender = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
@@ -1397,6 +1400,7 @@ api.post('/servers/:id/members/:userId/nudge', (req, res) => {
       serverName: server.name,
       channelId: voice?.serverId === server.id ? voice.channelId : null,
       at: now(),
+      message: message || undefined,
     });
   }
   res.json({ ok: true });

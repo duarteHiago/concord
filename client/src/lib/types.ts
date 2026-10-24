@@ -71,7 +71,8 @@ export interface Activity {
 export interface Presence {
   status: 'online' | 'dnd';
   customStatus: string;
-  activity: Activity | null;
+  /** até 2 ao mesmo tempo, ex.: jogando e ouvindo Spotify (ver desktop/main.cjs: pollActivity) */
+  activities: Activity[];
 }
 
 export interface Sound {
@@ -162,6 +163,8 @@ export interface NudgeEvent {
   serverName: string;
   channelId: string | null;
   at: number;
+  /** mensagem opcional digitada por quem chamou a atenção, junto da tremida (sem opção de copiar) */
+  message?: string;
 }
 
 export interface ThemeSettings {

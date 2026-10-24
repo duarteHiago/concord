@@ -19,6 +19,7 @@ import {
   Video,
   VideoOff,
   Volume2,
+  VolumeX,
   MessageSquare,
   PictureInPicture2,
   X,
@@ -421,16 +422,20 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
   return (
     <button
       onClick={(e) => openPopover(p.identity, detail.server.id, e.currentTarget.getBoundingClientRect())}
-      className="flex shrink-0 flex-col items-center gap-1.5"
+      title={tile.isLocal ? 'você' : name}
+      aria-label={tile.isLocal ? 'você' : name}
+      className="relative shrink-0"
     >
       <span className={cx('relative block h-16 w-16 overflow-hidden rounded-full ring-4 transition-shadow', speaking && !muted ? 'ring-accent' : 'ring-surface-1')}>
-        {camTrack ? <VideoEl track={camTrack} fit="cover" mirror={tile.isLocal} /> : <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={64} />}
+        {/* aqui é só a foto: sem nome embaixo. GIF animado congela num frame só (ver prop `freeze` do Avatar) */}
+        {camTrack ? <VideoEl track={camTrack} fit="cover" mirror={tile.isLocal} /> : <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={64} freeze />}
       </span>
-      <span className="flex max-w-24 items-center gap-1 rounded-full bg-surface-1/85 px-2.5 py-0.5 text-xs font-bold backdrop-blur">
-        {muted && <MicOff size={11} className="shrink-0 text-danger" />}
-        {deafened && <HeadphoneOff size={11} className="shrink-0 text-danger" />}
-        <span className="truncate">{tile.isLocal ? 'você' : name}</span>
-      </span>
+      {(muted || deafened) && (
+        <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-surface-1 px-1.5 py-0.5 ring-2 ring-surface-0">
+          {muted && <MicOff size={11} className="text-danger" />}
+          {deafened && <HeadphoneOff size={11} className="text-danger" />}
+        </span>
+      )}
     </button>
   );
 }
@@ -601,9 +606,26 @@ function OverlayButton({ label, active, onClick, children }: { label: string; ac
 function StreamVolume({ identity }: { identity: string }) {
   const volume = useVoice((s) => s.streamVolumes[identity] ?? 1);
   const setVolume = useVoice((s) => s.setVolume);
+  const muted = volume === 0;
+  // lembra o volume de antes de mutar, pra devolver o mesmo nível ao clicar de novo no ícone
+  const [before, setBefore] = useState(1);
   return (
-    <label className="flex h-10 items-center gap-2 rounded-full bg-surface-1/80 px-3 backdrop-blur" title="Volume da transmissão">
-      <Volume2 size={15} />
+    <label className="flex h-10 items-center gap-2 rounded-full bg-surface-1/80 px-3 backdrop-blur">
+      <button
+        type="button"
+        onClick={() => {
+          if (muted) setVolume(identity, before > 0 ? before : 1, true);
+          else {
+            setBefore(volume);
+            setVolume(identity, 0, true);
+          }
+        }}
+        title={muted ? 'Ativar o som da transmissão' : 'Mutar a transmissão'}
+        aria-label={muted ? 'Ativar o som da transmissão' : 'Mutar a transmissão'}
+        className="text-fg-muted transition-colors hover:text-fg"
+      >
+        {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+      </button>
       <span className="sr-only">Volume da transmissão</span>
       <input type="range" min={0} max={3} step={0.05} value={volume} onChange={(e) => setVolume(identity, Number(e.target.value), true)} className="w-20" />
     </label>

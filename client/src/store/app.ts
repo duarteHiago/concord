@@ -211,7 +211,7 @@ export const useApp = create<AppState>((set, get) => {
     const toPresence = (p: PresencePayload): Presence => ({
       status: p.status === 'dnd' ? 'dnd' : 'online',
       customStatus: p.customStatus ?? '',
-      activity: p.activity ?? null,
+      activities: p.activities ?? [],
     });
     socket.on('presence:list', (list: PresencePayload[]) => {
       set({ online: Object.fromEntries(list.map((p) => [p.userId, toPresence(p)])) });

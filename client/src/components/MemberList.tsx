@@ -81,25 +81,8 @@ function MemberRow({ detail, member, presence }: { detail: ServerDetail; member:
   const openPopover = usePopover((s) => s.open);
   const streaming = useApp((s) => s.voiceStates[detail.server.id]?.find((v) => v.userId === member.id)?.streaming);
   const online = !!presence;
-  const activity = presence?.activity;
-
-  let subtitle: React.ReactNode = null;
-  if (streaming) {
-    subtitle = (
-      <>
-        <MonitorUp size={12} className="shrink-0" /> Transmitindo
-      </>
-    );
-  } else if (activity) {
-    subtitle = (
-      <>
-        {activity.type === 'playing' ? <Gamepad2 size={12} className="shrink-0" /> : <Headphones size={12} className="shrink-0" />}
-        <span className="truncate">{activityLabel(activity)}</span>
-      </>
-    );
-  } else if (presence?.customStatus) {
-    subtitle = <span className="truncate">{presence.customStatus}</span>;
-  }
+  // até 2 atividades ao mesmo tempo (ex.: jogando e ouvindo Spotify), já vêm limitadas pelo servidor
+  const activities = presence?.activities ?? [];
 
   return (
     <button
@@ -116,7 +99,22 @@ function MemberRow({ detail, member, presence }: { detail: ServerDetail; member:
           {member.bot && <span className="shrink-0 rounded bg-accent-2/20 px-1 text-[9px] leading-4 font-bold text-accent-2">BOT</span>}
           {detail.server.ownerId === member.id && <Crown size={13} className="shrink-0 text-warn" />}
         </div>
-        {subtitle && <div className={cx('flex items-center gap-1 text-xs', streaming ? 'text-accent' : 'text-fg-muted')}>{subtitle}</div>}
+        {streaming ? (
+          <div className="flex items-center gap-1 text-xs text-accent">
+            <MonitorUp size={12} className="shrink-0" /> Transmitindo
+          </div>
+        ) : activities.length ? (
+          activities.map((a, i) => (
+            <div key={i} className="flex items-center gap-1 text-xs text-fg-muted">
+              {a.type === 'playing' ? <Gamepad2 size={12} className="shrink-0" /> : <Headphones size={12} className="shrink-0" />}
+              <span className="truncate">{activityLabel(a)}</span>
+            </div>
+          ))
+        ) : presence?.customStatus ? (
+          <div className="flex items-center gap-1 text-xs text-fg-muted">
+            <span className="truncate">{presence.customStatus}</span>
+          </div>
+        ) : null}
       </div>
     </button>
   );

@@ -1,17 +1,18 @@
 // Repassa ao servidor a atividade detectada pelo app desktop (jogo da Steam, música do Spotify).
+// Até 2 ao mesmo tempo (ex.: jogando e ouvindo Spotify) — ver desktop/main.cjs: pollActivity.
 import type { Socket } from 'socket.io-client';
 import { useApp } from '../store/app';
 import { desktop } from './desktop';
 import type { Activity } from './types';
 
-let current: Activity | null = null;
+let current: Activity[] = [];
 let socketRef: Socket | null = null;
 let started = false;
 
 const sharing = () => useApp.getState().me?.settings.shareActivity !== false;
 
 function publish() {
-  socketRef?.emit('activity:set', sharing() ? current : null);
+  socketRef?.emit('activity:set', sharing() ? current : []);
 }
 
 export function startActivityReporter(socket: Socket) {
@@ -22,11 +23,11 @@ export function startActivityReporter(socket: Socket) {
   started = true;
   void desktop.setActivitySharing?.(sharing());
   void desktop.getActivity?.().then((a) => {
-    current = (a as Activity | null) ?? null;
+    current = (a as Activity[] | null) ?? [];
     publish();
   });
   desktop.onActivity((a) => {
-    current = (a as Activity | null) ?? null;
+    current = (a as Activity[] | null) ?? [];
     publish();
   });
   // ligou/desligou "Mostrar o que estou jogando": reenvia na hora e liga/desliga a varredura no processo principal
