@@ -26,16 +26,19 @@ const online = new Map<string, number>(); // userId -> nº de sockets
 const voice = new Map<string, VoiceState>(); // userId -> estado
 const serverMutes = new Set<string>(); // `${serverId}:${userId}`
 
-// Jam do Spotify fixada numa sala de voz: o link que alguém colou, para todo mundo da sala entrar com um
-// clique. O Spotify não deixa criar Jam por API, então a pessoa cria no app dele e cola aqui. Fica só na
-// memória e some quando quem colou sai da sala (ver broadcastVoice).
+// Jams do Spotify fixadas nas salas de voz: cada pessoa da sala pode ter a sua (o link que ela colou), e quem
+// está na sala escolhe em qual entrar. O Spotify não deixa criar Jam por API, então a pessoa cria no app dele
+// e cola aqui. Fica só na memória; só quem fixou tira, e ela some quando a pessoa sai da sala (broadcastVoice).
 export interface Jam {
   channelId: string;
+  /** link completo da Jam (open.spotify.com/socialsession/...) */
   url: string;
+  /** o link como a pessoa colou (o curto do celular, spotify.link/...), para o chat reconhecer a mensagem */
+  sourceUrl: string;
   hostId: string;
   startedAt: number;
 }
-const jams = new Map<string, Jam & { serverId: string }>(); // channelId -> Jam
+const jams = new Map<string, Jam & { serverId: string }>(); // `${channelId}:${hostId}` -> Jam
 
 export function jamsFor(serverId: string): Jam[] {
   return [...jams.values()].filter((j) => j.serverId === serverId).map(({ serverId: _s, ...j }) => j);
@@ -45,14 +48,15 @@ function broadcastJams(serverId: string) {
   io.to(`server:${serverId}`).emit('voice:jams', { serverId, jams: jamsFor(serverId) });
 }
 
-/** Fixa (ou tira, com url null) a Jam de uma sala. */
-export function setJam(serverId: string, channelId: string, hostId: string, url: string | null) {
-  if (url) jams.set(channelId, { serverId, channelId, url, hostId, startedAt: Date.now() });
-  else jams.delete(channelId);
+/** Fixa (ou tira, com url null) a Jam de uma pessoa numa sala. */
+export function setJam(serverId: string, channelId: string, hostId: string, jam: { url: string; sourceUrl: string } | null) {
+  const key = `${channelId}:${hostId}`;
+  if (jam) jams.set(key, { serverId, channelId, hostId, ...jam, startedAt: Date.now() });
+  else jams.delete(key);
   broadcastJams(serverId);
 }
 
-export const getJam = (channelId: string) => jams.get(channelId);
+export const getJam = (channelId: string, hostId: string) => jams.get(`${channelId}:${hostId}`);
 
 const publicState = ({ socketId: _s, ...rest }: VoiceState) => rest;
 
@@ -74,7 +78,7 @@ function broadcastVoice(serverId: string) {
   let changed = false;
   for (const j of jams.values()) {
     if (j.serverId === serverId && voice.get(j.hostId)?.channelId !== j.channelId) {
-      jams.delete(j.channelId);
+      jams.delete(`${j.channelId}:${j.hostId}`);
       changed = true;
     }
   }

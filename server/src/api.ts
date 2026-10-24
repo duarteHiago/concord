@@ -1630,17 +1630,18 @@ async function resolveJamLink(text: string): Promise<string | null> {
   }
 }
 
-/** Quem está na sala e cola um link de Jam no chat dela fixa a Jam (se a sala ainda não tem uma). */
+/** Quem está na sala e cola um link de Jam no chat dela fixa (ou troca) a própria Jam. */
 function jamFromChat(channel: ChannelRow, me: string, content: string) {
-  const inRoom = () => channel.type === 'voice' && !getJam(channel.id) && getVoiceState(me)?.channelId === channel.id;
-  if (!inRoom() || !(JAM_SESSION.test(content) || SHORT_LINK.test(content))) return;
+  const inRoom = () => channel.type === 'voice' && getVoiceState(me)?.channelId === channel.id;
+  const sourceUrl = JAM_SESSION.exec(content)?.[0] ?? SHORT_LINK.exec(content)?.[0];
+  if (!inRoom() || !sourceUrl) return;
   void resolveJamLink(content).then((url) => {
-    // ler o link curto leva um instante: confere de novo se a pessoa continua na sala e a sala sem Jam
-    if (url && inRoom()) setJam(channel.server_id, channel.id, me, url);
+    // ler o link curto leva um instante: confere de novo se a pessoa continua na sala
+    if (url && inRoom()) setJam(channel.server_id, channel.id, me, { url, sourceUrl });
   });
 }
 
-/** Fixa a Jam: só quem está na sala. Trocar a Jam de outra pessoa pede permissão de moderar a sala. */
+/** Fixa (ou troca) a própria Jam: só quem está na sala. Cada pessoa tem a sua. */
 api.put('/channels/:id/jam', humansOnly, async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.VIEW_CHANNEL);
@@ -1650,20 +1651,15 @@ api.put('/channels/:id/jam', humansOnly, async (req, res) => {
   // link curto: guarda o endereço da Jam que ele aponta (e recusa link curto de música ou playlist)
   const url =
     (await resolveJamLink(raw!)) ?? fail(400, 'Esse link do Spotify não é de uma Jam (ou o Spotify não respondeu). Na Jam, toque em Convidar e depois em Copiar link.');
-  const current = getJam(channel.id);
-  if (current && current.hostId !== me && !has(channelPermissions(channel, me), P.MOVE_MEMBERS)) fail(409, 'Esta sala já tem uma Jam');
-  setJam(channel.server_id, channel.id, me, url);
+  setJam(channel.server_id, channel.id, me, { url, sourceUrl: raw! });
   res.json({ ok: true });
 });
 
-/** Tira a Jam: quem fixou, ou quem pode moderar a sala. */
+/** Tira a própria Jam: só quem fixou (ninguém tira a Jam dos outros). */
 api.delete('/channels/:id/jam', humansOnly, (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.VIEW_CHANNEL);
-  const current = getJam(channel.id);
-  if (!current) return res.json({ ok: true });
-  if (current.hostId !== me && !has(channelPermissions(channel, me), P.MOVE_MEMBERS)) fail(403, 'Só quem fixou a Jam (ou quem modera a sala) pode tirar');
-  setJam(channel.server_id, channel.id, me, null);
+  if (getJam(channel.id, me)) setJam(channel.server_id, channel.id, me, null);
   res.json({ ok: true });
 });
 

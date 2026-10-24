@@ -225,7 +225,10 @@ export interface VoiceState {
 /** Jam do Spotify fixada numa sala de voz (ver server/src/realtime.ts). */
 export interface Jam {
   channelId: string;
+  /** link completo da Jam (open.spotify.com/socialsession/...) */
   url: string;
+  /** o link como a pessoa colou (pode ser o curto do celular, spotify.link/...) */
+  sourceUrl: string;
   hostId: string;
   startedAt: number;
 }

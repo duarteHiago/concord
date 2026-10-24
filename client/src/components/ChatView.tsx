@@ -15,6 +15,7 @@ import { mentionsMe } from '../lib/mentions';
 import { availableCommands, runCommand } from '../lib/commands';
 import { GameCard, GameMenuButton } from './Games';
 import { StickerButton, StickerMessage } from './StickerPicker';
+import { JamCard, useJamInMessage } from './Jam';
 
 const EMPTY: Message[] = [];
 
@@ -165,6 +166,10 @@ function Bubble({
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const size = compact ? 32 : 36;
   const isAction = message.content.startsWith('/me ');
+  // link de Jam do Spotify: vira um cartão com o botão de entrar (só o link: o cartão substitui o balão)
+  const plain = message.kind !== 'clip' && message.kind !== 'game' && message.kind !== 'sticker';
+  const jamLink = useJamInMessage(plain ? message.content : '');
+  const onlyJamLink = !!jamLink && message.content.trim().split(/\s+/).length === 1;
 
   async function saveEdit() {
     setEditing(false);
@@ -236,6 +241,8 @@ function Bubble({
           <GameCard id={message.id} data={message.data as GameData} author={mine ? 'Você' : name} />
         ) : message.kind === 'sticker' && message.data ? (
           <StickerMessage data={message.data as StickerMessageData} mine={mine} />
+        ) : jamLink && onlyJamLink ? (
+          <JamCard url={jamLink.url} jam={jamLink.jam} authorName={name} mine={mine} />
         ) : (
           message.content && (
             <div
@@ -257,6 +264,7 @@ function Bubble({
             </div>
           )
         )}
+        {!editing && jamLink && !onlyJamLink && <JamCard url={jamLink.url} jam={jamLink.jam} authorName={name} mine={mine} />}
         {!editing && <MessageAttachments items={message.attachments} mine={mine} />}
       </div>
       {actions}
