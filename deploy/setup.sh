@@ -73,6 +73,15 @@ if [ -n "${COMMUNITY_INVITE:-}" ]; then
   fi
 fi
 
+# Quem entra no portal da equipe (/admin): nomes de usuário separados por vírgula. Vem da variável do CI.
+if [ -n "${ADMIN_USERS:-}" ]; then
+  if printf '%s' "$ADMIN_USERS" | grep -qE '^[A-Za-z0-9_.,@ ]{1,500}$'; then
+    upsert_env ADMIN_USERS "$ADMIN_USERS"
+  else
+    echo "!! ADMIN_USERS com formato inesperado (use: usuario1,usuario2); ignorado." >&2
+  fi
+fi
+
 # senha do Grafana: gerada aqui na VPS e nunca impressa (os logs do CI são públicos)
 if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' .env; then
   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)" >> .env

@@ -87,7 +87,7 @@ jobs:
           ssh "$TARGET" "mkdir -p /opt/concord \
             && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
             && cd /opt/concord && chmod +x deploy/setup.sh \
-            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} ./deploy/setup.sh"
+            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} ./deploy/setup.sh"
 
       # Verifica de dentro da VPS: a Cloudflare costuma bloquear (403) os runners do GitHub.
       - name: Verificar saúde
