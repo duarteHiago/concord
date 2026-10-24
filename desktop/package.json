@@ -23,7 +23,10 @@
     "productName": "Concord",
     "artifactName": "Concord-Setup-${version}.${ext}",
     "files": ["main.cjs", "preload.cjs", "offline.html", "build/icon.png", "build/icon.ico"],
-    "extraResources": [{ "from": "native/audio-capture.exe", "to": "audio-capture.exe" }],
+    "extraResources": [
+      { "from": "native/audio-capture.exe", "to": "audio-capture.exe" },
+      { "from": "native/window-shake.exe", "to": "window-shake.exe" }
+    ],
     "directories": { "output": "release" },
     "publish": [{ "provider": "generic", "url": "https://concord-community.com/downloads/" }],
     "win": { "target": ["nsis"], "icon": "build/icon.ico" },
