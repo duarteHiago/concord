@@ -96,11 +96,14 @@ export interface NotifySettings {
   nudges: boolean; // receber chamadas de atenção
   shake: boolean; // tremer a tela/janela
   sound: boolean;
-  desktop: boolean; // notificação do sistema
+  // notificação do sistema: separada por tipo (antes era um "desktop" só, que sem querer também
+  // controlava a de menção — ver client/src/lib/nudge.ts)
+  nudgeDesktop: boolean;
   mentions: boolean; // avisar quando alguém mencionar você
+  mentionDesktop: boolean;
 }
 
-export const DEFAULT_NOTIFY: NotifySettings = { nudges: true, shake: true, sound: true, desktop: true, mentions: true };
+export const DEFAULT_NOTIFY: NotifySettings = { nudges: true, shake: true, sound: true, nudgeDesktop: true, mentions: true, mentionDesktop: true };
 
 export interface UserSettings {
   theme?: Partial<ThemeSettings>;

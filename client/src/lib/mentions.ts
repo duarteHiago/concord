@@ -26,7 +26,7 @@ export function receiveDirectMessage(dm: DirectChannel, message: Message) {
   const prefs = notifySettings(me);
   if (!prefs.mentions) return;
   if (prefs.sound) playSound('mention');
-  if (!prefs.desktop) return;
+  if (!prefs.mentionDesktop) return;
   const title = `${dm.user.displayName} (mensagem privada)`;
   const body =
     !message.content && message.attachments?.length
@@ -62,7 +62,7 @@ export function receiveMention(m: MentionEvent) {
   if (viewing) return;
 
   if (prefs.sound) playSound('mention');
-  if (!prefs.desktop) return;
+  if (!prefs.mentionDesktop) return;
 
   const author = m.message.author.displayName;
   const title = `${author} em ${m.channelName.startsWith('#') ? '' : '#'}${m.channelName} · ${m.serverName}`;

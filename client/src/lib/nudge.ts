@@ -7,7 +7,13 @@ import { desktop } from './desktop';
 import { playSound } from './sounds';
 import { DEFAULT_NOTIFY, type Me, type NotifySettings, type NudgeEvent } from './types';
 
-export const notifySettings = (me: Me | null): NotifySettings => ({ ...DEFAULT_NOTIFY, ...me?.settings?.notifications });
+export function notifySettings(me: Me | null): NotifySettings {
+  const raw = me?.settings?.notifications as (Partial<NotifySettings> & { desktop?: boolean }) | undefined;
+  // migração: o "desktop" antigo virava as duas opções de uma vez (tremida e menção); quem já
+  // tinha desligado continua desligado nas duas até escolher separado nas configurações
+  const legacy = raw?.desktop !== undefined && raw.nudgeDesktop === undefined && raw.mentionDesktop === undefined ? raw.desktop : undefined;
+  return { ...DEFAULT_NOTIFY, ...(legacy !== undefined ? { nudgeDesktop: legacy, mentionDesktop: legacy } : {}), ...raw };
+}
 
 let lastReceived = 0;
 
@@ -26,7 +32,7 @@ export function receiveNudge(n: NudgeEvent) {
     shakeScreen();
     desktop?.shakeWindow?.();
   }
-  if (prefs.desktop) showSystemNotification(n);
+  if (prefs.nudgeDesktop) showSystemNotification(n);
 }
 
 function shakeScreen() {

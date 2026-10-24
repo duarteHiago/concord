@@ -573,12 +573,12 @@ function Notifications() {
           {row(
             'Notificação do sistema',
             desktop ? 'Aparece na central de notificações do Windows.' : 'Aparece quando a aba do Concord não está visível.',
-            prefs.desktop,
-            (v) => set({ desktop: v }),
+            prefs.nudgeDesktop,
+            (v) => set({ nudgeDesktop: v }),
             !prefs.nudges,
           )}
         </div>
-        {!desktop && prefs.desktop && permission !== 'granted' && (
+        {!desktop && (prefs.nudgeDesktop || prefs.mentionDesktop) && permission !== 'granted' && (
           <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl bg-warn/10 p-3 text-sm text-warn">
             {permission === 'denied' ? 'O navegador está bloqueando notificações deste site. Libere no cadeado ao lado do endereço.' : 'Falta permitir as notificações neste navegador.'}
             {permission === 'default' && (
@@ -588,6 +588,21 @@ function Notifications() {
             )}
           </div>
         )}
+      </div>
+
+      <div>
+        <SectionTitle>Menções e mensagens diretas</SectionTitle>
+        <div className="divide-y divide-line rounded-2xl bg-surface-0">
+          {row('Avisar quando te mencionarem', 'Vale para @menção e mensagem direta nova.', prefs.mentions, (mentions) => set({ mentions }))}
+          {row(
+            'Notificação do sistema',
+            // independente da notificação de "chamar atenção" ali em cima: uma não liga/desliga a outra
+            desktop ? 'Aparece na central de notificações do Windows.' : 'Aparece quando a aba do Concord não está visível.',
+            prefs.mentionDesktop,
+            (v) => set({ mentionDesktop: v }),
+            !prefs.mentions,
+          )}
+        </div>
       </div>
 
       <div>
