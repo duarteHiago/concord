@@ -52,12 +52,19 @@ export function totpCode(secret: Buffer, step: number): string {
 
 const currentStep = () => Math.floor(Date.now() / 1000 / STEP_SECONDS);
 
-/** Passo em que o código bate (aceita 1 passo de folga para relógios um pouco fora), ou null. */
-function matchStep(secret: Buffer, code: string): number | null {
-  const now = currentStep();
-  for (const step of [now, now - 1, now + 1]) {
-    const expected = Buffer.from(totpCode(secret, step));
-    if (expected.length === code.length && timingSafeEqual(expected, Buffer.from(code))) return step;
+// Celular com o relógio fora é comum (hora manual, bateria que zerou). Na configuração procuramos o código
+// em ±10 min e guardamos a diferença da pessoa (totp_drift); no login a folga continua de 1 passo, mas
+// centrada no relógio dela, e vai se ajustando sozinha se ele andar.
+const SETUP_DRIFT_STEPS = 20;
+
+/** Passo em que o código bate, procurando `spread` passos para cada lado de `center`, do mais perto ao mais longe. */
+function matchStep(secret: Buffer, code: string, center = currentStep(), spread = 1): number | null {
+  const given = Buffer.from(code);
+  for (let d = 0; d <= spread; d++) {
+    for (const step of d ? [center - d, center + d] : [center]) {
+      const expected = Buffer.from(totpCode(secret, step));
+      if (expected.length === given.length && timingSafeEqual(expected, given)) return step;
+    }
   }
   return null;
 }
@@ -128,10 +135,12 @@ export function checkCode(user: UserRow, raw: unknown): CodeKind | null {
   const code = typeof raw === 'string' ? raw.replace(/\s+/g, '') : '';
   let kind: CodeKind | null = null;
   if (/^\d{6}$/.test(code) && user.totp_secret) {
-    const step = matchStep(unseal(user.totp_secret), code);
+    const now = currentStep();
+    const step = matchStep(unseal(user.totp_secret), code, now + (user.totp_drift ?? 0));
     // o mesmo código não vale duas vezes (quem viu você digitar não reaproveita)
     if (step !== null && step > (user.totp_last_step ?? 0)) {
-      run('UPDATE users SET totp_last_step = ? WHERE id = ?', step, user.id);
+      // bateu na beirada da folga: o relógio do celular andou, a folga acompanha
+      run('UPDATE users SET totp_last_step = ?, totp_drift = ? WHERE id = ?', step, step - now, user.id);
       kind = 'totp';
     }
   } else if (normalize(code).length === 8) {
@@ -178,7 +187,7 @@ export function startSetup(user: UserRow) {
   let secret = pendingSecret(user);
   if (!secret) {
     secret = randomBytes(20);
-    run('UPDATE users SET totp_secret = ?, totp_last_step = 0 WHERE id = ?', seal(secret), user.id);
+    run('UPDATE users SET totp_secret = ?, totp_last_step = 0, totp_drift = 0 WHERE id = ?', seal(secret), user.id);
   }
   const b32 = base32(secret);
   const label = encodeURIComponent(`Concord:${user.username}`);
@@ -190,18 +199,20 @@ export function startSetup(user: UserRow) {
  * Errar aqui não conta para o bloqueio de 15 min: a pessoa já está logada e confirmou a senha, e adivinhar o
  * código não dá nada a ninguém (o segredo é dela). O bloqueio fica para o login e as ações sensíveis.
  */
-export function enable(user: UserRow, raw: unknown): string[] {
+export function enable(user: UserRow, raw: unknown): { backupCodes: string[]; clockOffsetSec: number } {
   if (user.totp_enabled) fail(400, 'A verificação em duas etapas já está ligada.');
   const secret = pendingSecret(user) ?? fail(400, 'Comece a configuração de novo.');
   const code = typeof raw === 'string' ? raw.replace(/\s+/g, '') : '';
   // aqui só vale o código do app: ainda não existem códigos de backup
   if (!/^\d{6}$/.test(code)) fail(400, 'Digite os 6 números que aparecem no app autenticador.');
-  const step = matchStep(secret, code);
+  const now = currentStep();
+  const step = matchStep(secret, code, now, SETUP_DRIFT_STEPS);
   if (step === null) {
-    fail(400, 'Esse código não bate com o QR desta tela. Confira se escaneou este QR (apague entradas antigas do Concord no app) e se o relógio do celular está no automático.');
+    fail(400, 'Esse código não bate com o QR desta tela. Apague as entradas antigas do Concord no app autenticador e escaneie este QR de novo.');
   }
-  run('UPDATE users SET totp_last_step = ? WHERE id = ?', step, user.id);
-  return rotateBackupCodes(user.id, true);
+  const drift = step! - now;
+  run('UPDATE users SET totp_last_step = ?, totp_drift = ? WHERE id = ?', step, drift, user.id);
+  return { backupCodes: rotateBackupCodes(user.id, true), clockOffsetSec: drift * STEP_SECONDS };
 }
 
 export function rotateBackupCodes(userId: string, enableNow = false): string[] {
@@ -215,7 +226,7 @@ export function rotateBackupCodes(userId: string, enableNow = false): string[] {
 }
 
 export function disable(userId: string) {
-  run('UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_last_step = 0, totp_backup = NULL WHERE id = ?', userId);
+  run('UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_last_step = 0, totp_drift = 0, totp_backup = NULL WHERE id = ?', userId);
 }
 
 // ---- Login em duas etapas ----
