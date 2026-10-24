@@ -642,6 +642,83 @@ function showClip({ text, from, autoCopy }) {
 
 handle('concord:show-clip', (_e, data) => showClip(data ?? {}));
 
+// ------------------------------------------------------------------ mensagem da tremida (chamar atenção)
+// Janelinha por cima de tudo igual à do código compartilhado acima, só que sem copiar: passa e some sozinha.
+
+const NUDGE_MSG_SHOW_MS = 10_000;
+let nudgeMsgWin = null;
+let nudgeMsgTimer = null;
+
+function nudgeMsgHtml(text, from) {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;user-select:none}
+  .card{box-sizing:border-box;margin:8px;height:calc(100% - 16px);border-radius:22px;background:#211a28;border:1px solid #ffffff22;
+    box-shadow:0 12px 32px #000a;padding:14px 18px;color:#f3ecf7;display:flex;flex-direction:column;justify-content:center;gap:6px;position:relative;overflow:hidden;
+    animation:pop .35s cubic-bezier(.2,1.5,.4,1)}
+  @keyframes pop{from{transform:translateY(-14px) scale(.96);opacity:0}}
+  .top{font-size:12px;color:#b3a6c2;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top b{color:#f3ecf7}
+  .msg{font:700 20px "Segoe UI",sans-serif;color:#c4a5ff;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .bar{position:absolute;left:0;bottom:0;height:3px;background:#c4a5ff;animation:shrink ${NUDGE_MSG_SHOW_MS}ms linear forwards}
+  @keyframes shrink{from{width:100%}to{width:0}}
+  </style></head><body><div class="card">
+  <div class="top">⚡ <b>${escapeHtml(from)}</b> chamou sua atenção!</div>
+  <div class="msg">${escapeHtml(text)}</div>
+  <div class="bar"></div></div></body></html>`;
+}
+
+function closeNudgeMsg() {
+  clearTimeout(nudgeMsgTimer);
+  if (nudgeMsgWin && !nudgeMsgWin.isDestroyed()) nudgeMsgWin.close();
+  nudgeMsgWin = null;
+}
+
+function showNudgeMessage({ text, from }) {
+  text = String(text ?? '').slice(0, 140);
+  if (!text) return false;
+  from = String(from ?? 'Alguém').slice(0, 40);
+  // aparece na tela onde está o mouse (normalmente a do jogo), no topo e centralizada
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const width = 440;
+  const height = 132;
+  const x = Math.round(display.workArea.x + (display.workArea.width - width) / 2);
+  const y = display.workArea.y + 24;
+  if (!nudgeMsgWin || nudgeMsgWin.isDestroyed()) {
+    nudgeMsgWin = new BrowserWindow({
+      width,
+      height,
+      x,
+      y,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      focusable: false,
+      show: false,
+      alwaysOnTop: true,
+      webPreferences: { sandbox: true, contextIsolation: true },
+    });
+    nudgeMsgWin.setAlwaysOnTop(true, 'screen-saver');
+    nudgeMsgWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    nudgeMsgWin.on('closed', () => {
+      nudgeMsgWin = null;
+    });
+  } else {
+    nudgeMsgWin.setBounds({ x, y, width, height });
+  }
+  void nudgeMsgWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(nudgeMsgHtml(text, from))}`);
+  nudgeMsgWin.showInactive();
+  clearTimeout(nudgeMsgTimer);
+  nudgeMsgTimer = setTimeout(closeNudgeMsg, NUDGE_MSG_SHOW_MS);
+  return true;
+}
+
+handle('concord:show-nudge-message', (_e, data) => showNudgeMessage(data ?? {}));
+
 // ------------------------------------------------------------------ chamar atenção (estilo MSN)
 
 const activeNotifications = new Set(); // evita que o coletor de lixo descarte a notificação antes do clique

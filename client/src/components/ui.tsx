@@ -371,10 +371,13 @@ export function AvatarStack({
   people,
   size = 30,
   max = 5,
+  freeze,
 }: {
   people: { id: string; name: string; color: string; src?: string | null; frame?: string | null; speaking?: boolean }[];
   size?: number;
   max?: number;
+  /** repassado para cada Avatar: desenha a foto num canvas, sem a animação do GIF */
+  freeze?: boolean;
 }) {
   const shown = people.slice(0, max);
   const extra = people.length - shown.length;
@@ -382,7 +385,7 @@ export function AvatarStack({
     <div className="flex items-center">
       {shown.map((p, i) => (
         <div key={p.id} className="rounded-full ring-[3px] ring-surface-3" style={{ marginLeft: i ? -size * 0.28 : 0, zIndex: shown.length - i }}>
-          <Avatar name={p.name} color={p.color} src={p.src} frame={p.frame} size={size} speaking={p.speaking} />
+          <Avatar name={p.name} color={p.color} src={p.src} frame={p.frame} size={size} speaking={p.speaking} freeze={freeze} />
         </div>
       ))}
       {extra > 0 && (

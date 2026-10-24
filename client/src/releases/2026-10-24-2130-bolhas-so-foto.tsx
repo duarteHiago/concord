@@ -2,12 +2,17 @@ import { Volume2, VolumeX } from 'lucide-react';
 import { Frame, Tag } from '../components/modals/OnboardingArt';
 import type { Release } from './index';
 
-function BubblesArt() {
+function WatchersArt() {
   return (
-    <Frame className="flex h-[150px] items-center justify-center gap-3">
-      <div className="h-11 w-11 rounded-full bg-surface-3" />
-      <div className="speaking-ring h-11 w-11 rounded-full bg-accent-2" />
-      <div className="h-11 w-11 rounded-full bg-surface-3" />
+    <Frame className="flex h-[150px] flex-col justify-start gap-2 p-3">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-accent px-2.5 py-1 text-[10px] font-bold text-on-accent">ao vivo</span>
+        <span className="rounded-full bg-surface-3 px-2 py-1 text-[10px] font-bold">H.265</span>
+        <div className="flex items-center rounded-full bg-surface-1 py-1 pr-2 pl-1">
+          <div className="h-5 w-5 rounded-full bg-surface-4 ring-2 ring-surface-1" />
+          <div className="-ml-1.5 h-5 w-5 rounded-full bg-accent-2 ring-2 ring-surface-1" />
+        </div>
+      </div>
       <Tag className="top-3 right-3">Sem nome</Tag>
     </Frame>
   );
@@ -30,13 +35,13 @@ function MuteClickArt() {
 
 export default {
   id: '2026-10-24-2130',
-  title: 'Bolhas de quem assiste só com a foto',
+  title: 'Quem está assistindo aparece do lado da qualidade',
   highlights: [
     {
       kicker: 'Transmissão de tela',
-      title: 'Quem está assistindo com você aparece só com a foto, sem nome',
-      text: 'Ao assistir a tela de alguém, as bolhas de quem mais está junto agora mostram só a foto de perfil (se for um GIF animado, fica parada num quadro só). Microfone e fone cortados ainda aparecem, num selinho embaixo da foto.',
-      art: BubblesArt,
+      title: 'Veja quem mais está assistindo, do lado do selo "ao vivo"',
+      text: 'Ao assistir a tela de alguém, um grupinho de fotos aparece no canto superior esquerdo, do lado do selo "ao vivo" e do codec: são as outras pessoas vendo aquela transmissão com você. É só a foto (sem nome), e se for um GIF animado, fica parada num quadro só. As bolhas dos participantes, embaixo, continuam do jeito que sempre foram.',
+      art: WatchersArt,
     },
     {
       kicker: 'Transmissão de tela',

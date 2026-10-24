@@ -44,6 +44,18 @@ import { toast } from '../store/toast';
 import { onVisibilityChange } from '../lib/visibility';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
 
+/** Fotos (sem nome, GIF parado) de quem mais está vendo essa transmissão com você. */
+function WatchersBadge({ people }: { people: { id: string; name: string; color: string; src: string | null }[] }) {
+  return (
+    <span
+      className="pointer-events-auto flex items-center rounded-full bg-surface-1/80 py-1 pr-2 pl-1 backdrop-blur"
+      title={`Também assistindo: ${people.map((p) => p.name).join(', ')}`}
+    >
+      <AvatarStack people={people} size={22} max={4} freeze />
+    </span>
+  );
+}
+
 export function VoiceView({ channel }: { channel: Channel }) {
   const detail = useActiveDetail()!;
   const status = useVoice((s) => (s.channelId === channel.id ? s.status : 'idle'));
@@ -314,6 +326,11 @@ function buildTiles(participants: Participant[]): TileInfo[] {
   return tiles;
 }
 
+/** Quem mais, além de quem transmite, está na sala vendo essa tela (exclui você mesmo). */
+function viewersFor(tiles: TileInfo[], screenTile: TileInfo): TileInfo[] {
+  return tiles.filter((t) => t.kind === 'person' && !t.isLocal && t.participant.identity !== screenTile.participant.identity);
+}
+
 function gridCols(n: number) {
   if (n <= 1) return 1;
   if (n <= 4) return 2;
@@ -341,7 +358,7 @@ function Stage({ detail }: { detail: ServerDetail }) {
     const others = tiles.filter((t) => t !== focused);
     return (
       <div className="absolute inset-0">
-        <Tile detail={detail} tile={focused} focused onClick={() => {}} />
+        <Tile detail={detail} tile={focused} viewers={focused.kind === 'screen' ? viewersFor(tiles, focused) : undefined} focused onClick={() => {}} />
         {bubblesHidden ? (
           // barra escondida: só um botão discreto no canto para trazer de volta
           <button
@@ -385,7 +402,7 @@ function Stage({ detail }: { detail: ServerDetail }) {
       <div className="grid w-full max-w-6xl gap-4" style={{ gridTemplateColumns: `repeat(${gridCols(tiles.length)}, minmax(0, 1fr))` }}>
         {tiles.map((t) => (
           <div key={t.key} className="aspect-video">
-            <Tile detail={detail} tile={t} onClick={() => setFocus(t.key)} />
+            <Tile detail={detail} tile={t} viewers={t.kind === 'screen' ? viewersFor(tiles, t) : undefined} onClick={() => setFocus(t.key)} />
           </div>
         ))}
       </div>
@@ -422,20 +439,16 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
   return (
     <button
       onClick={(e) => openPopover(p.identity, detail.server.id, e.currentTarget.getBoundingClientRect())}
-      title={tile.isLocal ? 'você' : name}
-      aria-label={tile.isLocal ? 'você' : name}
-      className="relative shrink-0"
+      className="flex shrink-0 flex-col items-center gap-1.5"
     >
       <span className={cx('relative block h-16 w-16 overflow-hidden rounded-full ring-4 transition-shadow', speaking && !muted ? 'ring-accent' : 'ring-surface-1')}>
-        {/* aqui é só a foto: sem nome embaixo. GIF animado congela num frame só (ver prop `freeze` do Avatar) */}
-        {camTrack ? <VideoEl track={camTrack} fit="cover" mirror={tile.isLocal} /> : <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={64} freeze />}
+        {camTrack ? <VideoEl track={camTrack} fit="cover" mirror={tile.isLocal} /> : <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={64} />}
       </span>
-      {(muted || deafened) && (
-        <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-surface-1 px-1.5 py-0.5 ring-2 ring-surface-0">
-          {muted && <MicOff size={11} className="text-danger" />}
-          {deafened && <HeadphoneOff size={11} className="text-danger" />}
-        </span>
-      )}
+      <span className="flex max-w-24 items-center gap-1 rounded-full bg-surface-1/85 px-2.5 py-0.5 text-xs font-bold backdrop-blur">
+        {muted && <MicOff size={11} className="shrink-0 text-danger" />}
+        {deafened && <HeadphoneOff size={11} className="shrink-0 text-danger" />}
+        <span className="truncate">{tile.isLocal ? 'você' : name}</span>
+      </span>
     </button>
   );
 }
@@ -449,7 +462,20 @@ function ScreenChip({ detail, tile, onClick }: { detail: ServerDetail; tile: Til
   );
 }
 
-function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: TileInfo; focused?: boolean; onClick: () => void }) {
+function Tile({
+  detail,
+  tile,
+  viewers,
+  focused,
+  onClick,
+}: {
+  detail: ServerDetail;
+  tile: TileInfo;
+  /** outras pessoas da sala assistindo essa transmissão junto com você (só telas) */
+  viewers?: TileInfo[];
+  focused?: boolean;
+  onClick: () => void;
+}) {
   const { participant: p, kind, isLocal } = tile;
   const { name, color, avatarUrl, frame } = useMemberInfo(detail, p);
   const speaking = useVoice((s) => !!s.speaking[p.identity]);
@@ -480,6 +506,15 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
     const pub = p.getTrackPublication(Track.Source.ScreenShare);
     const track = pub?.track as LocalTrack | RemoteTrack | undefined;
     const canView = isLocal || watching;
+    const watcherPeople = (viewers ?? []).map((t) => {
+      const member = detail.members.find((m) => m.id === t.participant.identity);
+      return {
+        id: t.participant.identity,
+        name: member ? memberName(member) : (t.participant.name ?? t.participant.identity),
+        color: member?.avatarColor ?? '#7c5cff',
+        src: member?.avatarUrl ?? null,
+      };
+    });
 
     return (
       <div
@@ -514,6 +549,7 @@ function Tile({ detail, tile, focused, onClick }: { detail: ServerDetail; tile: 
         <div className="pointer-events-none absolute top-5 left-5 flex items-center gap-2">
           <LivePill className="px-3 py-1 text-xs">ao vivo</LivePill>
           {isLocal && <ShareCodecBadge />}
+          {watcherPeople.length > 0 && <WatchersBadge people={watcherPeople} />}
           {showStats && track && <StatsBadge track={track} targetFps={isLocal ? shareFps : undefined} />}
         </div>
 

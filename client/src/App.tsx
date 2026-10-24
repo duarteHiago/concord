@@ -9,7 +9,7 @@ import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
 import { Spinner, Toasts } from './components/ui';
 import { UpdateBanner } from './components/UpdateBanner';
-import { NudgeCard } from './components/NudgeCard';
+import { NudgeCard, NudgeMessageToast } from './components/NudgeCard';
 import { GameOverlay } from './components/GameOverlay';
 import { ClipToast } from './components/Clip';
 import { RecordingPill } from './components/RecordControls';
@@ -108,6 +108,7 @@ function MainApp() {
       <Toasts />
       <UpdateBanner />
       {me && <NudgeCard />}
+      {me && <NudgeMessageToast />}
       {me && <GameOverlay />}
       {me && <ClipToast />}
       {me && <RecordingPill />}

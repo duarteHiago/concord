@@ -33,6 +33,26 @@ export function receiveNudge(n: NudgeEvent) {
     desktop?.shakeWindow?.();
   }
   if (prefs.nudgeDesktop) showSystemNotification(n);
+  if (n.message) showNudgeMessage(n);
+}
+
+export interface NudgeMessage {
+  text: string;
+  from: string;
+}
+
+/** Evento (navegador) da mensagem opcional: ver NudgeMessageToast, no NudgeCard.tsx. */
+export const NUDGE_MESSAGE_EVENT = 'concord:nudge-message';
+
+/** Mensagem opcional junto da tremida: passa e some, igual ao código compartilhado (sem copiar). */
+function showNudgeMessage(n: NudgeEvent) {
+  const from = n.from.nickname || n.from.displayName;
+  const text = n.message!;
+  if (desktop?.showNudgeMessage) {
+    void desktop.showNudgeMessage({ text, from });
+    return;
+  }
+  window.dispatchEvent(new CustomEvent<NudgeMessage>(NUDGE_MESSAGE_EVENT, { detail: { text, from } }));
 }
 
 function shakeScreen() {

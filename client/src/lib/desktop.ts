@@ -72,6 +72,8 @@ interface DesktopBridge {
   notify?(opts: { title: string; body: string; data?: unknown }): Promise<void>;
   shakeWindow?(): Promise<void>;
   showClip?(data: { text: string; from: string; autoCopy: boolean }): Promise<boolean>;
+  /** mensagem opcional da tremida: janelinha por cima de tudo, igual à do código compartilhado, sem copiar */
+  showNudgeMessage?(data: { text: string; from: string }): Promise<boolean>;
   /** prioridade alta para os processos de captura enquanto transmite */
   setStreaming?(on: boolean): Promise<number[]>;
   onNotificationClick?(cb: (data: unknown) => void): () => void;
