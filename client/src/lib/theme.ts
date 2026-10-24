@@ -134,7 +134,7 @@ export function cachedTheme(): ThemeSettings {
 }
 
 /** Texto escuro sobre cores claras, branco sobre cores escuras (luminância relativa do WCAG). */
-function readableOn(hex: string): string {
+export function readableOn(hex: string): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
   if (!m) return '#ffffff';
   const [r, g, b] = [0, 2, 4].map((i) => {

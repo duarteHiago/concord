@@ -27,7 +27,7 @@ import { api } from '../lib/api';
 import { memberName, type Channel, type ServerDetail, type VoiceState } from '../lib/types';
 import { HOME, memberColor, useActiveDetail, useApp } from '../store/app';
 import { DmSidebar } from './DirectMessages';
-import { profileTriggers } from '../store/popover';
+import { toggleOrOpenPopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { ServerStrip } from './ServerRail';
@@ -311,7 +311,10 @@ function VoiceParticipant({ detail, state, speaking }: { detail: ServerDetail; s
   if (!member) return null;
   return (
     <button
-      {...profileTriggers(member.id, detail.server.id, () => useApp.getState().openProfile(member.id, detail.server.id))}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleOrOpenPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect());
+      }}
       className="flex h-9 w-full items-center gap-2.5 rounded-xl px-1.5 text-left text-sm text-fg-muted hover:bg-surface-4 hover:text-fg"
     >
       <Avatar name={memberName(member)} color={member.avatarColor} src={member.avatarUrl} frame={member.frame} size={26} speaking={speaking && !state.muted} />

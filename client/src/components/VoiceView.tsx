@@ -28,7 +28,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { memberName, type Channel, type ServerDetail } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
-import { usePopover } from '../store/popover';
+import { toggleOrOpenPopover, usePopover } from '../store/popover';
 import { useVoice } from '../store/voice';
 import { Composer, MessageFeed } from './ChatView';
 import { MemberListBody } from './MemberList';
@@ -453,7 +453,6 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
   const p = tile.participant;
   const { name, color, avatarUrl, frame } = useMemberInfo(detail, p);
   const speaking = useVoice((s) => !!s.speaking[p.identity]);
-  const openPopover = usePopover((s) => s.open);
   const micPub = p.getTrackPublication(Track.Source.Microphone);
   const muted = !micPub || micPub.isMuted;
   const deafened = useDeafened(detail.server.id, p.identity);
@@ -462,7 +461,7 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
 
   return (
     <button
-      onClick={(e) => openPopover(p.identity, detail.server.id, e.currentTarget.getBoundingClientRect())}
+      onClick={(e) => toggleOrOpenPopover(p.identity, detail.server.id, e.currentTarget.getBoundingClientRect())}
       className="flex shrink-0 flex-col items-center gap-1.5"
     >
       <span className={cx('relative block h-16 w-16 overflow-hidden rounded-full ring-4 transition-shadow', speaking && !muted ? 'ring-accent' : 'ring-surface-1')}>
@@ -626,8 +625,8 @@ function Tile({
   return (
     <div
       ref={ref}
-      // clique abre o perfil (com as opções da pessoa); duplo clique destaca o quadro
-      onClick={(e) => openPopover(p.identity, detail.server.id, { left: e.clientX, right: e.clientX, top: e.clientY })}
+      // clique abre o mini perfil (clicar de novo fecha); duplo clique destaca o quadro
+      onClick={(e) => toggleOrOpenPopover(p.identity, detail.server.id, { left: e.clientX, right: e.clientX, top: e.clientY })}
       onDoubleClick={onClick}
       onContextMenu={(e) => {
         e.preventDefault();

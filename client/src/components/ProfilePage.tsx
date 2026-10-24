@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, Clock, Gamepad2, Headphones, ImagePlus, MessageCirc
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
+import { readableOn } from '../lib/theme';
 import type { Activity, Patch, ServerSummary, User } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
@@ -84,7 +85,9 @@ export function ProfilePage() {
   }
 
   const u = data.user;
-  const accentStyle = page.accent ? ({ '--color-accent': page.accent } as CSSProperties) : undefined;
+  // sem isso, o selo de verificado e o botão de mensagem ficavam com a cor de "em cima do destaque" do
+  // tema global (geralmente branco), que pode não ler bem sobre um destaque claro escolhido na página
+  const accentStyle = page.accent ? ({ '--color-accent': page.accent, '--color-on-accent': readableOn(page.accent) } as CSSProperties) : undefined;
 
   return (
     <main className="panel relative flex min-w-0 flex-1 overflow-hidden" style={accentStyle}>

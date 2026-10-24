@@ -56,6 +56,20 @@ export function releasePopover() {
 }
 
 /**
+ * Clique direto numa foto/linha que abre o mini perfil (sem passar pelo profileTriggers, ver abaixo):
+ * clicar de novo no mesmo gatilho fecha, em vez de reabrir o cartão do zero. Clicar em outro gatilho,
+ * ou em qualquer outro lugar da tela (já tratado pelo próprio MemberPopover), também funciona.
+ */
+export function toggleOrOpenPopover(userId: string, serverId: string, rect: DOMRect | { left: number; top: number; right: number }) {
+  const state = usePopover.getState();
+  if (state.userId === userId && !state.hover) {
+    state.close();
+    return;
+  }
+  state.open(userId, serverId, rect);
+}
+
+/**
  * Gatilhos de perfil para foto ou nome de alguém: passar o mouse abre o mini perfil, clicar abre a página do
  * perfil (`onOpenPage`). No toque (celular), o toque abre o mini perfil, que tem o botão "Ver perfil".
  */
@@ -79,7 +93,7 @@ export function profileTriggers(userId: string, serverId: string | null | undefi
       e.stopPropagation();
       clearTimeout(openTimer);
       if (lastPointer !== 'mouse' && serverId) {
-        usePopover.getState().open(userId, serverId, e.currentTarget.getBoundingClientRect());
+        toggleOrOpenPopover(userId, serverId, e.currentTarget.getBoundingClientRect());
         return;
       }
       usePopover.getState().close();
