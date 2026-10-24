@@ -3,7 +3,7 @@
 // topo mostra uma, e a setinha ao lado lista todas para escolher em qual entrar. Só quem fixou tira, e a Jam
 // sai sozinha quando a pessoa sai da sala (ver server/src/realtime.ts).
 import { ChevronDown, Music2, Plus, X } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import { memberName, type Channel, type Jam, type Member, type ServerDetail } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
@@ -31,7 +31,10 @@ const jamLabel = (jam: Jam, host: Member | undefined, myId: string) => (jam.host
 /** Botão das Jams no topo da sala. */
 export function JamButton({ detail, channel }: { detail: ServerDetail; channel: Channel }) {
   const me = useApp((s) => s.me)!;
-  const roomJams = useApp((s) => s.jams[detail.server.id]?.filter((j) => j.channelId === channel.id)) ?? [];
+  // o seletor devolve a lista guardada (mesma referência); filtrar dentro dele criaria uma lista nova a cada
+  // leitura e o Zustand redesenharia sem parar
+  const serverJams = useApp((s) => s.jams[detail.server.id]);
+  const roomJams = useMemo(() => (serverJams ?? []).filter((j) => j.channelId === channel.id), [serverJams, channel.id]);
   const inRoom = useVoice((s) => s.channelId === channel.id && s.status === 'connected');
   const [creating, setCreating] = useState(false);
   const [menu, setMenu] = useState(false);
