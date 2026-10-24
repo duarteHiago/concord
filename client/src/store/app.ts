@@ -27,6 +27,9 @@ import type {
   VoiceState,
 } from '../lib/types';
 
+/** Seções da página de Configurações (ver components/settings/SettingsPage.tsx). */
+export type SettingsTab = 'profile' | 'account' | 'privacy' | 'support' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'dev';
+
 /** activeServerId especial: a tela de conversas privadas. */
 export const HOME = '@me';
 import { toast } from './toast';
@@ -40,7 +43,7 @@ export type Modal =
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
   | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum' }
-  | { type: 'userSettings'; tab?: 'support' | 'account' | 'dev' | 'audio' | 'notifications' }
+  | { type: 'userSettings'; tab?: SettingsTab | 'style' }
   | { type: 'support' }
   | { type: 'shareScreen' }
   | { type: 'nickname'; serverId: string; userId: string }
@@ -81,6 +84,10 @@ interface AppState {
   closeReleases: () => void;
   /** página do perfil de alguém aberta no lugar da conversa (mesmas regras de fechar que a de Novidades) */
   profile: { userId: string; serverId: string | null } | null;
+  /** página de Configurações aberta (na seção indicada), no lugar da conversa */
+  settings: SettingsTab | null;
+  openSettings: (tab?: SettingsTab) => void;
+  closeSettings: () => void;
   openProfile: (userId: string, serverId?: string | null) => void;
   closeProfile: () => void;
   pendingInvite: string | null;
@@ -525,10 +532,12 @@ export const useApp = create<AppState>((set, get) => {
       // reconectar reabre o servidor atual, mas não deve tirar a pessoa da página de Novidades
       const keepReleases = get().releasesOpen;
       const keepProfile = get().profile;
+      const keepSettings = get().settings;
       if (target) get().openServer(target);
       else set({ activeServerId: null });
       if (keepReleases) set({ releasesOpen: true });
       if (keepProfile) set({ profile: keepProfile });
+      if (keepSettings) set({ settings: keepSettings });
       // recarrega os servidores já abertos (reconexão)
       for (const id of Object.keys(get().details)) if (id !== target) void get().loadDetail(id);
     },
@@ -558,7 +567,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openServer: (serverId) => {
-      set({ activeServerId: serverId, releasesOpen: false, profile: null });
+      set({ activeServerId: serverId, releasesOpen: false, profile: null, settings: null });
       saveLast(serverId, get().activeChannels);
       if (serverId === HOME) {
         void get().loadDms();
@@ -590,7 +599,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openDmById: (dmId) => {
-      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false, profile: null });
+      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false, profile: null, settings: null });
       saveLast(HOME, get().activeChannels);
       if (!get().messages[dmId]) void get().loadDmMessages(dmId);
       get().markDmRead(dmId);
@@ -619,7 +628,7 @@ export const useApp = create<AppState>((set, get) => {
 
     openChannel: (serverId, channelId) => {
       const activeChannels = { ...get().activeChannels, [serverId]: channelId };
-      set({ activeChannels, releasesOpen: false, profile: null });
+      set({ activeChannels, releasesOpen: false, profile: null, settings: null });
       saveLast(serverId, activeChannels);
       const ch = get().details[serverId]?.channels.find((c) => c.id === channelId);
       if (ch?.type === 'text' && !get().messages[channelId]) void get().loadMessages(channelId);
@@ -640,13 +649,20 @@ export const useApp = create<AppState>((set, get) => {
       }
     },
 
-    openModal: (modal) => set({ modal }),
+    // as Configurações viraram página: quem pede a "janela" de configurações (de qualquer lugar do app) abre ela
+    openModal: (modal) =>
+      modal.type === 'userSettings'
+        ? set({ settings: modal.tab === 'style' || !modal.tab ? 'profile' : modal.tab, profile: null, releasesOpen: false, modal: null })
+        : set({ modal }),
     closeModal: () => set({ modal: null }),
     toggleMemberList: () => set({ memberListOpen: !get().memberListOpen }),
     releasesOpen: false,
-    openReleases: () => set({ releasesOpen: true, profile: null }),
+    openReleases: () => set({ releasesOpen: true, profile: null, settings: null }),
     profile: null,
-    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false }),
+    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false, settings: null }),
+    settings: null,
+    openSettings: (tab = 'profile') => set({ settings: tab, profile: null, releasesOpen: false }),
+    closeSettings: () => set({ settings: null }),
     closeProfile: () => set({ profile: null }),
     closeReleases: () => set({ releasesOpen: false }),
   };

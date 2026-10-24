@@ -14,7 +14,6 @@ import { WhatsNewModal } from './WhatsNewModal';
 import { EmailPromptModal } from '../EmailRecovery';
 import { ServerSettingsModal } from './ServerSettingsModal';
 import { ShareScreenModal } from './ShareScreenModal';
-import { UserSettingsModal } from './UserSettingsModal';
 import { SupportModal } from '../Support';
 import { MecenasModal } from '../Mecenas';
 import { BackupCodesModal } from '../TwoFactor';
@@ -43,7 +42,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
     case 'channelSettings':
       return <ChannelSettingsModal serverId={modal.serverId} channelId={modal.channelId} />;
     case 'userSettings':
-      return <UserSettingsModal initialTab={modal.tab} />;
+      // chega aqui quando alguém troca o modal direto no estado (ex.: depois do código de recuperação): vira a página
+      return <SettingsRedirect tab={modal.tab} />;
     case 'support':
       return <SupportModal />;
     case 'shareScreen':
@@ -245,4 +245,12 @@ function ConfirmModal({ title, message, confirmLabel, danger, onConfirm }: Extra
       <p className="text-fg-muted">{message}</p>
     </Modal>
   );
+}
+
+/** As Configurações são uma página agora: abre ela na seção pedida e fecha o "modal". */
+function SettingsRedirect({ tab }: { tab?: Extract<ModalState, { type: 'userSettings' }>['tab'] }) {
+  useEffect(() => {
+    useApp.getState().openModal({ type: 'userSettings', tab });
+  }, [tab]);
+  return null;
 }
