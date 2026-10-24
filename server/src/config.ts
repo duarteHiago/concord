@@ -22,6 +22,15 @@ export const config = {
   // servidor cujo cargo "Administrador" vira autoridade da instalação inteira: dá o selo de verificado
   // em qualquer servidor ou pessoa (não só no próprio servidor). Vazio desliga a função.
   authorityServerId: (env.AUTHORITY_SERVER_ID ?? '').trim(),
+  // quem entra no portal da equipe (/admin): nomes de usuário separados por vírgula. Vazio desliga o portal.
+  adminUsers: new Set(
+    (env.ADMIN_USERS ?? '')
+      .split(',')
+      .map((u) => u.trim().replace(/^@/, '').toLowerCase())
+      .filter(Boolean),
+  ),
+  // diagnósticos enviados ficam ao lado do banco, fora de /uploads (que é público)
+  diagnosticsDir: env.DIAGNOSTICS_DIR ?? '',
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
   metricsPort: Number(env.METRICS_PORT ?? 9464),
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',
@@ -48,6 +57,7 @@ export const config = {
 // por padrão os uploads ficam ao lado do banco (no Docker: /data/uploads)
 if (!config.uploadsDir) config.uploadsDir = join(dirname(config.dbPath), 'uploads');
 if (!config.downloadsDir) config.downloadsDir = join(dirname(config.dbPath), 'downloads');
+if (!config.diagnosticsDir) config.diagnosticsDir = join(dirname(config.dbPath), 'diagnostics');
 
 if (env.NODE_ENV === 'production' && config.jwtSecret === 'dev-secret-troque-isto') {
   console.warn('[aviso] JWT_SECRET não definido — defina um valor aleatório em produção!');

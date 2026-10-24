@@ -428,6 +428,17 @@ function UserCard() {
           >
             Editar perfil e notificações
           </button>
+          {me.isAdmin && (
+            <a
+              href="/admin"
+              target="_blank"
+              rel="noopener"
+              onClick={() => setMenu(false)}
+              className="block w-full rounded-2xl px-3 py-2.5 text-left text-sm font-semibold text-fg-muted hover:bg-surface-4 hover:text-fg"
+            >
+              Portal da equipe
+            </a>
+          )}
         </div>
       )}
       <button onClick={() => setMenu(!menu)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" title="Status e perfil" aria-expanded={menu}>

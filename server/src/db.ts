@@ -353,6 +353,26 @@ db.exec(`
 `);
 addColumn('users', 'support_total_cents', 'INTEGER NOT NULL DEFAULT 0');
 
+// Diagnósticos que as pessoas mandam do app (ver diagnostics.ts). O arquivo em si fica fora do banco,
+// compactado, numa pasta que não é servida para fora; aqui fica só o resumo para a lista do portal.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS diagnostics (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    note TEXT NOT NULL DEFAULT '',
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL,
+    samples INTEGER NOT NULL,
+    markers INTEGER NOT NULL,
+    mode TEXT,
+    client_commit TEXT,
+    user_agent TEXT,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_diagnostics_created ON diagnostics(created_at);
+`);
+
 // (depois do CREATE TABLE de dm_messages: num banco novo a tabela ainda não existe lá em cima)
 addColumn('dm_messages', 'attachments', 'TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');

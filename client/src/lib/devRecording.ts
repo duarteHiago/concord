@@ -1,9 +1,11 @@
 // Gravação de diagnóstico: guarda cada leitura (a cada 2 s) enquanto estiver gravando e, ao parar,
-// baixa um .json para mandar a quem vai analisar. Roda na janela principal (o app), então não
+// a pessoa escolhe: mandar para a equipe (vai para o portal /admin, ver server/src/diagnostics.ts),
+// baixar o .json ou descartar. Roda na janela principal (o app), então não
 // depende da janela de diagnóstico ficar aberta; ela só mostra e controla esta mesma gravação
 // pelo BroadcastChannel (ver devStats.ts). O que não muda durante a sessão (versões, GPU,
 // processador) vai uma vez só no cabeçalho, para o arquivo não inchar.
 import { create } from 'zustand';
+import { getToken } from './api';
 import type { DevSnapshot } from './devStats';
 
 // 3 horas de leituras a cada 2 s; passou disso, para sozinho e salva
@@ -17,6 +19,11 @@ export interface RecordingState {
   count: number;
   /** momentos marcados */
   markers: number;
+  /** gravação parada, esperando a pessoa escolher o que fazer com ela */
+  finished: { startedAt: number; endedAt: number; count: number; markers: number } | null;
+  sending: boolean;
+  /** última tentativa de envio: deu certo, ou a mensagem do erro */
+  sendResult: { ok: true } | { ok: false; error: string } | null;
 }
 
 interface Marker {
@@ -75,12 +82,40 @@ const stamp = (d: Date) =>
 let header: ReturnType<typeof headerOf> | null = null;
 let samples: ReturnType<typeof sampleOf>[] = [];
 let markers: Marker[] = [];
+/** o arquivo da última gravação parada, até a pessoa mandar, baixar ou descartar */
+let pending: { name: string; data: unknown } | null = null;
+
+async function gzip(text: string): Promise<Blob> {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Response(stream).blob();
+}
+
+/** Manda para a equipe. A nota vai num cabeçalho porque o corpo é o arquivo compactado. */
+async function upload(data: unknown, note: string) {
+  const token = getToken();
+  const res = await fetch('/api/diagnostics', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/gzip',
+      'X-Diagnostic-Note': encodeURIComponent(note.slice(0, 1000)),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: await gzip(JSON.stringify(data)),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? (res.status === 413 ? 'A gravação ficou grande demais para enviar. Baixe o arquivo e mande por outro caminho.' : `Erro ${res.status}`));
+  }
+}
 
 export const useDevRecording = create<
   RecordingState & {
     start: () => void;
     stop: () => void;
     mark: (note: string) => void;
+    send: (note: string) => Promise<void>;
+    download: () => void;
+    discard: () => void;
     /** chamado pelo coletor (devStats.ts) a cada leitura nova */
     add: (snapshot: DevSnapshot) => void;
   }
@@ -89,32 +124,62 @@ export const useDevRecording = create<
   startedAt: null,
   count: 0,
   markers: 0,
+  finished: null,
+  sending: false,
+  sendResult: null,
 
   start() {
     if (get().recording) return;
     header = null;
     samples = [];
     markers = [];
-    set({ recording: true, startedAt: Date.now(), count: 0, markers: 0 });
+    pending = null;
+    set({ recording: true, startedAt: Date.now(), count: 0, markers: 0, finished: null, sendResult: null });
   },
 
   stop() {
     const { recording, startedAt } = get();
     if (!recording || !startedAt) return;
     const start = new Date(startedAt);
-    download(`concord-diagnostico_${stamp(start)}.json`, {
-      format: 'concord-diagnostico/1',
-      startedAt: start.toISOString(),
-      endedAt: new Date().toISOString(),
-      intervalSec: 2,
-      environment: header,
-      markers,
-      samples,
-    });
+    const end = new Date();
+    pending = {
+      name: `concord-diagnostico_${stamp(start)}.json`,
+      data: {
+        format: 'concord-diagnostico/1',
+        startedAt: start.toISOString(),
+        endedAt: end.toISOString(),
+        intervalSec: 2,
+        environment: header,
+        markers,
+        samples,
+      },
+    };
+    const finished = { startedAt, endedAt: end.getTime(), count: samples.length, markers: markers.length };
     header = null;
     samples = [];
     markers = [];
-    set({ recording: false, startedAt: null, count: 0, markers: 0 });
+    set({ recording: false, startedAt: null, count: 0, markers: 0, finished, sendResult: null });
+  },
+
+  async send(note) {
+    if (!pending || get().sending) return;
+    set({ sending: true, sendResult: null });
+    try {
+      await upload(pending.data, note);
+      pending = null;
+      set({ sending: false, finished: null, sendResult: { ok: true } });
+    } catch (err) {
+      set({ sending: false, sendResult: { ok: false, error: err instanceof Error ? err.message : String(err) } });
+    }
+  },
+
+  download() {
+    if (pending) download(pending.name, pending.data);
+  },
+
+  discard() {
+    pending = null;
+    set({ finished: null, sendResult: null });
   },
 
   mark(note) {

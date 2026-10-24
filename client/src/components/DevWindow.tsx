@@ -64,7 +64,10 @@ function RecordBar({ snapshot }: { snapshot: DevSnapshot | null }) {
       onStart={rec.start}
       onStop={rec.stop}
       onMark={rec.mark}
-      disabled={!snapshot}
+      onSend={rec.send}
+      onDownload={rec.download}
+      onDiscard={rec.discard}
+      disabled={!snapshot && !rec.finished}
       className={rec.recording ? 'border-b border-line bg-danger/10 px-4 py-2' : 'border-b border-line bg-surface-1 px-4 py-2'}
     />
   );

@@ -137,6 +137,8 @@ export interface Me extends User {
   emailPending?: string | null;
   /** pode conceder/revogar o selo de verificado em qualquer servidor ou pessoa */
   isAuthority?: boolean;
+  /** está em ADMIN_USERS: entra no portal da equipe (/admin) */
+  isAdmin?: boolean;
   /** total já apoiado (centavos): decide os acabamentos liberados */
   supportTotal?: number;
   /** acabamento escolhido para o perfil (null = escondido ou ainda não apoiou) */

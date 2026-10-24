@@ -33,9 +33,19 @@ const IS_DEV_WINDOW = PATH === '/diagnostico';
 /** /compatibilidade: página pública (sem login) sobre H.265 — ver components/CompatibilityPage.tsx. */
 const IS_COMPATIBILITY = PATH === '/compatibilidade';
 const CompatibilityPage = lazy(() => import('./components/CompatibilityPage'));
+/** /admin: portal da equipe (só quem está em ADMIN_USERS no servidor) — ver components/admin/. */
+const IS_ADMIN = PATH === '/admin';
+const AdminPortal = lazy(() => import('./components/admin/AdminPortal'));
 
 export default function App() {
   if (IS_DEV_WINDOW) return <DevWindow />;
+  if (IS_ADMIN) {
+    return (
+      <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner size={36} /></div>}>
+        <AdminPortal />
+      </Suspense>
+    );
+  }
   if (IS_COMPATIBILITY) {
     return (
       <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner size={36} /></div>}>
