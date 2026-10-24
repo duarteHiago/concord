@@ -9,8 +9,8 @@ const SOUNDS: Record<string, [number, number][]> = {
   mute: [[440, 0]],
   unmute: [[660, 0]],
   stream: [[523, 0], [659, 0.07], [784, 0.14]],
-  // "chamar atenção": um trinado curto, fácil de reconhecer
-  nudge: [[880, 0], [660, 0.06], [880, 0.12], [660, 0.18], [880, 0.24], [1175, 0.32]],
+  // "chamar atenção": tem som próprio, mais alto e com zumbido (ver playNudge)
+  nudge: [],
   nudgeSent: [[660, 0], [880, 0.06]],
   mention: [[988, 0], [1319, 0.08]],
   // código compartilhado: "plim" duplo
@@ -18,6 +18,7 @@ const SOUNDS: Record<string, [number, number][]> = {
 };
 
 export function playSound(name: keyof typeof SOUNDS) {
+  if (name === 'nudge') return playNudge();
   try {
     ctx ??= new AudioContext();
     const t0 = ctx.currentTime;
@@ -33,6 +34,60 @@ export function playSound(name: keyof typeof SOUNDS) {
       osc.start(t0 + offset);
       osc.stop(t0 + offset + 0.18);
     }
+  } catch {
+    // áudio indisponível
+  }
+}
+
+/**
+ * "Chamar atenção": trinado que sobe no fim, por cima de um zumbido vibrando (como celular no vibra), os dois
+ * durando o mesmo tanto que a tremida (750 ms, ver desktop/main.cjs). Mais alto que os outros sons de propósito.
+ */
+const NUDGE_SECONDS = 0.75;
+const NUDGE_TRILL: [number, number][] = [[880, 0], [660, 0.08], [880, 0.16], [660, 0.24], [880, 0.32], [660, 0.4], [1175, 0.5], [1568, 0.6]];
+
+function playNudge() {
+  try {
+    ctx ??= new AudioContext();
+    const t0 = ctx.currentTime;
+
+    for (const [freq, offset] of NUDGE_TRILL) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, t0 + offset);
+      gain.gain.linearRampToValueAtTime(0.2, t0 + offset + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + offset + 0.14);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0 + offset);
+      osc.stop(t0 + offset + 0.16);
+    }
+
+    // zumbido: onda grave e abafada, com o volume pulsando rápido (o "vibrar")
+    const buzz = ctx.createOscillator();
+    buzz.type = 'sawtooth';
+    buzz.frequency.value = 95;
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 900;
+    const pulse = ctx.createGain();
+    pulse.gain.value = 0.5;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 22;
+    const lfoDepth = ctx.createGain();
+    lfoDepth.gain.value = 0.5;
+    lfo.connect(lfoDepth).connect(pulse.gain);
+    const envelope = ctx.createGain();
+    envelope.gain.setValueAtTime(0, t0);
+    envelope.gain.linearRampToValueAtTime(0.16, t0 + 0.03);
+    envelope.gain.setValueAtTime(0.16, t0 + NUDGE_SECONDS - 0.15);
+    envelope.gain.linearRampToValueAtTime(0, t0 + NUDGE_SECONDS);
+    buzz.connect(lowpass).connect(pulse).connect(envelope).connect(ctx.destination);
+    buzz.start(t0);
+    lfo.start(t0);
+    buzz.stop(t0 + NUDGE_SECONDS + 0.05);
+    lfo.stop(t0 + NUDGE_SECONDS + 0.05);
   } catch {
     // áudio indisponível
   }
