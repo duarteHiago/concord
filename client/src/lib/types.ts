@@ -116,6 +116,8 @@ export interface UserSettings {
   clips?: { receive?: boolean; autoCopy?: boolean };
   /** já viu o tutorial de boas-vindas (ele reaparece em "Configurações → Conta" a qualquer momento) */
   onboarded?: boolean;
+  /** última edição de Novidades vista (id AAAA-MM-DD, ver releases/) */
+  lastSeenRelease?: string;
   /** clicou "Depois eu vejo" no aviso do e-mail de recuperação: não mostra mais */
   emailPromptDismissed?: boolean;
 }

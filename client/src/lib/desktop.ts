@@ -89,6 +89,12 @@ export const desktop: DesktopBridge | undefined = (window as unknown as { concor
 let infoCache: Promise<DesktopInfo> | null = null;
 export const desktopInfo = () => (infoCache ??= desktop!.info());
 
+/** Janela de diagnóstico: no app desktop é uma janela própria; no navegador, um pop-up em /diagnostico. */
+export function openDiagnosticsWindow() {
+  if (desktop?.openDevWindow) void desktop.openDevWindow();
+  else window.open('/diagnostico', 'concord-diagnostico', 'width=840,height=680,menubar=no,toolbar=no');
+}
+
 // Toca o PCM recebido (16 bits, 48 kHz, estéreo) com um buffer curto para manter baixa latência.
 const WORKLET = `
 class PcmPlayer extends AudioWorkletProcessor {

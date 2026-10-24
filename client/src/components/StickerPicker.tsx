@@ -71,6 +71,7 @@ export function StickerButton({ target, compact = false }: { target: StickerTarg
       <button
         aria-label="Figurinhas"
         title="Figurinhas"
+        data-tour="stickers"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
         className={cx('flex items-center justify-center rounded-full transition-colors', compact ? 'h-10 w-10' : 'h-[50px] w-[50px]', open ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}

@@ -4,12 +4,12 @@ import { cx } from '../ui';
 
 /** Pequenas "fotos" do app, feitas com os mesmos tokens de cor do tema (por isso acompanham o tema escolhido pela pessoa). */
 
-function Frame({ children }: { children: ReactNode }) {
-  return <div className="relative h-[150px] w-full overflow-hidden rounded-2xl border border-line bg-surface-0 p-3.5">{children}</div>;
+export function Frame({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cx('relative h-[150px] w-full overflow-hidden rounded-2xl border border-line bg-surface-0 p-3.5', className)}>{children}</div>;
 }
 
 /** Rótulo flutuante que aponta para o elemento sendo explicado. */
-function Tag({ children, className }: { children: ReactNode; className?: string }) {
+export function Tag({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span className={cx('absolute rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold whitespace-nowrap text-on-accent shadow-lg', className)}>
       {children}
@@ -18,11 +18,11 @@ function Tag({ children, className }: { children: ReactNode; className?: string 
 }
 
 /** Anel que destaca o botão/elemento em foco no mockup. */
-function Spot({ children, className, rounded = 'rounded-full' }: { children: ReactNode; className?: string; rounded?: string }) {
+export function Spot({ children, className, rounded = 'rounded-full' }: { children: ReactNode; className?: string; rounded?: string }) {
   return <div className={cx('flex items-center justify-center ring-2 ring-accent ring-offset-2 ring-offset-surface-0', rounded, className)}>{children}</div>;
 }
 
-function Bar({ w, className }: { w: number; className?: string }) {
+export function Bar({ w, className }: { w: number; className?: string }) {
   return <div className={cx('h-1.5 rounded-full bg-surface-4', className)} style={{ width: w }} />;
 }
 

@@ -136,6 +136,27 @@ h3,
   animation-name: fade-in;
 }
 
+/* Novidades: barra segmentada da apresentação (o fim da animação avança o passo) e o anel do "Mostrar onde fica" */
+@keyframes whats-new-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.whats-new-fill {
+  transform-origin: left;
+  animation: whats-new-fill 9s linear forwards;
+}
+@keyframes spotlight-ping {
+  0% { transform: scale(0.97); opacity: 0.8; }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+.spotlight-ping {
+  animation: spotlight-ping 1.6s ease-out infinite;
+}
+:root[data-motion='reduce'] .spotlight-ping {
+  animation: none;
+  opacity: 0;
+}
+
 input[type='range'] {
   accent-color: var(--color-accent);
 }
