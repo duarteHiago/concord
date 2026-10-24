@@ -3,7 +3,7 @@
 //   npm run release:draft figurinhas     -> src/releases/2026-10-24-1830-figurinhas.tsx
 // Como escrever: .claude/skills/novidades/SKILL.md
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 
 const slug = (process.argv[2] ?? '')
   .normalize('NFD')
@@ -16,9 +16,20 @@ if (!slug) {
   process.exit(1);
 }
 
-// AAAA-MM-DD-HHMM no horário de Brasília (UTC-3, sem horário de verão)
-const brt = new Date(Date.now() - 3 * 3_600_000).toISOString();
-const id = `${brt.slice(0, 10)}-${brt.slice(11, 13)}${brt.slice(14, 16)}`;
+// AAAA-MM-DD-HHMM no horário de Brasília (UTC-3, sem horário de verão). Precisa ser maior que o de todas
+// as notas que já existem: quem já viu a mais nova é marcado como "visto até ela" e não veria uma anterior.
+const stamp = (ms) => {
+  const t = new Date(ms - 3 * 3_600_000).toISOString();
+  return `${t.slice(0, 10)}-${t.slice(11, 13)}${t.slice(14, 16)}`;
+};
+const latest = readdirSync(new URL('../src/releases/', import.meta.url))
+  .map((f) => /^(\d{4}-\d{2}-\d{2}(?:-\d{4})?)/.exec(f)?.[1])
+  .filter(Boolean)
+  .sort()
+  .at(-1);
+let ms = Date.now();
+let id = stamp(ms);
+while (latest && id <= latest) id = stamp((ms += 60_000));
 const name = `${id}-${slug}.tsx`;
 const file = new URL(`../src/releases/${name}`, import.meta.url);
 if (existsSync(file)) {

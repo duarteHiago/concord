@@ -666,19 +666,95 @@ handle('concord:notify', (_e, opts) => {
 });
 
 let shaking = false;
-handle('concord:shake-window', () => {
-  if (!win || shaking || win.isMinimized() || win.isFullScreen()) return;
-  if (win.isMaximized()) return; // maximizada não dá para mover: a interface treme sozinha
-  shaking = true;
+
+// Tela inteira tremendo (até com o Concord minimizado ou atrás do jogo): tira uma foto de cada monitor,
+// mostra por cima de tudo numa janela que não recebe clique nem foco, sacode e some. A foto fica só na
+// memória deste computador e é descartada na hora. Jogo em tela cheia exclusiva fica por cima e não treme.
+const SHAKE_MS = 750;
+const SHAKE_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;transform:scale(1.03)}
+img.go{animation:s ${SHAKE_MS}ms cubic-bezier(.36,.07,.19,.97) both}
+@keyframes s{
+0%,100%{transform:scale(1.03) translate(0,0)}10%{transform:scale(1.03) translate(-14px,5px)}
+20%{transform:scale(1.03) translate(12px,-7px)}30%{transform:scale(1.03) translate(-12px,-5px)}
+40%{transform:scale(1.03) translate(14px,7px)}50%{transform:scale(1.03) translate(-9px,3px)}
+60%{transform:scale(1.03) translate(9px,-5px)}70%{transform:scale(1.03) translate(-7px,5px)}
+80%{transform:scale(1.03) translate(5px,-3px)}90%{transform:scale(1.03) translate(-2px,2px)}}
+</style></head><body><img id="i" alt=""></body></html>`;
+
+async function shakeAllScreens() {
+  const displays = screen.getAllDisplays();
+  const width = Math.max(...displays.map((d) => Math.round(d.size.width * d.scaleFactor)));
+  const height = Math.max(...displays.map((d) => Math.round(d.size.height * d.scaleFactor)));
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
+  const overlays = await Promise.all(
+    displays.map(async (d) => {
+      const source = sources.find((s) => s.display_id === String(d.id)) ?? (displays.length === 1 ? sources[0] : null);
+      if (!source || source.thumbnail.isEmpty()) return null;
+      const overlay = new BrowserWindow({
+        ...d.bounds,
+        frame: false,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        skipTaskbar: true,
+        focusable: false,
+        hasShadow: false,
+        enableLargerThanScreen: true,
+        show: false,
+        backgroundColor: '#000000',
+        webPreferences: { sandbox: true, contextIsolation: true },
+      });
+      overlay.setIgnoreMouseEvents(true);
+      overlay.setAlwaysOnTop(true, 'screen-saver');
+      overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      await overlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SHAKE_HTML)}`);
+      const jpeg = source.thumbnail.toJPEG(85).toString('base64');
+      // espera a foto desenhar antes de aparecer, para não piscar preto
+      await overlay.webContents.executeJavaScript(
+        `new Promise((r) => { const i = document.getElementById('i'); i.onload = i.onerror = r; i.src = 'data:image/jpeg;base64,${jpeg}'; })`,
+      );
+      overlay.setBounds(d.bounds);
+      return overlay;
+    }),
+  );
+  const shown = overlays.filter(Boolean);
+  if (!shown.length) return false;
+  for (const o of shown) o.showInactive();
+  // a animação começa só depois de todas aparecerem, para os monitores tremerem juntos
+  await Promise.all(shown.map((o) => o.webContents.executeJavaScript("document.getElementById('i').classList.add('go')")));
+  setTimeout(() => shown.forEach((o) => !o.isDestroyed() && o.destroy()), SHAKE_MS + 80);
+  return true;
+}
+
+/** Plano B (sem foto da tela): sacode só a janela do app, se der para mover. */
+function shakeAppWindow() {
+  if (!win || win.isMinimized() || win.isFullScreen() || win.isMaximized()) return;
   const [x, y] = win.getPosition();
   const offsets = [[-12, 4], [10, -6], [-10, -4], [12, 6], [-8, 2], [8, -4], [-6, 4], [4, -2], [-2, 2], [0, 0]];
   offsets.forEach(([dx, dy], i) =>
     setTimeout(() => {
-      if (!win || win.isDestroyed()) return;
-      win.setPosition(x + dx, y + dy);
-      if (i === offsets.length - 1) shaking = false;
+      if (win && !win.isDestroyed()) win.setPosition(x + dx, y + dy);
     }, i * 40),
   );
+}
+
+handle('concord:shake-window', async () => {
+  if (!win || shaking) return;
+  shaking = true;
+  // pisca na barra de tarefas também, para achar o Concord depois da tremida
+  if (!win.isFocused()) win.flashFrame(true);
+  try {
+    if (!(await shakeAllScreens())) shakeAppWindow();
+  } catch (err) {
+    console.error('[tremida] tela inteira falhou:', err);
+    shakeAppWindow();
+  } finally {
+    setTimeout(() => (shaking = false), SHAKE_MS);
+  }
 });
 
 // ------------------------------------------------------------------ atualização automática

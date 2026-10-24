@@ -568,7 +568,7 @@ function Notifications() {
         </div>
         <div className="divide-y divide-line rounded-2xl bg-surface-0">
           {row('Receber chamadas de atenção', 'Amigos podem fazer sua tela tremer para chamar você.', prefs.nudges, (nudges) => set({ nudges }))}
-          {row('Tremer a tela', 'A interface (e a janela, no app desktop) chacoalha.', prefs.shake, (shake) => set({ shake }), !prefs.nudges)}
+          {row('Tremer a tela', 'A interface chacoalha. No app para Windows, a tela inteira treme.', prefs.shake, (shake) => set({ shake }), !prefs.nudges)}
           {row('Tocar som', 'Um trinado curto, diferente dos sons da sala.', prefs.sound, (sound) => set({ sound }), !prefs.nudges)}
           {row(
             'Notificação do sistema',
