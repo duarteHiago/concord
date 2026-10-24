@@ -20,7 +20,6 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
       STEAM_API_KEY: ${STEAM_API_KEY:-}
-      LASTFM_API_KEY: ${LASTFM_API_KEY:-}
       # apoio por Pix (Mercado Pago). Vazio: o botão de apoiar não aparece
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
       MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}

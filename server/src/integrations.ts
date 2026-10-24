@@ -1,17 +1,13 @@
-// Integrações da página do perfil: biblioteca da Steam e músicas mais ouvidas pelo Last.fm.
-//
-// Steam: a pessoa conecta a conta pelo login oficial da Steam (OpenID 2.0), que confirma de quem é a conta
-// sem senha passando por aqui. Os jogos vêm da Web API da Steam (precisa de STEAM_API_KEY e do perfil com
-// "detalhes de jogos" públicos).
-// Last.fm: a pessoa liga o Spotify ao Last.fm (opção do próprio Last.fm) e põe o usuário dela aqui. As músicas
-// vêm da API pública do Last.fm (precisa de LASTFM_API_KEY). O Spotify não serve: a API dele só deixa 5 pessoas.
+// Integração da página do perfil com a Steam: a pessoa conecta a conta pelo login oficial da Steam (OpenID 2.0),
+// que confirma de quem é a conta sem senha passando por aqui. Os jogos vêm da Web API da Steam (precisa de
+// STEAM_API_KEY e do perfil com "detalhes de jogos" públicos).
 //
 // As respostas ficam 10 min em memória, para visitar um perfil não virar uma chamada lá fora toda vez.
 import { randomBytes } from 'node:crypto';
 import type { Router } from 'express';
 import { config } from './config.ts';
 import { get, run, type UserRow } from './db.ts';
-import { fail, str, uid } from './http.ts';
+import { fail, uid } from './http.ts';
 
 const CACHE_MS = 10 * 60_000;
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -33,7 +29,7 @@ async function getJson(url: string): Promise<unknown> {
   return res.json();
 }
 
-export const integrationsStatus = () => ({ steam: !!config.steamApiKey && !!config.publicUrl, lastfm: !!config.lastfmApiKey });
+export const integrationsStatus = () => ({ steam: !!config.steamApiKey && !!config.publicUrl });
 
 // ------------------------------------------------------------------ Steam
 
@@ -78,44 +74,6 @@ async function steamLibrary(steamId: string) {
             .map((g): SteamGame => ({ appid: g.appid, name: g.name ?? `App ${g.appid}`, playtimeMin: g.playtime_forever ?? 0, playtime2wMin: g.playtime_2weeks ?? 0 }))
             .sort((a, b) => b.playtimeMin - a.playtimeMin)
         : null,
-    };
-  });
-}
-
-// ------------------------------------------------------------------ Last.fm
-
-const LASTFM_USER = /^[A-Za-z][A-Za-z0-9_-]{1,14}$/;
-// o Last.fm devolve uma estrela cinza quando não tem a imagem (o que é comum para músicas e artistas)
-const lastfmImage = (images: { '#text'?: string; size?: string }[] | undefined) => {
-  const url = images?.find((i) => i.size === 'extralarge')?.['#text'] || images?.at(-1)?.['#text'] || '';
-  return url && !url.includes('2a96cbd8b46e442fc41c2b86b821562f') ? url : null;
-};
-
-function lastfmUrl(method: string, user: string, extra = '') {
-  return `https://ws.audioscrobbler.com/2.0/?method=${method}&user=${encodeURIComponent(user)}&api_key=${encodeURIComponent(config.lastfmApiKey)}&format=json${extra}`;
-}
-
-async function lastfmProfile(user: string) {
-  return cached(`lastfm:${user.toLowerCase()}`, async () => {
-    type Img = { '#text'?: string; size?: string }[];
-    const [tracks, artists, recent] = (await Promise.all([
-      getJson(lastfmUrl('user.gettoptracks', user, '&period=1month&limit=8')),
-      getJson(lastfmUrl('user.gettopartists', user, '&period=1month&limit=6')),
-      getJson(lastfmUrl('user.getrecenttracks', user, '&limit=1')),
-    ])) as [
-      { toptracks?: { track?: { name: string; playcount: string; url: string; artist: { name: string }; image?: Img }[] } },
-      { topartists?: { artist?: { name: string; playcount: string; url: string; image?: Img }[] } },
-      { recenttracks?: { track?: { name: string; url: string; artist: { '#text': string }; album?: { '#text': string }; image?: Img; '@attr'?: { nowplaying?: string } }[] } },
-    ];
-    const last = recent.recenttracks?.track?.[0];
-    return {
-      user,
-      url: `https://www.last.fm/user/${encodeURIComponent(user)}`,
-      nowPlaying: last?.['@attr']?.nowplaying === 'true' ? { name: last.name, artist: last.artist['#text'], url: last.url, image: lastfmImage(last.image) } : null,
-      // capa do álbum da última música: é a imagem que o Last.fm ainda tem com certeza
-      lastCover: last ? lastfmImage(last.image) : null,
-      topTracks: (tracks.toptracks?.track ?? []).map((t) => ({ name: t.name, artist: t.artist.name, plays: Number(t.playcount) || 0, url: t.url, image: lastfmImage(t.image) })),
-      topArtists: (artists.topartists?.artist ?? []).map((a) => ({ name: a.name, plays: Number(a.playcount) || 0, url: a.url, image: lastfmImage(a.image) })),
     };
   });
 }
@@ -180,33 +138,6 @@ export function registerIntegrationRoutes(api: Router, hooks: { meUpdated: (user
     res.json({ ok: true });
   });
 
-  api.put('/me/lastfm', async (req, res) => {
-    const me = uid(res);
-    const raw = req.body?.user;
-    if (raw === null || raw === '') {
-      run('UPDATE users SET lastfm_user = NULL WHERE id = ?', me);
-      hooks.meUpdated(me);
-      return res.json({ ok: true });
-    }
-    if (!integrationsStatus().lastfm) fail(503, 'A integração com o Last.fm não está configurada neste servidor.');
-    const user = str(raw, 'usuário do Last.fm', 2, 15).replace(/^@/, '');
-    if (!LASTFM_USER.test(user)) fail(400, 'Esse não parece um usuário do Last.fm.');
-    // confere que existe (e pega o nome com as maiúsculas certas)
-    let realName = user;
-    try {
-      const info = (await getJson(lastfmUrl('user.getinfo', user))) as { user?: { name?: string }; error?: number };
-      if (info.error || !info.user?.name) fail(404, `Não achei o usuário "${user}" no Last.fm.`);
-      realName = info.user!.name!;
-    } catch (err) {
-      if ((err as { status?: number }).status) throw err;
-      fail(404, `Não achei o usuário "${user}" no Last.fm.`);
-    }
-    run('UPDATE users SET lastfm_user = ? WHERE id = ?', realName, me);
-    cache.delete(`lastfm:${realName.toLowerCase()}`);
-    hooks.meUpdated(me);
-    res.json({ ok: true, user: realName });
-  });
-
   api.get('/users/:id/steam', async (req, res) => {
     if (!hooks.canSee(uid(res), req.params.id)) fail(404, 'Perfil não encontrado');
     const u = get<UserRow>('SELECT steam_id FROM users WHERE id = ?', req.params.id);
@@ -215,17 +146,6 @@ export function registerIntegrationRoutes(api: Router, hooks: { meUpdated: (user
       res.json({ linked: true, ...(await steamLibrary(u.steam_id)) });
     } catch {
       fail(502, 'A Steam não respondeu agora. Tente de novo daqui a pouco.');
-    }
-  });
-
-  api.get('/users/:id/lastfm', async (req, res) => {
-    if (!hooks.canSee(uid(res), req.params.id)) fail(404, 'Perfil não encontrado');
-    const u = get<UserRow>('SELECT lastfm_user FROM users WHERE id = ?', req.params.id);
-    if (!u?.lastfm_user || !integrationsStatus().lastfm) return res.json({ linked: false });
-    try {
-      res.json({ linked: true, ...(await lastfmProfile(u.lastfm_user)) });
-    } catch {
-      fail(502, 'O Last.fm não respondeu agora. Tente de novo daqui a pouco.');
     }
   });
 }
