@@ -1,7 +1,7 @@
-import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Zap } from 'lucide-react';
+import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { clipSettings } from '../../lib/clip';
-import { NOISE_MODES, micLevels, preloadDfn, type GateMode, type MicLevel } from '../../lib/voiceEffects';
+import { NOISE_MODES, micLevels, preloadDfn, startMicTest, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
 import { BotsTab } from './BotsTab';
 import { ShortcutsTab } from './ShortcutsTab';
@@ -761,6 +761,7 @@ function Audio() {
     <div className="space-y-4">
       {select('Microfone', settings.inputId, inputs, (inputId) => void setAudioSettings({ inputId }))}
       {outputs.length > 0 && select('Saída de áudio', settings.outputId, outputs, (outputId) => void setAudioSettings({ outputId }))}
+      <MicTest />
       <CameraSettings cameras={cameras} />
       <div>
         <SectionTitle>Supressão de ruído</SectionTitle>
@@ -802,6 +803,112 @@ function Audio() {
           <Toggle checked={settings.echoCancellation} onChange={(v) => void setAudioSettings({ echoCancellation: v })} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Testa o microfone sem entrar em nenhuma sala — reage ao vivo aos ajustes desta aba (modelo, força, sensibilidade). */
+function MicTest() {
+  const settings = useVoice((s) => s.audioSettings);
+  const status = useVoice((s) => s.status);
+  const toggleMic = useVoice((s) => s.toggleMic);
+  const toggleDeafen = useVoice((s) => s.toggleDeafen);
+  const [testing, setTesting] = useState(false);
+  const [level, setLevel] = useState<MicLevel | null>(null);
+  const [monitorVolume, setMonitorVolume] = useState(1);
+  const [error, setError] = useState('');
+  const handleRef = useRef<MicTestHandle | null>(null);
+  // guarda como a pessoa estava (mic/surdo) antes do teste, pra devolver do mesmo jeito ao parar
+  const priorRef = useRef<{ micOn: boolean; deafened: boolean } | null>(null);
+
+  // reage ao vivo às mudanças de modelo, força e sensibilidade feitas ali em cima, sem precisar reiniciar o teste
+  useEffect(() => {
+    handleRef.current?.update({ noise: settings.noiseMode, strength: settings.noiseStrength, gate: settings.gate, level: settings.autoGain });
+  }, [settings.noiseMode, settings.noiseStrength, settings.gate, settings.autoGain]);
+
+  async function stop() {
+    handleRef.current?.stop();
+    handleRef.current = null;
+    setTesting(false);
+    setLevel(null);
+    const prior = priorRef.current;
+    priorRef.current = null;
+    if (prior) {
+      if (prior.micOn && !useVoice.getState().micOn) await toggleMic();
+      if (!prior.deafened && useVoice.getState().deafened) await toggleDeafen();
+    }
+  }
+
+  useEffect(() => () => void stop(), []); // eslint-disable-line react-hooks/exhaustive-deps -- só ao desmontar
+
+  async function start() {
+    setError('');
+    try {
+      // enquanto testa, ninguém mais ouve (silenciado) e você não ouve a sala por cima do teste (surdo)
+      if (status === 'connected') {
+        const { micOn, deafened } = useVoice.getState();
+        priorRef.current = { micOn, deafened };
+        if (micOn) await toggleMic();
+        if (!deafened) await toggleDeafen();
+      }
+      const handle = await startMicTest(
+        settings.inputId,
+        settings.outputId,
+        { noise: settings.noiseMode, strength: settings.noiseStrength, gate: settings.gate, level: settings.autoGain },
+        setLevel,
+      );
+      handle.setMonitorVolume(monitorVolume);
+      handleRef.current = handle;
+      setTesting(true);
+    } catch (err) {
+      setError(err instanceof Error && err.name === 'NotAllowedError' ? 'Permissão do microfone negada.' : 'Não foi possível abrir o microfone.');
+    }
+  }
+
+  const pct = (db: number) => Math.min(100, Math.max(0, ((db + 80) / 70) * 100));
+
+  return (
+    <div className="rounded-2xl bg-surface-0 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">Testar microfone</div>
+          <div className="text-xs text-fg-muted">
+            Fale e se ouça com os ajustes desta página aplicados, como as outras pessoas ouviriam. Use fones — pela caixa de som pode causar eco.
+          </div>
+        </div>
+        <Button variant={testing ? 'danger' : 'secondary'} onClick={() => void (testing ? stop() : start())}>
+          {testing ? 'Parar teste' : 'Testar'}
+        </Button>
+      </div>
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+      {testing && (
+        <div className="mt-3 space-y-2">
+          <div className="h-2 overflow-hidden rounded-full bg-surface-3">
+            <div
+              className={cx('h-full rounded-full transition-[width]', level?.open ? 'bg-accent' : 'bg-fg-subtle')}
+              style={{ width: `${pct(level?.level ?? -80)}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Volume2 size={16} className="shrink-0 text-fg-muted" />
+            <input
+              type="range"
+              min={0}
+              max={2}
+              step={0.05}
+              value={monitorVolume}
+              aria-label="Volume do teste"
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setMonitorVolume(v);
+                handleRef.current?.setMonitorVolume(v);
+              }}
+              className="min-w-0 flex-1"
+            />
+            <span className="w-9 shrink-0 text-right text-xs text-fg-muted">{Math.round(monitorVolume * 100)}%</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -488,6 +488,116 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
 
 let sharedContext: AudioContext | null = null;
 
+export interface MicTestSettings {
+  noise: NoiseMode;
+  strength: number;
+  gate: GateSettings;
+  level: boolean;
+}
+
+export interface MicTestHandle {
+  /** troca ao vivo (ex.: a pessoa mexeu no modelo, na força ou na sensibilidade ali em cima) */
+  update(settings: MicTestSettings): void;
+  /** volume do que toca de volta nos seus fones (não é a sensibilidade/nível do microfone) */
+  setMonitorVolume(v: number): void;
+  stop(): void;
+}
+
+/**
+ * Testa o microfone sem entrar em nenhuma sala: captura o áudio, aplica a mesma cadeia da chamada
+ * de verdade (IA de ruído, portão, nivelador) e toca de volta, com um pequeno atraso natural —
+ * assim dá pra ouvir exatamente o que as outras pessoas ouviriam, e comparar os modelos na hora.
+ */
+export async function startMicTest(deviceId: string, outputId: string, initial: MicTestSettings, onLevel: (level: MicLevel) => void): Promise<MicTestHandle> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+  });
+  const ctx = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
+  await ctx.resume().catch(() => {});
+  const ctxWithSink = ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+  if (outputId && ctxWithSink.setSinkId) void ctxWithSink.setSinkId(outputId).catch(() => {});
+
+  const source = ctx.createMediaStreamSource(stream);
+  const mono = ctx.createGain();
+  mono.channelCount = 1;
+  mono.channelCountMode = 'explicit';
+  mono.channelInterpretation = 'speakers';
+  source.connect(mono);
+  const monitor = ctx.createGain();
+  monitor.connect(ctx.destination);
+
+  let settings = initial;
+  let nodes: AudioNode[] = [];
+
+  async function rebuild() {
+    for (const n of nodes) {
+      try {
+        if (n instanceof GtcrnWorkletNode) n.destroy();
+        n.disconnect();
+      } catch {
+        // já desligado
+      }
+    }
+    nodes = [];
+    let input: AudioNode = mono;
+    const denoise = await noiseNode(ctx, settings.noise, settings.strength);
+    if (denoise) {
+      mono.connect(denoise);
+      input = denoise;
+      nodes.push(denoise);
+    }
+    await loadGateWorklet(ctx);
+    const gateNode = new AudioWorkletNode(ctx, 'concord-gate', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] });
+    gateNode.port.postMessage(settings.gate);
+    gateNode.port.onmessage = (e: MessageEvent<MicLevel>) => onLevel(e.data);
+    input.connect(gateNode);
+    input = gateNode;
+    nodes.push(gateNode);
+    if (settings.level && settings.noise !== 'off') {
+      // mesmo nivelador da chamada de verdade: só depois da limpeza, pra não "subir" o ruído
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -28;
+      comp.knee.value = 12;
+      comp.ratio.value = 3.5;
+      comp.attack.value = 0.004;
+      comp.release.value = 0.25;
+      const makeup = ctx.createGain();
+      makeup.gain.value = 1;
+      input.connect(comp);
+      comp.connect(makeup);
+      input = makeup;
+      nodes.push(comp, makeup);
+    }
+    input.connect(monitor);
+  }
+  await rebuild();
+
+  return {
+    update(next) {
+      settings = next;
+      void rebuild();
+    },
+    setMonitorVolume(v) {
+      monitor.gain.value = v;
+    },
+    stop() {
+      for (const n of nodes) {
+        try {
+          if (n instanceof GtcrnWorkletNode) n.destroy();
+          n.disconnect();
+        } catch {
+          // já desligado
+        }
+      }
+      monitor.disconnect();
+      mono.disconnect();
+      source.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      void ctx.close();
+    },
+  };
+}
+
 /** Aplica (ou remove) a supressão de ruído por IA e o efeito na faixa do microfone. */
 export async function applyVoiceProcessing(
   track: LocalAudioTrack,
