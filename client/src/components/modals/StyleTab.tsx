@@ -9,7 +9,7 @@ import { toast } from '../../store/toast';
 import { PATCH_PRESETS, PATCH_TILTS, PatchBadge } from '../PatchBadge';
 import { PatchForm } from '../PatchForm';
 import { ServerPatchesPanel, equipPatch, newPatchDraft } from '../ServerPatches';
-import { Avatar, Button, ImageHint, cx } from '../ui';
+import { Avatar, Button, cx } from '../ui';
 
 const FRAME_NAMES: Record<string, string> = {
   neon: 'Neon',
@@ -37,7 +37,8 @@ function Title({ children, hint }: { children: React.ReactNode; hint?: string })
 }
 
 
-export function StyleTab() {
+/** Moldura, fundo do mini perfil e patches. Dentro de Meu perfil (`embedded`) a prévia fica na coluna ao lado. */
+export function StyleTab({ embedded = false }: { embedded?: boolean }) {
   const me = useApp((s) => s.me)!;
   const setMe = useApp((s) => s.setMe);
   const [uploadingBg, setUploadingBg] = useState(false);
@@ -69,7 +70,7 @@ export function StyleTab() {
     <div className="space-y-7">
       {/* moldura */}
       <section>
-        <Title hint="Aparece em volta da sua foto em todo lugar: chat, sala de voz, lista de membros…">Moldura animada</Title>
+        <Title hint="Em volta da sua foto em todo lugar.">Moldura</Title>
         <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
           <FrameOption label="Nenhuma" active={!me.frame} onClick={() => void setFrame(null)}>
             <Avatar name={name} color={me.avatarColor} src={me.avatarUrl} size={44} />
@@ -83,10 +84,9 @@ export function StyleTab() {
       </section>
 
       {/* fundo do mini perfil + prévia */}
-      <section className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_240px]">
+      <section className={cx('grid gap-5', !embedded && 'sm:grid-cols-[minmax(0,1fr)_240px]')}>
         <div>
-          <Title hint="Imagem ou GIF que preenche o cartão que abre quando clicam em você (até 8 MB).">Fundo do mini perfil</Title>
-          <ImageHint spec="cardBg" className="mb-3" />
+          <Title hint="Imagem ou GIF no cartão que abre quando passam o mouse em você.">Fundo do mini perfil</Title>
           <div className="flex gap-2">
             <Button variant="secondary" loading={uploadingBg} onClick={changeCardBg}>
               <ImagePlus size={15} /> {me.cardBgUrl ? 'Trocar fundo' : 'Escolher imagem ou GIF'}
@@ -99,7 +99,7 @@ export function StyleTab() {
           </div>
           <PatchesEditor />
         </div>
-        <CardPreview me={me} />
+        {!embedded && <CardPreview me={me} />}
       </section>
     </div>
   );
@@ -122,7 +122,7 @@ function FrameOption({ label, active, onClick, children }: { label: string; acti
 }
 
 /** Prévia do mini perfil como os outros veem. */
-function CardPreview({ me }: { me: Me }) {
+export function CardPreview({ me }: { me: Me }) {
   const name = me.displayName || me.username;
   const patches = me.patches ?? [];
   const top = me.bannerColor ?? me.avatarColor;

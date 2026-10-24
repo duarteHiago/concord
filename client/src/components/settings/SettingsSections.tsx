@@ -3,9 +3,9 @@ import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { clipSettings } from '../../lib/clip';
 import { NOISE_MODES, micLevels, preloadDfn, startMicTest, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
-import { BotsTab } from './BotsTab';
-import { ShortcutsTab } from './ShortcutsTab';
-import { StyleTab } from './StyleTab';
+import { BotsTab } from '../modals/BotsTab';
+import { ShortcutsTab } from '../modals/ShortcutsTab';
+import { CardPreview, StyleTab } from '../modals/StyleTab';
 import { SupportTab } from '../Support';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
@@ -21,55 +21,11 @@ import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { useVoice } from '../../store/voice';
-import { Avatar, Button, ImageHint, Input, Modal, Toggle, cx } from '../ui';
+import { Avatar, Button, Input, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
 
-type Tab = 'profile' | 'style' | 'support' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'account' | 'dev';
-
-export function UserSettingsModal({ initialTab }: { initialTab?: Tab }) {
-  const close = useApp((s) => s.closeModal);
-  const [tab, setTab] = useState<Tab>(initialTab ?? 'profile');
-  return (
-    <Modal title="Configurações de usuário" onClose={close} width={860}>
-      {/* rótulos nunca quebram linha (desalinhava a barra); se a janela for estreita, a barra rola na horizontal */}
-      <div className="mb-5 flex gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:none]">
-        {(
-          [
-            ['profile', 'Perfil'],
-            ['style', 'Estilo'],
-            ['support', 'Apoiar 💛'],
-            ['appearance', 'Aparência'],
-            ['notifications', 'Notificações'],
-            ['audio', 'Voz e vídeo'],
-            ['shortcuts', 'Atalhos'],
-            ['bots', 'Bots'],
-            ['account', 'Conta'],
-            ['dev', 'Desenvolvedor'],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={cx('shrink-0 border-b-2 px-3 pb-2 text-sm font-semibold whitespace-nowrap', tab === id ? 'border-accent text-fg' : 'border-transparent text-fg-muted hover:text-fg')}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === 'profile' && <Profile />}
-      {tab === 'style' && <StyleTab />}
-      {tab === 'support' && <SupportTab />}
-      {tab === 'appearance' && <Appearance />}
-      {tab === 'notifications' && <Notifications />}
-      {tab === 'shortcuts' && <ShortcutsTab />}
-      {tab === 'bots' && <BotsTab />}
-      {tab === 'audio' && <Audio />}
-      {tab === 'account' && <Account />}
-      {tab === 'dev' && <DevTab />}
-    </Modal>
-  );
-}
+export type { SettingsTab } from '../../store/app';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <span className="mb-2 block text-xs font-bold tracking-wide text-fg-muted uppercase">{children}</span>;
@@ -77,9 +33,12 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 // ------------------------------------------------------------------ Perfil
 
-function Profile() {
+/** Meu perfil: quem você é (foto, capa, nome, status, bio) e o visual (moldura, fundo do mini perfil, patches,
+ * página do perfil), com a prévia do mini perfil ao lado mudando enquanto você edita. */
+export function MyProfile() {
   const me = useApp((s) => s.me)!;
   const setMe = useApp((s) => s.setMe);
+  const openProfile = useApp((s) => s.openProfile);
   const [name, setName] = useState(me.displayName);
   const [color, setColor] = useState(me.avatarColor);
   const [banner, setBanner] = useState<string | null>(me.bannerColor);
@@ -89,6 +48,8 @@ function Profile() {
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const saveSettings = useApp((s) => s.saveSettings);
   const [customStatus, setCustomStatus] = useState(me.settings.customStatus ?? '');
+  const dirty =
+    name !== me.displayName || color !== me.avatarColor || banner !== me.bannerColor || bio !== me.bio || customStatus !== (me.settings.customStatus ?? '');
 
   async function changeBanner() {
     const file = await pickImage();
@@ -116,129 +77,173 @@ function Profile() {
     setUploading(false);
   }
 
+  async function save() {
+    setSaving(true);
+    try {
+      setMe(await api.patch<Me>('/me', { displayName: name, avatarColor: color, bannerColor: banner, bio }));
+      if (customStatus !== (me.settings.customStatus ?? '')) await saveSettings({ customStatus: customStatus.trim() });
+      toast.success('Perfil atualizado');
+    } catch (err) {
+      toast.error(err);
+    }
+    setSaving(false);
+  }
+
   return (
-    <div className="space-y-5">
-      {/* prévia do cartão de perfil */}
-      <div className="max-w-[480px] overflow-hidden rounded-2xl border border-line bg-surface-0">
-        <div className="group relative aspect-[3/1]">
-          {me.bannerUrl ? (
-            <img src={me.bannerUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <div className="h-full w-full" style={{ background: `linear-gradient(135deg, ${banner ?? color}, ${banner ?? color}55)` }} />
-          )}
-          <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            <Button variant="secondary" className="h-8 px-3 text-xs" loading={uploadingBanner} onClick={changeBanner}>
-              <ImagePlus size={14} /> {me.bannerUrl ? 'Trocar capa' : 'Adicionar capa'}
-            </Button>
-            {me.bannerUrl && (
-              <Button variant="secondary" className="h-8 px-2" title="Remover capa" onClick={() => void api.del<Me>('/me/banner').then(setMe, toast.error)}>
-                <Trash2 size={14} />
+    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="min-w-0 space-y-10">
+        <section className="space-y-5">
+          <SectionTitle>Quem você é</SectionTitle>
+          <div className="flex flex-wrap items-center gap-4">
+            <button onClick={changeAvatar} className="group relative rounded-full" title="Trocar foto (quadrada; GIF animado vale)">
+              <Avatar name={name || me.username} color={color} src={me.avatarUrl} frame={me.frame} size={72} />
+              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                {uploading ? '…' : <ImagePlus size={20} />}
+              </span>
+            </button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" className="h-9 px-4" onClick={changeAvatar} loading={uploading}>
+                Trocar foto
               </Button>
-            )}
-          </div>
-        </div>
-        <div className="flex items-end gap-4 px-4 pb-4">
-          <button onClick={changeAvatar} className="group relative -mt-10 rounded-full" title="Trocar foto">
-            <Avatar name={name || me.username} color={color} src={me.avatarUrl} frame={me.frame} size={84} className="rounded-full ring-[6px] ring-surface-0" />
-            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
-              {uploading ? '…' : <ImagePlus size={22} />}
-            </span>
-          </button>
-          <div className="min-w-0 pb-1">
-            <div className="truncate text-lg font-bold">{name || me.username}</div>
-            <div className="text-sm text-fg-muted">@{me.username}</div>
-          </div>
-          <div className="ml-auto flex gap-2 pb-1">
-            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={changeAvatar} loading={uploading}>
-              Trocar foto
-            </Button>
-            {me.avatarUrl && (
-              <Button variant="ghost" className="h-8 px-2" onClick={() => void api.del<Me>('/me/avatar').then(setMe, toast.error)} title="Remover foto">
-                <Trash2 size={15} />
+              <Button variant="secondary" className="h-9 px-4" onClick={changeBanner} loading={uploadingBanner} title="Faixa larga (3:1); GIF animado vale">
+                {me.bannerUrl ? 'Trocar capa' : 'Adicionar capa'}
               </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="-mt-2 space-y-1.5">
-        <ImageHint spec="avatar" label="Foto" />
-        <ImageHint spec="banner" label="Capa" />
-        <p className="pl-[34px] text-xs text-fg-subtle">Até 8 MB. Fotos são recortadas no centro na proporção certa; GIFs são enviados como estão.</p>
-      </div>
-
-      <Input label="Nome de exibição" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} hint="Em cada servidor você também pode usar um apelido diferente." />
-
-      <div className="flex items-end gap-2">
-        <Input
-          label="Status personalizado"
-          value={customStatus}
-          maxLength={80}
-          placeholder="Ex.: estudando para a prova, volto às 22h"
-          onChange={(e) => setCustomStatus(e.target.value)}
-          className="flex-1"
-        />
-        <Button variant="secondary" className="h-11 shrink-0" onClick={() => void saveSettings({ customStatus: customStatus.trim() }).then(() => toast.success('Status atualizado'))}>
-          Salvar status
-        </Button>
-      </div>
-      {desktop && (
-        <div className="space-y-3 rounded-2xl bg-surface-0 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-semibold">Mostrar o que estou jogando e ouvindo</div>
-              <div className="text-xs text-fg-muted">O app detecta o jogo aberto na Steam e a música tocando no Spotify.</div>
+              {me.avatarUrl && (
+                <Button variant="ghost" className="h-9 px-3" onClick={() => void api.del<Me>('/me/avatar').then(setMe, toast.error)}>
+                  Tirar foto
+                </Button>
+              )}
+              {me.bannerUrl && (
+                <Button variant="ghost" className="h-9 px-3" onClick={() => void api.del<Me>('/me/banner').then(setMe, toast.error)}>
+                  Tirar capa
+                </Button>
+              )}
             </div>
-            <Toggle checked={me.settings.shareActivity !== false} onChange={(v) => void saveSettings({ shareActivity: v })} />
           </div>
-          <DetectedActivity />
-        </div>
-      )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Nome de exibição" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
+            <Input label="Status" value={customStatus} maxLength={80} placeholder="Ex.: volto às 22h" onChange={(e) => setCustomStatus(e.target.value)} />
+          </div>
+          <label className="block">
+            <span className="mb-1.5 flex justify-between text-xs font-bold text-fg-muted">
+              Sobre mim <span className="font-normal text-fg-subtle tabular-nums">{bio.length}/190</span>
+            </span>
+            <textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              maxLength={190}
+              rows={3}
+              placeholder="Conte algo sobre você"
+              className="w-full resize-none rounded-2xl border border-transparent bg-surface-3 p-3 text-sm outline-none focus:border-accent"
+            />
+          </label>
+          <details>
+            <summary className="cursor-pointer text-sm font-semibold text-fg-muted hover:text-fg">Cores quando não tem foto ou capa</summary>
+            <div className="mt-3 grid gap-5 sm:grid-cols-2">
+              <div>
+                <span className="mb-2 block text-xs font-bold text-fg-muted">Foto</span>
+                <Swatches value={color} onChange={(c) => c && setColor(c)} />
+              </div>
+              <div>
+                <span className="mb-2 block text-xs font-bold text-fg-muted">Capa</span>
+                <Swatches value={banner} onChange={setBanner} allowNone />
+              </div>
+            </div>
+          </details>
+          <div className="flex items-center gap-3">
+            <Button loading={saving} disabled={!dirty} onClick={() => void save()}>
+              Salvar
+            </Button>
+            {dirty && <span className="text-xs text-fg-subtle">Alterações não salvas</span>}
+          </div>
+        </section>
 
-      <label className="block">
-        <SectionTitle>Sobre mim</SectionTitle>
-        <textarea
-          value={bio}
-          onChange={(e) => setBio(e.target.value)}
-          maxLength={190}
-          rows={3}
-          placeholder="Conte algo sobre você"
-          className="w-full resize-none rounded-lg border border-line bg-surface-0 p-3 text-sm outline-none focus:border-accent"
-        />
-        <span className="text-xs text-fg-subtle">{bio.length}/190</span>
-      </label>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <div>
-          <SectionTitle>Cor do avatar (sem foto)</SectionTitle>
-          <Swatches value={color} onChange={(c) => c && setColor(c)} />
-        </div>
-        <div>
-          <SectionTitle>Cor do banner</SectionTitle>
-          <Swatches value={banner} onChange={setBanner} allowNone />
-        </div>
+        <section className="space-y-5">
+          <SectionTitle>Visual</SectionTitle>
+          <StyleTab embedded />
+          <div className="flex items-center gap-4 border-t border-line pt-5">
+            <div className="min-w-0 flex-1">
+              <div className="text-[15px] font-bold">Página do perfil</div>
+              <div className="text-[13px] text-fg-muted">A capa, os jogos em destaque e a cor ficam na própria página.</div>
+            </div>
+            <Button variant="secondary" className="h-9 shrink-0 px-4" onClick={() => openProfile(me.id)}>
+              Abrir e personalizar
+            </Button>
+          </div>
+        </section>
       </div>
 
-      <Button
-        loading={saving}
-        onClick={async () => {
-          setSaving(true);
-          try {
-            setMe(await api.patch<Me>('/me', { displayName: name, avatarColor: color, bannerColor: banner, bio }));
-            toast.success('Perfil atualizado');
-          } catch (err) {
-            toast.error(err);
-          }
-          setSaving(false);
-        }}
-      >
-        Salvar perfil
-      </Button>
+      {/* prévia ao vivo: o mini perfil com o que está sendo editado, antes de salvar */}
+      <aside className="hidden xl:block">
+        <div className="sticky top-0 space-y-2">
+          <CardPreview me={{ ...me, displayName: name, avatarColor: color, bannerColor: banner, bio, settings: { ...me.settings, customStatus } }} />
+          <p className="text-xs text-fg-subtle">Muda enquanto você edita. Salve para valer.</p>
+        </div>
+      </aside>
     </div>
   );
 }
 
-/** Diagnóstico: o que o app desktop está detectando agora (até 2 atividades ao mesmo tempo). */
+/** Privacidade: o que os outros veem de você sem você dizer (atividade) e quem não pode chamar sua atenção. */
+export function Privacy() {
+  const me = useApp((s) => s.me)!;
+  const details = useApp((s) => s.details);
+  const saveSettings = useApp((s) => s.saveSettings);
+  const muted = me.settings.mutedNudges ?? [];
+  const nameOf = (id: string) => {
+    for (const d of Object.values(details)) {
+      const m = d.members.find((x) => x.id === id);
+      if (m) return memberName(m);
+    }
+    return 'Pessoa de outro servidor';
+  };
+
+  return (
+    <div className="space-y-10">
+      <section className="space-y-3">
+        <SectionTitle>Atividade</SectionTitle>
+        {desktop ? (
+          <>
+            <div className="flex items-center justify-between gap-6">
+              <div>
+                <div className="text-[15px] font-bold">Mostrar o que estou jogando e ouvindo</div>
+                <div className="text-[13px] text-fg-muted">O app detecta o jogo aberto e a música tocando no Spotify.</div>
+              </div>
+              <Toggle checked={me.settings.shareActivity !== false} onChange={(v) => void saveSettings({ shareActivity: v })} />
+            </div>
+            <DetectedActivity />
+          </>
+        ) : (
+          <p className="text-[13px] text-fg-muted">Mostrar o que você está jogando e ouvindo funciona no app para Windows.</p>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <SectionTitle>Pessoas silenciadas</SectionTitle>
+        {muted.length === 0 ? (
+          <p className="text-[13px] text-fg-muted">Ninguém. Para silenciar alguém, abra o perfil da pessoa e toque no sininho.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {muted.map((id) => (
+              <span key={id} className="inline-flex items-center gap-2 rounded-full bg-surface-3 py-1 pr-1 pl-3 text-sm font-semibold">
+                <BellOff size={14} className="text-danger" /> {nameOf(id)}
+                <button
+                  aria-label={`Reativar ${nameOf(id)}`}
+                  onClick={() => void saveSettings({ mutedNudges: muted.filter((x) => x !== id) })}
+                  className="rounded-full px-2 py-0.5 text-xs font-bold text-fg-muted hover:bg-surface-4 hover:text-fg"
+                >
+                  Reativar
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-fg-subtle">Quem você silencia não fica sabendo: para essa pessoa, o chamado parece ter sido entregue.</p>
+      </section>
+    </div>
+  );
+}
+
 function DetectedActivity() {
   const [activities, setActivities] = useState<Activity[] | undefined>(undefined);
   const [checking, setChecking] = useState(false);
@@ -336,7 +341,7 @@ function MotionSetting() {
   );
 }
 
-function Appearance() {
+export function Appearance() {
   // o seletor devolve o objeto guardado (estável); normalizar dentro dele criaria um objeto novo a cada render
   const stored = useApp((s) => s.me?.settings?.theme);
   const saveTheme = useApp((s) => s.saveTheme);
@@ -407,7 +412,6 @@ function Appearance() {
 
       <div>
         <SectionTitle>Imagem de fundo</SectionTitle>
-        <ImageHint spec="background" className="mb-2" />
         <div className="flex gap-2">
           <Input value={bgUrl} onChange={(e) => setBgUrl(e.target.value)} placeholder="https://… (link de uma imagem)" className="flex-1" />
           <Button variant="secondary" onClick={() => updateBg({ url: bgUrl.trim() || null })}>
@@ -495,24 +499,15 @@ function Slider({
 
 // ------------------------------------------------------------------ Notificações
 
-function Notifications() {
+export function Notifications() {
   const me = useApp((s) => s.me)!;
-  const details = useApp((s) => s.details);
   const saveSettings = useApp((s) => s.saveSettings);
   const prefs = notifySettings(me);
   const status = me.settings.status === 'dnd' ? 'dnd' : 'online';
-  const muted = me.settings.mutedNudges ?? [];
   const clips = clipSettings(me);
   const [permission, setPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
 
   const set = (patch: Partial<typeof prefs>) => void saveSettings({ notifications: { ...prefs, ...patch } });
-  const nameOf = (id: string) => {
-    for (const d of Object.values(details)) {
-      const m = d.members.find((x) => x.id === id);
-      if (m) return memberName(m);
-    }
-    return 'Pessoa de outro servidor';
-  };
 
   const row = (title: string, hint: string, checked: boolean, onChange: (v: boolean) => void, disabled = false) => (
     <div className="flex items-center justify-between gap-4 p-4">
@@ -625,26 +620,6 @@ function Notifications() {
         <p className="mt-2 text-xs text-fg-subtle">O código também fica no papo da sala, com botão de copiar.</p>
       </div>
 
-      <div>
-        <SectionTitle>Pessoas silenciadas</SectionTitle>
-        {muted.length === 0 ? (
-          <p className="text-sm text-fg-muted">Ninguém. Para silenciar alguém, abra o perfil da pessoa e toque no sininho.</p>
-        ) : (
-          <div className="divide-y divide-line rounded-2xl bg-surface-0">
-            {muted.map((id) => (
-              <div key={id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-                <span className="flex items-center gap-2 font-semibold">
-                  <BellOff size={15} className="text-danger" /> {nameOf(id)}
-                </span>
-                <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => void saveSettings({ mutedNudges: muted.filter((x) => x !== id) })}>
-                  Reativar
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-        <p className="mt-2 text-xs text-fg-subtle">Quem você silencia não fica sabendo: para essa pessoa, o chamado parece ter sido entregue.</p>
-      </div>
     </div>
   );
 }
@@ -732,7 +707,7 @@ function CameraSettings({ cameras }: { cameras: MediaDeviceInfo[] }) {
   );
 }
 
-function Audio() {
+export function Audio() {
   const settings = useVoice((s) => s.audioSettings);
   const setAudioSettings = useVoice((s) => s.setAudioSettings);
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
@@ -1161,7 +1136,7 @@ function UpdateRow() {
   );
 }
 
-function Account() {
+export function Account() {
   const logout = useApp((s) => s.logout);
   const me = useApp((s) => s.me)!;
   const setMe = useApp((s) => s.setMe);
@@ -1224,7 +1199,7 @@ function Account() {
 
 // ------------------------------------------------------------------ Modo desenvolvedor
 
-function DevTab() {
+export function DevTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-fg-muted">
