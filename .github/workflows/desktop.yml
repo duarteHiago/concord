@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths: ['desktop/**', '.github/workflows/desktop.yml']
+  # no PR só compila e monta o instalador (para pegar erro antes do merge); publicar é só na main
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 concurrency:
@@ -27,6 +30,11 @@ jobs:
         working-directory: desktop/native
         shell: cmd
         run: cl /nologo /O2 /EHsc /std:c++17 /W3 /DUNICODE /D_UNICODE audio-capture.cpp /Fe:audio-capture.exe
+
+      - name: Compilar a tremida ao vivo (C++)
+        working-directory: desktop/native
+        shell: cmd
+        run: cl /nologo /O2 /EHsc /std:c++17 /W3 /DUNICODE /D_UNICODE window-shake.cpp /Fe:window-shake.exe
 
       # Os runners não têm placa de som, então a ativação pode falhar aqui; serve para ver a mensagem.
       - name: Testar o capturador
@@ -76,7 +84,7 @@ jobs:
   publish:
     name: Publicar na VPS
     needs: build
-    if: github.ref == 'refs/heads/main' && vars.VPS_HOST != ''
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.VPS_HOST != ''
     runs-on: ubuntu-latest
     env:
       TARGET: ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}

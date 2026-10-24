@@ -667,9 +667,11 @@ handle('concord:notify', (_e, opts) => {
 
 let shaking = false;
 
-// Tela inteira tremendo (até com o Concord minimizado ou atrás do jogo): tira uma foto de cada monitor,
-// mostra por cima de tudo numa janela que não recebe clique nem foco, sacode e some. A foto fica só na
-// memória deste computador e é descartada na hora. Jogo em tela cheia exclusiva fica por cima e não treme.
+// Tremida ao vivo: o window-shake.exe (native/window-shake.cpp) sacode a janela que está na frente — o jogo,
+// o navegador, o próprio Concord — mexendo a posição dela, então nada congela. Quando não tem janela de
+// programa na frente (área de trabalho) ou o Windows não deixa mover, cai na tremida da tela inteira com
+// foto: tira uma foto de cada monitor, mostra por cima de tudo numa janela que não recebe clique nem foco,
+// sacode e some. A foto fica só na memória deste computador. Jogo em tela cheia exclusiva não treme.
 const SHAKE_MS = 750;
 const SHAKE_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;overflow:hidden;background:#000}
@@ -730,7 +732,20 @@ async function shakeAllScreens() {
   return true;
 }
 
-/** Plano B (sem foto da tela): sacode só a janela do app, se der para mover. */
+const shakerPath = () =>
+  app.isPackaged ? path.join(process.resourcesPath, 'window-shake.exe') : path.join(__dirname, 'native', 'window-shake.exe');
+
+/** Sacode ao vivo a janela da frente. Devolve o código de saída do window-shake.exe (ver o .cpp), ou -1 se ele não existe. */
+function shakeForegroundWindow() {
+  if (process.platform !== 'win32' || !fs.existsSync(shakerPath())) return Promise.resolve(-1);
+  return new Promise((resolve) => {
+    execFile(shakerPath(), ['--ms', String(SHAKE_MS)], { windowsHide: true, timeout: 5000 }, (err) => {
+      resolve(!err ? 0 : typeof err.code === 'number' ? err.code : -1);
+    });
+  });
+}
+
+/** Plano C (sem foto da tela): sacode só a janela do app, se der para mover. */
 function shakeAppWindow() {
   if (!win || win.isMinimized() || win.isFullScreen() || win.isMaximized()) return;
   const [x, y] = win.getPosition();
@@ -748,7 +763,9 @@ handle('concord:shake-window', async () => {
   // pisca na barra de tarefas também, para achar o Concord depois da tremida
   if (!win.isFocused()) win.flashFrame(true);
   try {
-    if (!(await shakeAllScreens())) shakeAppWindow();
+    const live = await shakeForegroundWindow();
+    // 0: tremeu ao vivo; 5: jogo em tela cheia exclusiva (nada aparece por cima dele)
+    if (live !== 0 && live !== 5 && !(await shakeAllScreens())) shakeAppWindow();
   } catch (err) {
     console.error('[tremida] tela inteira falhou:', err);
     shakeAppWindow();
