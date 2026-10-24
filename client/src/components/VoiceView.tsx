@@ -28,7 +28,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { memberName, type Channel, type ServerDetail } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
-import { toggleOrOpenPopover, usePopover } from '../store/popover';
+import { armPopoverToggle, toggleOrOpenPopover, usePopover } from '../store/popover';
 import { useVoice } from '../store/voice';
 import { Composer, MessageFeed } from './ChatView';
 import { MemberListBody } from './MemberList';
@@ -461,6 +461,7 @@ function Bubble({ detail, tile }: { detail: ServerDetail; tile: TileInfo }) {
 
   return (
     <button
+      onMouseDown={() => armPopoverToggle(p.identity)}
       onClick={(e) => toggleOrOpenPopover(p.identity, detail.server.id, e.currentTarget.getBoundingClientRect())}
       className="flex shrink-0 flex-col items-center gap-1.5"
     >
@@ -626,6 +627,7 @@ function Tile({
     <div
       ref={ref}
       // clique abre o mini perfil (clicar de novo fecha); duplo clique destaca o quadro
+      onMouseDown={() => armPopoverToggle(p.identity)}
       onClick={(e) => toggleOrOpenPopover(p.identity, detail.server.id, { left: e.clientX, right: e.clientX, top: e.clientY })}
       onDoubleClick={onClick}
       onContextMenu={(e) => {

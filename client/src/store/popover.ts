@@ -58,15 +58,28 @@ export function releasePopover() {
 /**
  * Clique direto numa foto/linha que abre o mini perfil (sem passar pelo profileTriggers, ver abaixo):
  * clicar de novo no mesmo gatilho fecha, em vez de reabrir o cartão do zero. Clicar em outro gatilho,
- * ou em qualquer outro lugar da tela (já tratado pelo próprio MemberPopover), também funciona.
+ * ou em qualquer outro lugar da tela, também funciona.
+ *
+ * O MemberPopover fecha ao clicar fora escutando "mousedown" na window — que dispara ANTES do "click"
+ * do próprio gatilho. Sem o armPopoverToggle abaixo, ao clicar de novo no mesmo gatilho esse mousedown
+ * já teria limpado o usuário aberto antes do clique decidir se fecha ou abre, e ele sempre reabria.
  */
-export function toggleOrOpenPopover(userId: string, serverId: string, rect: DOMRect | { left: number; top: number; right: number }) {
+let pendingToggleClose = false;
+
+/** Primeiro passo (mousedown/pointerdown): guarda a decisão antes do fecha-ao-clicar-fora rodar. */
+export function armPopoverToggle(userId: string) {
   const state = usePopover.getState();
-  if (state.userId === userId && !state.hover) {
-    state.close();
+  pendingToggleClose = state.userId === userId && !state.hover;
+}
+
+/** Segundo passo (click): usa a decisão guardada, não o estado atual (que o mousedown já pode ter limpado). */
+export function toggleOrOpenPopover(userId: string, serverId: string, rect: DOMRect | { left: number; top: number; right: number }) {
+  if (pendingToggleClose) {
+    pendingToggleClose = false;
+    usePopover.getState().close();
     return;
   }
-  state.open(userId, serverId, rect);
+  usePopover.getState().open(userId, serverId, rect);
 }
 
 /**
@@ -77,6 +90,7 @@ export function profileTriggers(userId: string, serverId: string | null | undefi
   return {
     onPointerDown: (e: PointerEvent<HTMLElement>) => {
       lastPointer = e.pointerType;
+      if (e.pointerType !== 'mouse') armPopoverToggle(userId);
     },
     onPointerEnter: (e: PointerEvent<HTMLElement>) => {
       if (e.pointerType !== 'mouse' || !serverId) return;

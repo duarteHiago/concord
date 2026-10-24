@@ -27,7 +27,7 @@ import { api } from '../lib/api';
 import { memberName, type Channel, type ServerDetail, type VoiceState } from '../lib/types';
 import { HOME, memberColor, useActiveDetail, useApp } from '../store/app';
 import { DmSidebar } from './DirectMessages';
-import { toggleOrOpenPopover } from '../store/popover';
+import { armPopoverToggle, toggleOrOpenPopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { ServerStrip } from './ServerRail';
@@ -311,6 +311,7 @@ function VoiceParticipant({ detail, state, speaking }: { detail: ServerDetail; s
   if (!member) return null;
   return (
     <button
+      onMouseDown={() => armPopoverToggle(member.id)}
       onClick={(e) => {
         e.stopPropagation();
         toggleOrOpenPopover(member.id, detail.server.id, e.currentTarget.getBoundingClientRect());
