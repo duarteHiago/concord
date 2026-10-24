@@ -62,7 +62,7 @@ export function SupportModal() {
   const [copied, setCopied] = useState(false);
   const [totalBefore] = useState(me.supportTotal ?? 0);
   // o Pix deu o cargo de Mecenas (ver Mecenas.tsx): o aviso abre quando esta janela fechar
-  const surprise = !!me.mecenas && !me.settings.mecenasSeen;
+  const surprise = !!me.mecenasPowers && !me.settings.mecenasSeen;
 
   const cents = custom ? Math.round(Number(custom.replace(',', '.')) * 100) || 0 : amount;
   const valid = !!config && cents >= config.minCents && cents <= config.maxCents;

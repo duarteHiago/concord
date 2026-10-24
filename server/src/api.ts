@@ -181,7 +181,7 @@ const meJson = (u: UserRow) => {
     // entra no portal da equipe (/admin, ver admin.ts)
     isAdmin: isAdmin(u.id),
     // é o Mecenas: o cargo e sobre quem tem os poderes
-    mecenas: mecenasOfMe(u.id),
+    mecenasPowers: mecenasOfMe(u.id),
     // apoio: o total decide quais acabamentos estão liberados; supportTier é o escolhido (null = escondido)
     supportTotal: u.support_total_cents ?? 0,
     supportTier: (() => {

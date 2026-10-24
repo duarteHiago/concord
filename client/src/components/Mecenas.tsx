@@ -9,7 +9,7 @@ export function MecenasModal() {
   const me = useApp((s) => s.me)!;
   const saveSettings = useApp((s) => s.saveSettings);
   const closeModal = useApp((s) => s.closeModal);
-  const target = me.mecenas?.target;
+  const target = me.mecenasPowers?.target;
 
   const close = () => {
     void saveSettings({ mecenasSeen: true });
@@ -64,7 +64,7 @@ export function MecenasModal() {
 
 /** Abre o aviso uma vez, quando o cargo chega (Pix confirmado) e não tem outra janela por cima (a do agradecimento fecha antes). */
 export function useMecenasReveal() {
-  const pending = useApp((s) => !!s.me?.mecenas && !s.me.settings.mecenasSeen);
+  const pending = useApp((s) => !!s.me?.mecenasPowers && !s.me.settings.mecenasSeen);
   const modal = useApp((s) => s.modal);
   useEffect(() => {
     if (!pending || modal) return;

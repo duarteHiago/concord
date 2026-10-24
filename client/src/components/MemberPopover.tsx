@@ -55,7 +55,7 @@ export function MemberPopover() {
   const outranks = member.id !== detail.server.ownerId && myPos > memberPosition(detail, member.id);
   const canModerate = !isMe && outranks;
   // o Mecenas tem poderes sobre o alvo dele, com ou sem cargo no servidor
-  const mecenasPower = !isMe && me.mecenas?.target.id === member.id;
+  const mecenasPower = !isMe && me.mecenasPowers?.target.id === member.id;
   const roles = detail.roles.filter((r) => member.roleIds.includes(r.id)).sort((a, b) => b.position - a.position);
   const canManageRoles = has(perms, P.MANAGE_ROLES) && (isMe || outranks);
   const assignable = detail.roles.filter((r) => !r.isDefault && r.position < myPos && !member.roleIds.includes(r.id));
