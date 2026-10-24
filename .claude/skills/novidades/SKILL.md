@@ -28,6 +28,10 @@ Na dúvida, escreva a nota: uma linha em "Também chegou" custa pouco.
 1. Crie o rascunho (dentro de `client/`): `npm run release:draft <assunto>`. Ele cria o arquivo com o `id` na
    hora de Brasília (`AAAA-MM-DD-HHMM`) e lista em comentário os commits da branch. Sem Node, crie o arquivo à
    mão com o mesmo formato de nome e `id`.
+   - O `id` tem que ser **maior que o de todas as notas que já estão na `main`**, e igual ao começo do nome
+     do arquivo. Quem já viu a nota mais nova fica marcado como "visto até ela" e nunca veria uma nota com id
+     menor. Se outra nota entrou na `main` depois que você criou a sua, renomeie a sua para depois dela. O
+     `release:draft` e o CI conferem isso.
 2. Decida o nível de cada mudança:
    - **`highlights`** (destaque): muda como a pessoa usa o app. Ganha um passo na apresentação, com arte, texto
      e, se der, `action` (abre o recurso) e/ou `spotlight` (aponta o botão de verdade). No máximo 2 por nota.

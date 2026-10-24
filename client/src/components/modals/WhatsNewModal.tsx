@@ -208,8 +208,9 @@ export function useWhatsNewPrompt() {
       if (withHighlights) {
         useApp.getState().openModal({ type: 'whatsNew', ids: key.split(',') });
       } else {
-        const n = unseen.reduce((sum, r) => sum + (r.fixes?.length ?? 0), 0);
-        toast.info(`${n} conserto(s) nesta atualização. Veja em Novidades, no ícone de jornal da barra de servidores.`);
+        // nota sem destaque: conta o "também chegou" junto, para nunca dizer "0 conserto(s)"
+        const n = unseen.reduce((sum, r) => sum + (r.also?.length ?? 0) + (r.fixes?.length ?? 0), 0);
+        toast.info(`${n} melhoria(s) nesta atualização. Veja em Novidades, no ícone de jornal da barra de servidores.`);
         markReleasesSeen();
       }
     }, 1500);

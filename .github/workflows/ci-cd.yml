@@ -21,6 +21,10 @@ jobs:
         with:
           node-version: 24
 
+      # o app desktop atualiza sozinho no PC de todo mundo: um erro de sintaxe aqui quebraria o app de todos
+      - name: Desktop — sintaxe
+        run: node --check desktop/main.cjs && node --check desktop/preload.cjs
+
       - name: Servidor — dependências e checagem de tipos
         working-directory: server
         run: npm ci --no-audit --no-fund && npx tsc --noEmit
