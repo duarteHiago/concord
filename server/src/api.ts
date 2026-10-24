@@ -691,10 +691,10 @@ api.post('/me/2fa/setup', humansOnly, async (req, res) => {
 /** Confirma com o primeiro código do app: liga o 2FA e mostra os códigos de backup (uma vez). */
 api.post('/me/2fa/enable', humansOnly, (req, res) => {
   const me = uid(res);
-  const backupCodes = twoFactor.enable(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!, req.body?.code);
+  const { backupCodes, clockOffsetSec } = twoFactor.enable(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!, req.body?.code);
   const updated = meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!);
   emitToUser(me, 'me:updated', updated);
-  res.json({ backupCodes, me: updated });
+  res.json({ backupCodes, me: updated, clockOffsetSec });
 });
 
 api.post('/me/2fa/disable', humansOnly, (req, res) => {

@@ -146,6 +146,8 @@ addColumn('users', 'totp_secret', 'TEXT');
 addColumn('users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'totp_last_step', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'totp_backup', 'TEXT');
+// quantos passos de 30 s o relógio do celular da pessoa está adiantado (+) ou atrasado (-); ver twoFactor.ts
+addColumn('users', 'totp_drift', 'INTEGER NOT NULL DEFAULT 0');
 db.exec(`
   CREATE TABLE IF NOT EXISTS email_tokens (
     token_hash TEXT PRIMARY KEY,
@@ -466,6 +468,7 @@ export interface UserRow {
   totp_enabled?: number;
   totp_last_step?: number;
   totp_backup?: string | null;
+  totp_drift?: number;
   support_total_cents?: number;
   created_at: number;
 }

@@ -137,11 +137,17 @@ export function TwoFactorSection() {
 
   const confirm = () =>
     run(async () => {
-      const res = await api.post<{ backupCodes: string[]; me: Me }>('/me/2fa/enable', { code });
+      const res = await api.post<{ backupCodes: string[]; me: Me; clockOffsetSec?: number }>('/me/2fa/enable', { code });
       setMe(res.me);
       setSetup(null);
       setCode('');
       showCodes(res.backupCodes);
+      // funciona mesmo assim (o servidor guarda a diferença), mas vale avisar: outros sites não fazem isso
+      const off = res.clockOffsetSec ?? 0;
+      if (Math.abs(off) >= 60) {
+        const min = Math.round(Math.abs(off) / 60);
+        toast.info(`O relógio do seu celular está uns ${min} min ${off > 0 ? 'adiantado' : 'atrasado'}. Funcionou, mas vale colocar a hora no automático.`);
+      }
     });
 
   const newCodes = () =>
