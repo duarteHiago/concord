@@ -1,4 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
+import { LATEST_RELEASE } from '../../releases';
 import { useApp } from '../../store/app';
 import { Button, cx } from '../ui';
 import {
@@ -69,6 +70,7 @@ const SLIDES: Slide[] = [
 
 export function OnboardingModal() {
   const saveSettings = useApp((s) => s.saveSettings);
+  const firstTime = useApp((s) => !s.me?.settings.onboarded);
   const closeModal = useApp((s) => s.closeModal);
   const [step, setStep] = useState(0);
   const last = step === SLIDES.length - 1;
@@ -76,7 +78,8 @@ export function OnboardingModal() {
   const Art = slide.art;
 
   function finish() {
-    void saveSettings({ onboarded: true });
+    // conta nova acabou de ver o tour: não precisa da apresentação de novidades antigas
+    void saveSettings(firstTime ? { onboarded: true, lastSeenRelease: LATEST_RELEASE } : { onboarded: true });
     closeModal();
   }
 

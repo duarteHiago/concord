@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "release:draft": "node scripts/release-draft.mjs"
   },
   "dependencies": {
     "@sapphi-red/web-noise-suppressor": "0.4.1",

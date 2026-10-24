@@ -14,6 +14,9 @@ import { GameOverlay } from './components/GameOverlay';
 import { ClipToast } from './components/Clip';
 import { RecordingPill } from './components/RecordControls';
 import { PatchInspectorHost } from './components/PatchInspector';
+import { ReleasesView } from './components/ReleasesView';
+import { SpotlightHost } from './components/Spotlight';
+import { useWhatsNewPrompt } from './components/modals/WhatsNewModal';
 import { DropClaimModal, DropPage, useClaimAfterLogin, useDrop } from './components/PatchDrop';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
@@ -98,12 +101,15 @@ function MainApp() {
       {me && <ClipToast />}
       {me && <RecordingPill />}
       {me && <PatchInspectorHost />}
+      {me && <SpotlightHost />}
     </>
   );
 }
 
 function Shell() {
   useEmailPrompt();
+  useWhatsNewPrompt();
+  const releasesOpen = useApp((s) => s.releasesOpen);
   const detail = useActiveDetail();
   const activeServerId = useApp((s) => s.activeServerId);
   const channelId = useApp((s) => (s.activeServerId ? s.activeChannels[s.activeServerId] : undefined));
@@ -113,7 +119,9 @@ function Shell() {
   return (
     <div className="flex h-full gap-4 bg-surface-1 p-4">
       <ChannelSidebar />
-      {activeServerId === HOME ? (
+      {releasesOpen ? (
+        <ReleasesView />
+      ) : activeServerId === HOME ? (
         <DmView />
       ) : activeServerId ? (
         channel?.type === 'voice' ? (

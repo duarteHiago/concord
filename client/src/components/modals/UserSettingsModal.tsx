@@ -13,7 +13,7 @@ import { LocalRecordControls } from '../RecordControls';
 import { useEffect, useRef, useState } from 'react';
 import { api, setToken } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
-import { desktop, desktopInfo, type UpdateState } from '../../lib/desktop';
+import { desktop, desktopInfo, openDiagnosticsWindow, type UpdateState } from '../../lib/desktop';
 import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
 import { memberName, type Activity, type Me, type ThemeSettings } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
@@ -1087,17 +1087,13 @@ function Account() {
 // ------------------------------------------------------------------ Modo desenvolvedor
 
 function DevTab() {
-  const open = () => {
-    if (desktop?.openDevWindow) void desktop.openDevWindow();
-    else window.open('/diagnostico', 'concord-diagnostico', 'width=840,height=680,menubar=no,toolbar=no');
-  };
   return (
     <div className="space-y-4">
       <p className="text-sm text-fg-muted">
         Abre uma janela separada mostrando o que está acontecendo dentro do Concord em tempo real — ambiente, conexão com o servidor, áudio/vídeo ativo, CPU, GPU e rede — com gráficos que
         atualizam enquanto você usa o app normalmente na janela principal. Nada daqui sai da sua máquina.
       </p>
-      <Button onClick={open}>Abrir janela de diagnóstico</Button>
+      <Button onClick={openDiagnosticsWindow}>Abrir janela de diagnóstico</Button>
       <div className="h-px bg-line" />
       <div className="space-y-2">
         <h3 className="font-semibold">Gravação de diagnóstico</h3>

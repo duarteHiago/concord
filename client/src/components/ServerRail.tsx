@@ -1,7 +1,8 @@
-import { Download, MessageCircle, Plus } from 'lucide-react';
+import { Download, Gift, MessageCircle, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
+import { useUnseenReleases } from '../releases';
 import { HOME, useApp } from '../store/app';
 import { useVoice } from '../store/voice';
 import { useCommunity, usePendingCommunity } from '../store/community';
@@ -15,6 +16,10 @@ export function ServerStrip() {
   const openModal = useApp((s) => s.openModal);
   const voiceServer = useVoice((s) => s.serverId);
   const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0));
+  const releasesOpen = useApp((s) => s.releasesOpen);
+  const openReleases = useApp((s) => s.openReleases);
+  const closeReleases = useApp((s) => s.closeReleases);
+  const newReleases = useUnseenReleases().length > 0;
   const [download, setDownload] = useState<string | null>(null);
   // servidor oficial da comunidade: aparece aqui até a pessoa entrar
   const community = usePendingCommunity();
@@ -29,7 +34,7 @@ export function ServerStrip() {
 
   const tile = 'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] font-display text-base font-bold transition-all';
 
-  const home = activeId === HOME;
+  const home = activeId === HOME && !releasesOpen;
   return (
     <nav aria-label="Servidores" className="flex flex-wrap gap-2 border-b border-line p-4">
       <button
@@ -47,7 +52,7 @@ export function ServerStrip() {
         )}
       </button>
       {servers.map((s) => {
-        const active = s.id === activeId;
+        const active = s.id === activeId && !releasesOpen;
         return (
           <button
             key={s.id}
@@ -89,6 +94,17 @@ export function ServerStrip() {
         className={cx(tile, 'border-2 border-dashed border-line-strong text-fg-muted hover:border-accent hover:text-accent')}
       >
         <Plus size={20} />
+      </button>
+      <button
+        title="Novidades"
+        aria-label={`Novidades${newReleases ? ' (tem coisa nova)' : ''}`}
+        aria-current={releasesOpen ? 'true' : undefined}
+        data-tour="releases"
+        onClick={releasesOpen ? closeReleases : openReleases}
+        className={cx(tile, releasesOpen ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-fg')}
+      >
+        <Gift size={20} />
+        {newReleases && !releasesOpen && <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-surface-2 bg-accent" />}
       </button>
       {!desktop && download && (
         <a
