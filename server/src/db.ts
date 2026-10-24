@@ -355,6 +355,16 @@ db.exec(`
 `);
 addColumn('users', 'support_total_cents', 'INTEGER NOT NULL DEFAULT 0');
 
+// Links curtos do Spotify (spotify.link/...) já conferidos: para onde levam, se for Jam (ver api.ts). Serve
+// para o chat mostrar o cartão da Jam mesmo depois que ela acabou, sem abrir o link de novo toda vez.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS jam_links (
+    short_url TEXT PRIMARY KEY,
+    jam_url TEXT,
+    checked_at INTEGER NOT NULL
+  );
+`);
+
 // Custos mensais da instalação (servidor, domínio...), cadastrados no portal da equipe (ver costs.ts).
 db.exec(`
   CREATE TABLE IF NOT EXISTS costs (

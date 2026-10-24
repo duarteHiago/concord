@@ -1623,16 +1623,34 @@ async function resolveJamLink(text: string): Promise<string | null> {
   if (full) return full;
   const short = SHORT_LINK.exec(text)?.[0];
   if (!short) return null;
+  // já conferido: a resposta fica guardada (link curto não muda de destino)
+  const known = get<{ jam_url: string | null; checked_at: number }>('SELECT jam_url, checked_at FROM jam_links WHERE short_url = ?', short);
+  if (known && (known.jam_url || now() - known.checked_at < 86_400_000)) return known.jam_url;
+  let jamUrl: string | null = null;
   try {
     const res = await fetch(short, { redirect: 'follow', signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'Mozilla/5.0 Concord' } });
-    const finalUrl = JAM_SESSION.exec(res.url)?.[0];
-    if (finalUrl) return finalUrl;
-    const page = (await res.text()).slice(0, 300_000);
-    return JAM_SESSION.exec(page)?.[0] ?? null;
+    jamUrl = JAM_SESSION.exec(res.url)?.[0] ?? JAM_SESSION.exec((await res.text()).slice(0, 300_000))?.[0] ?? null;
   } catch {
-    return null;
+    return null; // sem resposta do Spotify: não guarda, tenta de novo na próxima
   }
+  run(
+    'INSERT INTO jam_links (short_url, jam_url, checked_at) VALUES (?, ?, ?) ON CONFLICT (short_url) DO UPDATE SET jam_url = excluded.jam_url, checked_at = excluded.checked_at',
+    short,
+    jamUrl,
+    now(),
+  );
+  return jamUrl;
 }
+
+// o chat pergunta, uma vez por link, se um spotify.link é de Jam (para mostrar o cartão)
+const jamLinkLookups = limiter(120, 60_000);
+
+/** Um link curto do Spotify leva a uma Jam? Devolve o endereço dela, ou null. */
+api.get('/spotify/jam-link', async (req, res) => {
+  if (!jamLinkLookups(uid(res))) fail(429, 'Muitas consultas de link. Tente daqui a pouco.');
+  const short = SHORT_LINK.exec(String(req.query.url ?? ''))?.[0] ?? fail(400, 'Link inválido');
+  res.json({ url: await resolveJamLink(short!) });
+});
 
 /** Quem está na sala e cola um link de Jam no chat dela fixa (ou troca) a própria Jam. */
 function jamFromChat(channel: ChannelRow, me: string, content: string) {

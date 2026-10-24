@@ -4,6 +4,7 @@
 // sai sozinha quando a pessoa sai da sala (ver server/src/realtime.ts).
 import { ChevronDown, Music2, Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { create } from 'zustand';
 import { api } from '../lib/api';
 import { memberName, type Channel, type Jam, type Member, type ServerDetail } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
@@ -221,19 +222,44 @@ const JAM_SESSION = /https:\/\/open\.spotify\.com\/socialsession\/[A-Za-z0-9]+(?
 const SHORT_LINK = /https:\/\/(?:spotify\.link|spotify\.app\.link)\/[A-Za-z0-9]+/;
 
 /**
- * O link de Jam numa mensagem, se tiver. O link completo é sempre de Jam; o curto do celular também serve
- * para música e playlist, então só conta quando é o de uma Jam fixada agora.
+ * Links curtos (spotify.link) já perguntados ao servidor: o endereço da Jam, null se não é Jam, ou
+ * undefined enquanto não chegou a resposta. Uma pergunta por link enquanto o app está aberto.
+ */
+const useShortLinks = create<{ links: Record<string, string | null> }>(() => ({ links: {} }));
+const asked = new Set<string>();
+
+function lookupShortLink(short: string) {
+  if (asked.has(short)) return;
+  asked.add(short);
+  api.get<{ url: string | null }>(`/spotify/jam-link?url=${encodeURIComponent(short)}`).then(
+    ({ url }) => useShortLinks.setState((s) => ({ links: { ...s.links, [short]: url } })),
+    () => asked.delete(short), // sem resposta agora: tenta de novo quando a mensagem aparecer outra vez
+  );
+}
+
+/**
+ * O link de Jam numa mensagem, se tiver. O link completo é sempre de Jam. O curto do celular também serve
+ * para música e playlist: conta quando é o de uma Jam fixada agora ou quando o servidor confirma que leva a
+ * uma Jam (aí o cartão continua mesmo depois que a Jam acabou).
  */
 export function useJamInMessage(content: string): { url: string; jam: Jam | null } | null {
   const detail = useActiveDetail();
   const jams = useApp((s) => (detail ? s.jams[detail.server.id] : undefined));
   const full = JAM_SESSION.exec(content)?.[0];
-  const short = SHORT_LINK.exec(content)?.[0];
-  const link = full ?? short;
-  if (!link) return null;
-  const jam = jams?.find((j) => j.url === link || j.sourceUrl === link || (full && j.url.startsWith(full.split('?')[0]))) ?? null;
-  if (!full && !jam) return null;
-  return { url: jam?.url ?? link, jam };
+  const short = full ? undefined : SHORT_LINK.exec(content)?.[0];
+  const resolved = useShortLinks((s) => (short ? s.links[short] : undefined));
+  const active = (url: string | undefined) =>
+    url ? (jams?.find((j) => j.url === url || j.sourceUrl === url || j.url.split('?')[0] === url.split('?')[0]) ?? null) : null;
+  const jam = active(full) ?? active(short) ?? active(resolved ?? undefined);
+
+  useEffect(() => {
+    if (short && !jam && resolved === undefined) lookupShortLink(short);
+  }, [short, jam, resolved]);
+
+  if (full) return { url: jam?.url ?? full, jam };
+  if (!short) return null;
+  if (jam) return { url: jam.url, jam };
+  return resolved ? { url: resolved, jam: null } : null;
 }
 
 /** A mensagem com link de Jam vira um cartão com o símbolo do Spotify e o botão de entrar. */
