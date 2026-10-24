@@ -82,6 +82,15 @@ if [ -n "${ADMIN_USERS:-}" ]; then
   fi
 fi
 
+# Mecenas (cargo especial, ver server/src/mecenas.ts): "quem>sobre-quem". Vem da variável do CI.
+if [ -n "${MECENAS:-}" ]; then
+  if printf '%s' "$MECENAS" | grep -qE '^@?[A-Za-z0-9_.]{3,32}>@?[A-Za-z0-9_.]{3,32}$'; then
+    upsert_env MECENAS "$MECENAS"
+  else
+    echo "!! MECENAS com formato inesperado (use: usuario>outro_usuario); ignorado." >&2
+  fi
+fi
+
 # senha do Grafana: gerada aqui na VPS e nunca impressa (os logs do CI são públicos)
 if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' .env; then
   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)" >> .env

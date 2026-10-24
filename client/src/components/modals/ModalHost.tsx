@@ -16,6 +16,7 @@ import { ServerSettingsModal } from './ServerSettingsModal';
 import { ShareScreenModal } from './ShareScreenModal';
 import { UserSettingsModal } from './UserSettingsModal';
 import { SupportModal } from '../Support';
+import { MecenasModal } from '../Mecenas';
 import { BackupCodesModal } from '../TwoFactor';
 
 export function ModalHost() {
@@ -67,6 +68,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <WhatsNewModal ids={modal.ids} />;
     case 'emailPrompt':
       return <EmailPromptModal />;
+    case 'mecenas':
+      return <MecenasModal />;
   }
 }
 

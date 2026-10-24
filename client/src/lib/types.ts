@@ -24,6 +24,10 @@ export interface User {
   patches?: Patch[];
   /** patch de apoiador: o acabamento que a pessoa escolheu mostrar (só o servidor grava) */
   supporter?: { tier: SupporterTier } | null;
+  /** tem o cargo de Mecenas da instalação (ver server/src/mecenas.ts) */
+  mecenas?: true;
+  /** tem um Mecenas: o @usuário dele */
+  mecenasBy?: string;
 }
 
 /** Patch compartilhado num servidor. */
@@ -120,6 +124,8 @@ export interface UserSettings {
   lastSeenRelease?: string;
   /** clicou "Depois eu vejo" no aviso do e-mail de recuperação: não mostra mais */
   emailPromptDismissed?: boolean;
+  /** já viu o aviso de que virou Mecenas */
+  mecenasSeen?: boolean;
 }
 
 export interface Me extends User {
@@ -139,6 +145,8 @@ export interface Me extends User {
   isAuthority?: boolean;
   /** está em ADMIN_USERS: entra no portal da equipe (/admin) */
   isAdmin?: boolean;
+  /** é o Mecenas: o cargo e sobre quem tem os poderes (o selo público é `mecenas`) */
+  mecenasPowers?: { title: string; target: { id: string; username: string; displayName: string } } | null;
   /** total já apoiado (centavos): decide os acabamentos liberados */
   supportTotal?: number;
   /** acabamento escolhido para o perfil (null = escondido ou ainda não apoiou) */

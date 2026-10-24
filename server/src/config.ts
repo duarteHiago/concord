@@ -29,6 +29,11 @@ export const config = {
       .map((u) => u.trim().replace(/^@/, '').toLowerCase())
       .filter(Boolean),
   ),
+  // Mecenas (ver mecenas.ts): "quem>sobre-quem", por nome de usuário. Vazio desliga.
+  mecenas: (() => {
+    const [holder, target] = (env.MECENAS ?? '').split('>').map((u) => u.trim().replace(/^@/, '').toLowerCase());
+    return holder && target ? { holder, target } : null;
+  })(),
   // diagnósticos enviados ficam ao lado do banco, fora de /uploads (que é público)
   diagnosticsDir: env.DIAGNOSTICS_DIR ?? '',
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.

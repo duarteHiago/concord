@@ -1,4 +1,4 @@
-import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Headphones, MessageCircle, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
+import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MicOff, MonitorX, Pencil, PhoneOff, Plus, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useRef, useState } from 'react';
@@ -54,6 +54,8 @@ export function MemberPopover() {
   const myPos = memberPosition(detail, me.id);
   const outranks = member.id !== detail.server.ownerId && myPos > memberPosition(detail, member.id);
   const canModerate = !isMe && outranks;
+  // o Mecenas tem poderes sobre o alvo dele, com ou sem cargo no servidor
+  const mecenasPower = !isMe && me.mecenasPowers?.target.id === member.id;
   const roles = detail.roles.filter((r) => member.roleIds.includes(r.id)).sort((a, b) => b.position - a.position);
   const canManageRoles = has(perms, P.MANAGE_ROLES) && (isMe || outranks);
   const assignable = detail.roles.filter((r) => !r.isDefault && r.position < myPos && !member.roleIds.includes(r.id));
@@ -61,7 +63,7 @@ export function MemberPopover() {
   const name = memberName(member);
   const canNick = isMe
     ? has(perms, P.CHANGE_NICKNAME) || has(perms, P.MANAGE_NICKNAMES)
-    : has(perms, P.MANAGE_NICKNAMES) && outranks;
+    : (has(perms, P.MANAGE_NICKNAMES) && outranks) || mecenasPower;
 
   function editNickname() {
     close();
@@ -157,6 +159,11 @@ export function MemberPopover() {
           <div className="flex items-center gap-1.5 text-lg font-bold">
             <span className="truncate">{name}</span>
             {member.verified && <VerifiedBadge size={16} />}
+            {member.mecenas && (
+              <span title="Mecenas do Concord" className="flex shrink-0 items-center gap-1 rounded-full bg-warn/15 px-2 text-[10px] leading-5 font-extrabold tracking-wide text-warn">
+                <Gem size={11} /> MECENAS
+              </span>
+            )}
             {member.bot && <span className="shrink-0 rounded bg-accent-2/20 px-1.5 text-[10px] leading-5 font-bold text-accent-2">BOT</span>}
             {detail.server.ownerId === member.id && <Crown size={16} className="shrink-0 text-warn" />}
             {canNick && (
@@ -168,6 +175,11 @@ export function MemberPopover() {
           <div className="text-sm text-fg-muted">
             {member.nickname ? `${member.displayName} · ` : ''}@{member.username}
           </div>
+          {member.mecenasBy && (
+            <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-warn">
+              <Gem size={12} /> Mecenas: @{member.mecenasBy}
+            </div>
+          )}
           {presenceInfo?.customStatus && <p className="mt-2 text-sm break-words">{presenceInfo.customStatus}</p>}
           {presenceInfo?.activity && (
             <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
@@ -319,22 +331,22 @@ export function MemberPopover() {
             </div>
           )}
 
-          {canModerate && (
+          {(canModerate || mecenasPower) && (
             <div className="mt-3 space-y-1">
-              {voiceState && has(perms, P.MUTE_MEMBERS) && (
+              {voiceState && ((canModerate && has(perms, P.MUTE_MEMBERS)) || mecenasPower) && (
                 <ModButton
                   icon={<MicOff size={15} />}
                   label={voiceState.serverMuted ? 'Remover silenciamento' : 'Silenciar na sala'}
                   onClick={() => void action('voice-mute', { muted: !voiceState.serverMuted })}
                 />
               )}
-              {voiceState?.streaming && has(perms, P.MUTE_MEMBERS) && (
+              {canModerate && voiceState?.streaming && has(perms, P.MUTE_MEMBERS) && (
                 <ModButton icon={<MonitorX size={15} />} label="Encerrar transmissão" onClick={() => void action('stop-stream', {}, 'Transmissão encerrada')} />
               )}
-              {voiceState && has(perms, P.MOVE_MEMBERS) && (
+              {voiceState && ((canModerate && has(perms, P.MOVE_MEMBERS)) || mecenasPower) && (
                 <ModButton icon={<PhoneOff size={15} />} label="Desconectar da sala" onClick={() => void action('voice-disconnect')} danger />
               )}
-              {has(perms, P.KICK_MEMBERS) && (
+              {canModerate && has(perms, P.KICK_MEMBERS) && (
                 <ModButton
                   icon={<UserX size={15} />}
                   label={`Expulsar ${name}`}

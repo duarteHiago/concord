@@ -51,6 +51,7 @@ export type Modal =
   | { type: 'onboarding' }
   | { type: 'whatsNew'; ids: string[] }
   | { type: 'emailPrompt' }
+  | { type: 'mecenas' }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {

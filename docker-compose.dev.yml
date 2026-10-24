@@ -24,6 +24,7 @@ services:
       LIVEKIT_API_KEY: devkey
       LIVEKIT_API_SECRET: secret
       ADMIN_USERS: ${ADMIN_USERS:-}
+      MECENAS: ${MECENAS:-}
     volumes:
       - ./data-dev:/data
     depends_on:
