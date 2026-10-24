@@ -134,8 +134,10 @@ interface ProfilePage {
   showcases?: Showcase[];
   /** jogos em destaque, pelo appid da Steam, na ordem: o primeiro é o favorito (até 5) */
   featured?: number[];
-  /** sem fundo próprio, usa a arte larga do jogo favorito como capa da página */
+  /** sem fundo próprio, usa a arte larga de um jogo como capa da página */
   favoriteAsBg?: boolean;
+  /** qual jogo (appid): sem escolher, usa o primeiro dos jogos em destaque */
+  coverGame?: number | null;
 }
 const MAX_FEATURED = 5;
 
@@ -146,6 +148,7 @@ const pageJson = (p: ProfilePage | undefined) => ({
   showcases: Array.isArray(p?.showcases) ? p.showcases.filter((s) => (SHOWCASES as readonly string[]).includes(s)) : [...SHOWCASES],
   featured: Array.isArray(p?.featured) ? p.featured.slice(0, MAX_FEATURED) : [],
   favoriteAsBg: p?.favoriteAsBg !== false,
+  coverGame: typeof p?.coverGame === 'number' ? p.coverGame : null,
 });
 
 function parseStyle(raw: string | null | undefined): ProfileStyle {
@@ -2592,6 +2595,10 @@ api.put('/me/profile-page', (req, res) => {
     page.featured = [...new Set(ids)].slice(0, MAX_FEATURED);
   }
   if (b.favoriteAsBg !== undefined) page.favoriteAsBg = b.favoriteAsBg !== false;
+  if (b.coverGame !== undefined) {
+    if (b.coverGame !== null && !(Number.isInteger(b.coverGame) && (b.coverGame as number) > 0 && (b.coverGame as number) < 1e9)) fail(400, 'Jogo inválido');
+    page.coverGame = b.coverGame as number | null;
+  }
   if (b.showcases !== undefined) {
     if (!Array.isArray(b.showcases)) fail(400, 'Vitrines inválidas');
     page.showcases = [...new Set((b.showcases as unknown[]).filter((s): s is Showcase => (SHOWCASES as readonly unknown[]).includes(s)))];

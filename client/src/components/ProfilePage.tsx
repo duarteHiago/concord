@@ -2,7 +2,7 @@
 // escolhido vira uma capa de cinema que se dissolve na página, o nome vem grande, e embaixo ficam só números soltos
 // e as seções que importam: os jogos que a pessoa escolheu em destaque (capas em pé, o favorito maior), os mais
 // jogados e o que vocês têm em comum. A personalização fica na própria página (botão "Personalizar").
-import { Check, ChevronLeft, ChevronRight, Gamepad2, Headphones, ImagePlus, Paintbrush, Search, Star, Trash2, X, Zap } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Gamepad2, Headphones, ImagePlus, LayoutGrid, List, Paintbrush, Search, Star, Trash2, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
@@ -31,6 +31,8 @@ interface PageStyle {
   showcases: Showcase[];
   featured: number[];
   favoriteAsBg: boolean;
+  /** jogo escolhido pra capa (appid); sem escolher, usa o primeiro dos jogos em destaque */
+  coverGame: number | null;
 }
 
 interface ProfileData {
@@ -88,6 +90,7 @@ export function ProfilePage() {
   const [page, setPage] = useState<PageStyle | null>(null);
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [pickingCover, setPickingCover] = useState(false);
   useEffect(() => setPage(data?.page ?? null), [data]);
 
   const games = steam.data?.games ?? null;
@@ -116,6 +119,8 @@ export function ProfilePage() {
   const byId = new Map((games ?? []).map((g) => [g.appid, g]));
   const featured = page.featured.map((id) => byId.get(id)).filter((g): g is SteamGame => !!g);
   const common = (games ?? []).filter((g) => mineIds.has(g.appid));
+  // capa: o jogo escolhido pra isso; sem escolher, o primeiro dos jogos em destaque
+  const coverGame = (page.coverGame != null ? byId.get(page.coverGame) : undefined) ?? featured[0];
 
   return (
     // cor de destaque da página: o texto em cima dela (selo, botão Mensagem) ganha um tom que leia bem sobre ela
@@ -129,7 +134,7 @@ export function ProfilePage() {
           page={page}
           own={own}
           serverId={view.serverId}
-          favorite={page.favoriteAsBg ? featured[0] : undefined}
+          favorite={page.favoriteAsBg ? coverGame : undefined}
           showNow={show('playing')}
           onEdit={() => setEditing(true)}
           onClose={closeProfile}
@@ -178,8 +183,19 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {editing && <Editor page={page} canPick={!!games} onChange={setPage} onPick={() => setPicking(true)} onClose={() => setEditing(false)} />}
+      {editing && (
+        <Editor
+          page={page}
+          games={games}
+          canPick={!!games}
+          onChange={setPage}
+          onPick={() => setPicking(true)}
+          onPickCover={() => setPickingCover(true)}
+          onClose={() => setEditing(false)}
+        />
+      )}
       {picking && games && <FeaturedPicker games={games} current={page.featured} onSaved={setPage} onClose={() => setPicking(false)} />}
+      {pickingCover && games && <CoverGamePicker games={games} current={page.coverGame} onSaved={setPage} onClose={() => setPickingCover(false)} />}
     </main>
   );
 }
@@ -383,13 +399,34 @@ function Featured({ games, mineIds, own, onPick, name }: { games: SteamGame[]; m
 
 function MostPlayed({ games, profileUrl, own }: { games: SteamGame[]; profileUrl?: string; own: boolean }) {
   const [all, setAll] = useState(false);
+  const [view, setView] = useState<'list' | 'grid'>('list');
   const top = games.slice(0, all ? 40 : 5);
   const max = Math.max(1, games[0]?.playtimeMin ?? 1);
   return (
     <section className="flex min-w-0 flex-[3_1_440px] flex-col gap-4">
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="font-display text-[22px] font-bold">Mais jogados</h2>
-        <div className="flex gap-4 text-sm font-bold">
+        <div className="flex items-center gap-4 text-sm font-bold">
+          <div className="flex gap-1 rounded-full bg-surface-0 p-1">
+            <button
+              title="Lista, com as horas"
+              aria-label="Ver em lista, com as horas"
+              aria-pressed={view === 'list'}
+              onClick={() => setView('list')}
+              className={cx('flex h-7 w-7 items-center justify-center rounded-full', view === 'list' ? 'bg-accent text-on-accent' : 'text-fg-muted hover:text-fg')}
+            >
+              <List size={14} />
+            </button>
+            <button
+              title="Grade, com as capas"
+              aria-label="Ver em grade, com as capas"
+              aria-pressed={view === 'grid'}
+              onClick={() => setView('grid')}
+              className={cx('flex h-7 w-7 items-center justify-center rounded-full', view === 'grid' ? 'bg-accent text-on-accent' : 'text-fg-muted hover:text-fg')}
+            >
+              <LayoutGrid size={14} />
+            </button>
+          </div>
           {games.length > 5 && (
             <button onClick={() => setAll(!all)} className="text-accent hover:underline">
               {all ? 'Mostrar menos' : `Biblioteca completa (${games.length})`}
@@ -402,22 +439,42 @@ function MostPlayed({ games, profileUrl, own }: { games: SteamGame[]; profileUrl
           )}
         </div>
       </div>
-      <ol className="flex flex-col gap-3.5">
-        {top.map((g) => (
-          <li key={g.appid}>
-            <a href={`https://store.steampowered.com/app/${g.appid}`} target="_blank" rel="noreferrer noopener" className="grid grid-cols-[72px_minmax(0,1fr)_72px] items-center gap-4">
-              <img src={steamArt(g.appid, 'header')} alt="" loading="lazy" className="aspect-[460/215] w-full rounded-md bg-surface-3 object-cover" />
-              <span className="flex min-w-0 flex-col gap-1.5">
-                <span className="truncate text-[15px] font-bold">{g.name}</span>
-                <span className="h-1 rounded-full bg-white/8">
-                  <span className="block h-1 rounded-full bg-accent" style={{ width: `${Math.max(2, (g.playtimeMin / max) * 100)}%` }} />
+      {view === 'list' ? (
+        <ol className="flex flex-col gap-3.5">
+          {top.map((g) => (
+            <li key={g.appid}>
+              <a href={`https://store.steampowered.com/app/${g.appid}`} target="_blank" rel="noreferrer noopener" className="grid grid-cols-[72px_minmax(0,1fr)_72px] items-center gap-4">
+                <img src={steamArt(g.appid, 'header')} alt="" loading="lazy" className="aspect-[460/215] w-full rounded-md bg-surface-3 object-cover" />
+                <span className="flex min-w-0 flex-col gap-1.5">
+                  <span className="truncate text-[15px] font-bold">{g.name}</span>
+                  <span className="h-1 rounded-full bg-white/8">
+                    <span className="block h-1 rounded-full bg-accent" style={{ width: `${Math.max(2, (g.playtimeMin / max) * 100)}%` }} />
+                  </span>
                 </span>
+                <span className="text-right font-display font-semibold text-fg-muted tabular-nums">{hours(g.playtimeMin)}</span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+          {top.map((g) => (
+            <a
+              key={g.appid}
+              href={`https://store.steampowered.com/app/${g.appid}`}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="group relative block aspect-[2/3] overflow-hidden rounded-xl transition-transform hover:-translate-y-1"
+            >
+              <Cover game={g} />
+              <span className="absolute inset-x-0 bottom-0 flex flex-col gap-0.5 bg-linear-to-t from-black/90 to-transparent px-2.5 pt-8 pb-2 text-white">
+                <b className="truncate font-display text-xs leading-tight">{g.name}</b>
+                <span className="text-[10px] text-white/75">{hours(g.playtimeMin)}</span>
               </span>
-              <span className="text-right font-display font-semibold text-fg-muted tabular-nums">{hours(g.playtimeMin)}</span>
             </a>
-          </li>
-        ))}
-      </ol>
+          ))}
+        </div>
+      )}
       {own && <SteamDisconnect />}
     </section>
   );
@@ -639,19 +696,122 @@ function FeaturedPicker({ games, current, onSaved, onClose }: { games: SteamGame
   );
 }
 
+// ------------------------------------------------------------------ escolher o jogo da capa
+
+/** Qual jogo vira a capa (arte larga, "hero") quando não há imagem própria: 1 só, pode ser qualquer um da biblioteca. */
+function CoverGamePicker({ games, current, onSaved, onClose }: { games: SteamGame[]; current: number | null; onSaved: (p: PageStyle) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q ? games.filter((g) => g.name.toLowerCase().includes(q)) : games;
+    return [...filtered].sort((a, b) => b.playtimeMin - a.playtimeMin).slice(0, 80);
+  }, [games, query]);
+
+  async function pick(appid: number | null) {
+    setSaving(true);
+    try {
+      onSaved(await api.put<PageStyle>('/me/profile-page', { coverGame: appid }));
+      onClose();
+    } catch (err) {
+      toast.error(err);
+      setSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-label="Escolher o jogo da capa"
+        className="flex max-h-[80vh] w-full max-w-lg animate-pop-in flex-col overflow-hidden rounded-[28px] bg-surface-2 shadow-2xl ring-1 ring-line"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-1 px-6 pt-6">
+          <h2 className="font-display text-xl font-bold">Jogo da capa</h2>
+          <p className="text-sm text-fg-muted">A arte larga dele vira o fundo do topo do perfil.</p>
+        </div>
+
+        <div className="px-6 py-4">
+          <label className="relative block">
+            <Search size={15} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-fg-subtle" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar na sua biblioteca da Steam"
+              aria-label="Buscar na sua biblioteca da Steam"
+              className="h-10 w-full rounded-full bg-surface-3 pr-4 pl-9 text-sm outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60"
+            />
+          </label>
+        </div>
+
+        <ul className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
+          {current !== null && (
+            <li>
+              <button
+                disabled={saving}
+                onClick={() => void pick(null)}
+                className="flex w-full items-center gap-3.5 rounded-2xl px-3 py-2.5 text-left text-sm font-bold text-fg-muted transition-colors hover:bg-surface-3 disabled:opacity-40"
+              >
+                <X size={16} className="shrink-0" /> Nenhum: usar o jogo em destaque
+              </button>
+            </li>
+          )}
+          {list.map((g) => (
+            <li key={g.appid}>
+              <button
+                disabled={saving}
+                onClick={() => void pick(g.appid)}
+                aria-pressed={current === g.appid}
+                className={cx(
+                  'grid w-full grid-cols-[92px_minmax(0,1fr)_64px] items-center gap-3.5 rounded-2xl px-3 py-2 text-left transition-colors disabled:opacity-40',
+                  current === g.appid ? 'bg-accent/10' : 'hover:bg-surface-3',
+                )}
+              >
+                <img src={steamArt(g.appid, 'header')} alt="" loading="lazy" className="aspect-[460/215] w-full rounded-lg bg-surface-3 object-cover" />
+                <span className="truncate text-[15px] font-bold">{g.name}</span>
+                <span className="text-right font-display font-semibold text-fg-subtle tabular-nums">{hours(g.playtimeMin)}</span>
+              </button>
+            </li>
+          ))}
+          {list.length === 0 && <li className="py-8 text-center text-sm text-fg-subtle">Nenhum jogo com esse nome.</li>}
+        </ul>
+
+        <div className="flex items-center justify-end gap-3 border-t border-line px-6 py-4">
+          <Button variant="ghost" onClick={onClose}>
+            Fechar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ personalizar
 
 function Editor({
   page,
+  games,
   canPick,
   onChange,
   onPick,
+  onPickCover,
   onClose,
 }: {
   page: PageStyle;
+  games: SteamGame[] | null;
   canPick: boolean;
   onChange: (p: PageStyle) => void;
   onPick: () => void;
+  onPickCover: () => void;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -702,8 +862,20 @@ function Editor({
         <p className="text-xs text-fg-subtle">Imagem ou GIF, até 8 MB. Ela fica no topo e se dissolve na página.</p>
         <label className="flex items-center gap-2.5 text-sm">
           <input type="checkbox" checked={page.favoriteAsBg} onChange={(e) => void save({ favoriteAsBg: e.target.checked })} className="h-4 w-4 accent-[var(--color-accent)]" />
-          Sem imagem, usar a arte do jogo favorito
+          Sem imagem, usar a arte de um jogo
         </label>
+        {page.favoriteAsBg && (
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-surface-0 px-3 py-2 text-xs">
+            <span className="min-w-0 truncate text-fg-muted">
+              Capa: <b className="text-fg">{(page.coverGame != null && games?.find((g) => g.appid === page.coverGame)?.name) || 'o jogo em destaque'}</b>
+            </span>
+            {canPick && (
+              <button onClick={onPickCover} className="shrink-0 font-semibold text-accent hover:underline">
+                Escolher jogo
+              </button>
+            )}
+          </div>
+        )}
         <label className="block">
           <span className="mb-1 flex justify-between text-xs font-bold text-fg-muted">
             Escurecer a capa <span className="tabular-nums">{page.dim}%</span>
