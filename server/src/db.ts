@@ -355,6 +355,19 @@ db.exec(`
 `);
 addColumn('users', 'support_total_cents', 'INTEGER NOT NULL DEFAULT 0');
 
+// Custos mensais da instalação (servidor, domínio...), cadastrados no portal da equipe (ver costs.ts).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS costs (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    due_day INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+`);
+
 // Diagnósticos que as pessoas mandam do app (ver diagnostics.ts). O arquivo em si fica fora do banco,
 // compactado, numa pasta que não é servida para fora; aqui fica só o resumo para a lista do portal.
 db.exec(`

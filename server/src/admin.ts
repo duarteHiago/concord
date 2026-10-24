@@ -4,6 +4,7 @@
 import type { NextFunction, Request, Response, Router } from 'express';
 import { P, has } from '../../shared/permissions.ts';
 import { config } from './config.ts';
+import { registerCostRoutes } from './costs.ts';
 import { all, get, type UserRow } from './db.ts';
 import { DIAGNOSTIC_RETENTION_DAYS, deleteDiagnostic, readDiagnostic } from './diagnostics.ts';
 import { fail, uid } from './http.ts';
@@ -104,6 +105,7 @@ const DIAG_SELECT = 'SELECT d.*, u.username, u.display_name FROM diagnostics d L
 
 export function registerAdminRoutes(api: Router) {
   api.use('/admin', requireAdmin);
+  registerCostRoutes(api);
 
   api.get('/admin/overview', (_req, res) => {
     const live = liveStats();
