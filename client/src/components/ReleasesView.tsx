@@ -1,6 +1,6 @@
 import { ArrowRight, Newspaper, Play, Plus, Target, Wrench, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { RELEASES, markReleasesSeen, releaseDate, unseenReleases, type Highlight, type Release } from '../releases';
+import { RELEASE_DAYS, markReleasesSeen, releaseDate, unseenReleases, type Highlight, type Release } from '../releases';
 import { useApp } from '../store/app';
 import { RecapList } from './modals/WhatsNewModal';
 import { showSpotlight } from './Spotlight';
@@ -30,8 +30,8 @@ export function ReleasesView() {
       </header>
       <div className="flex-1 overflow-y-auto">
         <ol className="mx-auto max-w-3xl px-8 py-8">
-          {RELEASES.map((r, i) => (
-            <Edition key={r.id} release={r} fresh={fresh.has(r.id)} last={i === RELEASES.length - 1} />
+          {RELEASE_DAYS.map((d, i) => (
+            <Edition key={d.day} day={d.day} releases={d.releases} fresh={d.releases.some((r) => fresh.has(r.id))} last={i === RELEASE_DAYS.length - 1} />
           ))}
         </ol>
       </div>
@@ -39,8 +39,18 @@ export function ReleasesView() {
   );
 }
 
-function Edition({ release, fresh, last }: { release: Release; fresh: boolean; last: boolean }) {
+/** Uma edição = as notas de um dia (cada PR traz a sua). */
+function Edition({ day, releases, fresh, last }: { day: string; releases: Release[]; fresh: boolean; last: boolean }) {
   const openModal = useApp((s) => s.openModal);
+  // a mais antiga do dia primeiro, na ordem em que as coisas entraram
+  const inOrder = [...releases].reverse();
+  const release = {
+    id: day,
+    title: inOrder.map((r) => r.title).join(' · '),
+    highlights: inOrder.flatMap((r) => r.highlights),
+    also: inOrder.flatMap((r) => r.also ?? []),
+    fixes: inOrder.flatMap((r) => r.fixes ?? []),
+  };
   return (
     <li className="grid grid-cols-[14px_1fr] gap-x-5">
       {/* linha do tempo */}
@@ -60,7 +70,7 @@ function Edition({ release, fresh, last }: { release: Release; fresh: boolean; l
             {release.title}
           </h2>
           {release.highlights.length > 0 && (
-            <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => openModal({ type: 'whatsNew', ids: [release.id] })}>
+            <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => openModal({ type: 'whatsNew', ids: releases.map((r) => r.id) })}>
               <Play size={13} /> Rever apresentação
             </Button>
           )}

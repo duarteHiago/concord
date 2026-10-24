@@ -39,7 +39,7 @@ export type Modal =
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
   | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum' }
-  | { type: 'userSettings'; tab?: 'support' | 'account' }
+  | { type: 'userSettings'; tab?: 'support' | 'account' | 'dev' }
   | { type: 'support' }
   | { type: 'shareScreen' }
   | { type: 'nickname'; serverId: string; userId: string }
