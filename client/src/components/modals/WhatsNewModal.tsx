@@ -208,7 +208,7 @@ export function useWhatsNewPrompt() {
         useApp.getState().openModal({ type: 'whatsNew', ids: key.split(',') });
       } else {
         const n = unseen.reduce((sum, r) => sum + (r.fixes?.length ?? 0), 0);
-        toast.info(`${n} conserto(s) nesta atualização. Veja em Novidades, no presente da barra de servidores.`);
+        toast.info(`${n} conserto(s) nesta atualização. Veja em Novidades, no ícone de jornal da barra de servidores.`);
         markReleasesSeen();
       }
     }, 1500);

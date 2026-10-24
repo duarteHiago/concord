@@ -1,4 +1,4 @@
-import { ArrowRight, Gift, Play, Plus, Target, Wrench, X } from 'lucide-react';
+import { ArrowRight, Newspaper, Play, Plus, Target, Wrench, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { RELEASES, markReleasesSeen, releaseDate, unseenReleases, type Highlight, type Release } from '../releases';
 import { useApp } from '../store/app';
@@ -18,7 +18,7 @@ export function ReleasesView() {
     <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
       <header className="flex items-center gap-4 border-b border-line px-8 py-5">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-accent">
-          <Gift size={22} />
+          <Newspaper size={22} />
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-extrabold">Novidades</h1>

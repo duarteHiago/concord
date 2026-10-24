@@ -1,4 +1,4 @@
-import { Download, Gift, MessageCircle, Plus } from 'lucide-react';
+import { Download, Newspaper, MessageCircle, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
@@ -103,7 +103,7 @@ export function ServerStrip() {
         onClick={releasesOpen ? closeReleases : openReleases}
         className={cx(tile, releasesOpen ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-fg')}
       >
-        <Gift size={20} />
+        <Newspaper size={20} />
         {newReleases && !releasesOpen && <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-surface-2 bg-accent" />}
       </button>
       {!desktop && download && (
