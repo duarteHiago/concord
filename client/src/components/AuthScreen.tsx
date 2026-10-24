@@ -5,6 +5,7 @@ import type { InvitePreview } from '../lib/types';
 import { useApp } from '../store/app';
 import { ForgotByEmail, useEmailRecovery } from './EmailRecovery';
 import { GoogleButton, GoogleSignupForm } from './GoogleLogin';
+import { TwoFactorStep } from './TwoFactor';
 import { Avatar, Button, Input } from './ui';
 
 type Mode = 'login' | 'register' | 'reset' | 'forgot';
@@ -33,6 +34,7 @@ export function AuthScreen() {
   };
   const pendingInvite = useApp((s) => s.pendingInvite);
   const googleSignup = useApp((s) => s.googleSignup);
+  const mfaTicket = useApp((s) => s.mfaTicket);
   const emailOn = useEmailRecovery();
   const [invite, setInvite] = useState<InvitePreview | null>(null);
 
@@ -95,7 +97,9 @@ export function AuthScreen() {
           </p>
         </div>
 
-        {googleSignup ? (
+        {mfaTicket ? (
+          <TwoFactorStep />
+        ) : googleSignup ? (
           <GoogleSignupForm />
         ) : mode === 'forgot' ? (
           <div className="space-y-4 p-8 md:p-10">

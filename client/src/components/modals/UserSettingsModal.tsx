@@ -9,6 +9,7 @@ import { StyleTab } from './StyleTab';
 import { SupportTab } from '../Support';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
+import { TwoFactorCodeInput, TwoFactorSection } from '../TwoFactor';
 import { LocalRecordControls } from '../RecordControls';
 import { useEffect, useRef, useState } from 'react';
 import { api, setToken } from '../../lib/api';
@@ -927,14 +928,17 @@ function RecoverySection() {
   const hasCode = useApp((s) => !!s.me?.hasRecoveryCode);
   const noPassword = useApp((s) => s.me?.hasPassword === false);
   const openModal = useApp((s) => s.openModal);
+  const twoFactor = useApp((s) => !!s.me?.twoFactor);
   const [password, setPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function generate() {
     setLoading(true);
     try {
-      const { code } = await api.post<{ code: string }>('/me/recovery-code', { password });
+      const { code } = await api.post<{ code: string }>('/me/recovery-code', { password, twoFactorCode });
       setPassword('');
+      setTwoFactorCode('');
       openModal({ type: 'recoveryCode', code, next: { type: 'userSettings' } });
     } catch (err) {
       toast.error(err);
@@ -956,10 +960,17 @@ function RecoverySection() {
         ) : (
           <Input label="Senha atual" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="flex-1" />
         )}
-        <Button variant={hasCode ? 'secondary' : 'primary'} disabled={!password && !noPassword} loading={loading} onClick={generate} className="h-11 shrink-0">
+        <Button
+          variant={hasCode ? 'secondary' : 'primary'}
+          disabled={(!password && !noPassword) || (twoFactor && !twoFactorCode)}
+          loading={loading}
+          onClick={generate}
+          className="h-11 shrink-0"
+        >
           {hasCode ? 'Gerar novo código' : 'Gerar código'}
         </Button>
       </div>
+      <TwoFactorCodeInput value={twoFactorCode} onChange={setTwoFactorCode} />
     </div>
   );
 }
@@ -1035,10 +1046,12 @@ function Account() {
   const noPassword = me.hasPassword === false;
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [saving, setSaving] = useState(false);
   return (
     <div className="space-y-5">
       {desktop && <DesktopServer />}
+      <TwoFactorSection />
       <GoogleAccountSection />
       <EmailSection />
       <RecoverySection />
@@ -1050,9 +1063,10 @@ function Account() {
           <Input label="Senha atual" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         )}
         <Input label="Nova senha" type="password" value={next} onChange={(e) => setNext(e.target.value)} hint="Mínimo de 6 caracteres" />
+        <TwoFactorCodeInput value={twoFactorCode} onChange={setTwoFactorCode} />
         <Button
           loading={saving}
-          disabled={(!current && !noPassword) || next.length < 6}
+          disabled={(!current && !noPassword) || next.length < 6 || (!!me.twoFactor && !twoFactorCode)}
           onClick={async () => {
             setSaving(true);
             try {
@@ -1060,6 +1074,7 @@ function Account() {
               const { token, ...updated } = await api.patch<Me & { token?: string }>('/me', {
                 currentPassword: current,
                 newPassword: next,
+                twoFactorCode,
                 socketId: getSocket()?.id,
               });
               if (token) setToken(token);
@@ -1067,6 +1082,7 @@ function Account() {
               toast.success(noPassword ? 'Senha criada' : 'Senha alterada. Os outros aparelhos saíram da conta.');
               setCurrent('');
               setNext('');
+              setTwoFactorCode('');
             } catch (err) {
               toast.error(err);
             }

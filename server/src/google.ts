@@ -27,7 +27,7 @@ const signups = new Map<string, { sub: string; handoff?: string; at: number }>()
 const handoffs = new Map<string, { result: HandoffResult; at: number }>();
 const linkTickets = new Map<string, { userId: string; at: number }>();
 
-export type HandoffResult = { token: string } | { signup: string } | { linked: true } | { error: string };
+export type HandoffResult = { token: string } | { mfa: string } | { signup: string } | { linked: true } | { error: string };
 
 function sweep() {
   const old = Date.now() - TTL;

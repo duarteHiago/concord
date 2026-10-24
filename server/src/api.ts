@@ -52,6 +52,7 @@ import { registerForumRoutes } from './forum.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
 import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
 import * as google from './google.ts';
+import * as twoFactor from './twoFactor.ts';
 import {
   ART_OFFSET,
   ART_SCALE,
@@ -164,6 +165,8 @@ const meJson = (u: UserRow) => {
     hasRecoveryCode: !!u.recovery_hash,
     googleLinked: !!u.google_sub,
     hasPassword: !!u.password_hash,
+    twoFactor: !!u.totp_enabled,
+    backupCodesLeft: twoFactor.backupCodesLeft(u),
     // e-mail de recuperação: só o confirmado fica na conta; o pendente espera o clique no link
     email: u.email ?? null,
     emailPending:
@@ -298,7 +301,7 @@ api.post('/auth/reset-email', async (req, res) => {
   // o link só vale enquanto esse ainda for o e-mail da conta
   if (user.email !== row.email) fail(400, expired);
   await setPassword(user, password);
-  res.json({ token: signToken(user.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!) });
+  sendLogin(res, get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!);
 });
 
 /** Link de confirmação: o e-mail passa a valer para recuperar a senha. Não precisa estar logado. */
@@ -364,8 +367,11 @@ api.post('/auth/reset', async (req, res) => {
   const ok = !!user?.recovery_hash && (await bcrypt.compare(normalizeCode(code), user.recovery_hash));
   if (!ok) fail(400, 'Usuário ou código de recuperação incorretos');
   await setPassword(user!, password);
-  const recoveryCode = await rotateRecoveryCode(user!.id);
-  res.json({ token: signToken(user!.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user!.id)!), recoveryCode });
+  const updated = get<UserRow>('SELECT * FROM users WHERE id = ?', user!.id)!;
+  // com 2FA, o código de recuperação novo só sai depois da segunda etapa (POST /auth/2fa)
+  if (updated.totp_enabled) return sendLogin(res, updated, { recovery: true });
+  const recoveryCode = await rotateRecoveryCode(updated.id);
+  res.json({ token: signToken(updated.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', updated.id)!), recoveryCode });
 });
 
 /** Confere usuário e senha (com limite de tentativas). Usado no login e ao conectar o Google a uma conta. */
@@ -395,7 +401,21 @@ api.post('/auth/login', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
   const password = str(req.body?.password, 'senha', 1, 128);
   const user = await checkPassword(username, password);
-  res.json({ token: signToken(user.id), user: meJson(user) });
+  sendLogin(res, user);
+});
+
+/** Responde um login: o token de sessão, ou, com o 2FA ligado, o ticket para pedir o código. */
+function sendLogin(res: express.Response, user: UserRow, opts: { recovery?: boolean } = {}) {
+  const result = twoFactor.loginResult(user, opts);
+  res.json('mfa' in result ? result : { token: result.token, user: meJson(user) });
+}
+
+/** Segunda etapa do login: o ticket da senha (ou do Google) + o código do app ou de backup. */
+api.post('/auth/2fa', async (req, res) => {
+  const { user, kind, recovery } = twoFactor.finishLogin(req.body?.ticket, req.body?.code);
+  const recoveryCode = recovery ? await rotateRecoveryCode(user.id) : undefined;
+  const fresh = get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!;
+  res.json({ token: signToken(user.id), user: meJson(fresh), recoveryCode, usedBackup: kind === 'backup' });
 });
 
 // Prévia do convite é pública: aparece na tela de login de quem recebeu o link.
@@ -435,18 +455,27 @@ api.get('/auth/google/callback', async (req, res) => {
   const deliver = (result: google.HandoffResult, handoff?: string) => {
     if (handoff && !('signup' in result)) {
       google.putHandoff(handoff, result);
-      const msg = 'error' in result ? result.error : 'linked' in result ? 'Conta Google conectada. Pode voltar para o app do Concord.' : 'Você entrou. Pode voltar para o app do Concord.';
+      const msg =
+        'error' in result
+          ? result.error
+          : 'linked' in result
+            ? 'Conta Google conectada. Pode voltar para o app do Concord.'
+            : 'mfa' in result
+              ? 'Falta o código de verificação: volte para o app do Concord e digite o código do seu app autenticador.'
+              : 'Você entrou. Pode voltar para o app do Concord.';
       res.type('html').send(handoffPage(!('error' in result), msg));
       return;
     }
     const hash =
       'token' in result
         ? `google-token=${result.token}`
-        : 'signup' in result
-          ? `google-signup=${result.signup}`
-          : 'linked' in result
-            ? 'google-linked=1'
-            : `google-error=${encodeURIComponent(result.error)}`;
+        : 'mfa' in result
+          ? `google-mfa=${result.mfa}`
+          : 'signup' in result
+            ? `google-signup=${result.signup}`
+            : 'linked' in result
+              ? 'google-linked=1'
+              : `google-error=${encodeURIComponent(result.error)}`;
     // o token vai no fragmento (#): não é enviado a servidor nenhum nem aparece em logs
     res.redirect(`/#${hash}`);
   };
@@ -469,7 +498,7 @@ api.get('/auth/google/callback', async (req, res) => {
     run('UPDATE users SET google_sub = ? WHERE id = ?', sub, pending.userId!);
     return deliver({ linked: true }, pending.handoff);
   }
-  if (owner) return deliver({ token: signToken(owner.id) }, pending.handoff);
+  if (owner) return deliver(twoFactor.loginResult(owner), pending.handoff);
   if (!config.allowRegistration) return deliver({ error: 'Cadastro desativado neste servidor.' }, pending.handoff);
   deliver({ signup: google.newSignup(sub, pending.handoff) });
 });
@@ -502,13 +531,14 @@ api.post('/auth/google/signup', async (req, res) => {
       now(),
     );
   }
-  const token = signToken(id);
   const recoveryCode = existing ? undefined : await rotateRecoveryCode(id);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', id)!;
+  const result = twoFactor.loginResult(user);
   if (ticket.handoff) {
-    google.putHandoff(ticket.handoff, { token });
+    google.putHandoff(ticket.handoff, result);
     return res.json({ handoff: true });
   }
-  res.json({ token, user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', id)!), recoveryCode });
+  res.json('mfa' in result ? result : { token: result.token, user: meJson(user), recoveryCode });
 });
 
 /**
@@ -530,12 +560,12 @@ api.post('/auth/google/signup/link', async (req, res) => {
     fail(409, 'Essa conta do Concord já está conectada a outra conta Google. Entre com aquela conta Google, ou entre com a senha e troque em Configurações > Conta.');
   }
   run('UPDATE users SET google_sub = ? WHERE id = ?', ticket.sub, user.id);
-  const token = signToken(user.id);
+  const linked = get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!;
   if (ticket.handoff) {
-    google.putHandoff(ticket.handoff, { token });
+    google.putHandoff(ticket.handoff, twoFactor.loginResult(linked));
     return res.json({ handoff: true });
   }
-  res.json({ token, user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!) });
+  sendLogin(res, linked);
 });
 
 /** App desktop: busca o resultado do login feito no navegador (uma vez só). */
@@ -625,6 +655,7 @@ api.patch('/me', async (req, res) => {
     const newPassword = str(req.body.newPassword, 'nova senha', 6, 128);
     // quem entrou pelo Google e ainda não tem senha pode criar uma sem informar a atual
     if (user.password_hash && !(await bcrypt.compare(String(req.body.currentPassword ?? ''), user.password_hash))) fail(400, 'Senha atual incorreta');
+    twoFactor.requireCode(user, req.body.twoFactorCode);
     await setPassword(user, newPassword, typeof req.body.socketId === 'string' ? req.body.socketId : undefined);
     token = signToken(me);
   }
@@ -640,7 +671,49 @@ api.post('/me/recovery-code', humansOnly, async (req, res) => {
   const me = uid(res);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
   if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  twoFactor.requireCode(user, req.body?.twoFactorCode);
   res.json({ code: await rotateRecoveryCode(me) });
+});
+
+// ---- Verificação em duas etapas (ver twoFactor.ts) ----
+
+/** Começa: pede a senha (quem pegou a sessão de alguém não liga o 2FA e tranca o dono do lado de fora). */
+api.post('/me/2fa/setup', humansOnly, async (req, res) => {
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', uid(res))!;
+  if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  res.json(twoFactor.startSetup(user));
+});
+
+/** Confirma com o primeiro código do app: liga o 2FA e mostra os códigos de backup (uma vez). */
+api.post('/me/2fa/enable', humansOnly, (req, res) => {
+  const me = uid(res);
+  const backupCodes = twoFactor.enable(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!, req.body?.code);
+  const updated = meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!);
+  emitToUser(me, 'me:updated', updated);
+  res.json({ backupCodes, me: updated });
+});
+
+api.post('/me/2fa/disable', humansOnly, (req, res) => {
+  const me = uid(res);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+  if (!user.totp_enabled) fail(400, 'A verificação em duas etapas já está desligada.');
+  twoFactor.requireCode(user, req.body?.code);
+  twoFactor.disable(me);
+  const updated = meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!);
+  emitToUser(me, 'me:updated', updated);
+  res.json(updated);
+});
+
+/** Códigos de backup novos (os antigos deixam de valer). */
+api.post('/me/2fa/backup-codes', humansOnly, (req, res) => {
+  const me = uid(res);
+  const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+  if (!user.totp_enabled) fail(400, 'Ligue a verificação em duas etapas primeiro.');
+  twoFactor.requireCode(user, req.body?.code);
+  const backupCodes = twoFactor.rotateBackupCodes(me);
+  const updated = meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!);
+  emitToUser(me, 'me:updated', updated);
+  res.json({ backupCodes, me: updated });
 });
 
 const imageBody = express.raw({ type: () => true, limit: '9mb' });
@@ -2175,6 +2248,7 @@ api.put('/me/email', humansOnly, async (req, res) => {
   if (!verifyPerUser(me)) fail(429, 'Muitas tentativas. Espere um pouco e tente de novo.');
   // pede a senha: quem pegou a sessão de alguém não consegue trocar o e-mail e depois a senha
   if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  twoFactor.requireCode(user, req.body?.twoFactorCode);
   const token = newEmailToken(me, 'verify', email, 24 * 60 * 60_000);
   try {
     await sendVerifyEmail(email, user.username, `${config.publicUrl}/#verify-email=${token}`);

@@ -39,11 +39,12 @@ export type Modal =
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
   | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum' }
-  | { type: 'userSettings'; tab?: 'support' }
+  | { type: 'userSettings'; tab?: 'support' | 'account' }
   | { type: 'support' }
   | { type: 'shareScreen' }
   | { type: 'nickname'; serverId: string; userId: string }
   | { type: 'recoveryCode'; code: string; next?: Modal; afterReset?: boolean }
+  | { type: 'backupCodes'; codes: string[]; next?: Modal }
   | { type: 'image'; src: string; alt: string }
   | { type: 'roulette'; target: { kind: 'channel' | 'dm'; id: string } }
   | { type: 'quickSwitch' }
@@ -75,6 +76,9 @@ interface AppState {
   /** link de "esqueci minha senha" aberto do e-mail: a tela pede a senha nova */
   emailReset: string | null;
   emailResetSubmit: (newPassword: string) => Promise<void>;
+  /** senha (ou Google) conferida, falta o código do app autenticador: o ticket da segunda etapa */
+  mfaTicket: string | null;
+  submitTwoFactor: (code: string) => Promise<void>;
 
   bootstrap: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
@@ -127,7 +131,17 @@ let themeSaveTimer: ReturnType<typeof setTimeout> | undefined;
 /** quando este aparelho mexeu nas preferências pela última vez (ignora o eco do servidor logo depois) */
 let localSettingsAt = 0;
 
+/** Resposta de um login: a sessão, ou (com 2FA) só o ticket para pedir o código. */
+type LoginResponse = { token?: string; user?: Me; recoveryCode?: string; mfa?: string };
+
 export const useApp = create<AppState>((set, get) => {
+  /** Com 2FA, guarda o ticket (a tela de login passa a pedir o código) e avisa que ainda não entrou. */
+  function needsCode(res: LoginResponse): boolean {
+    if (!res.mfa) return false;
+    set({ mfaTicket: res.mfa });
+    return true;
+  }
+
   /** Insere/atualiza uma conversa e mantém a lista ordenada pela última mensagem. */
   function upsertDm(dm: DirectChannel) {
     const list = (get().dms ?? []).filter((d) => d.id !== dm.id);
@@ -309,6 +323,7 @@ export const useApp = create<AppState>((set, get) => {
     pendingInvite: null,
     googleSignup: null,
     emailReset: null,
+    mfaTicket: null,
 
     bootstrap: async () => {
       setUnauthorizedHandler(() => get().logout());
@@ -324,6 +339,7 @@ export const useApp = create<AppState>((set, get) => {
       if ([...hash.keys()].some((k) => k.startsWith('google-'))) {
         history.replaceState(null, '', location.pathname + location.search);
         if (hash.get('google-token')) setToken(hash.get('google-token'));
+        if (hash.get('google-mfa')) set({ mfaTicket: hash.get('google-mfa') });
         if (hash.get('google-signup')) set({ googleSignup: hash.get('google-signup') });
         const err = hash.get('google-error');
         if (err) googleNote = () => toast.error(err);
@@ -361,42 +377,62 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     googleSignupSubmit: async (username, displayName) => {
-      const res = await api.post<{ token?: string; user?: Me; recoveryCode?: string; handoff?: boolean }>('/auth/google/signup', {
+      const res = await api.post<LoginResponse & { handoff?: boolean }>('/auth/google/signup', {
         ticket: get().googleSignup,
         username,
         displayName,
       });
       set({ googleSignup: null });
       if (res.handoff) return 'desktop';
+      if (needsCode(res)) return 'done';
       startSession(res.token!, res.user!);
       if (res.recoveryCode) set({ modal: { type: 'recoveryCode', code: res.recoveryCode, next: get().modal ?? undefined } });
       return 'done';
     },
 
     googleSignupLink: async (username, password) => {
-      const res = await api.post<{ token?: string; user?: Me; handoff?: boolean }>('/auth/google/signup/link', {
+      const res = await api.post<LoginResponse & { handoff?: boolean }>('/auth/google/signup/link', {
         ticket: get().googleSignup,
         username,
         password,
       });
       set({ googleSignup: null });
       if (res.handoff) return 'desktop';
+      if (needsCode(res)) return 'done';
       startSession(res.token!, res.user!);
       toast.success('Conta Google conectada. Da próxima vez é só usar "Entrar com Google".');
       return 'done';
     },
 
     emailResetSubmit: async (newPassword) => {
-      const { token, user } = await api.post<{ token: string; user: Me }>('/auth/reset-email', { token: get().emailReset, newPassword });
+      const res = await api.post<LoginResponse>('/auth/reset-email', { token: get().emailReset, newPassword });
       if (get().me) get().logout();
       set({ emailReset: null });
-      startSession(token, user);
       toast.success('Senha nova salva. Os outros aparelhos saíram da conta.');
+      if (needsCode(res)) return;
+      startSession(res.token!, res.user!);
     },
 
     login: async (username, password) => {
-      const { token, user } = await api.post<{ token: string; user: Me }>('/auth/login', { username, password });
-      startSession(token, user);
+      const res = await api.post<LoginResponse>('/auth/login', { username, password });
+      if (needsCode(res)) return;
+      startSession(res.token!, res.user!);
+    },
+
+    submitTwoFactor: async (code) => {
+      const res = await api.post<{ token: string; user: Me; recoveryCode?: string; usedBackup?: boolean }>('/auth/2fa', { ticket: get().mfaTicket, code });
+      set({ mfaTicket: null });
+      startSession(res.token, res.user);
+      // entrou pelo código de recuperação: o novo só aparece agora, depois da segunda etapa
+      if (res.recoveryCode) set({ modal: { type: 'recoveryCode', code: res.recoveryCode, next: get().modal ?? undefined, afterReset: true } });
+      if (res.usedBackup) {
+        const left = res.user.backupCodesLeft ?? 0;
+        toast.info(
+          left > 2
+            ? `Código de backup usado. Restam ${left}.`
+            : `Código de backup usado. Restam só ${left}: gere novos em Configurações > Conta.`,
+        );
+      }
     },
 
     register: async (username, password, displayName) => {
@@ -411,13 +447,14 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     resetPassword: async (username, code, newPassword) => {
-      const { token, user, recoveryCode } = await api.post<{ token: string; user: Me; recoveryCode: string }>('/auth/reset', {
+      const res = await api.post<LoginResponse>('/auth/reset', {
         username,
         code,
         newPassword,
       });
-      startSession(token, user);
-      set({ modal: { type: 'recoveryCode', code: recoveryCode, next: get().modal ?? undefined, afterReset: true } });
+      if (needsCode(res)) return;
+      startSession(res.token!, res.user!);
+      set({ modal: { type: 'recoveryCode', code: res.recoveryCode!, next: get().modal ?? undefined, afterReset: true } });
     },
 
     logout: () => {
@@ -426,7 +463,7 @@ export const useApp = create<AppState>((set, get) => {
       disconnectSocket();
       setToken(null);
       applyTheme(DEFAULT_THEME);
-      set({ me: null, servers: [], details: {}, activeServerId: null, messages: {}, voiceStates: {}, modal: null });
+      set({ me: null, servers: [], details: {}, activeServerId: null, messages: {}, voiceStates: {}, modal: null, mfaTicket: null });
     },
 
     setMe: (me) => set({ me }),

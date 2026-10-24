@@ -15,6 +15,7 @@ import { ServerSettingsModal } from './ServerSettingsModal';
 import { ShareScreenModal } from './ShareScreenModal';
 import { UserSettingsModal } from './UserSettingsModal';
 import { SupportModal } from '../Support';
+import { BackupCodesModal } from '../TwoFactor';
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
@@ -51,6 +52,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <NicknameModal serverId={modal.serverId} userId={modal.userId} />;
     case 'recoveryCode':
       return <RecoveryCodeModal {...modal} />;
+    case 'backupCodes':
+      return <BackupCodesModal {...modal} />;
     case 'quickSwitch':
       return <QuickSwitch />;
     case 'roulette':

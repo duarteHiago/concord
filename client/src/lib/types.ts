@@ -125,6 +125,10 @@ export interface Me extends User {
   hasRecoveryCode?: boolean;
   googleLinked?: boolean;
   hasPassword?: boolean;
+  /** verificação em duas etapas (app autenticador) ligada */
+  twoFactor?: boolean;
+  /** códigos de backup do 2FA que ainda não foram usados */
+  backupCodesLeft?: number;
   /** e-mail de recuperação confirmado */
   email?: string | null;
   /** e-mail esperando o clique no link de confirmação */

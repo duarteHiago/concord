@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import { run } from './db.ts';
 
 // sem 0/O, 1/I/L para não confundir ao copiar à mão
-const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 export function newRecoveryCode(): string {
   const bytes = randomBytes(16);

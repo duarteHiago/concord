@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import type { Me } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
+import { TwoFactorCodeInput } from './TwoFactor';
 import { Button, Input, Modal } from './ui';
 
 // só o "sim" fica guardado: se o e-mail for ligado com o app aberto, a próxima tela já pergunta de novo
@@ -178,6 +179,7 @@ export function EmailSection() {
   const [editing, setEditing] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [loading, setLoading] = useState(false);
   if (!enabled && !me.email) return null;
 
@@ -186,10 +188,11 @@ export function EmailSection() {
   async function save() {
     setLoading(true);
     try {
-      setMe(await api.put<Me>('/me/email', { email, password }));
+      setMe(await api.put<Me>('/me/email', { email, password, twoFactorCode }));
       setEditing(false);
       setEmail('');
       setPassword('');
+      setTwoFactorCode('');
       toast.success('Mandamos um link de confirmação. O e-mail só passa a valer depois do clique.');
     } catch (err) {
       toast.error(err);
@@ -234,8 +237,13 @@ export function EmailSection() {
           {me.hasPassword !== false && (
             <Input label="Senha atual" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
           )}
+          <TwoFactorCodeInput value={twoFactorCode} onChange={setTwoFactorCode} />
           <div className="flex gap-2">
-            <Button loading={loading} disabled={!email.includes('@') || (me.hasPassword !== false && !password)} onClick={() => void save()}>
+            <Button
+              loading={loading}
+              disabled={!email.includes('@') || (me.hasPassword !== false && !password) || (!!me.twoFactor && !twoFactorCode)}
+              onClick={() => void save()}
+            >
               Enviar confirmação
             </Button>
             {editing && (

@@ -141,6 +141,11 @@ addColumn('users', 'email', 'TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL');
 // sobe a cada troca de senha: tokens de login antigos (outros aparelhos, quem roubou a senha) param de valer
 addColumn('users', 'token_version', 'INTEGER NOT NULL DEFAULT 0');
+// verificação em duas etapas (ver twoFactor.ts): o segredo fica cifrado; os códigos de backup, só o hash
+addColumn('users', 'totp_secret', 'TEXT');
+addColumn('users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'totp_last_step', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'totp_backup', 'TEXT');
 db.exec(`
   CREATE TABLE IF NOT EXISTS email_tokens (
     token_hash TEXT PRIMARY KEY,
@@ -437,6 +442,10 @@ export interface UserRow {
   verified: number;
   email?: string | null;
   token_version?: number;
+  totp_secret?: string | null;
+  totp_enabled?: number;
+  totp_last_step?: number;
+  totp_backup?: string | null;
   support_total_cents?: number;
   created_at: number;
 }

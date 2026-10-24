@@ -24,7 +24,7 @@ export function useGoogleEnabled() {
   return on;
 }
 
-type HandoffResult = { token: string } | { signup: string } | { linked: true } | { error: string };
+type HandoffResult = { token: string } | { mfa: string } | { signup: string } | { linked: true } | { error: string };
 
 const newHandoffId = () => {
   const b = crypto.getRandomValues(new Uint8Array(32));
@@ -82,6 +82,7 @@ export function GoogleButton() {
   const [error, setError] = useState('');
   const { waiting, start, cancel } = useDesktopHandoff((r) => {
     if ('token' in r) void loginWithToken(r.token).catch((e) => setError((e as Error).message));
+    else if ('mfa' in r) useApp.setState({ mfaTicket: r.mfa });
     else if ('signup' in r) useApp.setState({ googleSignup: r.signup });
     else if ('error' in r) setError(r.error);
   });
