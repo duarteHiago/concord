@@ -1603,25 +1603,53 @@ api.post('/channels/:id/messages', async (req, res) => {
 
 // ============================================================ Jam do Spotify na sala de voz (ver realtime.ts)
 
-// links de convite de Jam: o do app no computador (open.spotify.com/socialsession/...) e os curtos do celular
+// links de convite de Jam aceitos no botão: o do app no computador (open.spotify.com/socialsession/...) e os curtos do celular
 const JAM_LINK = /https:\/\/(?:open\.spotify\.com\/socialsession\/[A-Za-z0-9]+|spotify\.link\/[A-Za-z0-9]+|spotify\.app\.link\/[A-Za-z0-9]+)(?:\?[^\s<>"]*)?/;
-// no chat só o link de Jam com cara de Jam: spotify.link também é usado para música e playlist
-const JAM_LINK_IN_CHAT = /https:\/\/open\.spotify\.com\/socialsession\/[A-Za-z0-9]+(?:\?[^\s<>"]*)?/;
+const JAM_SESSION = /https:\/\/open\.spotify\.com\/socialsession\/[A-Za-z0-9]+/;
+const SHORT_LINK = /https:\/\/(?:spotify\.link|spotify\.app\.link)\/[A-Za-z0-9]+/;
+
+/**
+ * O link da Jam, no formato completo (open.spotify.com/socialsession/...). O link curto do celular
+ * (spotify.link) serve para música, playlist e Jam: ele abre uma página do Spotify que tem o endereço de
+ * destino, então lemos essa página para saber se é Jam. Devolve null se não for Jam (ou não deu para ler).
+ * Só busca nos dois domínios de link curto do Spotify.
+ */
+async function resolveJamLink(text: string): Promise<string | null> {
+  const full = JAM_SESSION.exec(text)?.[0];
+  if (full) return full;
+  const short = SHORT_LINK.exec(text)?.[0];
+  if (!short) return null;
+  try {
+    const res = await fetch(short, { redirect: 'follow', signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'Mozilla/5.0 Concord' } });
+    const finalUrl = JAM_SESSION.exec(res.url)?.[0];
+    if (finalUrl) return finalUrl;
+    const page = (await res.text()).slice(0, 300_000);
+    return JAM_SESSION.exec(page)?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /** Quem está na sala e cola um link de Jam no chat dela fixa a Jam (se a sala ainda não tem uma). */
 function jamFromChat(channel: ChannelRow, me: string, content: string) {
-  if (channel.type !== 'voice' || getJam(channel.id) || getVoiceState(me)?.channelId !== channel.id) return;
-  const url = JAM_LINK_IN_CHAT.exec(content)?.[0];
-  if (url) setJam(channel.server_id, channel.id, me, url);
+  const inRoom = () => channel.type === 'voice' && !getJam(channel.id) && getVoiceState(me)?.channelId === channel.id;
+  if (!inRoom() || !(JAM_SESSION.test(content) || SHORT_LINK.test(content))) return;
+  void resolveJamLink(content).then((url) => {
+    // ler o link curto leva um instante: confere de novo se a pessoa continua na sala e a sala sem Jam
+    if (url && inRoom()) setJam(channel.server_id, channel.id, me, url);
+  });
 }
 
 /** Fixa a Jam: só quem está na sala. Trocar a Jam de outra pessoa pede permissão de moderar a sala. */
-api.put('/channels/:id/jam', humansOnly, (req, res) => {
+api.put('/channels/:id/jam', humansOnly, async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.VIEW_CHANNEL);
   if (channel.type !== 'voice') fail(400, 'A Jam fica numa sala de voz');
   if (getVoiceState(me)?.channelId !== channel.id) fail(400, 'Entre na sala para fixar a Jam');
-  const url = JAM_LINK.exec(String(req.body?.url ?? '').trim())?.[0] ?? fail(400, 'Isso não parece um link de Jam do Spotify. No Spotify, toque em Convidar e depois em Copiar link.');
+  const raw = JAM_LINK.exec(String(req.body?.url ?? '').trim())?.[0] ?? fail(400, 'Isso não parece um link de Jam do Spotify. No Spotify, toque em Convidar e depois em Copiar link.');
+  // link curto: guarda o endereço da Jam que ele aponta (e recusa link curto de música ou playlist)
+  const url =
+    (await resolveJamLink(raw!)) ?? fail(400, 'Esse link do Spotify não é de uma Jam (ou o Spotify não respondeu). Na Jam, toque em Convidar e depois em Copiar link.');
   const current = getJam(channel.id);
   if (current && current.hostId !== me && !has(channelPermissions(channel, me), P.MOVE_MEMBERS)) fail(409, 'Esta sala já tem uma Jam');
   setJam(channel.server_id, channel.id, me, url);
