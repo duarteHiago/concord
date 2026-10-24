@@ -661,8 +661,13 @@ handle('concord:notify', (_e, opts) => {
   });
   n.on('close', forget);
   n.show();
-  // pisca na barra de tarefas até a janela receber foco
-  if (win && !win.isFocused()) win.flashFrame(true);
+  // pisca na barra de tarefas até a janela receber foco, mas não por cima de jogo em tela cheia: piscar faz
+  // o Windows mostrar a barra de tarefas na frente dele
+  if (win && !win.isFocused()) {
+    void fullscreenInFront().then((busy) => {
+      if (!busy && win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true);
+    });
+  }
 });
 
 let shaking = false;
@@ -757,11 +762,17 @@ function shakeAppWindow() {
   );
 }
 
+/** Tem jogo (ou outro programa) em tela cheia na frente? Piscar o botão na barra de tarefas traz a barra por cima dele. */
+function fullscreenInFront() {
+  if (process.platform !== 'win32' || !fs.existsSync(shakerPath())) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    execFile(shakerPath(), ['--fullscreen'], { windowsHide: true, timeout: 2000 }, (err) => resolve(!!err && err.code === 1));
+  });
+}
+
 handle('concord:shake-window', async () => {
   if (!win || shaking) return;
   shaking = true;
-  // pisca na barra de tarefas também, para achar o Concord depois da tremida
-  if (!win.isFocused()) win.flashFrame(true);
   try {
     const live = await shakeForegroundWindow();
     // 0: tremeu ao vivo; 5: jogo em tela cheia exclusiva (nada aparece por cima dele)
