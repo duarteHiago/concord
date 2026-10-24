@@ -92,8 +92,17 @@ export const voiceNotices = new EventTarget();
  */
 export const DEFAULT_NOISE_STRENGTH = 45;
 
+// depois de uma falha do DeepFilterNet3, espera um pouco antes de tentar de novo nesta mesma
+// sessão: alguns programas de mixagem de áudio (ex.: VoiceMeeter) reiniciam o próprio motor de
+// áudio de vez em quando, o que reinicia a faixa do microfone e, com ela, essa montagem — tentar
+// de novo imediatamente a cada reinício tende a falhar pela mesma razão. Depois do intervalo,
+// volta a tentar sozinho (não precisa trocar de modelo manualmente pra "destravar").
+let dfnCooldownUntil = 0;
+const DFN_COOLDOWN_MS = 5 * 60_000;
+
 async function noiseNode(ctx: AudioContext, mode: NoiseMode, strength = DEFAULT_NOISE_STRENGTH): Promise<AudioWorkletNode | null> {
   if (mode === 'dfn') {
+    if (Date.now() < dfnCooldownUntil) return noiseNode(ctx, 'gtcrn');
     try {
       const core = await loadDfn();
       const node = await core.createAudioWorkletNode(ctx);
@@ -111,6 +120,7 @@ async function noiseNode(ctx: AudioContext, mode: NoiseMode, strength = DEFAULT_
       } catch (err2) {
         // GTCRN mediu quase tão bem quanto o DFN3 e é leve: é o plano B
         console.warn('[voz] DeepFilterNet3 indisponível, usando GTCRN', err2);
+        dfnCooldownUntil = Date.now() + DFN_COOLDOWN_MS;
         voiceNotices.dispatchEvent(new CustomEvent('fallback', { detail: (err2 as Error).message }));
         return noiseNode(ctx, 'gtcrn');
       }
