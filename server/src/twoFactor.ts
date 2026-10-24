@@ -158,23 +158,49 @@ export function requireCode(user: UserRow, raw: unknown) {
 
 // ---- Ligar / desligar ----
 
-/** Começa a configuração: gera um segredo novo (ainda não vale até `enable`). */
+/** O segredo de uma configuração começada e ainda não confirmada (null se não houver ou não abrir). */
+function pendingSecret(user: UserRow): Buffer | null {
+  if (user.totp_enabled || !user.totp_secret) return null;
+  try {
+    return unseal(user.totp_secret);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Começa a configuração (ainda não vale até `enable`). Se já tem uma começada, devolve o mesmo segredo:
+ * abrir de novo (outra janela, o app e o navegador, cancelar e ligar de novo) mostra o mesmo QR, em vez
+ * de trocar a chave por baixo do QR que a pessoa acabou de escanear.
+ */
 export function startSetup(user: UserRow) {
   if (user.totp_enabled) fail(400, 'A verificação em duas etapas já está ligada.');
-  const secret = randomBytes(20);
-  run('UPDATE users SET totp_secret = ? WHERE id = ?', seal(secret), user.id);
+  let secret = pendingSecret(user);
+  if (!secret) {
+    secret = randomBytes(20);
+    run('UPDATE users SET totp_secret = ?, totp_last_step = 0 WHERE id = ?', seal(secret), user.id);
+  }
   const b32 = base32(secret);
   const label = encodeURIComponent(`Concord:${user.username}`);
   return { secret: b32, uri: `otpauth://totp/${label}?secret=${b32}&issuer=Concord&digits=${DIGITS}&period=${STEP_SECONDS}` };
 }
 
-/** Confirma a configuração com o primeiro código do app. Devolve os códigos de backup (mostrados uma vez). */
+/**
+ * Confirma a configuração com o primeiro código do app. Devolve os códigos de backup (mostrados uma vez).
+ * Errar aqui não conta para o bloqueio de 15 min: a pessoa já está logada e confirmou a senha, e adivinhar o
+ * código não dá nada a ninguém (o segredo é dela). O bloqueio fica para o login e as ações sensíveis.
+ */
 export function enable(user: UserRow, raw: unknown): string[] {
   if (user.totp_enabled) fail(400, 'A verificação em duas etapas já está ligada.');
-  if (!user.totp_secret) fail(400, 'Comece a configuração de novo.');
+  const secret = pendingSecret(user) ?? fail(400, 'Comece a configuração de novo.');
   const code = typeof raw === 'string' ? raw.replace(/\s+/g, '') : '';
   // aqui só vale o código do app: ainda não existem códigos de backup
-  if (!/^\d{6}$/.test(code) || checkCode(user, code) !== 'totp') fail(400, 'Código incorreto. Confira se o relógio do celular está certo e tente o código novo.');
+  if (!/^\d{6}$/.test(code)) fail(400, 'Digite os 6 números que aparecem no app autenticador.');
+  const step = matchStep(secret, code);
+  if (step === null) {
+    fail(400, 'Esse código não bate com o QR desta tela. Confira se escaneou este QR (apague entradas antigas do Concord no app) e se o relógio do celular está no automático.');
+  }
+  run('UPDATE users SET totp_last_step = ? WHERE id = ?', step, user.id);
   return rotateBackupCodes(user.id, true);
 }
 
