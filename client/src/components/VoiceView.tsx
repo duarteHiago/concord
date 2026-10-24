@@ -36,6 +36,7 @@ import { ReactionLayer, ReactionsButton } from './Reactions';
 import { VoiceEffectsButton } from './VoiceEffectsButton';
 import { StickerButton, StickerLayer } from './Stickers';
 import { ClipButton } from './Clip';
+import { JamButton } from './Jam';
 import { CodecRequests, H265Help, ShareCodecBadge } from './H265Help';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
@@ -74,6 +75,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
             {streamerMember ? `${memberName(streamerMember)} está transmitindo` : inRoom.length ? `${inRoom.length} na sala` : 'Sala vazia'}
           </span>
           <div className="ml-auto flex items-center gap-2">
+            <JamButton detail={detail} channel={channel} />
             {status === 'connected' && <ConnectionQuality />}
             {canChat && (
               <button

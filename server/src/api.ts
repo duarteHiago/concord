@@ -83,6 +83,9 @@ import {
   serverChanged,
   setServerMute,
   voiceStatesFor,
+  getJam,
+  jamsFor,
+  setJam,
   broadcastStatus,
   isOnline,
 } from './realtime.ts';
@@ -1008,6 +1011,7 @@ api.get('/servers/:id', (req, res) => {
     channels,
     members,
     voiceStates: voiceStatesFor(server.id),
+    jams: jamsFor(server.id),
     online: onlineUserIds().filter((id) => members.some((m) => m.id === id)),
   });
 });
@@ -1593,7 +1597,46 @@ api.post('/channels/:id/messages', async (req, res) => {
   const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
   await emitToChannel(channel, 'message:new', msg);
   notifyMentions(channel, me, content, msg);
+  jamFromChat(channel, me, content);
   res.json(msg);
+});
+
+// ============================================================ Jam do Spotify na sala de voz (ver realtime.ts)
+
+// links de convite de Jam: o do app no computador (open.spotify.com/socialsession/...) e os curtos do celular
+const JAM_LINK = /https:\/\/(?:open\.spotify\.com\/socialsession\/[A-Za-z0-9]+|spotify\.link\/[A-Za-z0-9]+|spotify\.app\.link\/[A-Za-z0-9]+)(?:\?[^\s<>"]*)?/;
+// no chat só o link de Jam com cara de Jam: spotify.link também é usado para música e playlist
+const JAM_LINK_IN_CHAT = /https:\/\/open\.spotify\.com\/socialsession\/[A-Za-z0-9]+(?:\?[^\s<>"]*)?/;
+
+/** Quem está na sala e cola um link de Jam no chat dela fixa a Jam (se a sala ainda não tem uma). */
+function jamFromChat(channel: ChannelRow, me: string, content: string) {
+  if (channel.type !== 'voice' || getJam(channel.id) || getVoiceState(me)?.channelId !== channel.id) return;
+  const url = JAM_LINK_IN_CHAT.exec(content)?.[0];
+  if (url) setJam(channel.server_id, channel.id, me, url);
+}
+
+/** Fixa a Jam: só quem está na sala. Trocar a Jam de outra pessoa pede permissão de moderar a sala. */
+api.put('/channels/:id/jam', humansOnly, (req, res) => {
+  const me = uid(res);
+  const channel = requireChannelPerm(req.params.id, me, P.VIEW_CHANNEL);
+  if (channel.type !== 'voice') fail(400, 'A Jam fica numa sala de voz');
+  if (getVoiceState(me)?.channelId !== channel.id) fail(400, 'Entre na sala para fixar a Jam');
+  const url = JAM_LINK.exec(String(req.body?.url ?? '').trim())?.[0] ?? fail(400, 'Isso não parece um link de Jam do Spotify. No Spotify, toque em Convidar e depois em Copiar link.');
+  const current = getJam(channel.id);
+  if (current && current.hostId !== me && !has(channelPermissions(channel, me), P.MOVE_MEMBERS)) fail(409, 'Esta sala já tem uma Jam');
+  setJam(channel.server_id, channel.id, me, url);
+  res.json({ ok: true });
+});
+
+/** Tira a Jam: quem fixou, ou quem pode moderar a sala. */
+api.delete('/channels/:id/jam', humansOnly, (req, res) => {
+  const me = uid(res);
+  const channel = requireChannelPerm(req.params.id, me, P.VIEW_CHANNEL);
+  const current = getJam(channel.id);
+  if (!current) return res.json({ ok: true });
+  if (current.hostId !== me && !has(channelPermissions(channel, me), P.MOVE_MEMBERS)) fail(403, 'Só quem fixou a Jam (ou quem modera a sala) pode tirar');
+  setJam(channel.server_id, channel.id, me, null);
+  res.json({ ok: true });
 });
 
 /** @usuario avisa a pessoa; @todos avisa todo mundo que vê o canal (precisa de "Mencionar todos"). */

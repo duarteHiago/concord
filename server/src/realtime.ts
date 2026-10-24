@@ -26,6 +26,34 @@ const online = new Map<string, number>(); // userId -> nº de sockets
 const voice = new Map<string, VoiceState>(); // userId -> estado
 const serverMutes = new Set<string>(); // `${serverId}:${userId}`
 
+// Jam do Spotify fixada numa sala de voz: o link que alguém colou, para todo mundo da sala entrar com um
+// clique. O Spotify não deixa criar Jam por API, então a pessoa cria no app dele e cola aqui. Fica só na
+// memória e some quando quem colou sai da sala (ver broadcastVoice).
+export interface Jam {
+  channelId: string;
+  url: string;
+  hostId: string;
+  startedAt: number;
+}
+const jams = new Map<string, Jam & { serverId: string }>(); // channelId -> Jam
+
+export function jamsFor(serverId: string): Jam[] {
+  return [...jams.values()].filter((j) => j.serverId === serverId).map(({ serverId: _s, ...j }) => j);
+}
+
+function broadcastJams(serverId: string) {
+  io.to(`server:${serverId}`).emit('voice:jams', { serverId, jams: jamsFor(serverId) });
+}
+
+/** Fixa (ou tira, com url null) a Jam de uma sala. */
+export function setJam(serverId: string, channelId: string, hostId: string, url: string | null) {
+  if (url) jams.set(channelId, { serverId, channelId, url, hostId, startedAt: Date.now() });
+  else jams.delete(channelId);
+  broadcastJams(serverId);
+}
+
+export const getJam = (channelId: string) => jams.get(channelId);
+
 const publicState = ({ socketId: _s, ...rest }: VoiceState) => rest;
 
 export function voiceStatesFor(serverId: string) {
@@ -42,6 +70,15 @@ export function isServerMuted(serverId: string, userId: string) {
 
 function broadcastVoice(serverId: string) {
   io.to(`server:${serverId}`).emit('voice:states', { serverId, states: voiceStatesFor(serverId) });
+  // quem colou a Jam saiu da sala (ou foi para outra): a Jam sai junto
+  let changed = false;
+  for (const j of jams.values()) {
+    if (j.serverId === serverId && voice.get(j.hostId)?.channelId !== j.channelId) {
+      jams.delete(j.channelId);
+      changed = true;
+    }
+  }
+  if (changed) broadcastJams(serverId);
 }
 
 export function emitToUser(userId: string, event: string, payload: unknown) {
@@ -76,7 +113,10 @@ export async function emitToChannel(channel: ChannelRow, event: string, payload:
 
 export function joinServerRoom(userId: string, serverId: string) {
   io.in(`user:${userId}`).socketsJoin(`server:${serverId}`);
-  socketsOf(userId).forEach((s) => s.emit('voice:states', { serverId, states: voiceStatesFor(serverId) }));
+  socketsOf(userId).forEach((s) => {
+    s.emit('voice:states', { serverId, states: voiceStatesFor(serverId) });
+    s.emit('voice:jams', { serverId, jams: jamsFor(serverId) });
+  });
 }
 
 export function leaveServerRoom(userId: string, serverId: string) {

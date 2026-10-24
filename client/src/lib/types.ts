@@ -219,6 +219,14 @@ export interface VoiceState {
   serverMuted: boolean;
 }
 
+/** Jam do Spotify fixada numa sala de voz (ver server/src/realtime.ts). */
+export interface Jam {
+  channelId: string;
+  url: string;
+  hostId: string;
+  startedAt: number;
+}
+
 export interface ServerDetail {
   server: ServerSummary;
   permissions: number;
@@ -227,6 +235,7 @@ export interface ServerDetail {
   channels: Channel[];
   members: Member[];
   voiceStates: VoiceState[];
+  jams?: Jam[];
   online: string[];
 }
 
