@@ -298,7 +298,7 @@ export function MemberPopover() {
                 <input
                   type="range"
                   min={0}
-                  max={2}
+                  max={3}
                   step={0.05}
                   value={volume}
                   disabled={localMuted}

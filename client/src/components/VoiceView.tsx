@@ -603,7 +603,7 @@ function StreamVolume({ identity }: { identity: string }) {
     <label className="flex h-10 items-center gap-2 rounded-full bg-surface-1/80 px-3 backdrop-blur" title="Volume da transmissão">
       <Volume2 size={15} />
       <span className="sr-only">Volume da transmissão</span>
-      <input type="range" min={0} max={2} step={0.05} value={volume} onChange={(e) => setVolume(identity, Number(e.target.value), true)} className="w-20" />
+      <input type="range" min={0} max={3} step={0.05} value={volume} onChange={(e) => setVolume(identity, Number(e.target.value), true)} className="w-20" />
     </label>
   );
 }
