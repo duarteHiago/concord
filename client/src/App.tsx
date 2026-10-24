@@ -16,6 +16,7 @@ import { RecordingPill } from './components/RecordControls';
 import { PatchInspectorHost } from './components/PatchInspector';
 import { ReleasesView } from './components/ReleasesView';
 import { SpotlightHost } from './components/Spotlight';
+import { useMecenasReveal } from './components/Mecenas';
 import { useWhatsNewPrompt } from './components/modals/WhatsNewModal';
 import { DropClaimModal, DropPage, useClaimAfterLogin, useDrop } from './components/PatchDrop';
 import { VoiceView } from './components/VoiceView';
@@ -119,6 +120,7 @@ function MainApp() {
 function Shell() {
   useEmailPrompt();
   useWhatsNewPrompt();
+  useMecenasReveal();
   const releasesOpen = useApp((s) => s.releasesOpen);
   const detail = useActiveDetail();
   const activeServerId = useApp((s) => s.activeServerId);

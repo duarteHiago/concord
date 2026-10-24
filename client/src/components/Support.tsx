@@ -61,6 +61,8 @@ export function SupportModal() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [totalBefore] = useState(me.supportTotal ?? 0);
+  // o Pix deu o cargo de Mecenas (ver Mecenas.tsx): o aviso abre quando esta janela fechar
+  const surprise = !!me.mecenas && !me.settings.mecenasSeen;
 
   const cents = custom ? Math.round(Number(custom.replace(',', '.')) * 100) || 0 : amount;
   const valid = !!config && cents >= config.minCents && cents <= config.maxCents;
@@ -137,11 +139,12 @@ export function SupportModal() {
                 : ' Seu total de apoio foi atualizado.'}
             </p>
           </div>
+          {surprise && <p className="text-sm font-semibold text-warn">E tem mais uma surpresa só pra você…</p>}
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={close}>
-              Fechar
+            <Button variant={surprise ? 'primary' : 'ghost'} onClick={close}>
+              {surprise ? 'Ver a surpresa' : 'Fechar'}
             </Button>
-            <Button onClick={() => openModal({ type: 'userSettings', tab: 'support' })}>
+            <Button variant={surprise ? 'secondary' : 'primary'} onClick={() => openModal({ type: 'userSettings', tab: 'support' })}>
               <Sparkles size={16} /> Ver meus acabamentos
             </Button>
           </div>
