@@ -13,11 +13,27 @@ export function pickImage(): Promise<File | null> {
 }
 
 /**
+ * A imagem é animada? GIF, WebP animado (o "GIF" que Tenor, Giphy e o Discord costumam baixar) ou PNG animado.
+ * Olha o conteúdo, não o tipo: muito "GIF" baixado da internet é WebP por baixo, ou vem sem tipo.
+ */
+async function isAnimated(file: Blob): Promise<boolean> {
+  const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  const text = (from: number, to: number) => String.fromCharCode(...head.subarray(from, to));
+  if (text(0, 4) === 'GIF8') return true;
+  // WebP: o bloco VP8X marca animação no bit 2 das flags (e o bloco ANIM vem logo depois)
+  if (text(0, 4) === 'RIFF' && text(8, 12) === 'WEBP') return text(12, 16) === 'VP8X' && (head[20] & 0x02) !== 0;
+  // PNG animado: tem o bloco acTL antes das imagens
+  if (head[0] === 0x89 && text(1, 4) === 'PNG') return text(0, head.length).includes('acTL');
+  return false;
+}
+
+/**
  * Redimensiona e recorta no centro (quadrado ou numa proporção largura/altura) no próprio navegador antes de enviar,
- * assim a imagem nunca fica esticada onde aparece. GIFs são enviados como estão para manter a animação.
+ * assim a imagem nunca fica esticada onde aparece. Imagens animadas vão como estão: passar pelo canvas guardaria
+ * só o primeiro quadro.
  */
 export async function prepareImage(file: File, maxSize: number, crop: boolean | number): Promise<Blob> {
-  if (file.type === 'image/gif') return file;
+  if (file.type === 'image/gif' || (await isAnimated(file))) return file;
   const bitmap = await createImageBitmap(file);
   let sx = 0;
   let sy = 0;
