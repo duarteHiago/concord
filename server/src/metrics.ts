@@ -4,7 +4,7 @@ import { statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { NextFunction, Request, Response } from 'express';
 import client from 'prom-client';
-import { listBackups } from './backup.ts';
+import { lastOffsite, listBackups } from './backup.ts';
 import { config } from './config.ts';
 import { get, observeQueries } from './db.ts';
 import { cpuProfile } from './profile.ts';
@@ -226,6 +226,15 @@ export function registerLiveGauges(read: {
     collect() {
       const last = listBackups().at(-1);
       if (last) this.set(last.size);
+    },
+  });
+  new client.Gauge({
+    name: 'concord_backup_offsite_timestamp_seconds',
+    help: 'Quando o backup mais novo chegou no bucket fora da VPS',
+    registers: [registry],
+    collect() {
+      const last = lastOffsite();
+      if (last) this.set(last.mtimeMs / 1000);
     },
   });
 }

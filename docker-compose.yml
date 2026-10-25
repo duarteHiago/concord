@@ -26,6 +26,11 @@ services:
       # backup diário do banco em data/backups (ver README > Backup e restauração). 0 desliga
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
       BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-6}
+      # cópia dos backups fora da VPS (Cloudflare R2 ou outro compatível com S3). Vazio: só no disco
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      BACKUP_S3_SECRET: ${BACKUP_S3_SECRET:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Concord}
       # o logo dos e-mails vem do GitHub: o Gmail busca imagens por servidores do Google, que a proteção anti-bot do site pode barrar

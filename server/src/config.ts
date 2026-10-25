@@ -39,7 +39,20 @@ export const config = {
   // diagnósticos enviados ficam ao lado do banco, fora de /uploads (que é público)
   diagnosticsDir: env.DIAGNOSTICS_DIR ?? '',
   // backup diário do banco (ver backup.ts): quantos dias guardar (0 desliga) e a partir de que hora (UTC)
-  backup: { dir: env.BACKUP_DIR ?? '', keep: Number(env.BACKUP_KEEP ?? 7), hourUtc: Number(env.BACKUP_HOUR_UTC ?? 6) },
+  backup: {
+    dir: env.BACKUP_DIR ?? '',
+    keep: Number(env.BACKUP_KEEP ?? 7),
+    hourUtc: Number(env.BACKUP_HOUR_UTC ?? 6),
+    // cópia fora da VPS (ver offsite.ts), num bucket compatível com S3. Ex. do R2: https://<conta>.r2.cloudflarestorage.com
+    s3: {
+      endpoint: (env.BACKUP_S3_ENDPOINT ?? '').trim(),
+      bucket: (env.BACKUP_S3_BUCKET ?? '').trim(),
+      region: (env.BACKUP_S3_REGION ?? '').trim() || 'auto',
+      prefix: (env.BACKUP_S3_PREFIX ?? 'db/').trim(),
+      accessKey: (env.BACKUP_S3_ACCESS_KEY ?? '').trim(),
+      secret: (env.BACKUP_S3_SECRET ?? '').trim(),
+    },
+  },
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
   metricsPort: Number(env.METRICS_PORT ?? 9464),
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',

@@ -4,7 +4,8 @@
 //   docker compose exec app node src/cli.ts disable-2fa <usuário>
 //   docker compose exec app node src/cli.ts backup
 import bcrypt from 'bcryptjs';
-import { backupNow, listBackups } from './backup.ts';
+import { backupNow, listBackups, sendOffsite } from './backup.ts';
+import { config } from './config.ts';
 import { all, get, run, type UserRow } from './db.ts';
 import { temporaryPassword } from './recovery.ts';
 import { disable as disableTwoFactor } from './twoFactor.ts';
@@ -37,7 +38,9 @@ if (command === 'reset-password' && arg) {
     console.log(`@${u.username}  (${u.display_name})  criado em ${new Date(u.created_at).toLocaleString('pt-BR')}`);
   }
 } else if (command === 'backup') {
-  console.log(`Backup feito: ${await backupNow()}`);
+  const file = await backupNow();
+  console.log(`Backup feito: ${file}`);
+  if (await sendOffsite(file)) console.log(`Enviado para o bucket ${config.backup.s3.bucket}.`);
   for (const b of listBackups()) console.log(`  ${b.day}  ${(b.size / 1024 / 1024).toFixed(1)} MB`);
 } else {
   console.log('Uso:');

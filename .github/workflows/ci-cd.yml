@@ -79,6 +79,8 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          BACKUP_S3_ACCESS_KEY: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
+          BACKUP_S3_SECRET: ${{ secrets.BACKUP_S3_SECRET }}
         run: |
           if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
             printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.google.env"
@@ -90,13 +92,17 @@ jobs:
           if [ -n "$STEAM_API_KEY" ]; then
             printf 'STEAM_API_KEY=%s\n' "$STEAM_API_KEY" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.integrations.env"
           fi
+          # chave do bucket dos backups fora da VPS (Cloudflare R2)
+          if [ -n "$BACKUP_S3_ACCESS_KEY" ] && [ -n "$BACKUP_S3_SECRET" ]; then
+            printf 'BACKUP_S3_ACCESS_KEY=%s\nBACKUP_S3_SECRET=%s\n' "$BACKUP_S3_ACCESS_KEY" "$BACKUP_S3_SECRET" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.backup.env"
+          fi
 
       - name: Instalar e reiniciar
         run: |
           ssh "$TARGET" "mkdir -p /opt/concord \
             && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
             && cd /opt/concord && chmod +x deploy/setup.sh \
-            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} ./deploy/setup.sh"
+            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
 
       # Verifica de dentro da VPS: a Cloudflare costuma bloquear (403) os runners do GitHub.
       - name: Verificar saúde
