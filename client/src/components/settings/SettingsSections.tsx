@@ -1108,6 +1108,7 @@ function UpdateRow() {
     checking: 'Procurando…',
     latest: 'Você está na versão mais recente.',
     downloading: `Baixando a versão ${s?.version ?? ''}… ${s?.progress ?? 0}%`,
+    verifying: `Conferindo a assinatura da versão ${s?.version ?? ''}…`,
     ready: `Versão ${s?.version ?? ''} pronta. Reinicie para instalar.`,
     error: `Não foi possível verificar: ${s?.error ?? ''}`,
   };
@@ -1123,7 +1124,7 @@ function UpdateRow() {
           variant="secondary"
           className="h-9 shrink-0 px-4 text-xs"
           loading={s?.state === 'checking'}
-          disabled={s?.state === 'downloading'}
+          disabled={s?.state === 'downloading' || s?.state === 'verifying'}
           onClick={() => void desktop!.checkForUpdates!().then(setS)}
         >
           Procurar atualizações
