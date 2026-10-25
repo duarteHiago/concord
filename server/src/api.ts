@@ -52,6 +52,7 @@ import { isAdmin, registerAdminRoutes } from './admin.ts';
 import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
 import { mecenasBadge, mecenasOfMe, mecenasOver } from './mecenas.ts';
 import { registerClientErrorRoutes } from './clientErrors.ts';
+import { registerCspReportRoutes } from './security.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerForumRoutes } from './forum.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
@@ -662,8 +663,9 @@ registerPublicIntegrationRoutes(api, {
   },
 });
 
-// o app pode quebrar antes do login: fica antes do requireAuth
+// o app pode quebrar antes do login, e o navegador manda o relatório da CSP sem token: ficam antes do requireAuth
 registerClientErrorRoutes(api);
+registerCspReportRoutes(api);
 
 api.use(requireAuth);
 

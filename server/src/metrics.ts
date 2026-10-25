@@ -45,6 +45,14 @@ export const clientErrors = new client.Counter({
   registers: [registry],
 });
 
+/** O que a Content-Security-Policy bloquearia, por diretiva (ver security.ts). */
+export const cspReports = new client.Counter({
+  name: 'concord_csp_reports_total',
+  help: 'Violações da CSP (em modo só relatório) avisadas pelos navegadores',
+  labelNames: ['directive'] as const,
+  registers: [registry],
+});
+
 export const socketEvents = new client.Counter({
   name: 'concord_socket_events_total',
   help: 'Eventos recebidos pelo Socket.io',
