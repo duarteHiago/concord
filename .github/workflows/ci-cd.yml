@@ -110,9 +110,12 @@ jobs:
             else echo 'O app ainda não está rodando: sem backup.'; fi" \
             || echo "::warning title=Backup antes do deploy::O backup falhou; o deploy segue. Veja o log acima."
 
+      # O código é trocado inteiro, não extraído por cima: senão um arquivo apagado no repositório continua na VPS
+      # e entra no build (aconteceu com o UserSettingsModal.tsx, apagado no #74). Dados, .env e deploy/ ficam.
       - name: Instalar e reiniciar
         run: |
           ssh "$TARGET" "mkdir -p /opt/concord \
+            && cd /opt/concord && rm -rf client server shared desktop tests examples docs \
             && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
             && cd /opt/concord && chmod +x deploy/setup.sh \
             && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
