@@ -6,6 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import client from 'prom-client';
 import { lastOffsite, listBackups } from './backup.ts';
 import { config } from './config.ts';
+import { lastUploadsSync } from './offsite.ts';
 import { get, observeQueries } from './db.ts';
 import { cpuProfile } from './profile.ts';
 
@@ -251,6 +252,15 @@ export function registerLiveGauges(read: {
     collect() {
       const last = lastOffsite();
       if (last) this.set(last.mtimeMs / 1000);
+    },
+  });
+  new client.Gauge({
+    name: 'concord_backup_uploads_sync_timestamp_seconds',
+    help: 'Quando o espelho de data/uploads no bucket foi atualizado pela última vez',
+    registers: [registry],
+    collect() {
+      const last = lastUploadsSync();
+      if (last) this.set(last / 1000);
     },
   });
 }

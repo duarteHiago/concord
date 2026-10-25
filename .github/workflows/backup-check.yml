@@ -1,0 +1,98 @@
+name: Conferir backup
+
+# Todo dia, depois do backup das 6h UTC: baixa o backup mais novo do bucket (R2), restaura e abre com a versão
+# atual do servidor (as migrações rodam numa cópia). Backup que nunca foi restaurado é só uma esperança.
+# Se falhar (backup velho, corrompido, que não abre, uploads faltando), o GitHub avisa por e-mail.
+on:
+  schedule:
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conferir:
+    name: Restaurar o backup mais novo
+    if: vars.BACKUP_S3_BUCKET != ''
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET }}
+      AWS_DEFAULT_REGION: auto
+      S3: aws s3 --endpoint-url ${{ vars.BACKUP_S3_ENDPOINT }}
+      BUCKET: s3://${{ vars.BACKUP_S3_BUCKET }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Baixar o backup mais novo
+        run: |
+          latest=$($S3 ls "$BUCKET/db/" | awk '{print $4}' | grep -E '^concord-[0-9]{4}-[0-9]{2}-[0-9]{2}\.db\.gz$' | sort | tail -1)
+          [ -n "$latest" ] || { echo "::error::Nenhum backup em db/ no bucket."; exit 1; }
+          day=$(echo "$latest" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          age=$(( ( $(date -u +%s) - $(date -u -d "$day" +%s) ) / 86400 ))
+          echo "Backup mais novo: $latest ($age dia(s))"
+          # o das 6h de hoje já devia estar lá; tolera um dia de atraso
+          [ "$age" -le 1 ] || { echo "::error::O backup mais novo é de $day ($age dias atrás): o backup diário parou."; exit 1; }
+          $S3 cp "$BUCKET/db/$latest" /tmp/backup.db.gz --only-show-errors
+          gunzip -c /tmp/backup.db.gz > /tmp/restaurado.db
+          echo "LATEST=$latest" >> "$GITHUB_ENV"
+
+      - name: Restaurar e abrir com o servidor atual
+        working-directory: server
+        run: |
+          npm ci --omit=dev --no-audit --no-fund
+          cp /tmp/restaurado.db /tmp/migrado.db
+          DB_PATH=/tmp/migrado.db node --disable-warning=ExperimentalWarning --input-type=module -e "
+            const { DatabaseSync } = await import('node:sqlite');
+            const raw = new DatabaseSync('/tmp/restaurado.db', { readOnly: true });
+            const ok = raw.prepare('PRAGMA integrity_check').get().integrity_check;
+            if (ok !== 'ok') throw new Error('integrity_check: ' + ok);
+            const n = (t) => raw.prepare('SELECT COUNT(*) AS n FROM ' + t).get().n;
+            const counts = { contas: n('users'), servidores: n('servers'), mensagens: n('messages') + n('dm_messages') };
+            if (!counts.contas) throw new Error('o backup não tem nenhuma conta');
+            const last = raw.prepare('SELECT MAX(created_at) AS t FROM messages').get().t;
+            // as migrações da versão atual rodam numa cópia: o backup abre com o código de hoje
+            await import('./src/db.ts');
+            const fs = await import('node:fs');
+            fs.writeFileSync('/tmp/resumo.json', JSON.stringify({ ...counts, ultimaMensagem: last ? new Date(last).toISOString() : null }));
+            console.log('integrity_check ok, migrações ok', counts);
+          "
+
+      - name: Conferir os arquivos enviados
+        run: |
+          $S3 ls "$BUCKET/uploads/" --recursive | awk '{print $4}' | sed 's|^uploads/||' | sort > /tmp/no-bucket.txt
+          echo "Arquivos em uploads/ no bucket: $(wc -l < /tmp/no-bucket.txt)"
+          # os arquivos que as contas e mensagens do backup usam têm que estar no bucket
+          node --input-type=module -e "
+            const { DatabaseSync } = await import('node:sqlite');
+            const db = new DatabaseSync('/tmp/restaurado.db', { readOnly: true });
+            const urls = new Set();
+            const sql = 'SELECT avatar_url AS u FROM users UNION SELECT banner_url FROM users UNION SELECT icon_url FROM servers UNION SELECT url FROM attachments WHERE message_id IS NOT NULL';
+            for (const r of db.prepare(sql).all()) if (r.u) urls.add(r.u);
+            const fs = await import('node:fs');
+            fs.writeFileSync('/tmp/usados.txt', [...urls].filter((u) => u.startsWith('/uploads/')).map((u) => u.slice(9)).sort().join('\n') + '\n');
+          "
+          missing=$(comm -23 <(sort -u /tmp/usados.txt | grep .) /tmp/no-bucket.txt | wc -l)
+          used=$(grep -c . /tmp/usados.txt || true)
+          echo "Arquivos usados no banco: $used, faltando no bucket: $missing"
+          comm -23 <(sort -u /tmp/usados.txt | grep .) /tmp/no-bucket.txt | head -5
+          # uns poucos faltando é normal (enviados depois do envio da última meia hora); muitos, não
+          [ "$missing" -le $(( used / 20 + 5 )) ] || { echo "::error::$missing arquivo(s) usados no banco não estão no bucket."; exit 1; }
+          echo "MISSING=$missing" >> "$GITHUB_ENV"
+          echo "USED=$used" >> "$GITHUB_ENV"
+
+      - name: Resumo
+        run: |
+          {
+            echo "### Backup restaurado: $LATEST"
+            echo
+            echo '| | |'
+            echo '|---|---|'
+            node -e "const r=require('/tmp/resumo.json');for(const[k,v]of Object.entries(r))console.log('| '+k+' | '+v+' |')"
+            echo "| arquivos usados / faltando no bucket | $USED / $MISSING |"
+          } >> "$GITHUB_STEP_SUMMARY"

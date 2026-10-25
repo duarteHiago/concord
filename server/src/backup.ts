@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { Worker } from 'node:worker_threads';
 import { createGzip } from 'node:zlib';
 import { config } from './config.ts';
-import { offsiteEnabled, uploadBackup } from './offsite.ts';
+import { offsiteEnabled, syncUploads, uploadBackup } from './offsite.ts';
 
 const NAME = /^concord-(\d{4}-\d{2}-\d{2})\.db\.gz$/;
 
@@ -130,6 +130,22 @@ export function scheduleBackups() {
       busy = false;
     }
   };
+  // o espelho dos arquivos enviados não espera a hora do backup: um arquivo apagado no app sai logo do bucket
+  let syncing = false;
+  const sync = async () => {
+    if (syncing || !offsiteEnabled()) return;
+    syncing = true;
+    try {
+      const { sent, deleted } = await syncUploads();
+      if (sent || deleted) console.log(`[backup] uploads no bucket: ${sent} enviado(s), ${deleted} apagado(s)`);
+    } catch (err) {
+      console.error('[backup] espelho dos uploads falhou:', err);
+    } finally {
+      syncing = false;
+    }
+  };
   setTimeout(check, 60_000).unref();
   setInterval(check, 30 * 60_000).unref();
+  setTimeout(sync, 2 * 60_000).unref();
+  setInterval(sync, 30 * 60_000).unref();
 }
