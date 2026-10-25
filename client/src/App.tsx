@@ -4,6 +4,7 @@ import { EmailResetScreen, useEmailPrompt } from './components/EmailRecovery';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
 import { DevWindow } from './components/DevWindow';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ForumView } from './components/ForumView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
@@ -132,40 +133,44 @@ function Shell() {
   const channelId = useApp((s) => (s.activeServerId ? s.activeChannels[s.activeServerId] : undefined));
   const memberListOpen = useApp((s) => s.memberListOpen);
   const channel = detail?.channels.find((c) => c.id === channelId);
+  // erro na área do meio fica só nela (a barra lateral continua); trocar de canal ou página tenta de novo
+  const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}`;
 
   return (
     <div className="flex h-full gap-4 bg-surface-1 p-4">
       <ChannelSidebar />
-      {settingsOpen ? (
-        <SettingsPage />
-      ) : profileOpen ? (
-        <ProfilePage />
-      ) : releasesOpen ? (
-        <ReleasesView />
-      ) : activeServerId === HOME ? (
-        <DmView />
-      ) : activeServerId ? (
-        channel?.type === 'voice' ? (
-          <VoiceView channel={channel} />
+      <ErrorBoundary area="painel" resetKey={view}>
+        {settingsOpen ? (
+          <SettingsPage />
+        ) : profileOpen ? (
+          <ProfilePage />
+        ) : releasesOpen ? (
+          <ReleasesView />
+        ) : activeServerId === HOME ? (
+          <DmView />
+        ) : activeServerId ? (
+          channel?.type === 'voice' ? (
+            <VoiceView channel={channel} />
+          ) : (
+            <>
+              <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
+                {channel?.type === 'forum' ? (
+                  <ForumView channel={channel} />
+                ) : channel ? (
+                  <ChatView channel={channel} />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center">
+                    <Spinner />
+                  </div>
+                )}
+              </main>
+              {memberListOpen && channel && <MemberList />}
+            </>
+          )
         ) : (
-          <>
-            <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
-              {channel?.type === 'forum' ? (
-                <ForumView channel={channel} />
-              ) : channel ? (
-                <ChatView channel={channel} />
-              ) : (
-                <div className="flex flex-1 items-center justify-center">
-                  <Spinner />
-                </div>
-              )}
-            </main>
-            {memberListOpen && channel && <MemberList />}
-          </>
-        )
-      ) : (
-        <WelcomeView />
-      )}
+          <WelcomeView />
+        )}
+      </ErrorBoundary>
     </div>
   );
 }

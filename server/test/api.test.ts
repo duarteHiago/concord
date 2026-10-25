@@ -82,6 +82,13 @@ describe('contas e login', () => {
   });
 });
 
+describe('erros do app', () => {
+  it('aceita o relatório de erro mesmo sem login', async () => {
+    const res = await new Client(server.url).post('/client-errors', { area: 'painel', message: 'quebrou', stack: 'at X', path: '/', commit: 'abc' });
+    assert.equal(res.status, 204);
+  });
+});
+
 describe('servidores', () => {
   // o que a pessoa não pode ver responde 404, e não 403: não revela nem que existe
   it('quem não é membro não vê o servidor nem as mensagens', async () => {
