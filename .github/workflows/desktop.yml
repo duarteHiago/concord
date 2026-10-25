@@ -62,13 +62,24 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win --publish never
 
-      - name: Conferir pacote (atualizador incluído)
+      # os apps só instalam atualização com esta assinatura (ver desktop/update-signature.cjs). Em PR de fork o
+      # segredo não existe: só monta o instalador, sem assinar (e PR nunca publica).
+      - name: Assinar a atualização
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: desktop
+        env:
+          DESKTOP_UPDATE_KEY: ${{ secrets.DESKTOP_UPDATE_KEY }}
+        run: node scripts/sign-update.cjs
+
+      - name: Conferir pacote (atualizador e chave pública incluídos)
         working-directory: desktop
         shell: bash
         run: |
           # no Windows o asar lista os caminhos com "\"
           npx --yes @electron/asar@3.4.1 list release/win-unpacked/resources/app.asar > asar.txt
           grep -E 'node_modules[\\/]electron-updater[\\/]package\.json' asar.txt
+          grep -E '[\\/]update-key\.pub$' asar.txt
+          grep -E '[\\/]update-signature\.cjs$' asar.txt
           ls release
           cat release/latest.yml
 
@@ -78,6 +89,7 @@ jobs:
           path: |
             desktop/release/Concord-Setup-*.exe
             desktop/release/Concord-Setup-*.exe.blockmap
+            desktop/release/Concord-Setup-*.exe.sig
             desktop/release/latest.yml
           if-no-files-found: error
 
@@ -101,15 +113,16 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
       # O app serve <dados>/downloads em https://DOMINIO/downloads/.
-      # O latest.yml vai por último: só depois que o instalador está lá os apps veem a versão nova.
+      # O latest.yml vai por último: só depois que o instalador e a assinatura estão lá os apps veem a versão nova.
       - name: Publicar versão
         run: |
           D=/opt/concord/data/downloads
           FILE=$(ls Concord-Setup-*.exe | head -1)
+          [ -s "$FILE.sig" ] || { echo "::error::Instalador sem assinatura: os apps recusariam a atualização."; exit 1; }
           ssh "$TARGET" "mkdir -p $D"
-          scp -q "$FILE" "$FILE.blockmap" "$TARGET:$D/"
+          scp -q "$FILE" "$FILE.blockmap" "$FILE.sig" "$TARGET:$D/"
           scp -q latest.yml "$TARGET:$D/latest.yml.tmp"
           ssh "$TARGET" "cd $D && mv latest.yml.tmp latest.yml \
             && cp '$FILE' Concord-Setup.exe.tmp && mv Concord-Setup.exe.tmp Concord-Setup.exe \
-            && ls -t Concord-Setup-*.exe | tail -n +4 | while read f; do rm -f \"\$f\" \"\$f.blockmap\"; done \
+            && ls -t Concord-Setup-*.exe | tail -n +4 | while read f; do rm -f \"\$f\" \"\$f.blockmap\" \"\$f.sig\"; done \
             && ls -la"

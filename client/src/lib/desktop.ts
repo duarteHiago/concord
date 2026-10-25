@@ -9,7 +9,7 @@ export interface DesktopSource {
 }
 
 export interface UpdateState {
-  state: 'idle' | 'dev' | 'checking' | 'latest' | 'downloading' | 'ready' | 'error';
+  state: 'idle' | 'dev' | 'checking' | 'latest' | 'downloading' | 'verifying' | 'ready' | 'error';
   version: string | null;
   progress: number;
   error: string | null;

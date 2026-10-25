@@ -1,7 +1,7 @@
 // Concord Desktop — processo principal do Electron.
 // Carrega o Concord do servidor configurado e adiciona o que o navegador não oferece:
 // seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
-const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, Notification, powerMonitor, screen, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, screen, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -349,9 +349,23 @@ handle('concord:select-source', (_e, id) => {
 handle('concord:audio-start', (event, opts) => startCapture(event.sender, opts?.sourceId));
 handle('concord:audio-stop', () => stopCapture());
 
-handle('concord:set-server', (_e, url) => {
+handle('concord:set-server', async (_e, url) => {
   const parsed = new URL(String(url));
   if (!/^https?:$/.test(parsed.protocol)) throw new Error('Use um endereço http(s)');
+  // qualquer script da página pode chamar isto: a janela nativa garante que foi a pessoa que pediu
+  // (senão uma página com uma falha mandaria o app para um site falso sem ninguém perceber)
+  if (parsed.origin !== serverOrigin()) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Trocar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Trocar de servidor',
+      message: `Abrir o Concord em ${parsed.origin}?`,
+      detail: 'O app passa a abrir esse endereço. Só confirme se foi você quem digitou.',
+    });
+    if (response !== 0) throw new Error('Troca de servidor cancelada.');
+  }
   config.server = parsed.origin;
   saveConfig();
   void win?.loadURL(config.server);
@@ -882,6 +896,28 @@ handle('concord:shake-window', async () => {
 // <servidor>/downloads/, o app baixa em segundo plano e instala ao reiniciar ou fechar.
 
 let updateReady = null;
+
+/**
+ * Confere a assinatura do instalador baixado (ver update-signature.cjs) com a chave pública que vem no app.
+ * O .sig vem do mesmo lugar que o instalador, mas sem a chave privada ninguém consegue fazer um que confira.
+ */
+async function verifyDownloadedUpdate(info) {
+  try {
+    const { net } = require('electron');
+    const { sha512File, verify } = require('./update-signature.cjs');
+    const name = info.files?.[0]?.url ?? info.path;
+    // o nome tem a versão (Concord-Setup-1.0.123.exe.sig): cache não atrapalha
+    const res = await net.fetch(`${serverOrigin()}/downloads/${encodeURIComponent(path.basename(String(name)))}.sig`);
+    if (!res.ok) throw new Error(`sem assinatura (HTTP ${res.status})`);
+    const publicKey = fs.readFileSync(path.join(__dirname, 'update-key.pub'), 'utf8');
+    const ok = verify(publicKey, info.version, await sha512File(info.downloadedFile), await res.text());
+    if (!ok) console.warn('[atualização] assinatura não confere: instalador descartado');
+    return ok;
+  } catch (err) {
+    console.warn('[atualização] não deu para conferir a assinatura:', err?.message ?? err);
+    return false;
+  }
+}
 // estado mostrado no botão "Procurar atualizações"
 let updateState = { state: 'idle', version: null, progress: 0, error: null };
 
@@ -913,9 +949,23 @@ function setupAutoUpdate() {
   autoUpdater.on('update-available', (info) => setState({ state: 'downloading', version: info.version, progress: 0 }));
   autoUpdater.on('download-progress', (p) => setState({ state: 'downloading', progress: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => {
-    updateReady = { version: info.version };
-    setState({ state: 'ready', version: info.version, progress: 100 });
-    win?.webContents.send('concord:update-ready', updateReady);
+    // logo depois deste evento o electron-updater registra "instalar ao fechar", e só se a opção estiver ligada:
+    // desliga no próximo instante (o registro já foi feito) e só religa quando a assinatura conferir
+    queueMicrotask(() => (autoUpdater.autoInstallOnAppQuit = false));
+    setState({ state: 'verifying', version: info.version, progress: 100 });
+    void verifyDownloadedUpdate(info).then((ok) => {
+      if (!ok) {
+        // não baixa de novo até o app reiniciar: senão baixaria o mesmo arquivo a cada 10 min
+        autoUpdater.autoDownload = false;
+        fs.rm(info.downloadedFile, { force: true }, () => {});
+        setState({ state: 'error', error: 'A atualização não tem a assinatura do Concord e foi descartada.' });
+        return;
+      }
+      autoUpdater.autoInstallOnAppQuit = true;
+      updateReady = { version: info.version };
+      setState({ state: 'ready', version: info.version, progress: 100 });
+      win?.webContents.send('concord:update-ready', updateReady);
+    });
   });
   autoUpdater.on('error', (err) => {
     console.warn('[atualização]', err?.message ?? err);
@@ -939,6 +989,8 @@ function setupAutoUpdate() {
     return updateState;
   });
   handle('concord:update-install', () => {
+    // só depois de a assinatura conferir (ver verifyDownloadedUpdate)
+    if (!updateReady) return;
     stopCapture();
     // isSilent=true: sem telas do instalador; isForceRunAfter=true: abre o app de novo
     setImmediate(() => autoUpdater.quitAndInstall(true, true));

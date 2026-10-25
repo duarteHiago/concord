@@ -28,6 +28,11 @@ O áudio sem retorno exige **Windows 11**, ou Windows 10 a partir do build 20348
 
 O workflow [desktop.yml](.github/workflows/desktop.yml) compila o capturador, gera o instalador e o publica em `https://SEU-DOMINIO/downloads/Concord-Setup.exe`. No site aparece um botão de download na barra da esquerda. O instalador não é assinado digitalmente, então o Windows pode exibir o aviso do SmartScreen: clique em "Mais informações" e depois em "Executar assim mesmo".
 
+**Atualizações assinadas.** O app se atualiza sozinho baixando o instalador novo de `<servidor>/downloads/`, mas só instala o que tem a assinatura do Concord: o CI assina a versão e o SHA-512 de cada instalador com uma chave Ed25519 (segredo `DESKTOP_UPDATE_KEY`), e o app confere com a chave pública que vai dentro dele ([desktop/update-key.pub](desktop/update-key.pub)). Assim, nem quem invadir a VPS nem uma página que troque o servidor do app consegue instalar um programa no PC das pessoas. Trocar de servidor no app também pede confirmação numa janela do Windows.
+
+- **Guarde uma cópia da chave privada fora do GitHub** (num gerenciador de senhas). Sem ela não sai mais atualização: os apps instalados recusam qualquer outra chave, e cada pessoa teria que baixar o instalador de novo no site.
+- Para trocar a chave (por exemplo, se vazou): gere um par novo, troque o `update-key.pub` e o segredo no mesmo PR. Quem tem o app instalado precisa reinstalar pelo site, porque a versão instalada só aceita a chave antiga.
+
 ## Na sala de voz
 
 - **Mesa de sons:** cada servidor tem até 50 sons (MP3, OGG, WAV ou WEBM, até 15 segundos). Quem está na sala toca para todos ouvirem. Também dá para usar `/sound nome` no chat.
