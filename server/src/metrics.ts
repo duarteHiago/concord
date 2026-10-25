@@ -4,6 +4,7 @@ import { statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { NextFunction, Request, Response } from 'express';
 import client from 'prom-client';
+import { listBackups } from './backup.ts';
 import { config } from './config.ts';
 import { get, observeQueries } from './db.ts';
 import { cpuProfile } from './profile.ts';
@@ -206,6 +207,25 @@ export function registerLiveGauges(read: {
       } catch {
         // banco ainda não criado
       }
+    },
+  });
+  // backup diário (ver backup.ts): um alerta olha se o mais novo ficou velho demais
+  new client.Gauge({
+    name: 'concord_backup_last_timestamp_seconds',
+    help: 'Quando foi feito o backup mais novo do banco',
+    registers: [registry],
+    collect() {
+      const last = listBackups().at(-1);
+      if (last) this.set(last.mtimeMs / 1000);
+    },
+  });
+  new client.Gauge({
+    name: 'concord_backup_last_size_bytes',
+    help: 'Tamanho do backup mais novo (compactado)',
+    registers: [registry],
+    collect() {
+      const last = listBackups().at(-1);
+      if (last) this.set(last.size);
     },
   });
 }

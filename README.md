@@ -130,7 +130,26 @@ Vai contribuir? Veja o [guia de contribuição](CONTRIBUTING.md): desenvolviment
 
 **Recuperar a senha por e-mail (opcional):** crie uma conta no [Brevo](https://www.brevo.com), autentique o domínio (registros DKIM, DMARC e de verificação no DNS, em *Senders, Domains & Dedicated IPs → Domains*) e gere uma chave em *SMTP & API → API Keys*. No `.env`, coloque `BREVO_API_KEY=` e `MAIL_FROM=` (remetente no domínio autenticado, por exemplo `nao-responda@seudominio.com`). Pelo CI/CD: `gh secret set BREVO_API_KEY` e `gh variable set MAIL_FROM -b nao-responda@seudominio.com`. A pessoa cadastra o e-mail em Configurações → Conta (só vale depois do clique no link de confirmação) e passa a receber um link em "Esqueci minha senha". O e-mail é opcional: o código de recuperação continua funcionando. Sem a chave, a função não aparece no app.
 
-Atualizar: `git pull && docker compose up -d --build`. Os dados ficam em `./data/concord.db`; para backup, basta copiar esse arquivo.
+Atualizar: `git pull && docker compose up -d --build`. Os dados ficam em `./data/concord.db`.
+
+### Backup e restauração
+
+O servidor faz sozinho um backup do banco por dia, depois das 6h UTC, em `data/backups/concord-AAAA-MM-DD.db.gz`, e guarda os 7 mais novos. A cópia é feita com o app no ar e conferida (`integrity_check`) antes de ser guardada. No Grafana, `concord_backup_last_timestamp_seconds` mostra quando foi o último.
+
+- Fazer um agora: `docker compose exec app node src/cli.ts backup`
+- Mudar no `.env` (e rodar `docker compose up -d`): `BACKUP_KEEP=14` (quantos guardar; `0` desliga), `BACKUP_HOUR_UTC=6`
+
+Os backups ficam no mesmo disco da VPS: protegem de um erro no app ou num deploy, não de perder a VPS. Copie `data/backups/` para fora de vez em quando. Os arquivos enviados (`data/uploads/`) não entram no backup do banco.
+
+Para restaurar:
+
+```bash
+docker compose stop app
+# guarde o atual (com o -wal e o -shm, onde estão as escritas mais recentes), por via das dúvidas
+mkdir -p data/antes-da-restauracao && mv data/concord.db* data/antes-da-restauracao/
+gunzip -c data/backups/concord-2026-10-24.db.gz > data/concord.db
+docker compose start app
+```
 
 ### Dimensionamento
 
