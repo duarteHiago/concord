@@ -139,7 +139,13 @@ O servidor faz sozinho um backup do banco por dia, depois das 6h UTC, em `data/b
 - Fazer um agora: `docker compose exec app node src/cli.ts backup`
 - Mudar no `.env` (e rodar `docker compose up -d`): `BACKUP_KEEP=14` (quantos guardar; `0` desliga), `BACKUP_HOUR_UTC=6`
 
-Os backups ficam no mesmo disco da VPS: protegem de um erro no app ou num deploy, não de perder a VPS. Copie `data/backups/` para fora de vez em quando. Os arquivos enviados (`data/uploads/`) não entram no backup do banco.
+Esses ficam no mesmo disco da VPS: protegem de um erro no app ou num deploy, não de perder a VPS. Para isso, o backup de cada dia também vai para um bucket fora dela (Cloudflare R2, ou qualquer um compatível com S3):
+
+1. No painel da Cloudflare, em **R2 → Create bucket**, crie um bucket (ex.: `concord-backups`). Em **Settings → Object lifecycle rules**, adicione uma regra para apagar objetos depois de 30 dias.
+2. Em **R2 → Manage API tokens → Create API token**, escolha **Object Read & Write**, só nesse bucket. Guarde o *Access Key ID* e o *Secret Access Key*.
+3. No `.env`: `BACKUP_S3_ENDPOINT=https://<id-da-conta>.r2.cloudflarestorage.com`, `BACKUP_S3_BUCKET=concord-backups`, `BACKUP_S3_ACCESS_KEY=` e `BACKUP_S3_SECRET=`. Pelo CI/CD: `gh variable set BACKUP_S3_ENDPOINT -b https://<id-da-conta>.r2.cloudflarestorage.com`, `gh variable set BACKUP_S3_BUCKET -b concord-backups`, `gh secret set BACKUP_S3_ACCESS_KEY` e `gh secret set BACKUP_S3_SECRET`.
+
+Os arquivos vão para `db/` no bucket. Se o envio falhar, o servidor tenta de novo a cada meia hora, e `concord_backup_offsite_timestamp_seconds` mostra quando foi o último que chegou. Os arquivos enviados pelas pessoas (`data/uploads/`) ainda não entram no backup.
 
 Para restaurar:
 

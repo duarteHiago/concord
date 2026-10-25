@@ -1,12 +1,13 @@
 // Backup diário do banco, em data/backups/concord-AAAA-MM-DD.db.gz (ver README > Backup e restauração).
 // A cópia é online, pela API de backup do SQLite, numa worker thread com conexão própria: o node:sqlite é
 // síncrono, e copiar ou conferir o banco na thread principal travaria o app inteiro enquanto durasse.
-import { createReadStream, createWriteStream, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { createReadStream, createWriteStream, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Worker } from 'node:worker_threads';
 import { createGzip } from 'node:zlib';
 import { config } from './config.ts';
+import { offsiteEnabled, uploadBackup } from './offsite.ts';
 
 const NAME = /^concord-(\d{4}-\d{2}-\d{2})\.db\.gz$/;
 
@@ -83,19 +84,51 @@ export function backupNow(): Promise<string> {
   return running;
 }
 
-/** Confere de meia em meia hora: passou da hora do backup (UTC) e ainda não tem o de hoje, faz. */
+// dia do último backup que chegou no bucket (ver offsite.ts); o mtime do arquivo diz quando
+const offsiteMark = () => join(config.backup.dir, '.offsite');
+
+export function lastOffsite(): { day: string; mtimeMs: number } | null {
+  try {
+    return { day: readFileSync(offsiteMark(), 'utf8').trim(), mtimeMs: statSync(offsiteMark()).mtimeMs };
+  } catch {
+    return null;
+  }
+}
+
+/** Manda o backup para o bucket, se houver um configurado. */
+export async function sendOffsite(file: string): Promise<boolean> {
+  if (!offsiteEnabled()) return false;
+  await uploadBackup(file);
+  writeFileSync(offsiteMark(), NAME.exec(basename(file))![1]);
+  return true;
+}
+
+/**
+ * Confere de meia em meia hora: passou da hora do backup (UTC) e ainda não tem o de hoje, faz. Se o envio
+ * para o bucket falhou (rede, bucket fora do ar), a próxima conferência tenta de novo só o envio.
+ */
 export function scheduleBackups() {
   if (config.backup.keep <= 0) return;
-  const check = () => {
+  let busy = false;
+  const check = async () => {
     const now = new Date();
-    if (now.getUTCHours() < config.backup.hourUtc) return;
+    if (busy || now.getUTCHours() < config.backup.hourUtc) return;
     const today = now.toISOString().slice(0, 10);
-    if (listBackups().some((b) => b.day === today)) return;
-    const start = performance.now();
-    backupNow().then(
-      (file) => console.log(`[backup] ${file} (${((performance.now() - start) / 1000).toFixed(1)} s)`),
-      (err) => console.error('[backup] falhou:', err),
-    );
+    let file = listBackups().find((b) => b.day === today)?.file;
+    if (file && (!offsiteEnabled() || lastOffsite()?.day === today)) return;
+    busy = true;
+    try {
+      if (!file) {
+        const start = performance.now();
+        file = await backupNow();
+        console.log(`[backup] ${file} (${((performance.now() - start) / 1000).toFixed(1)} s)`);
+      }
+      if (await sendOffsite(file)) console.log(`[backup] ${basename(file)} enviado para o bucket ${config.backup.s3.bucket}`);
+    } catch (err) {
+      console.error('[backup] falhou:', err);
+    } finally {
+      busy = false;
+    }
   };
   setTimeout(check, 60_000).unref();
   setInterval(check, 30 * 60_000).unref();

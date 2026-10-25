@@ -70,6 +70,22 @@ if [ -f .integrations.env ]; then
   rm -f .integrations.env
   unset VAL
 fi
+# backups fora da VPS (bucket do Cloudflare R2): endereço e bucket vêm das variáveis do CI; a chave, por .backup.env
+if [ -n "${BACKUP_S3_ENDPOINT:-}" ]; then
+  if printf '%s' "$BACKUP_S3_ENDPOINT" | grep -qE '^https://[A-Za-z0-9.-]+(:[0-9]+)?$'; then upsert_env BACKUP_S3_ENDPOINT "$BACKUP_S3_ENDPOINT"; else echo "!! BACKUP_S3_ENDPOINT com formato inesperado (use https://<conta>.r2.cloudflarestorage.com); ignorado." >&2; fi
+fi
+if [ -n "${BACKUP_S3_BUCKET:-}" ]; then
+  if printf '%s' "$BACKUP_S3_BUCKET" | grep -qE '^[a-z0-9][a-z0-9.-]{1,62}$'; then upsert_env BACKUP_S3_BUCKET "$BACKUP_S3_BUCKET"; else echo "!! BACKUP_S3_BUCKET com formato inesperado; ignorado." >&2; fi
+fi
+if [ -f .backup.env ]; then
+  for KEY in BACKUP_S3_ACCESS_KEY BACKUP_S3_SECRET; do
+    VAL="$(grep "^$KEY=" .backup.env | cut -d= -f2-)"
+    [ -z "$VAL" ] && continue
+    if printf '%s' "$VAL" | grep -qE '^[A-Za-z0-9/+=]{16,128}$'; then upsert_env "$KEY" "$VAL"; else echo "!! $KEY com formato inesperado; ignorada." >&2; fi
+  done
+  rm -f .backup.env
+  unset VAL
+fi
 chmod 600 .env
 
 # Convite do servidor oficial da comunidade (o app mostra "Entrar na comunidade"). Vem da variável do CI.
