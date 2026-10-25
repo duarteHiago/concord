@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.ts",
     "dev": "node --watch --disable-warning=ExperimentalWarning src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

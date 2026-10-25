@@ -29,6 +29,10 @@ jobs:
         working-directory: server
         run: npm ci --no-audit --no-fund && npx tsc --noEmit
 
+      - name: Servidor — testes (permissões e API)
+        working-directory: server
+        run: npm test
+
       - name: Cliente — build
         working-directory: client
         run: npm ci --no-audit --no-fund && npm run build

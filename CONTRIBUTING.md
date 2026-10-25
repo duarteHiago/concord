@@ -81,8 +81,11 @@ Rode na sua máquina:
 
 ```bash
 cd server && npx tsc --noEmit     # checagem de tipos do servidor
+cd server && npm test             # testes do servidor (permissões e API)
 cd client && npm run build        # checagem de tipos + build do cliente
 ```
+
+Os testes do servidor ficam em `server/test/` e usam o `node:test`, sem dependência nova. Os de API sobem o servidor de verdade com um banco temporário (`test/helpers.ts`) e falam com ele por HTTP. Mexeu numa regra de quem pode fazer o quê? Escreva o teste do caso que **não** pode, junto com o que pode.
 
 Se mexeu em voz, vídeo, login ou no banco, rode também o teste E2E (precisa do Docker):
 
