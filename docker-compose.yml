@@ -23,6 +23,9 @@ services:
       # apoio por Pix (Mercado Pago). Vazio: o botão de apoiar não aparece
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
       MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+      # backup diário do banco em data/backups (ver README > Backup e restauração). 0 desliga
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-6}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Concord}
       # o logo dos e-mails vem do GitHub: o Gmail busca imagens por servidores do Google, que a proteção anti-bot do site pode barrar

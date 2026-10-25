@@ -38,6 +38,8 @@ export const config = {
   steamApiKey: (env.STEAM_API_KEY ?? '').trim(),
   // diagnósticos enviados ficam ao lado do banco, fora de /uploads (que é público)
   diagnosticsDir: env.DIAGNOSTICS_DIR ?? '',
+  // backup diário do banco (ver backup.ts): quantos dias guardar (0 desliga) e a partir de que hora (UTC)
+  backup: { dir: env.BACKUP_DIR ?? '', keep: Number(env.BACKUP_KEEP ?? 7), hourUtc: Number(env.BACKUP_HOUR_UTC ?? 6) },
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
   metricsPort: Number(env.METRICS_PORT ?? 9464),
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',
@@ -65,6 +67,7 @@ export const config = {
 if (!config.uploadsDir) config.uploadsDir = join(dirname(config.dbPath), 'uploads');
 if (!config.downloadsDir) config.downloadsDir = join(dirname(config.dbPath), 'downloads');
 if (!config.diagnosticsDir) config.diagnosticsDir = join(dirname(config.dbPath), 'diagnostics');
+if (!config.backup.dir) config.backup.dir = join(dirname(config.dbPath), 'backups');
 
 if (env.NODE_ENV === 'production' && config.jwtSecret === 'dev-secret-troque-isto') {
   console.warn('[aviso] JWT_SECRET não definido — defina um valor aleatório em produção!');

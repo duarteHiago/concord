@@ -10,6 +10,8 @@ const db = new DatabaseSync(config.dbPath);
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
+  -- o CLI (cli.ts) abre o mesmo banco com o servidor rodando: espera a vez em vez de falhar com "database is locked"
+  PRAGMA busy_timeout = 5000;
 
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
