@@ -441,8 +441,19 @@ function UserCard() {
           )}
         </div>
       )}
-      <button onClick={() => setMenu(!menu)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" title="Status e perfil" aria-expanded={menu}>
+      {/* a foto abre o seu perfil; o nome abre o menu de status */}
+      <button
+        onClick={() => {
+          setMenu(false);
+          useApp.getState().openProfile(me.id);
+        }}
+        className="shrink-0 rounded-full transition-transform hover:scale-105"
+        title="Ver meu perfil"
+        aria-label="Ver meu perfil"
+      >
         <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} frame={me.frame} size={40} status={presence} />
+      </button>
+      <button onClick={() => setMenu(!menu)} className="flex min-w-0 flex-1 items-center gap-2.5 pl-1.5 text-left" title="Status e perfil" aria-expanded={menu}>
         <div className="min-w-0 leading-tight">
           <div className="truncate text-sm font-bold">{me.displayName}</div>
           <div className={cx('truncate text-xs', presence === 'dnd' ? 'text-danger' : 'text-fg-muted')}>
