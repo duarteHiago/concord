@@ -101,6 +101,15 @@ jobs:
             printf 'BACKUP_S3_ACCESS_KEY=%s\nBACKUP_S3_SECRET=%s\n' "$BACKUP_S3_ACCESS_KEY" "$BACKUP_S3_SECRET" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.backup.env"
           fi
 
+      # cópia do banco com a versão que ainda está no ar: se o deploy estragar alguma coisa, ela é de minutos atrás.
+      # Não segura o deploy se falhar (o backup diário continua), só avisa.
+      - name: Backup antes do deploy
+        run: |
+          ssh "$TARGET" "cd /opt/concord && if [ -n \"\$(docker compose ps -q app 2>/dev/null)\" ]; then \
+            docker compose exec -T app node --disable-warning=ExperimentalWarning src/cli.ts backup; \
+            else echo 'O app ainda não está rodando: sem backup.'; fi" \
+            || echo "::warning title=Backup antes do deploy::O backup falhou; o deploy segue. Veja o log acima."
+
       - name: Instalar e reiniciar
         run: |
           ssh "$TARGET" "mkdir -p /opt/concord \

@@ -137,6 +137,7 @@ Atualizar: `git pull && docker compose up -d --build`. Os dados ficam em `./data
 O servidor faz sozinho um backup do banco por dia, depois das 6h UTC, em `data/backups/concord-AAAA-MM-DD.db.gz`, e guarda os 7 mais novos. A cópia é feita com o app no ar e conferida (`integrity_check`) antes de ser guardada. No Grafana, `concord_backup_last_timestamp_seconds` mostra quando foi o último.
 
 - Fazer um agora: `docker compose exec app node src/cli.ts backup`
+- O deploy pelo CI também faz um logo antes de trocar a versão
 - Mudar no `.env` (e rodar `docker compose up -d`): `BACKUP_KEEP=14` (quantos guardar; `0` desliga), `BACKUP_HOUR_UTC=6`
 
 Esses ficam no mesmo disco da VPS: protegem de um erro no app ou num deploy, não de perder a VPS. Para isso, o backup de cada dia também vai para um bucket fora dela (Cloudflare R2, ou qualquer um compatível com S3):
