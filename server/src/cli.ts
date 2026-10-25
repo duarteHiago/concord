@@ -3,9 +3,11 @@
 //   docker compose exec app node src/cli.ts users
 //   docker compose exec app node src/cli.ts disable-2fa <usuário>
 //   docker compose exec app node src/cli.ts backup
+//   docker compose exec app node src/cli.ts sync-uploads
 import bcrypt from 'bcryptjs';
 import { backupNow, listBackups, sendOffsite } from './backup.ts';
 import { config } from './config.ts';
+import { offsiteEnabled, syncUploads } from './offsite.ts';
 import { all, get, run, type UserRow } from './db.ts';
 import { temporaryPassword } from './recovery.ts';
 import { disable as disableTwoFactor } from './twoFactor.ts';
@@ -42,11 +44,19 @@ if (command === 'reset-password' && arg) {
   console.log(`Backup feito: ${file}`);
   if (await sendOffsite(file)) console.log(`Enviado para o bucket ${config.backup.s3.bucket}.`);
   for (const b of listBackups()) console.log(`  ${b.day}  ${(b.size / 1024 / 1024).toFixed(1)} MB`);
+} else if (command === 'sync-uploads') {
+  if (!offsiteEnabled()) {
+    console.error('Sem bucket configurado (BACKUP_S3_*): nada a fazer.');
+    process.exit(1);
+  }
+  const { sent, deleted } = await syncUploads();
+  console.log(`Uploads no bucket ${config.backup.s3.bucket}: ${sent} enviado(s), ${deleted} apagado(s).`);
 } else {
   console.log('Uso:');
   console.log('  node src/cli.ts reset-password <usuário>   gera uma senha temporária');
   console.log('  node src/cli.ts users                      lista as contas');
   console.log('  node src/cli.ts disable-2fa <usuário>      desliga a verificação em duas etapas');
   console.log('  node src/cli.ts backup                     faz o backup do banco agora (data/backups/)');
+  console.log('  node src/cli.ts sync-uploads               atualiza agora a cópia de data/uploads no bucket');
   process.exit(command ? 1 : 0);
 }
