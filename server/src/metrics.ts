@@ -37,6 +37,14 @@ export const appEvents = new client.Counter({
   registers: [registry],
 });
 
+/** Erros que derrubaram uma parte do app no navegador de alguém (ver clientErrors.ts). */
+export const clientErrors = new client.Counter({
+  name: 'concord_client_errors_total',
+  help: 'Erros do app pegos pelo ErrorBoundary (app inteiro ou só um painel)',
+  labelNames: ['area'] as const,
+  registers: [registry],
+});
+
 export const socketEvents = new client.Counter({
   name: 'concord_socket_events_total',
   help: 'Eventos recebidos pelo Socket.io',

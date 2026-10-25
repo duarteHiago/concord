@@ -51,6 +51,7 @@ import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
 import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
 import { mecenasBadge, mecenasOfMe, mecenasOver } from './mecenas.ts';
+import { registerClientErrorRoutes } from './clientErrors.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerForumRoutes } from './forum.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
@@ -660,6 +661,9 @@ registerPublicIntegrationRoutes(api, {
     if (user) emitToUser(userId, 'me:updated', meJson(user));
   },
 });
+
+// o app pode quebrar antes do login: fica antes do requireAuth
+registerClientErrorRoutes(api);
 
 api.use(requireAuth);
 
