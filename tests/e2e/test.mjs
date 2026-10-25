@@ -55,9 +55,21 @@ const args = [
   '--autoplay-policy=no-user-gesture-required',
 ];
 
+// o que a Content-Security-Policy (por enquanto só relatório, ver server/src/security.ts) bloquearia:
+// tem que ficar vazio, senão ligar a CSP para valer quebraria a voz ou a transmissão
+const cspViolations = new Set();
+
 async function open(name, token) {
   const browser = await chromium.launch({ args });
-  const page = await browser.newPage();
+  // no contexto (e não na página) para valer também na janela separada da transmissão
+  const context = await browser.newContext();
+  await context.exposeFunction('cspViolation', (v) => cspViolations.add(`[${name}] ${v}`));
+  await context.addInitScript(() =>
+    document.addEventListener('securitypolicyviolation', (e) =>
+      window.cspViolation(`${e.effectiveDirective} ${e.blockedURI.replace(/\?.*$/, '')} em ${location.pathname}`),
+    ),
+  );
+  const page = await context.newPage();
   page.on('console', (m) => m.type() === 'error' && console.log(`  [${name}] ${m.text().slice(0, 200)}`));
   await page.addInitScript((t) => localStorage.setItem('concord.token', t), token);
   await page.goto(APP);
@@ -130,6 +142,8 @@ try {
   await b.page.getByRole('button', { name: 'Ver todos em grade' }).click().catch(() => {});
   await b.page.locator('[title^="Clique para ver o perfil"]').first().click();
   check(await b.page.getByText('Membro desde').isVisible().catch(() => false), 'clicar no participante abre o perfil');
+  for (const v of cspViolations) console.log(`  CSP bloquearia: ${v}`);
+  check(cspViolations.size === 0, 'nada esbarra na Content-Security-Policy');
   exitCode = failures.length ? 1 : 0;
 } catch (err) {
   console.log('✘ erro:', err.message);

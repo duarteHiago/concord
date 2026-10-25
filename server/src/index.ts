@@ -9,11 +9,13 @@ import { config } from './config.ts';
 import { HttpError } from './http.ts';
 import { httpMetrics, registerLiveGauges, startMetricsServer } from './metrics.ts';
 import { liveStats, setupRealtime } from './realtime.ts';
+import { securityHeaders } from './security.ts';
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
 app.use(httpMetrics);
+app.use(securityHeaders());
 app.use(express.json({ limit: '1mb' }));
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
