@@ -46,6 +46,19 @@ if (OLD_SERVERS.includes(config.server)) {
 }
 const serverOrigin = () => new URL(config.server).origin;
 
+// Links do Spotify (Jam, música, playlist...) abrem no app do Spotify quando ele está instalado: no navegador
+// cairiam no Spotify Web, e a Jam é para tocar no app. Sem o Spotify instalado, seguem para o navegador.
+const SPOTIFY_LINK = /^https:\/\/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(socialsession|track|album|playlist|artist|episode|show)\/([A-Za-z0-9]+)/;
+
+function openLink(url) {
+  const m = SPOTIFY_LINK.exec(url);
+  if (m && app.getApplicationNameForProtocol('spotify://')) {
+    void shell.openExternal(`spotify:${m[1]}:${m[2]}`).catch(() => shell.openExternal(url));
+    return;
+  }
+  void shell.openExternal(url);
+}
+
 /** Só a página do servidor configurado (ou a tela offline local) pode usar a ponte do app. */
 function trusted(event) {
   try {
@@ -157,14 +170,14 @@ function createWindow() {
         },
       };
     }
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) openLink(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
     try {
       if (new URL(url).origin !== serverOrigin()) {
         event.preventDefault();
-        void shell.openExternal(url);
+        openLink(url);
       }
     } catch {
       event.preventDefault();
