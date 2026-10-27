@@ -1,0 +1,111 @@
+# Varredura de segurança: o Trivy olha a imagem Docker (pacotes do Alpine e dependências npm que vão para
+# produção), procura segredos esquecidos no repositório e configuração arriscada (Dockerfile, compose); o
+# CodeQL lê o nosso próprio código atrás de falhas (injeção, XSS, path traversal...). Tudo aparece na aba
+# Security → Code scanning. Roda toda semana também, porque CVE nova sai sem ninguém mexer no código.
+name: Segurança
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    env:
+      # versão do Trivy fixada; a action vai por SHA porque as tags dela já foram sequestradas (mar/2026)
+      TRIVY_VERSION: v0.76.1
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Imagem Docker
+        run: docker build -t concord-app:scan .
+
+      # relatório completo para a aba Security (não falha o job)
+      - name: Imagem — relatório
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: concord-app:scan
+          format: sarif
+          output: trivy-image.sarif
+
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      # o que bloqueia: CRITICAL/HIGH que já tem versão corrigida (sem correção não há o que fazer além de esperar)
+      - name: Imagem — falhas graves com correção
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: concord-app:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-setup-trivy: true
+
+      # segredos no código falham o job; configuração arriscada (ex.: container rodando como root) só vai para o relatório
+      - name: Repositório — segredos e configuração
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: fs
+          scan-ref: .
+          scanners: secret,misconfig
+          skip-dirs: node_modules,data-dev
+          format: sarif
+          output: trivy-repo.sarif
+          skip-setup-trivy: true
+
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-repo.sarif
+          category: trivy-repo
+
+      - name: Repositório — segredos
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          skip-dirs: node_modules,data-dev
+          exit-code: '1'
+          skip-setup-trivy: true
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # actions: confere os próprios workflows (injeção por título de PR, permissões demais etc.)
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: codeql-${{ matrix.language }}

@@ -35,6 +35,10 @@ Pedimos que você não divulgue a falha até a correção estar publicada, ou at
 - A configuração de deploy (`deploy/`, `docker-compose*.yml`).
 - O serviço oficial em concord-community.com.
 
+## Varredura automática
+
+Todo PR passa pelo [Trivy](https://trivy.dev) (vulnerabilidades na imagem Docker e nas dependências, segredos no código, configuração do Docker) e pelo [CodeQL](https://codeql.github.com) (falhas no nosso código). Os dois rodam também toda semana, e o Dependabot mantém as dependências atualizadas. Detalhes no [README](README.md#cicd-github-actions).
+
 ## Fora do escopo
 
 - Ataques de negação de serviço (DDoS) e testes de carga contra concord-community.com.

@@ -188,6 +188,8 @@ O pipeline (`.github/workflows/ci-cd.yml`) roda em todo PR e em todo push na `ma
 
 Se os testes falharem na `main`, nada vai para produção: corrija com um novo PR. Acompanhe em **Actions** no GitHub ou com `gh run watch`.
 
+O `security.yml` roda junto, em todo PR: o **Trivy** escaneia a imagem Docker e procura segredos no repositório, e o **CodeQL** procura falhas no código. Se ele ficar vermelho, abra o log: na maioria das vezes é uma dependência com CVE, e a correção é atualizar o pacote (`npm update <pacote>` ou o PR do Dependabot). O que o CodeQL encontra aparece como comentário no próprio PR e na aba **Security**. Alarme falso pode ser descartado lá, com o motivo.
+
 Mudanças em `desktop/` também disparam o `desktop.yml`, que gera um instalador novo para Windows. Os apps instalados se atualizam sozinhos.
 
 ## Issues
