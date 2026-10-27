@@ -216,6 +216,14 @@ Todo push na branch `main` roda o pipeline [.github/workflows/ci-cd.yml](.github
 
 Pull requests rodam só os testes.
 
+**Segurança:** o workflow [security.yml](.github/workflows/security.yml) roda em todo PR, em todo push na `main` e toda segunda-feira (CVE nova aparece sem ninguém mexer no código). Os resultados ficam na aba **Security → Code scanning** do repositório.
+
+- **Trivy** monta a imagem Docker e procura vulnerabilidades conhecidas nos pacotes do Alpine e nas dependências npm que vão para produção. Falha quando acha uma falha `CRITICAL` ou `HIGH` que já tem versão corrigida. Também procura segredos esquecidos no repositório (falha se achar) e configuração arriscada no `Dockerfile` e nos `docker-compose*.yml` (só relata).
+- **CodeQL** lê o código do servidor, do cliente e do desktop atrás de falhas como injeção, XSS e path traversal, e confere os próprios workflows.
+- O **Dependabot** ([dependabot.yml](.github/dependabot.yml)) abre os PRs que atualizam as dependências e a imagem base.
+
+Para rodar o Trivy localmente: `docker build -t concord-app:scan . && docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.1 image --severity CRITICAL,HIGH --ignore-unfixed concord-app:scan`.
+
 **Configuração (uma vez):** `powershell -ExecutionPolicy Bypass -File .\deploy\setup-cicd.ps1`. O script cria uma chave SSH só para o deploy, instala essa chave na VPS e cadastra os secrets e as variáveis do repositório.
 
 Para rodar o E2E localmente:

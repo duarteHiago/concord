@@ -16,7 +16,10 @@ ENV NODE_ENV=production \
     PUBLIC_DIR=/app/client/dist
 COPY shared ./shared
 COPY server/package.json server/package-lock.json ./server/
-RUN cd server && npm ci --omit=dev --no-audit --no-fund
+# o npm só serve para instalar: sai da imagem final (e leva junto as dependências dele, que o Trivy acusa)
+RUN cd server && npm ci --omit=dev --no-audit --no-fund \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY server/src ./server/src
 COPY --from=client /app/client/dist ./client/dist
 WORKDIR /app/server
