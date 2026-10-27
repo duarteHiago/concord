@@ -42,25 +42,7 @@ jobs:
           format: sarif
           output: trivy-image.sarif
 
-      - uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: trivy-image.sarif
-          category: trivy-image
-
-      # o que bloqueia: CRITICAL/HIGH que já tem versão corrigida (sem correção não há o que fazer além de esperar)
-      - name: Imagem — falhas graves com correção
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          version: ${{ env.TRIVY_VERSION }}
-          image-ref: concord-app:scan
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: '1'
-          skip-setup-trivy: true
-
-      # segredos no código falham o job; configuração arriscada (ex.: container rodando como root) só vai para o relatório
-      - name: Repositório — segredos e configuração
+      - name: Repositório — relatório de segredos e configuração
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
@@ -73,12 +55,29 @@ jobs:
           skip-setup-trivy: true
 
       - uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-repo.sarif
           category: trivy-repo
 
+      # o que bloqueia: CRITICAL/HIGH que já tem versão corrigida (sem correção não há o que fazer além de esperar)
+      - name: Imagem — falhas graves com correção
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: concord-app:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-setup-trivy: true
+
+      # segredos no código também bloqueiam (configuração arriscada, como container rodando como root, fica só no relatório)
       - name: Repositório — segredos
+        if: success() || failure()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
