@@ -507,7 +507,7 @@ function PostDetail({ channel, postId, onBack }: { channel: Channel; postId: str
           </div>
         </div>
         <div className="mt-4 text-[15px] leading-relaxed wrap-anywhere whitespace-pre-wrap">
-          <RichText text={post.content ?? ''} mine={false} />
+          <RichText text={post.content ?? ''} />
         </div>
 
         {mod && (
@@ -625,7 +625,7 @@ function ReplyItem({ reply, mine, mod, onChanged }: { reply: ForumReply; mine: b
         </div>
       ) : (
         <div className="mt-2 text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap">
-          <RichText text={reply.content} mine={false} />
+          <RichText text={reply.content} />
         </div>
       )}
     </li>

@@ -395,7 +395,14 @@ export interface Message {
   createdAt: number;
   editedAt: number | null;
   author: User;
+  /** mensagem que esta responde (prévia), ou null */
+  replyTo?: ReplyPreview | null;
 }
+
+/** Prévia da mensagem respondida. `deleted`: a original foi apagada. */
+export type ReplyPreview =
+  | { id: string; deleted: true }
+  | { id: string; deleted?: undefined; authorId: string; authorName: string; content: string; kind: string; hasAttachments: boolean };
 
 /** Conversa privada (DM). */
 export interface DirectChannel {

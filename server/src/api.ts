@@ -265,7 +265,16 @@ const roleJson = (r: RoleRow) => ({
   hoist: !!r.hoist,
 });
 
-type MessageWithAuthor = MessageRow & Omit<PublicUser, 'id'>;
+/** A mensagem respondida vem junto (LEFT JOIN): r_* são dela e do autor dela; null = foi apagada. */
+interface ReplyColumns {
+  r_id?: string | null;
+  r_content?: string | null;
+  r_kind?: string | null;
+  r_attachments?: string | null;
+  r_author_id?: string | null;
+  r_author_name?: string | null;
+}
+type MessageWithAuthor = MessageRow & Omit<PublicUser, 'id'> & ReplyColumns;
 const parseData = (raw: string | null) => {
   if (!raw) return null;
   try {
@@ -285,10 +294,38 @@ const messageJson = (m: MessageWithAuthor) => ({
   createdAt: m.created_at,
   editedAt: m.edited_at,
   author: authorJson({ ...m, id: m.author_id }),
+  replyTo: replyJson(m),
 });
 
-const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style
-  FROM messages m JOIN users u ON u.id = m.author_id`;
+/** Prévia da mensagem respondida (só o começo do texto). */
+function replyJson(m: MessageWithAuthor) {
+  if (!m.reply_to) return null;
+  if (!m.r_id) return { id: m.reply_to, deleted: true as const };
+  return {
+    id: m.r_id,
+    authorId: m.r_author_id!,
+    authorName: m.r_author_name!,
+    content: (m.r_content ?? '').slice(0, 200),
+    kind: m.r_kind ?? 'text',
+    hasAttachments: !!m.r_attachments && m.r_attachments !== '[]',
+  };
+}
+
+const REPLY_COLUMNS = `r.id AS r_id, r.content AS r_content, r.kind AS r_kind, r.attachments AS r_attachments,
+  ru.id AS r_author_id, ru.display_name AS r_author_name`;
+
+const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style,
+  ${REPLY_COLUMNS}
+  FROM messages m JOIN users u ON u.id = m.author_id
+  LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN users ru ON ru.id = r.author_id`;
+
+/** Id da mensagem respondida, conferindo que ela é da mesma conversa (senão, 400). */
+function replyTarget(raw: unknown, table: 'messages' | 'dm_messages', column: 'channel_id' | 'dm_id', parentId: string): string | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const id = str(raw, 'resposta', 1, 64);
+  if (!get(`SELECT 1 FROM ${table} WHERE id = ? AND ${column} = ?`, id, parentId)) fail(400, 'A mensagem que você está respondendo não existe mais');
+  return id;
+}
 
 // ============================================================ Auth
 
@@ -1684,14 +1721,16 @@ api.post('/channels/:id/messages', async (req, res) => {
   if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
   const files = pendingAttachments(req.body?.attachments, me);
   const content = messageContent(req.body?.content, files.length > 0);
+  const replyTo = replyTarget(req.body?.replyTo, 'messages', 'channel_id', channel.id);
   const id = randomUUID();
   run(
-    'INSERT INTO messages (id, channel_id, author_id, content, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO messages (id, channel_id, author_id, content, attachments, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     id,
     channel.id,
     me,
     content,
     attachmentsField(files),
+    replyTo,
     now(),
   );
   claimAttachments(files, id);
@@ -1786,14 +1825,19 @@ api.delete('/channels/:id/jam', humansOnly, (req, res) => {
 function notifyMentions(channel: ChannelRow, authorId: string, content: string, msg: ReturnType<typeof messageJson>) {
   const everyone = /(^|\s)@(todos|everyone|all)\b/i.test(content) && has(channelPermissions(channel, authorId), P.MENTION_EVERYONE);
   const names = [...content.matchAll(/(^|\s)@([a-zA-Z0-9_.]{3,32})/g)].map((m) => m[2].toLowerCase());
-  if (!everyone && names.length === 0) return;
+  // responder alguém também avisa a pessoa (como no Discord)
+  const replied = msg.replyTo && !('deleted' in msg.replyTo) ? msg.replyTo.authorId : null;
+  if (!everyone && names.length === 0 && !replied) return;
 
   const members = all<{ id: string; username: string }>(
     'SELECT u.id, u.username FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ?',
     channel.server_id,
   );
   const targets = members.filter(
-    (m) => m.id !== authorId && (everyone || names.includes(m.username.toLowerCase())) && has(channelPermissions(channel, m.id), P.VIEW_CHANNEL),
+    (m) =>
+      m.id !== authorId &&
+      (everyone || m.id === replied || names.includes(m.username.toLowerCase())) &&
+      has(channelPermissions(channel, m.id), P.VIEW_CHANNEL),
   );
   const server = getServer(channel.server_id);
   for (const t of targets) {
@@ -2299,9 +2343,11 @@ api.post('/voice/clip', humansOnly, async (req, res) => {
 
 // ============================================================ Conversas privadas (DMs)
 
-const DM_SELECT = `SELECT m.id, m.dm_id AS channel_id, m.author_id, m.content, m.kind, m.data, m.attachments, m.created_at, m.edited_at,
-  u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style
-  FROM dm_messages m JOIN users u ON u.id = m.author_id`;
+const DM_SELECT = `SELECT m.id, m.dm_id AS channel_id, m.author_id, m.content, m.kind, m.data, m.attachments, m.reply_to, m.created_at, m.edited_at,
+  u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style,
+  ${REPLY_COLUMNS}
+  FROM dm_messages m JOIN users u ON u.id = m.author_id
+  LEFT JOIN dm_messages r ON r.id = m.reply_to LEFT JOIN users ru ON ru.id = r.author_id`;
 
 const otherOf = (dm: DmChannelRow, me: string) => (dm.user_a === me ? dm.user_b : dm.user_a);
 
@@ -2362,11 +2408,19 @@ api.get('/dms/:id/messages', (req, res) => {
   res.json(rows.reverse().map(messageJson));
 });
 
-function insertDmMessage(dm: DmChannelRow, me: string, content: string, kind = 'text', data: unknown = null, files: AttachmentRow[] = []) {
+function insertDmMessage(
+  dm: DmChannelRow,
+  me: string,
+  content: string,
+  kind = 'text',
+  data: unknown = null,
+  files: AttachmentRow[] = [],
+  replyTo: string | null = null,
+) {
   const id = randomUUID();
   const at = now();
   run(
-    'INSERT INTO dm_messages (id, dm_id, author_id, content, kind, data, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO dm_messages (id, dm_id, author_id, content, kind, data, attachments, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     id,
     dm.id,
     me,
@@ -2374,6 +2428,7 @@ function insertDmMessage(dm: DmChannelRow, me: string, content: string, kind = '
     kind,
     data ? JSON.stringify(data) : null,
     attachmentsField(files),
+    replyTo,
     at,
   );
   claimAttachments(files, id);
@@ -2395,7 +2450,8 @@ api.post('/dms/:id/messages', (req, res) => {
   const me = uid(res);
   const dm = requireDm(req.params.id, me);
   const files = pendingAttachments(req.body?.attachments, me);
-  res.json(insertDmMessage(dm, me, messageContent(req.body?.content, files.length > 0), 'text', null, files));
+  const replyTo = replyTarget(req.body?.replyTo, 'dm_messages', 'dm_id', dm.id);
+  res.json(insertDmMessage(dm, me, messageContent(req.body?.content, files.length > 0), 'text', null, files, replyTo));
 });
 
 api.post('/dms/:id/games', (req, res) => {

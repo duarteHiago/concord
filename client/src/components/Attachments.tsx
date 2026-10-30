@@ -6,7 +6,7 @@ import { getToken } from '../lib/api';
 import type { Attachment } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
-import { Spinner, cx } from './ui';
+import { Spinner } from './ui';
 
 const MAX_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 10;
@@ -164,11 +164,11 @@ export function PendingAttachments({ items, onRemove }: { items: Pending[]; onRe
 }
 
 /** Anexos dentro da mensagem: imagem com prévia (clique amplia), o resto como cartão para baixar. */
-export function MessageAttachments({ items, mine }: { items: Attachment[] | undefined; mine: boolean }) {
+export function MessageAttachments({ items }: { items: Attachment[] | undefined }) {
   const openModal = useApp((s) => s.openModal);
   if (!items?.length) return null;
   return (
-    <div className={cx('mt-1.5 flex flex-col gap-1.5', mine ? 'items-end' : 'items-start')}>
+    <div className="mt-1.5 flex flex-col items-start gap-1.5">
       {items.map((a) =>
         a.image ? (
           <button key={a.id} onClick={() => openModal({ type: 'image', src: a.url, alt: a.name })} className="block overflow-hidden rounded-2xl">

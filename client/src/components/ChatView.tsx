@@ -1,5 +1,5 @@
 import { ClipCard } from './Clip';
-import { Hash, Pencil, Trash2, Users } from 'lucide-react';
+import { Hash, Pencil, Reply, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
 import { P, has } from '../../../shared/permissions.ts';
@@ -16,6 +16,7 @@ import { availableCommands, runCommand } from '../lib/commands';
 import { GameCard, GameMenuButton } from './Games';
 import { StickerButton, StickerMessage } from './StickerPicker';
 import { JamCard, useJamInMessage } from './Jam';
+import { ReplyBar, ReplyQuote, startReply } from './Replies';
 
 const EMPTY: Message[] = [];
 
@@ -177,15 +178,22 @@ function Bubble({
     }
   }
 
-  const actions = !editing && (mine || canDelete) && (
-    // barrinha flutuante no canto de cima da mensagem: não ocupa espaço na linha, então não fica espremida
-    // nem por cima de cartões largos (Jam, clipe) no chat estreito da sala
-    <div
-      className={cx(
-        'absolute -top-4 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100',
-        mine ? 'left-0' : 'right-0',
+  const canReply = has(channel.permissions, P.SEND_MESSAGES);
+  const nameOf = (authorId: string, fallback: string) => {
+    if (authorId === me.id) return 'Você';
+    const m = detail.members.find((x) => x.id === authorId);
+    return m ? memberName(m) : fallback;
+  };
+
+  const actions = !editing && (canReply || mine || canDelete) && (
+    // barrinha flutuante no canto direito da linha: não ocupa espaço, não fica espremida no chat estreito
+    // da sala e não cobre o nome nem a citação de mensagens curtas
+    <div className="absolute -top-4 right-2 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {canReply && (
+        <IconButton label="Responder" className="h-8 w-8" onClick={() => startReply(channel.id, message, `composer-${channel.id}`)}>
+          <Reply size={14} />
+        </IconButton>
       )}
-    >
       {mine && (message.kind ?? 'text') === 'text' && (
         <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
           <Pencil size={14} />
@@ -200,9 +208,13 @@ function Bubble({
   );
 
   return (
-    <div className={cx('group flex items-end gap-2.5', mine && 'flex-row-reverse', grouped ? 'mt-1' : 'mt-4')}>
+    <div
+      id={`msg-${message.id}`}
+      className={cx('group relative -mx-2 flex items-end gap-2.5 rounded-2xl px-2 transition-colors duration-500', grouped && !message.replyTo ? 'mt-1' : 'mt-4')}
+    >
+      {actions}
       <div className="shrink-0" style={{ width: size }}>
-        {!grouped && (
+        {(!grouped || message.replyTo) && (
           <button
             aria-label={`Perfil de ${name}`}
             {...profileTriggers(message.author.id, detail.server.id, () => useApp.getState().openProfile(message.author.id, detail.server.id))}
@@ -211,16 +223,14 @@ function Bubble({
           </button>
         )}
       </div>
-      <div className={cx('relative flex min-w-0 flex-col', mine ? 'items-end' : 'items-start', compact ? 'max-w-[82%]' : 'max-w-[70%]')}>
-        {actions}
-        {!grouped && (
-          <div className={cx('mb-1 flex items-baseline gap-2 px-1', mine && 'flex-row-reverse')}>
-            {!mine && (
-              <span className="flex items-center gap-1 text-[13px] font-bold" style={{ color: memberColor(detail, message.author.id) }}>
-                {name}
-                {verified && <VerifiedBadge size={13} />}
-              </span>
-            )}
+      <div className={cx('flex min-w-0 flex-col items-start', compact ? 'max-w-[82%]' : 'max-w-[70%]')}>
+        {message.replyTo && <ReplyQuote reply={message.replyTo} nameOf={nameOf} />}
+        {(!grouped || message.replyTo) && (
+          <div className="mb-1 flex items-baseline gap-2 px-1">
+            <span className="flex items-center gap-1 text-[13px] font-bold" style={{ color: memberColor(detail, message.author.id) }}>
+              {name}
+              {verified && <VerifiedBadge size={13} />}
+            </span>
             <span className="text-[11px] text-fg-subtle">{time}</span>
           </div>
         )}
@@ -247,32 +257,31 @@ function Bubble({
         ) : message.kind === 'game' && message.data ? (
           <GameCard id={message.id} data={message.data as GameData} author={mine ? 'Você' : name} />
         ) : message.kind === 'sticker' && message.data ? (
-          <StickerMessage data={message.data as StickerMessageData} mine={mine} />
+          <StickerMessage data={message.data as StickerMessageData} />
         ) : jamLink && onlyJamLink ? (
           <JamCard url={jamLink.url} jam={jamLink.jam} authorName={name} mine={mine} />
         ) : (
           message.content && (
             <div
               className={cx(
-                'px-4 py-2.5 text-[15px] leading-relaxed wrap-anywhere whitespace-pre-wrap',
-                mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
-                !mine && mentionsMe(message.content, me.username) && 'ring-2 ring-accent',
+                'rounded-[18px] rounded-bl-md bg-surface-3 px-4 py-2.5 text-[15px] leading-relaxed wrap-anywhere whitespace-pre-wrap text-fg',
+                !mine && (mentionsMe(message.content, me.username) || (message.replyTo && !message.replyTo.deleted && message.replyTo.authorId === me.id)) && 'ring-2 ring-accent',
                 isAction && 'italic',
               )}
             >
               {isAction ? (
                 <>
-                  <b className="not-italic">{name}</b> <RichText text={message.content.slice(4)} mine={mine} />
+                  <b className="not-italic">{name}</b> <RichText text={message.content.slice(4)} />
                 </>
               ) : (
-                <RichText text={message.content} mine={mine} />
+                <RichText text={message.content} />
               )}
               {message.editedAt && <span className="ml-1.5 text-[10px] opacity-60">(editada)</span>}
             </div>
           )
         )}
         {!editing && jamLink && !onlyJamLink && <JamCard url={jamLink.url} jam={jamLink.jam} authorName={name} mine={mine} />}
-        {!editing && <MessageAttachments items={message.attachments} mine={mine} />}
+        {!editing && <MessageAttachments items={message.attachments} />}
       </div>
     </div>
   );
@@ -282,21 +291,21 @@ const URL_RE = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g;
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i;
 const MENTION_RE = /(@[a-zA-Z0-9_.]{3,32})/g;
 
-export function RichText({ text, mine }: { text: string; mine: boolean }) {
+export function RichText({ text }: { text: string }) {
   const parts = text.split(URL_RE);
   const images = parts.filter((p, i) => i % 2 === 1 && IMG_RE.test(p));
   return (
     <>
       {parts.map((p, i) =>
         i % 2 === 1 ? (
-          <a key={i} href={p} target="_blank" rel="noreferrer noopener" className={cx('underline underline-offset-2', mine ? 'text-on-accent' : 'text-accent')}>
+          <a key={i} href={p} target="_blank" rel="noreferrer noopener" className="text-accent underline underline-offset-2">
             {p}
           </a>
         ) : (
           <Fragment key={i}>
             {p.split(MENTION_RE).map((piece, j) =>
               j % 2 === 1 ? (
-                <span key={j} className={cx('rounded-md px-1 font-semibold', mine ? 'bg-on-accent/15' : 'bg-accent/20 text-accent')}>
+                <span key={j} className="rounded-md bg-accent/20 px-1 font-semibold text-accent">
                   {piece}
                 </span>
               ) : (
@@ -334,6 +343,12 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   const [, force] = useState(0);
   const canSend = has(channel.permissions, P.SEND_MESSAGES);
   const files = useAttachmentDraft();
+  const replying = useApp((s) => s.replying[channel.id]);
+  const replyName = (m: Message) => {
+    if (m.author.id === useApp.getState().me?.id) return 'você mesmo';
+    const member = detail.members.find((x) => x.id === m.author.id);
+    return member ? memberName(member) : m.author.displayName;
+  };
 
   // reavalia a validade do "digitando…" a cada 2s; pausa com a página oculta, sem motivo pra ficar acordando sem ninguém olhando
   useEffect(() => {
@@ -406,15 +421,17 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
     if (files.uploading) return toast.info('Espere os arquivos terminarem de subir.');
     const attachments = files.ids;
     if (!content && !attachments.length) return;
+    const replyTo = replying?.id;
     const post = async (c: string) => {
-      await api.post(`/channels/${channel.id}/messages`, { content: c });
+      await api.post(`/channels/${channel.id}/messages`, { content: c, replyTo });
     };
     setText('');
     try {
       if (attachments.length) {
         // se falhar, o texto volta (catch abaixo) e os arquivos continuam na fila
-        await api.post(`/channels/${channel.id}/messages`, { content, attachments });
+        await api.post(`/channels/${channel.id}/messages`, { content, attachments, replyTo });
         files.clear();
+        useApp.getState().setReplying(channel.id, null);
         return;
       }
       if (content.startsWith('/')) {
@@ -426,6 +443,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
         return;
       }
       await post(content);
+      useApp.getState().setReplying(channel.id, null);
     } catch (err) {
       setText(content);
       toast.error(err);
@@ -447,6 +465,8 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
         return;
       }
       if (e.key === 'Escape') {
+        // marca o evento: o Esc fecha só a lista, sem cancelar a resposta (ver Replies.tsx)
+        e.preventDefault();
         setDismissed(true);
         return;
       }
@@ -504,6 +524,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
           ))}
         </div>
       )}
+      <ReplyBar conversationId={channel.id} name={replyName} />
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => canSend && e.preventDefault()} onDrop={(e) => canSend && files.onDrop(e)}>
         {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} compact={compact} onAttach={compact ? () => void pickAttachments().then((f) => f && files.add(f)) : undefined} />}

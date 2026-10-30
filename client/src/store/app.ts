@@ -100,6 +100,9 @@ interface AppState {
   /** link de "esqueci minha senha" aberto do e-mail: a tela pede a senha nova */
   emailReset: string | null;
   emailResetSubmit: (newPassword: string) => Promise<void>;
+  /** mensagem sendo respondida em cada canal/conversa (a faixa em cima do campo de texto) */
+  replying: Record<string, Message>;
+  setReplying: (conversationId: string, message: Message | null) => void;
   /** senha (ou Google) conferida, falta o código do app autenticador: o ticket da segunda etapa */
   mfaTicket: string | null;
   submitTwoFactor: (code: string) => Promise<void>;
@@ -164,6 +167,27 @@ export const useApp = create<AppState>((set, get) => {
     if (!res.mfa) return false;
     set({ mfaTicket: res.mfa });
     return true;
+  }
+
+  /** Mensagem editada: troca ela na lista e atualiza a citação nas respostas a ela. */
+  function replaceMessage(list: Message[], msg: Message): Message[] {
+    return list.map((m) =>
+      m.id === msg.id
+        ? msg
+        : m.replyTo?.id === msg.id && !m.replyTo.deleted
+          ? { ...m, replyTo: { ...m.replyTo, content: msg.content.slice(0, 200) } }
+          : m,
+    );
+  }
+
+  /** Mensagem apagada: sai da lista, as respostas a ela passam a mostrar "mensagem apagada". */
+  function removeMessage(list: Message[], id: string): Message[] {
+    return list.filter((m) => m.id !== id).map((m) => (m.replyTo?.id === id ? { ...m, replyTo: { id, deleted: true as const } } : m));
+  }
+
+  /** Se a mensagem que a pessoa estava respondendo foi apagada, a faixa some. */
+  function dropReplying(conversationId: string, id: string) {
+    if (get().replying[conversationId]?.id === id) get().setReplying(conversationId, null);
   }
 
   /** Insere/atualiza uma conversa e mantém a lista ordenada pela última mensagem. */
@@ -291,11 +315,12 @@ export const useApp = create<AppState>((set, get) => {
     });
     socket.on('message:update', (msg: Message) => {
       const list = get().messages[msg.channelId];
-      if (list) set({ messages: { ...get().messages, [msg.channelId]: list.map((m) => (m.id === msg.id ? msg : m)) } });
+      if (list) set({ messages: { ...get().messages, [msg.channelId]: replaceMessage(list, msg) } });
     });
     socket.on('message:delete', ({ id, channelId }: { id: string; channelId: string }) => {
       const list = get().messages[channelId];
-      if (list) set({ messages: { ...get().messages, [channelId]: list.filter((m) => m.id !== id) } });
+      if (list) set({ messages: { ...get().messages, [channelId]: removeMessage(list, id) } });
+      dropReplying(channelId, id);
     });
     socket.on('dm:message', ({ dm, message }: { dm: DirectChannel; message: Message }) => {
       if (message.kind === 'game') announceGame(message, { kind: 'dm', id: dm.id });
@@ -309,11 +334,12 @@ export const useApp = create<AppState>((set, get) => {
     });
     socket.on('dm:update', ({ message }: { message: Message }) => {
       const list = get().messages[message.channelId];
-      if (list) set({ messages: { ...get().messages, [message.channelId]: list.map((m) => (m.id === message.id ? message : m)) } });
+      if (list) set({ messages: { ...get().messages, [message.channelId]: replaceMessage(list, message) } });
     });
     socket.on('dm:delete', ({ dm, message }: { dm: DirectChannel; message: { id: string; channelId: string } }) => {
       const list = get().messages[message.channelId];
-      if (list) set({ messages: { ...get().messages, [message.channelId]: list.filter((m) => m.id !== message.id) } });
+      if (list) set({ messages: { ...get().messages, [message.channelId]: removeMessage(list, message.id) } });
+      dropReplying(message.channelId, message.id);
       upsertDm(dm);
     });
     socket.on('typing', ({ channelId, userId }: { channelId: string; userId: string }) => {
@@ -355,6 +381,11 @@ export const useApp = create<AppState>((set, get) => {
     googleSignup: null,
     emailReset: null,
     mfaTicket: null,
+    replying: {},
+    setReplying: (conversationId, message) => {
+      const { [conversationId]: _old, ...rest } = get().replying;
+      set({ replying: message ? { ...rest, [conversationId]: message } : rest });
+    },
 
     bootstrap: async () => {
       setUnauthorizedHandler(() => get().logout());

@@ -148,6 +148,9 @@ addColumn('users', 'totp_secret', 'TEXT');
 addColumn('users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'totp_last_step', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'totp_backup', 'TEXT');
+// resposta a uma mensagem (do mesmo canal / da mesma conversa). Sem chave estrangeira: se a original for
+// apagada, a resposta continua e mostra "mensagem apagada". A das DMs fica lá embaixo, junto dos anexos
+addColumn('messages', 'reply_to', 'TEXT');
 // quantos passos de 30 s o relógio do celular da pessoa está adiantado (+) ou atrasado (-); ver twoFactor.ts
 addColumn('users', 'totp_drift', 'INTEGER NOT NULL DEFAULT 0');
 db.exec(`
@@ -485,6 +488,7 @@ db.exec(`
 
 // (depois do CREATE TABLE de dm_messages: num banco novo a tabela ainda não existe lá em cima)
 addColumn('dm_messages', 'attachments', 'TEXT');
+addColumn('dm_messages', 'reply_to', 'TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
 if (version < 2) {
@@ -711,6 +715,7 @@ export interface MessageRow {
   kind: string;
   data: string | null;
   attachments?: string | null;
+  reply_to?: string | null;
   created_at: number;
   edited_at: number | null;
 }

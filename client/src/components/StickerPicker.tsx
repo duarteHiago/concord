@@ -404,7 +404,7 @@ function ImportView({ onDone }: { onDone: (packId: string) => void }) {
 }
 
 /** Figurinha numa conversa: grande e sem balão. Clicar mostra o pack e deixa salvar nas suas figurinhas. */
-export function StickerMessage({ data, mine }: { data: StickerMessageData; mine: boolean }) {
+export function StickerMessage({ data }: { data: StickerMessageData }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const loaded = useStickerPacks((s) => s.loaded);
@@ -429,7 +429,7 @@ export function StickerMessage({ data, mine }: { data: StickerMessageData; mine:
   }
 
   return (
-    <div className={cx('flex flex-col', mine ? 'items-end' : 'items-start')}>
+    <div className="flex flex-col items-start">
       <button onClick={toggle} title={`Pack "${data.packName}"`} className="rounded-2xl">
         <img src={data.url} alt={`Figurinha do pack ${data.packName}`} loading="lazy" draggable={false} className="h-36 w-36 object-contain" />
       </button>

@@ -1,4 +1,4 @@
-import { Gamepad2, Headphones, MessageCircle, Pencil, Search, Trash2, Zap } from 'lucide-react';
+import { Gamepad2, Headphones, MessageCircle, Pencil, Reply, Search, Trash2, Zap } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
@@ -11,6 +11,7 @@ import { RichText } from './ChatView';
 import { GameCard, GameMenuButton } from './Games';
 import { StickerButton, StickerMessage } from './StickerPicker';
 import { activityLabel } from './MemberList';
+import { ReplyBar, ReplyQuote, startReply } from './Replies';
 import { Avatar, IconButton, Spinner, cx } from './ui';
 
 const EMPTY: Message[] = [];
@@ -246,6 +247,25 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
   const [draft, setDraft] = useState(message.content);
   const mine = message.author.id === me.id;
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const nameOf = (authorId: string, fallback: string) => (authorId === me.id ? 'Você' : fallback);
+
+  const actions = !editing && (
+    <div className="absolute -top-4 right-2 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <IconButton label="Responder" className="h-8 w-8" onClick={() => startReply(message.channelId, message, 'dm-composer')}>
+        <Reply size={14} />
+      </IconButton>
+      {mine && (message.kind ?? 'text') === 'text' && (
+        <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
+          <Pencil size={14} />
+        </IconButton>
+      )}
+      {mine && (
+        <IconButton label="Apagar" danger className="h-8 w-8" onClick={() => void api.del(`/dm-messages/${message.id}`).catch(toast.error)}>
+          <Trash2 size={14} />
+        </IconButton>
+      )}
+    </div>
+  );
 
   async function save() {
     setEditing(false);
@@ -255,9 +275,13 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
   }
 
   return (
-    <div className={cx('group flex items-end gap-2.5', mine && 'flex-row-reverse', grouped ? 'mt-1' : 'mt-4')}>
+    <div
+      id={`msg-${message.id}`}
+      className={cx('group relative -mx-2 flex items-end gap-2.5 rounded-2xl px-2 transition-colors duration-500', grouped && !message.replyTo ? 'mt-1' : 'mt-4')}
+    >
+      {actions}
       <div className="w-9 shrink-0">
-        {!grouped && (
+        {(!grouped || message.replyTo) && (
           <button
             aria-label={`Perfil de ${message.author.displayName}`}
             // o mini perfil depende de um servidor em comum; a página do perfil abre de qualquer jeito
@@ -267,8 +291,14 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
           </button>
         )}
       </div>
-      <div className={cx('flex max-w-[70%] min-w-0 flex-col', mine ? 'items-end' : 'items-start')}>
-        {!grouped && <span className="mb-1 px-1 text-[11px] text-fg-subtle">{time}</span>}
+      <div className="flex max-w-[70%] min-w-0 flex-col items-start">
+        {message.replyTo && <ReplyQuote reply={message.replyTo} nameOf={nameOf} />}
+        {(!grouped || message.replyTo) && (
+          <div className="mb-1 flex items-baseline gap-2 px-1">
+            <span className="text-[13px] font-bold">{message.author.displayName}</span>
+            <span className="text-[11px] text-fg-subtle">{time}</span>
+          </div>
+        )}
         {editing ? (
           <textarea
             autoFocus
@@ -287,34 +317,19 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
         ) : message.kind === 'game' && message.data ? (
           <GameCard id={message.id} data={message.data as GameData} author={mine ? 'Você' : message.author.displayName} />
         ) : message.kind === 'sticker' && message.data ? (
-          <StickerMessage data={message.data as StickerMessageData} mine={mine} />
+          <StickerMessage data={message.data as StickerMessageData} />
         ) : (
           message.content && (
             <div
-              className={cx(
-                'px-4 py-2.5 text-[15px] leading-relaxed wrap-anywhere whitespace-pre-wrap',
-                mine ? 'rounded-[18px] rounded-br-md bg-accent text-on-accent' : 'rounded-[18px] rounded-bl-md bg-surface-3 text-fg',
-              )}
+              className="rounded-[18px] rounded-bl-md bg-surface-3 px-4 py-2.5 text-[15px] leading-relaxed wrap-anywhere whitespace-pre-wrap text-fg"
             >
-              <RichText text={message.content} mine={mine} />
+              <RichText text={message.content} />
               {message.editedAt && <span className="ml-1.5 text-[10px] opacity-60">(editada)</span>}
             </div>
           )
         )}
-        {!editing && <MessageAttachments items={message.attachments} mine={mine} />}
+        {!editing && <MessageAttachments items={message.attachments} />}
       </div>
-      {mine && !editing && (
-        <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          {(message.kind ?? 'text') === 'text' && (
-            <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
-              <Pencil size={14} />
-            </IconButton>
-          )}
-          <IconButton label="Apagar" danger className="h-8 w-8" onClick={() => void api.del(`/dm-messages/${message.id}`).catch(toast.error)}>
-            <Trash2 size={14} />
-          </IconButton>
-        </div>
-      )}
     </div>
   );
 }
@@ -322,6 +337,7 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
 function DmComposer({ dm }: { dm: DirectChannel }) {
   const [text, setText] = useState('');
   const files = useAttachmentDraft();
+  const replying = useApp((s) => s.replying[dm.id]);
   useEffect(() => {
     setText('');
     files.clear();
@@ -335,8 +351,9 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
     if (!content && !attachments.length) return;
     setText('');
     try {
-      await api.post(`/dms/${dm.id}/messages`, { content, ...(attachments.length ? { attachments } : {}) });
+      await api.post(`/dms/${dm.id}/messages`, { content, replyTo: replying?.id, ...(attachments.length ? { attachments } : {}) });
       files.clear();
+      useApp.getState().setReplying(dm.id, null);
     } catch (err) {
       setText(content);
       toast.error(err);
@@ -352,6 +369,7 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
 
   return (
     <div className="relative shrink-0 px-6 pb-5">
+      <ReplyBar conversationId={dm.id} name={(m) => (m.author.id === dm.user.id ? m.author.displayName : 'você mesmo')} />
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => e.preventDefault()} onDrop={files.onDrop}>
         <GameMenuButton target={{ kind: 'dm', id: dm.id }} />
