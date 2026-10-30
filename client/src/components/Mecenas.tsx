@@ -1,6 +1,6 @@
-// Aviso de que a pessoa virou Mecenas (ver server/src/mecenas.ts): aparece uma vez, logo depois do
-// agradecimento do Pix (ou na próxima vez que ela abrir o app, se fechou antes).
-import { Gem, MicOff, Pencil, PhoneOff, Zap } from 'lucide-react';
+// Aviso de que a pessoa virou Mecenas num contrato (ver server/src/contracts.ts e Mecenato.tsx): aparece uma
+// vez, na primeira vez que ela assume (ou depois do agradecimento do Pix, se foi o Pix que virou a liderança).
+import { Gem, ImagePlus, MicOff, Pencil, PhoneOff, VolumeX, Wand2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useApp } from '../store/app';
 import { Button } from './ui';
@@ -9,11 +9,16 @@ export function MecenasModal() {
   const me = useApp((s) => s.me)!;
   const saveSettings = useApp((s) => s.saveSettings);
   const closeModal = useApp((s) => s.closeModal);
+  const openModal = useApp((s) => s.openModal);
   const target = me.mecenasPowers?.target;
 
   const close = () => {
     void saveSettings({ mecenasSeen: true });
     closeModal();
+  };
+  const openPranks = () => {
+    void saveSettings({ mecenasSeen: true });
+    openModal({ type: 'pranks' });
   };
 
   useEffect(() => {
@@ -25,10 +30,12 @@ export function MecenasModal() {
 
   if (!target) return null;
   const powers = [
-    { icon: Zap, text: 'Tremer a tela dele quase sem esperar' },
-    { icon: MicOff, text: 'Silenciar o microfone dele nas salas' },
-    { icon: PhoneOff, text: 'Tirar ele da sala de voz' },
-    { icon: Pencil, text: 'Trocar o apelido dele nos servidores' },
+    { icon: MicOff, text: 'Silenciar o microfone nas salas' },
+    { icon: VolumeX, text: 'Ensurdecer (não ouve ninguém)' },
+    { icon: PhoneOff, text: 'Tirar da sala de voz' },
+    { icon: Pencil, text: 'Trocar o apelido nos servidores' },
+    { icon: ImagePlus, text: 'Trocar a foto/GIF do perfil até o fim do contrato' },
+    { icon: Wand2, text: 'Soltar um efeito de voz surpresa' },
   ];
 
   return (
@@ -38,11 +45,10 @@ export function MecenasModal() {
           <span className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-warn/20 text-warn ring-2 ring-warn/50">
             <Gem size={32} />
           </span>
-          <span className="font-display text-[11px] font-extrabold tracking-[0.2em] text-warn uppercase">Cargo exclusivo</span>
-          <h2 className="font-display text-2xl font-extrabold text-balance">Você agora é o Mecenas do Concord</h2>
+          <span className="font-display text-[11px] font-extrabold tracking-[0.2em] text-warn uppercase">Contrato de Mecenato</span>
+          <h2 className="font-display text-2xl font-extrabold text-balance">Você agora é o Mecenas</h2>
           <p className="text-sm text-fg-muted">
-            Esse cargo é só seu, ninguém mais tem. Ele aparece no seu perfil. E tem um bônus: com o <b className="text-fg">@{target.username}</b> você
-            pode fazer o que bem entender.
+            O cargo aparece no seu perfil enquanto você tiver mais apoio que <b className="text-fg">@{target.username}</b>. E enquanto isso, você pode:
           </p>
         </div>
         <ul className="mx-6 my-4 space-y-2 rounded-2xl bg-surface-0 p-4">
@@ -53,9 +59,14 @@ export function MecenasModal() {
             </li>
           ))}
         </ul>
-        <p className="px-6 text-xs text-fg-subtle">É só clicar no perfil do @{target.username} em qualquer servidor que vocês dois estão. Se ele entrar em "Não perturbe", a tela dele para de tremer.</p>
-        <div className="flex justify-end px-6 py-5">
-          <Button onClick={close}>Vou usar com sabedoria</Button>
+        <p className="px-6 text-xs text-fg-subtle">
+          Tudo fica em Configurações → Mecenato → Sacanagens e Peripécias. Se @{target.username} ligar o Escudo, nada disso funciona até ele desligar (ou o saldo acabar).
+        </p>
+        <div className="flex justify-end gap-2 px-6 py-5">
+          <Button variant="ghost" onClick={close}>
+            Depois
+          </Button>
+          <Button onClick={openPranks}>Vou usar com sabedoria</Button>
         </div>
       </div>
     </div>

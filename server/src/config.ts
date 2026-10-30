@@ -29,7 +29,8 @@ export const config = {
       .map((u) => u.trim().replace(/^@/, '').toLowerCase())
       .filter(Boolean),
   ),
-  // Mecenas (ver mecenas.ts): "quem>sobre-quem", por nome de usuário. Vazio desliga.
+  // Dupla antiga de Mecenas ("quem>sobre-quem", por nome de usuário). Não dá mais poderes: no primeiro início
+  // vira um convite de renovação de contrato para as duas pessoas (ver contracts.ts#migrateLegacyPair).
   mecenas: (() => {
     const [holder, target] = (env.MECENAS ?? '').split('>').map((u) => u.trim().replace(/^@/, '').toLowerCase());
     return holder && target ? { holder, target } : null;

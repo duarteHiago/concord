@@ -106,6 +106,8 @@ interface VoiceStore {
   cameraOn: boolean;
   sharing: boolean;
   serverMuted: boolean;
+  /** sem ouvir ninguém por decisão do servidor (o Mecenas do contrato): o LiveKit nem entrega o som */
+  serverDeafened: boolean;
   speaking: Record<string, true>;
   watching: Record<string, true>;
   focus: string | null;
@@ -289,6 +291,11 @@ export function screenShareSupport(): string | null {
 
 let intentionalLeave = false;
 let micBeforeDeafen = false;
+/** se a pessoa já estava com o fone desligado antes de o servidor ensurdecer (volta assim depois) */
+let deafBeforeServer = false;
+/** efeito surpresa do Mecenas: vale por uns segundos por cima do efeito escolhido, sem mudar a escolha na tela */
+let prankOverride: EffectId | null = null;
+let prankTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useVoice = create<VoiceStore>((set, get) => {
   const bump = () => set({ tick: get().tick + 1 });
@@ -501,6 +508,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       cameraOn: false,
       sharing: false,
       serverMuted: false,
+      ...(get().serverDeafened ? { serverDeafened: false, deafened: deafBeforeServer } : {}),
       speaking: {},
       watching: {},
       focus: null,
@@ -508,6 +516,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
       codecRequests: [],
       h265Blocked: {},
     });
+    clearTimeout(prankTimer);
+    prankOverride = null;
   }
 
   function wireRoom(room: Room) {
@@ -626,7 +636,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     if (!track) return;
     try {
       const { noiseMode, gate, autoGain, noiseStrength } = get().audioSettings;
-      await applyVoiceProcessing(track, noiseMode, get().effect, gate, autoGain, noiseStrength);
+      await applyVoiceProcessing(track, noiseMode, prankOverride ?? get().effect, gate, autoGain, noiseStrength);
     } catch (err) {
       toast.error(`Não foi possível aplicar o efeito: ${(err as Error).message}`);
     }
@@ -667,6 +677,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     cameraOn: false,
     sharing: false,
     serverMuted: false,
+    serverDeafened: false,
     speaking: {},
     watching: {},
     focus: null,
@@ -721,9 +732,15 @@ export const useVoice = create<VoiceStore>((set, get) => {
         await room.connect(wsUrl, token, { autoSubscribe: false });
 
         await new Promise<void>((resolve, reject) => {
-          getSocket()?.emit('voice:join', { channelId }, (r: { ok: boolean; error?: string }) =>
-            r.ok ? resolve() : reject(new Error(r.error)),
-          );
+          getSocket()?.emit('voice:join', { channelId }, (r: { ok: boolean; error?: string; serverDeafened?: boolean }) => {
+            if (!r.ok) return reject(new Error(r.error));
+            // já entrou ensurdecido pelo Mecenas (o token veio sem poder ouvir)
+            if (r.serverDeafened) {
+              deafBeforeServer = get().deafened;
+              set({ serverDeafened: true, deafened: true });
+            }
+            resolve();
+          });
         });
 
         set({ status: 'connected' });
@@ -781,6 +798,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
 
     toggleDeafen: async () => {
       const s = get();
+      if (s.serverDeafened) return toast.info('Seu Mecenas deixou você sem ouvir. Ligue o Escudo para voltar.');
       const next = !s.deafened;
       set({ deafened: next });
       applyVolumes();
@@ -988,6 +1006,25 @@ export const useVoice = create<VoiceStore>((set, get) => {
           toast.info('Um moderador removeu seu silenciamento.');
         }
         publishState();
+      });
+      socket.on('voice:server-deafen', ({ deafened }: { deafened: boolean }) => {
+        if (deafened === get().serverDeafened) return;
+        if (deafened) deafBeforeServer = get().deafened;
+        set({ serverDeafened: deafened, deafened: deafened || deafBeforeServer });
+        applyVolumes();
+        playSound(deafened ? 'mute' : 'unmute');
+        toast.info(deafened ? 'Seu Mecenas deixou você sem ouvir ninguém.' : 'Você voltou a ouvir a sala.');
+        publishState();
+      });
+      // efeito de voz surpresa do Mecenas: sem aviso nenhum, por no máximo 5 s
+      socket.on('voice:fx', ({ effect, durationMs }: { effect: EffectId; durationMs: number }) => {
+        if (prankOverride || !get().micOn || effect === 'none' || !EFFECTS.some((e) => e.id === effect)) return;
+        prankOverride = effect;
+        void applyCurrentEffect();
+        prankTimer = setTimeout(() => {
+          prankOverride = null;
+          if (get().micOn) void applyCurrentEffect();
+        }, Math.min(Math.max(durationMs, 0), 5_000));
       });
       socket.on('voice:stop-stream', ({ reason }: { reason: string }) => {
         void get().stopShare();

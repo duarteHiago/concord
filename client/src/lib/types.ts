@@ -24,7 +24,7 @@ export interface User {
   patches?: Patch[];
   /** patch de apoiador: o acabamento que a pessoa escolheu mostrar (só o servidor grava) */
   supporter?: { tier: SupporterTier } | null;
-  /** tem o cargo de Mecenas da instalação (ver server/src/mecenas.ts) */
+  /** é o Mecenas de um contrato agora (ver server/src/contracts.ts) */
   mecenas?: true;
   /** tem um Mecenas: o @usuário dele */
   mecenasBy?: string;
@@ -149,11 +149,11 @@ export interface Me extends User {
   isAuthority?: boolean;
   /** está em ADMIN_USERS: entra no portal da equipe (/admin) */
   isAdmin?: boolean;
-  /** é o Mecenas: o cargo e sobre quem tem os poderes (o selo público é `mecenas`) */
   /** página do perfil: contas conectadas e o que esta instalação oferece */
   steamLinked?: boolean;
   integrations?: { steam: boolean };
-  mecenasPowers?: { title: string; target: { id: string; username: string; displayName: string } } | null;
+  /** é o Mecenas de um contrato agora: o cargo e sobre quem tem os poderes (o selo público é `mecenas`) */
+  mecenasPowers?: { title: string; contractId: string; target: { id: string; username: string; displayName: string } } | null;
   /** total já apoiado (centavos): decide os acabamentos liberados */
   supportTotal?: number;
   /** acabamento escolhido para o perfil (null = escondido ou ainda não apoiou) */
@@ -226,6 +226,106 @@ export interface VoiceState {
   streaming: boolean;
   camera: boolean;
   serverMuted: boolean;
+  /** ensurdecido pelo Mecenas (não ouve ninguém) */
+  serverDeafened?: boolean;
+}
+
+// ---- Contratos de Mecenato (ver server/src/contracts.ts e shared/contracts.ts)
+
+export interface ContractUser {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  avatarColor: string;
+}
+
+export interface ShieldView {
+  active: boolean;
+  /** saldo agora (desconta o tempo ligado) */
+  balanceMs: number;
+  maxMs: number;
+  activeSince: number | null;
+  /** com ele ligado, quando o saldo acaba */
+  runsOutAt: number | null;
+  /** até quando não dá para ligar de novo (null: liberado) */
+  cooldownUntil: number | null;
+  depletedAt: number | null;
+  /** zerou: quando as 3 h voltam */
+  restoresAt: number | null;
+}
+
+export interface ContractEvent {
+  id: number;
+  type: string;
+  userId: string | null;
+  actorId: string | null;
+  data: Record<string, unknown> | null;
+  at: number;
+}
+
+export type ContractStatus = 'pending' | 'active' | 'ended';
+
+export interface ContractBrief {
+  id: string;
+  status: ContractStatus;
+  /** renovação do contrato antigo (o par fixo de antes) */
+  renewal: boolean;
+  creator: ContractUser;
+  invitee: ContractUser;
+  durationMs: number;
+  cooldownMs: number;
+  tieClause: boolean;
+  createdAt: number;
+  inviteExpiresAt: number;
+  startedAt: number | null;
+  endsAt: number | null;
+  endedAt: number | null;
+  endReason: string | null;
+  endedBy: string | null;
+  leaderId: string | null;
+}
+
+export interface Contract extends ContractBrief {
+  tie: boolean;
+  /** quem tem os poderes agora (os dois no empate com a cláusula) */
+  holders: string[];
+  /** total de apoio confirmado de cada um */
+  totals: Record<string, number>;
+  accepted: Record<string, number | null>;
+  shields: Record<string, ShieldView> | null;
+  /** apoio dos dois desde que o contrato começou (base da multa) */
+  contributedCents: number;
+  fineEstimateCents: number | null;
+  /** quem está com a foto escolhida pelo Mecenas */
+  avatarOverrides: string[];
+  /** efeito surpresa agendado (só para quem agendou) */
+  pendingFx: { effect: string; durationMs: number } | null;
+  /** onde a outra pessoa está em chamada (se for num servidor seu) */
+  otherVoice: { serverId: string; channelId: string; muted: boolean; deafened: boolean; serverMuted: boolean; serverDeafened: boolean } | null;
+  mutualServers: { id: string; name: string }[];
+  endNote: string | null;
+  events: ContractEvent[];
+}
+
+export interface ContractFine {
+  id: string;
+  contractId: string;
+  userId: string;
+  amountCents: number;
+  baseCents: number;
+  status: 'open' | 'paid' | 'waived' | 'cancelled';
+  createdAt: number;
+  resolvedAt: number | null;
+  note: string | null;
+}
+
+export interface ContractsMe {
+  current: Contract | null;
+  history: ContractBrief[];
+  shield: ShieldView;
+  fines: ContractFine[];
+  supportTotalCents: number;
 }
 
 /** Jam do Spotify fixada numa sala de voz (ver server/src/realtime.ts). */

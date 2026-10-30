@@ -28,7 +28,7 @@ import type {
 } from '../lib/types';
 
 /** Seções da página de Configurações (ver components/settings/SettingsPage.tsx). */
-export type SettingsTab = 'profile' | 'account' | 'privacy' | 'support' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'dev';
+export type SettingsTab = 'profile' | 'account' | 'privacy' | 'support' | 'mecenato' | 'appearance' | 'notifications' | 'audio' | 'shortcuts' | 'bots' | 'dev';
 
 /** activeServerId especial: a tela de conversas privadas. */
 export const HOME = '@me';
@@ -36,6 +36,7 @@ import { toast } from './toast';
 import { FORUM_STATUSES } from '../../../shared/forum.ts';
 import { useVoice } from './voice';
 import { useStickerPacks } from './stickerPacks';
+import { useContracts } from './contracts';
 
 export type Modal =
   | { type: 'addServer'; tab?: 'create' | 'join'; code?: string }
@@ -56,6 +57,9 @@ export type Modal =
   | { type: 'whatsNew'; ids: string[] }
   | { type: 'emailPrompt' }
   | { type: 'mecenas' }
+  | { type: 'pranks' }
+  | { type: 'contractRenewal' }
+  | { type: 'finePix'; fineId: string; amountCents: number }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {
@@ -186,7 +190,10 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('connect', () => {
       void get().loadServers();
       useVoice.getState().resync();
+      // contrato de Mecenato: a renovação do contrato antigo aparece logo ao entrar (ver Mecenato.tsx)
+      void useContracts.getState().load();
     });
+    socket.on('contract:updated', () => void useContracts.getState().load());
     socket.on('connect_error', (err) => {
       if (err.message === 'unauthorized') get().logout();
     });

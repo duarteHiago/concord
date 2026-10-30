@@ -27,7 +27,7 @@ interface SupportConfig {
   presets: number[];
 }
 
-interface Payment {
+export interface Payment {
   id: string;
   amountCents: number;
   status: 'pending' | 'paid' | 'expired' | 'refunded';
@@ -35,6 +35,65 @@ interface Payment {
   qrBase64: string | null;
   expiresAt: number;
   test: boolean;
+}
+
+/** A cada 3 s pergunta ao servidor (que confere no Mercado Pago de tempos em tempos). */
+export function usePixPolling(payment: Payment | null, setPayment: (p: Payment) => void) {
+  useEffect(() => {
+    if (!payment || payment.status !== 'pending') return;
+    const t = setInterval(async () => {
+      const next = await api.get<Payment>(`/support/pix/${payment.id}`).catch(() => null);
+      if (next && next.status !== payment.status) setPayment(next);
+    }, 3000);
+    return () => clearInterval(t);
+  }, [payment, setPayment]);
+}
+
+/** O QR do Pix esperando o pagamento (apoio ou multa de contrato, ver Mecenato.tsx). */
+export function PixPending({ payment, onChange }: { payment: Payment; onChange: (p: Payment) => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!payment.qrCode) return;
+    await navigator.clipboard.writeText(payment.qrCode).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div className="rounded-2xl bg-white p-3">
+        {payment.qrBase64 ? (
+          <img src={`data:image/png;base64,${payment.qrBase64}`} alt="QR code do Pix" width={220} height={220} />
+        ) : (
+          <div className="flex h-[220px] w-[220px] flex-col items-center justify-center gap-2 text-center text-sm font-semibold text-neutral-700">
+            <QrCode size={48} />
+            QR de teste
+            <span className="px-4 text-xs font-normal">Modo de teste: nenhum dinheiro de verdade.</span>
+          </div>
+        )}
+      </div>
+      <div className="w-full">
+        <p className="mb-1 text-xs font-bold tracking-wide text-fg-muted uppercase">Ou use o Pix copia e cola</p>
+        <div className="flex gap-2">
+          <input readOnly value={payment.qrCode ?? ''} onFocus={(e) => e.currentTarget.select()} className="min-w-0 flex-1 truncate rounded-xl bg-surface-0 px-3 text-xs text-fg-muted outline-none" />
+          <Button variant="secondary" onClick={() => void copy()}>
+            {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copiado' : 'Copiar'}
+          </Button>
+        </div>
+      </div>
+      <p className="flex items-center gap-2 text-sm text-fg-muted">
+        <Spinner size={16} /> Esperando o pagamento… Esta janela atualiza sozinha.
+      </p>
+      <Expiry until={payment.expiresAt} />
+      {payment.test && (
+        <Button
+          variant="secondary"
+          onClick={async () => onChange(await api.post<Payment>(`/support/pix/${payment.id}/simulate`).catch((e) => (toast.error(e), payment)))}
+        >
+          Simular pagamento (teste)
+        </Button>
+      )}
+    </div>
+  );
 }
 
 let configCache: Promise<SupportConfig> | null = null;
@@ -59,7 +118,6 @@ export function SupportModal() {
   const [custom, setCustom] = useState('');
   const [payment, setPayment] = useState<Payment | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [totalBefore] = useState(me.supportTotal ?? 0);
   // o Pix deu o cargo de Mecenas (ver Mecenas.tsx): o aviso abre quando esta janela fechar
   const surprise = !!me.mecenasPowers && !me.settings.mecenasSeen;
@@ -70,15 +128,7 @@ export function SupportModal() {
   const willHave = topTier(after);
   const hadBefore = topTier(totalBefore);
 
-  // a cada 3 s pergunta ao servidor (que confere no Mercado Pago de tempos em tempos)
-  useEffect(() => {
-    if (!payment || payment.status !== 'pending') return;
-    const t = setInterval(async () => {
-      const next = await api.get<Payment>(`/support/pix/${payment.id}`).catch(() => null);
-      if (next && next.status !== payment.status) setPayment(next);
-    }, 3000);
-    return () => clearInterval(t);
-  }, [payment]);
+  usePixPolling(payment, setPayment);
 
   // pagou: atualiza o próprio perfil (o socket também avisa, isto é só garantia)
   useEffect(() => {
@@ -94,13 +144,6 @@ export function SupportModal() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const copy = async () => {
-    if (!payment?.qrCode) return;
-    await navigator.clipboard.writeText(payment.qrCode).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   if (!config) {
@@ -157,40 +200,7 @@ export function SupportModal() {
   if (payment && payment.status === 'pending') {
     return (
       <Modal title={`Pix de ${formatBRL(payment.amountCents)}`} subtitle="Abra o app do seu banco, escolha pagar com Pix e escaneie o código." onClose={close} width={440}>
-        <div className="flex flex-col items-center gap-4">
-          <div className="rounded-2xl bg-white p-3">
-            {payment.qrBase64 ? (
-              <img src={`data:image/png;base64,${payment.qrBase64}`} alt="QR code do Pix" width={220} height={220} />
-            ) : (
-              <div className="flex h-[220px] w-[220px] flex-col items-center justify-center gap-2 text-center text-sm font-semibold text-neutral-700">
-                <QrCode size={48} />
-                QR de teste
-                <span className="px-4 text-xs font-normal">Modo de teste: nenhum dinheiro de verdade.</span>
-              </div>
-            )}
-          </div>
-          <div className="w-full">
-            <p className="mb-1 text-xs font-bold tracking-wide text-fg-muted uppercase">Ou use o Pix copia e cola</p>
-            <div className="flex gap-2">
-              <input readOnly value={payment.qrCode ?? ''} onFocus={(e) => e.currentTarget.select()} className="min-w-0 flex-1 truncate rounded-xl bg-surface-0 px-3 text-xs text-fg-muted outline-none" />
-              <Button variant="secondary" onClick={() => void copy()}>
-                {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copiado' : 'Copiar'}
-              </Button>
-            </div>
-          </div>
-          <p className="flex items-center gap-2 text-sm text-fg-muted">
-            <Spinner size={16} /> Esperando o pagamento… Esta janela atualiza sozinha.
-          </p>
-          <Expiry until={payment.expiresAt} />
-          {payment.test && (
-            <Button
-              variant="secondary"
-              onClick={async () => setPayment(await api.post<Payment>(`/support/pix/${payment.id}/simulate`).catch((e) => (toast.error(e), payment)))}
-            >
-              Simular pagamento (teste)
-            </Button>
-          )}
-        </div>
+        <PixPending payment={payment} onChange={setPayment} />
       </Modal>
     );
   }

@@ -20,6 +20,7 @@ import { ProfilePage } from './components/ProfilePage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { SpotlightHost } from './components/Spotlight';
 import { useMecenasReveal } from './components/Mecenas';
+import { useContractRenewal } from './components/Mecenato';
 import { useWhatsNewPrompt } from './components/modals/WhatsNewModal';
 import { DropClaimModal, DropPage, useClaimAfterLogin, useDrop } from './components/PatchDrop';
 import { VoiceView } from './components/VoiceView';
@@ -95,6 +96,24 @@ function MainApp() {
     openModal({ type: 'support' });
   }, [me, openModal]);
 
+  // veio da seção de Mecenato da landing: abre a aba dos contratos depois do login (mesma ideia do apoio)
+  const openSettings = useApp((s) => s.openSettings);
+  useEffect(() => {
+    if (!me) return;
+    let flagged = false;
+    try {
+      flagged = localStorage.getItem('concord.openMecenato') === '1';
+      localStorage.removeItem('concord.openMecenato');
+    } catch {
+      // ignorado
+    }
+    const q = new URLSearchParams(location.search);
+    if (!flagged && !q.has('mecenato')) return;
+    q.delete('mecenato');
+    history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
+    openSettings('mecenato');
+  }, [me, openSettings]);
+
   if (!ready) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -125,6 +144,7 @@ function Shell() {
   useEmailPrompt();
   useWhatsNewPrompt();
   useMecenasReveal();
+  useContractRenewal();
   const releasesOpen = useApp((s) => s.releasesOpen);
   const profileOpen = useApp((s) => !!s.profile);
   const settingsOpen = useApp((s) => !!s.settings);

@@ -108,7 +108,8 @@ if [ -n "${ADMIN_USERS:-}" ]; then
   fi
 fi
 
-# Mecenas (cargo especial, ver server/src/mecenas.ts): "quem>sobre-quem". Vem da variável do CI.
+# Dupla antiga de Mecenas: "quem>sobre-quem". Vem da variável do CI. Só serve para criar, uma vez, o convite
+# de renovação de contrato dessa dupla (ver server/src/contracts.ts#migrateLegacyPair).
 if [ -n "${MECENAS:-}" ]; then
   if printf '%s' "$MECENAS" | grep -qE '^@?[A-Za-z0-9_.]{3,32}>@?[A-Za-z0-9_.]{3,32}$'; then
     upsert_env MECENAS "$MECENAS"

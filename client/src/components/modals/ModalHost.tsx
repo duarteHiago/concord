@@ -16,6 +16,7 @@ import { ServerSettingsModal } from './ServerSettingsModal';
 import { ShareScreenModal } from './ShareScreenModal';
 import { SupportModal } from '../Support';
 import { MecenasModal } from '../Mecenas';
+import { FinePixModal, PranksModal, RenewalModal } from '../Mecenato';
 import { BackupCodesModal } from '../TwoFactor';
 
 export function ModalHost() {
@@ -70,6 +71,12 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <EmailPromptModal />;
     case 'mecenas':
       return <MecenasModal />;
+    case 'pranks':
+      return <PranksModal />;
+    case 'contractRenewal':
+      return <RenewalModal />;
+    case 'finePix':
+      return <FinePixModal fineId={modal.fineId} amountCents={modal.amountCents} />;
   }
 }
 

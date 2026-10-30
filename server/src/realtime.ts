@@ -16,6 +16,8 @@ export interface VoiceState {
   streaming: boolean;
   camera: boolean;
   serverMuted: boolean;
+  /** sem ouvir ninguém, por decisão do servidor (só o Mecenas faz isso, ver contracts.ts) */
+  serverDeafened: boolean;
 }
 
 let io: Server;
@@ -25,6 +27,7 @@ export const REACTIONS = ['❤️', '😂', '🔥', '👏', '😮', '🎉', '�
 const online = new Map<string, number>(); // userId -> nº de sockets
 const voice = new Map<string, VoiceState>(); // userId -> estado
 const serverMutes = new Set<string>(); // `${serverId}:${userId}`
+const serverDeafens = new Set<string>(); // `${serverId}:${userId}`
 
 // Jams do Spotify fixadas nas salas de voz: cada pessoa da sala pode ter a sua (o link que ela colou), e quem
 // está na sala escolhe em qual entrar. O Spotify não deixa criar Jam por API, então a pessoa cria no app dele
@@ -70,6 +73,10 @@ export function getVoiceState(userId: string) {
 
 export function isServerMuted(serverId: string, userId: string) {
   return serverMutes.has(`${serverId}:${userId}`);
+}
+
+export function isServerDeafened(serverId: string, userId: string) {
+  return serverDeafens.has(`${serverId}:${userId}`);
 }
 
 function broadcastVoice(serverId: string) {
@@ -153,6 +160,19 @@ export function setServerMute(serverId: string, userId: string, muted: boolean) 
     v.serverMuted = muted;
     if (muted) v.muted = true;
     io.to(v.socketId).emit('voice:server-mute', { muted });
+    broadcastVoice(serverId);
+  }
+}
+
+export function setServerDeafen(serverId: string, userId: string, deafened: boolean) {
+  const key = `${serverId}:${userId}`;
+  if (deafened) serverDeafens.add(key);
+  else serverDeafens.delete(key);
+  const v = voice.get(userId);
+  if (v && v.serverId === serverId) {
+    v.serverDeafened = deafened;
+    if (deafened) v.deafened = true;
+    io.to(v.socketId).emit('voice:server-deafen', { deafened });
     broadcastVoice(serverId);
   }
 }
@@ -299,20 +319,22 @@ export function setupRealtime(httpServer: HttpServer) {
           io.to(prev.socketId).emit('voice:force-disconnect', { reason: 'Você entrou em uma sala em outro dispositivo.' });
         }
         const serverMuted = isServerMuted(channel.server_id, userId);
+        const serverDeafened = isServerDeafened(channel.server_id, userId);
         voice.set(userId, {
           userId,
           serverId: channel.server_id,
           channelId: channel.id,
           socketId: socket.id,
           muted: serverMuted || !has(perms, P.SPEAK),
-          deafened: false,
+          deafened: serverDeafened,
           streaming: false,
           camera: false,
           serverMuted,
+          serverDeafened,
         });
         if (prev && prev.serverId !== channel.server_id) broadcastVoice(prev.serverId);
         broadcastVoice(channel.server_id);
-        ack?.({ ok: true });
+        ack?.({ ok: true, serverDeafened });
       } catch (err) {
         ack?.({ ok: false, error: (err as Error).message });
       }
@@ -322,7 +344,7 @@ export function setupRealtime(httpServer: HttpServer) {
       const v = voice.get(userId);
       if (!v || v.socketId !== socket.id) return;
       if (typeof data.muted === 'boolean') v.muted = data.muted || v.serverMuted;
-      if (typeof data.deafened === 'boolean') v.deafened = data.deafened;
+      if (typeof data.deafened === 'boolean') v.deafened = data.deafened || v.serverDeafened;
       if (typeof data.streaming === 'boolean') v.streaming = data.streaming;
       if (typeof data.camera === 'boolean') v.camera = data.camera;
       broadcastVoice(v.serverId);

@@ -42,7 +42,7 @@ import {
   type SoundRow,
   type UserRow,
 } from './db.ts';
-import { color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
+import { HttpError, color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
@@ -50,7 +50,19 @@ import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetE
 import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
 import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
-import { mecenasBadge, mecenasOfMe, mecenasOver } from './mecenas.ts';
+import {
+  avatarLocked,
+  mecenasBadge,
+  mecenasDeafen,
+  mecenasDisconnect,
+  mecenasMute,
+  mecenasNickname,
+  mecenasOfMe,
+  mecenasPower,
+  registerContractRoutes,
+  setContractHooks,
+  type MecenasPower,
+} from './contracts.ts';
 import { registerClientErrorRoutes } from './clientErrors.ts';
 import { registerCspReportRoutes } from './security.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
@@ -79,6 +91,7 @@ import {
   emitToUser,
   getVoiceState,
   isServerMuted,
+  isServerDeafened,
   joinServerRoom,
   leaveServerRoom,
   onlineUserIds,
@@ -182,8 +195,8 @@ const userJson = (u: PublicUser) => ({
   bannerUrl: u.banner_url,
   bot: !!u.is_bot,
   verified: !!u.verified,
-  // cargo de Mecenas: quem é, e quem tem um (ver mecenas.ts)
-  ...mecenasBadge(u.username),
+  // cargo de Mecenas: quem é, e quem tem um (ver contracts.ts)
+  ...mecenasBadge(u.id),
 });
 
 /** Autor de mensagem: sem os patches (só aparecem no cartão do perfil). */
@@ -216,7 +229,7 @@ const meJson = (u: UserRow) => {
     isAuthority: isInstanceAuthority(u.id),
     // entra no portal da equipe (/admin, ver admin.ts)
     isAdmin: isAdmin(u.id),
-    // é o Mecenas: o cargo e sobre quem tem os poderes
+    // é o Mecenas de um contrato agora: o cargo e sobre quem tem os poderes
     mecenasPowers: mecenasOfMe(u.id),
     // página do perfil: contas conectadas e o que esta instalação oferece
     steamLinked: !!u.steam_id,
@@ -778,8 +791,11 @@ api.post('/me/2fa/backup-codes', humansOnly, (req, res) => {
 
 const imageBody = express.raw({ type: () => true, limit: '9mb' });
 
+const AVATAR_LOCKED = 'Seu Mecenas escolheu sua foto. Ela volta ao normal quando o contrato acabar.';
+
 api.post('/me/avatar', imageBody, (req, res) => {
   const me = uid(res);
+  if (avatarLocked(me)) fail(403, AVATAR_LOCKED);
   const old = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url;
   const url = saveImage('avatars', me, req.body);
   run('UPDATE users SET avatar_url = ? WHERE id = ?', url, me);
@@ -790,6 +806,7 @@ api.post('/me/avatar', imageBody, (req, res) => {
 
 api.delete('/me/avatar', (_req, res) => {
   const me = uid(res);
+  if (avatarLocked(me)) fail(403, AVATAR_LOCKED);
   removeUpload(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url);
   run('UPDATE users SET avatar_url = NULL WHERE id = ?', me);
   profileChanged(me);
@@ -1115,13 +1132,20 @@ api.put('/servers/:id/members/:userId/nickname', (req, res) => {
   const server = requireMember(req.params.id, me);
   if (!isMember(server.id, target)) fail(404, 'Membro não encontrado');
   const perms = serverPermissions(server.id, me);
-  if (target === me) {
-    if (!has(perms, P.CHANGE_NICKNAME) && !has(perms, P.MANAGE_NICKNAMES)) fail(403, 'Você não pode alterar seu apelido aqui');
-  } else if (!mecenasOver(me, target) && (!has(perms, P.MANAGE_NICKNAMES) || !outranks(server.id, me, target))) {
-    fail(403, 'Você não pode alterar o apelido deste membro');
-  }
   const raw = req.body?.nickname;
   const nickname = raw === null || raw === '' ? null : str(raw, 'apelido', 1, 32);
+  const mecenas = target === me ? 'no' : mecenasPower(me, target);
+  if (mecenas === 'yes') {
+    mecenasNickname(me, target, server.id, nickname);
+    return res.json({ ok: true, nickname });
+  }
+  if (target === me) {
+    if (!has(perms, P.CHANGE_NICKNAME) && !has(perms, P.MANAGE_NICKNAMES)) fail(403, 'Você não pode alterar seu apelido aqui');
+  } else {
+    shieldAware(mecenas, target, () => {
+      if (!has(perms, P.MANAGE_NICKNAMES) || !outranks(server.id, me, target)) fail(403, 'Você não pode alterar o apelido deste membro');
+    });
+  }
   run('UPDATE members SET nickname = ? WHERE server_id = ? AND user_id = ?', nickname, server.id, target);
   serverChanged(server.id);
   res.json({ ok: true, nickname });
@@ -1359,12 +1383,20 @@ function voiceTarget(serverId: string, me: string, target: string, flag: number)
   return v!;
 }
 
-/** O Mecenas age sobre o alvo dele sem cargo no servidor: basta os dois estarem nele e o alvo numa sala. */
-function mecenasVoiceTarget(serverId: string, me: string, target: string) {
-  requireMember(serverId, me);
-  const v = getVoiceState(target);
-  if (!v || v.serverId !== serverId) fail(400, 'Este membro não está em uma sala de voz');
-  return v!;
+/**
+ * Moderação normal sobre alguém que também é alvo de um Mecenas: se quem tenta só teria o poder pelo contrato
+ * e o Escudo do alvo está ligado, a recusa diz isso (em vez de "sem permissão").
+ */
+function shieldAware<T>(mecenas: MecenasPower, target: string, check: () => T): T {
+  try {
+    return check();
+  } catch (err) {
+    if (mecenas === 'shielded' && err instanceof HttpError && err.status === 403) {
+      const name = get<{ display_name: string }>('SELECT display_name FROM users WHERE id = ?', target)?.display_name ?? 'Essa pessoa';
+      fail(409, `${name} está com o Escudo ligado`);
+    }
+    throw err;
+  }
 }
 
 api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
@@ -1372,27 +1404,46 @@ api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
   const serverId = req.params.id;
   const target = req.params.userId;
   const muted = req.body?.muted !== false;
-  if (mecenasOver(me, target)) {
+  const mecenas = mecenasPower(me, target);
+  if (mecenas === 'yes') {
     // o Mecenas silencia o alvo dele sem precisar de cargo no servidor
     requireMember(serverId, me);
-    const v = getVoiceState(target);
-    if (muted && v?.serverId === serverId) await muteTracks(v.channelId, target, [TrackSource.MICROPHONE]);
-  } else if (getVoiceState(target)?.serverId === serverId) {
-    const v = voiceTarget(serverId, me, target, P.MUTE_MEMBERS);
+    await mecenasMute(me, target, muted, serverId);
+    return res.json({ ok: true, muted });
+  }
+  if (getVoiceState(target)?.serverId === serverId) {
+    const v = shieldAware(mecenas, target, () => voiceTarget(serverId, me, target, P.MUTE_MEMBERS));
     if (muted) await muteTracks(v.channelId, target, [TrackSource.MICROPHONE]);
   } else {
-    requireServerPerm(serverId, me, P.MUTE_MEMBERS);
-    if (!outranks(serverId, me, target)) fail(403, 'Você não pode moderar este membro');
+    shieldAware(mecenas, target, () => {
+      requireServerPerm(serverId, me, P.MUTE_MEMBERS);
+      if (!outranks(serverId, me, target)) fail(403, 'Você não pode moderar este membro');
+    });
   }
   setServerMute(serverId, target, muted);
   res.json({ ok: true, muted });
 });
 
+/** Ensurdecer pelo servidor: não há cargo para isso, só o Mecenas faz (ver contracts.ts). */
+api.post('/servers/:id/members/:userId/voice-deafen', async (req, res) => {
+  const me = uid(res);
+  requireMember(req.params.id, me);
+  await mecenasDeafen(me, req.params.userId, req.body?.deafened !== false, req.params.id);
+  res.json({ ok: true });
+});
+
 api.post('/servers/:id/members/:userId/voice-disconnect', async (req, res) => {
   const me = uid(res);
-  const mecenas = mecenasOver(me, req.params.userId);
-  const v = mecenas ? mecenasVoiceTarget(req.params.id, me, req.params.userId) : voiceTarget(req.params.id, me, req.params.userId, P.MOVE_MEMBERS);
-  dropVoice(v.userId, mecenas ? 'Seu Mecenas tirou você da sala.' : 'Você foi desconectado da sala por um moderador.');
+  const target = req.params.userId;
+  const mecenas = mecenasPower(me, target);
+  if (mecenas === 'yes') {
+    requireMember(req.params.id, me);
+    if (getVoiceState(target)?.serverId !== req.params.id) fail(400, 'Este membro não está em uma sala de voz');
+    await mecenasDisconnect(me, target, req.params.id);
+    return res.json({ ok: true });
+  }
+  const v = shieldAware(mecenas, target, () => voiceTarget(req.params.id, me, target, P.MOVE_MEMBERS));
+  dropVoice(v.userId, 'Você foi desconectado da sala por um moderador.');
   await removeFromRoom(v.channelId, v.userId);
   res.json({ ok: true });
 });
@@ -1428,9 +1479,7 @@ api.post('/servers/:id/members/:userId/nudge', (req, res) => {
   if (prefs.notifications?.nudges === false) fail(409, `${name} não está recebendo chamadas de atenção`);
 
   const key = `${me}:${target}`;
-  // o Mecenas chama o alvo dele quase sem espera (3 s: o app de quem recebe ignora tremidas a menos de 2,5 s, ver lib/nudge.ts)
-  const cooldown = mecenasOver(me, target) ? 3_000 : NUDGE_COOLDOWN_MS;
-  const wait = (lastNudge.get(key) ?? 0) + cooldown - now();
+  const wait = (lastNudge.get(key) ?? 0) + NUDGE_COOLDOWN_MS - now();
   if (wait > 0) fail(429, `Calma! Espere ${Math.ceil(wait / 1000)}s para chamar de novo`);
   lastNudge.set(key, now());
 
@@ -1795,6 +1844,7 @@ api.post('/channels/:id/voice-token', humansOnly, async (req, res) => {
     metadata: JSON.stringify({ avatarColor: user.avatar_color, username: user.username }),
     perms,
     serverMuted: isServerMuted(channel.server_id, me),
+    serverDeafened: isServerDeafened(channel.server_id, me),
   });
   res.json({ token, url: config.livekit.publicUrl || null, permissions: perms });
 });
@@ -2553,6 +2603,8 @@ registerStickerPackRoutes(api);
 registerSupportRoutes(api);
 registerDiagnosticRoutes(api);
 registerAdminRoutes(api);
+// depois do admin: as rotas /admin/contracts* ficam atrás do requireAdmin
+registerContractRoutes(api);
 registerIntegrationRoutes(api, {
   meUpdated: (userId) => {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
@@ -2633,10 +2685,12 @@ api.delete('/me/profile-bg', (_req, res) => {
   saveStyle(me, style);
   res.json(pageJson(style.page));
 });
-setSupportHooks({
-  meUpdated: (userId) => {
+const meHooks = {
+  meUpdated: (userId: string) => {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
     if (user) emitToUser(userId, 'me:updated', meJson(user));
   },
-  profileChanged: (userId) => profileChanged(userId),
-});
+  profileChanged: (userId: string) => profileChanged(userId),
+};
+setSupportHooks(meHooks);
+setContractHooks(meHooks);

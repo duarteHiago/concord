@@ -5,6 +5,7 @@
 import { Search, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../../store/app';
+import { MecenatoTab } from '../Mecenato';
 import { SupportTab } from '../Support';
 import { BotsTab } from '../modals/BotsTab';
 import { ShortcutsTab } from '../modals/ShortcutsTab';
@@ -51,6 +52,13 @@ const GROUPS: { title: string; items: Item[] }[] = [
         subtitle: 'Ajude a manter o Concord no ar.',
         words: 'apoiar apoio pix doação doar patch apoiador acabamento',
         render: () => <SupportTab />,
+      },
+      {
+        id: 'mecenato',
+        label: 'Mecenato',
+        subtitle: 'Seu contrato de Mecenas, o Escudo e as sacanagens.',
+        words: 'mecenas mecenato contrato escudo não perturbe sacanagens peripécias multa rescindir convite',
+        render: () => <MecenatoTab />,
       },
     ],
   },

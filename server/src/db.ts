@@ -356,6 +356,83 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider, provider_id) WHERE provider_id IS NOT NULL;
 `);
 addColumn('users', 'support_total_cents', 'INTEGER NOT NULL DEFAULT 0');
+// o Pix também cobra a multa de rescisão dos contratos de Mecenato: essa não soma no total de apoio
+addColumn('payments', 'kind', "TEXT NOT NULL DEFAULT 'support'");
+addColumn('payments', 'fine_id', 'TEXT');
+
+// Contratos de Mecenato (ver contracts.ts). Sem chave estrangeira para users nas tabelas de histórico: a
+// auditoria fica mesmo que a conta suma. contract_locks garante um contrato (ou convite) por pessoa: a chave
+// primária recusa o segundo, mesmo que dois pedidos cheguem juntos.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS contracts (
+    id TEXT PRIMARY KEY,
+    creator_id TEXT NOT NULL,
+    invitee_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'ended')),
+    duration_ms INTEGER NOT NULL,
+    cooldown_ms INTEGER NOT NULL,
+    tie_clause INTEGER NOT NULL DEFAULT 0,
+    renewal INTEGER NOT NULL DEFAULT 0,
+    creator_accepted_at INTEGER,
+    invitee_accepted_at INTEGER,
+    leader_id TEXT,
+    created_at INTEGER NOT NULL,
+    invite_expires_at INTEGER NOT NULL,
+    started_at INTEGER,
+    ends_at INTEGER,
+    ended_at INTEGER,
+    end_reason TEXT,
+    ended_by TEXT,
+    end_note TEXT,
+    review TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status, ends_at);
+  CREATE INDEX IF NOT EXISTS idx_contracts_creator ON contracts(creator_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_contracts_invitee ON contracts(invitee_id, created_at);
+  CREATE TABLE IF NOT EXISTS contract_locks (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    contract_id TEXT NOT NULL REFERENCES contracts(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS user_shields (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    balance_ms INTEGER NOT NULL,
+    active_since INTEGER,
+    depleted_at INTEGER,
+    cooldown_until INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS contract_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_id TEXT,
+    user_id TEXT,
+    actor_id TEXT,
+    type TEXT NOT NULL,
+    data TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_contract_events_contract ON contract_events(contract_id, id);
+  CREATE INDEX IF NOT EXISTS idx_contract_events_user ON contract_events(user_id, id);
+  CREATE TABLE IF NOT EXISTS contract_fines (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    base_cents INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'paid', 'waived', 'cancelled')),
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER,
+    resolved_by TEXT,
+    note TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_contract_fines_user ON contract_fines(user_id, status);
+  CREATE TABLE IF NOT EXISTS contract_avatars (
+    contract_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    original_url TEXT,
+    current_url TEXT,
+    PRIMARY KEY (contract_id, user_id)
+  );
+`);
+
 // página do perfil: conta da Steam (SteamID64, confirmada pelo login da Steam; ver integrations.ts)
 addColumn('users', 'steam_id', 'TEXT');
 // o Last.fm saiu do perfil: apaga o usuário que alguém tenha salvo
@@ -460,8 +537,13 @@ export function run(sql: string, ...params: SQLInputValue[]) {
   return timed(sql, () => stmt(sql).run(...params));
 }
 
+let txDepth = 0;
+
+/** Transação. Chamada dentro de outra, só roda junto (o SQLite não aceita BEGIN dentro de BEGIN). */
 export function tx<T>(fn: () => T): T {
+  if (txDepth > 0) return fn();
   db.exec('BEGIN');
+  txDepth++;
   try {
     const result = fn();
     // no COMMIT o SQLite grava no disco: é onde um disco lento aparece
@@ -470,6 +552,8 @@ export function tx<T>(fn: () => T): T {
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
+  } finally {
+    txDepth--;
   }
 }
 
@@ -700,4 +784,43 @@ export interface PaymentRow {
   checked_at: number | null;
   created_at: number;
   paid_at: number | null;
+  /** 'support' (apoio) ou 'fine' (multa de rescisão de contrato, ver contracts.ts) */
+  kind: 'support' | 'fine';
+  fine_id: string | null;
+}
+
+export interface ContractRow {
+  id: string;
+  creator_id: string;
+  invitee_id: string;
+  status: 'pending' | 'active' | 'ended';
+  duration_ms: number;
+  cooldown_ms: number;
+  tie_clause: number;
+  renewal: number;
+  creator_accepted_at: number | null;
+  invitee_accepted_at: number | null;
+  leader_id: string | null;
+  created_at: number;
+  invite_expires_at: number;
+  started_at: number | null;
+  ends_at: number | null;
+  ended_at: number | null;
+  end_reason: string | null;
+  ended_by: string | null;
+  end_note: string | null;
+  review: 'pending' | 'confirmed' | 'fined' | null;
+}
+
+export interface ContractFineRow {
+  id: string;
+  contract_id: string;
+  user_id: string;
+  amount_cents: number;
+  base_cents: number;
+  status: 'open' | 'paid' | 'waived' | 'cancelled';
+  created_at: number;
+  resolved_at: number | null;
+  resolved_by: string | null;
+  note: string | null;
 }
