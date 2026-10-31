@@ -193,19 +193,19 @@ describe('contratos (API)', () => {
     assert.equal((await nick(b, 'chefe')).status, 403);
 
     // a apoia primeiro: manda; b não pode, a pode
-    await support(a, 200);
+    await support(a, 400);
     assert.equal((await nick(b, 'chefe')).status, 403);
     assert.equal((await nick(a, 'capacho')).status, 200);
     // selo público
     assert.equal((await b.get(`/users/${a.id}/profile`)).body.user.mecenas, true);
     assert.equal((await a.get(`/users/${b.id}/profile`)).body.user.mecenasBy, a.username);
 
-    // b apoia mais durante o contrato (300 > 200, mesmo com menos no total): vira o Mecenas
-    await support(b, 300);
+    // b apoia mais durante o contrato (500 > 400, mesmo com menos no total: R$ 8 contra R$ 9): vira o Mecenas
+    await support(b, 500);
     const now = (await a.get('/contracts/me')).body.current;
     assert.equal(now.leaderId, b.id);
-    assert.deepEqual(now.totals, { [a.id]: 200, [b.id]: 300 });
-    assert.equal(now.contributedCents, 500);
+    assert.deepEqual(now.totals, { [a.id]: 400, [b.id]: 500 });
+    assert.equal(now.contributedCents, 900);
     assert.equal((await nick(a, 'chefe')).status, 403);
     assert.equal((await nick(b, 'ex-chefe')).status, 200);
 
@@ -226,12 +226,12 @@ describe('contratos (API)', () => {
     assert.ok(events.some((e) => e.type === 'leader_changed'));
     assert.ok(events.some((e) => e.type === 'power'));
 
-    // rescisão: precisa confirmar o valor; R$ 25 + 10% de R$ 5 (só o que entrou durante o contrato)
-    assert.equal(now.fineEstimateCents, 2_550);
+    // rescisão: precisa confirmar o valor; R$ 25 + 10% de R$ 9 (só o que entrou durante o contrato)
+    assert.equal(now.fineEstimateCents, 2_590);
     assert.equal((await a.post(`/contracts/${id}/rescind`, { confirmCents: 100 })).status, 409);
-    const rescinded = await a.post(`/contracts/${id}/rescind`, { confirmCents: 2_550 });
+    const rescinded = await a.post(`/contracts/${id}/rescind`, { confirmCents: 2_590 });
     assert.equal(rescinded.status, 200, JSON.stringify(rescinded.body));
-    assert.equal(rescinded.body.fine.amountCents, 2_550);
+    assert.equal(rescinded.body.fine.amountCents, 2_590);
     assert.equal((await a.get('/contracts/me')).body.current, null);
     assert.equal((await b.get(`/users/${a.id}/profile`)).body.user.mecenasBy, undefined);
 
@@ -243,7 +243,7 @@ describe('contratos (API)', () => {
     const before = (await a.get('/me')).body.supportTotal;
     const pix = await a.post(`/contracts/fines/${rescinded.body.fine.id}/pix`);
     assert.equal(pix.status, 200);
-    assert.equal(pix.body.amountCents, 2_550);
+    assert.equal(pix.body.amountCents, 2_590);
     await a.post(`/support/pix/${pix.body.id}/simulate`);
     assert.equal((await a.get('/me')).body.supportTotal, before);
     assert.equal((await a.get('/contracts/me')).body.fines[0].status, 'paid');
