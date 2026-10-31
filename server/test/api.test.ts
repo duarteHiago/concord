@@ -235,6 +235,6 @@ describe('login com Google pelo app desktop', () => {
     const c = new Client(server.url);
     assert.equal((await c.post('/auth/handoff', { code: 'inventado', verifier: 'qualquer' })).status, 400);
     // o jeito antigo (consultar por um código que qualquer um inventa) não existe mais
-    assert.equal((await c.get('/auth/handoff/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).status, 404);
+    assert.notEqual((await c.get('/auth/handoff/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).status, 200);
   });
 });

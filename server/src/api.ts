@@ -586,6 +586,14 @@ function deliverGoogle(res: express.Response, result: google.HandoffResult, desk
   res.redirect(`/#${hash}`);
 }
 
+// rotas do login com Google: por rede, para ninguém ficar chutando códigos (são longos e de uso único, mas não custa)
+const googlePerIp = limiter(60, 10 * 60_000);
+function googleLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = clientIp(req);
+  if (ip && !googlePerIp(ip)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos e tente de novo.' });
+  next();
+}
+
 api.get('/auth/google/start', (req, res) => {
   if (!google.googleEnabled()) fail(404, 'Login com Google não está configurado neste servidor');
   const desktop = google.desktopReturn(req.query.desktop, req.query.challenge);
@@ -597,7 +605,7 @@ api.get('/auth/google/start', (req, res) => {
   res.redirect(google.startUrl({ mode: userId ? 'link' : 'login', userId, desktop }));
 });
 
-api.get('/auth/google/callback', async (req, res) => {
+api.get('/auth/google/callback', googleLimit, async (req, res) => {
   if (typeof req.query.error === 'string') return deliverGoogle(res, { error: 'Login com Google cancelado.' });
   let sub: string;
   let pending: Awaited<ReturnType<typeof google.finish>>['pending'];
@@ -625,7 +633,7 @@ api.get('/auth/google/callback', async (req, res) => {
 });
 
 /** A pessoa confirmou, na página, a conta do Concord que recebe o Google. */
-api.post('/auth/google/link-confirm', express.urlencoded({ extended: false, limit: '2kb' }), (req, res) => {
+api.post('/auth/google/link-confirm', googleLimit, express.urlencoded({ extended: false, limit: '2kb' }), (req, res) => {
   const c = google.takeLinkConfirm(req.body?.nonce);
   if (!c) return deliverGoogle(res, { error: 'O pedido para conectar a conta expirou. Tente de novo.' });
   const owner = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', c.sub);
@@ -642,7 +650,7 @@ api.get('/auth/google/signup/:ticket', (req, res) => {
   res.json({ ok: true, desktop: !!t.desktop });
 });
 
-api.post('/auth/google/signup', async (req, res) => {
+api.post('/auth/google/signup', googleLimit, async (req, res) => {
   if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
   const username = str(req.body?.username, 'usuário', 3, 32);
   if (!/^[a-zA-Z0-9_.]+$/.test(username)) fail(400, 'Usuário deve conter apenas letras, números, "_" e "."');
@@ -678,7 +686,7 @@ api.post('/auth/google/signup', async (req, res) => {
  * Conta Google ainda sem dono, mas a pessoa já tem conta no Concord: entra com usuário e senha e o
  * Google fica conectado a essa conta (em vez de criar uma segunda conta vazia).
  */
-api.post('/auth/google/signup/link', async (req, res) => {
+api.post('/auth/google/signup/link', googleLimit, async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
   const password = str(req.body?.password, 'senha', 1, 128);
   const ticketId = String(req.body?.ticket ?? '');
@@ -699,7 +707,7 @@ api.post('/auth/google/signup/link', async (req, res) => {
 });
 
 /** App desktop: troca o código que chegou no endereço local do app pelo resultado do login (uma vez só). */
-api.post('/auth/handoff', (req, res) => {
+api.post('/auth/handoff', googleLimit, (req, res) => {
   const result = google.takeHandoff(req.body?.code, req.body?.verifier) ?? fail(400, 'Esse login expirou. Tente entrar com o Google de novo.');
   res.json(result);
 });
