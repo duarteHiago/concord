@@ -62,10 +62,13 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win --publish never
 
-      # os apps só instalam atualização com esta assinatura (ver desktop/update-signature.cjs). Em PR de fork o
-      # segredo não existe: só monta o instalador, sem assinar (e PR nunca publica).
+      # os apps só instalam atualização com esta assinatura (ver desktop/update-signature.cjs). Em PR de fork e em
+      # PR do Dependabot o segredo não existe: só monta o instalador, sem assinar (e PR nunca publica).
       - name: Assinar a atualização
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: >-
+          github.event_name != 'pull_request' ||
+          (github.event.pull_request.head.repo.full_name == github.repository &&
+           github.event.pull_request.user.login != 'dependabot[bot]')
         working-directory: desktop
         env:
           DESKTOP_UPDATE_KEY: ${{ secrets.DESKTOP_UPDATE_KEY }}
