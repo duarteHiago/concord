@@ -54,7 +54,8 @@ function Terms({ days, cooldownHours, tieClause }: { days: number; cooldownHours
         • Vale por <b className="text-fg">{days} {days === 1 ? 'dia' : 'dias'}</b> depois que os dois aceitarem.
       </li>
       <li>
-        • O <b className="text-fg">Mecenas</b> é quem tem mais apoio confirmado ao Concord, no total. Se o outro passar, vira o Mecenas na hora (o prazo não muda).
+        • O <b className="text-fg">Mecenas</b> é quem apoiar mais o Concord durante o contrato: os dois começam no zero, o apoio de antes não conta. Se o outro
+        passar, vira o Mecenas na hora (o prazo não muda).
       </li>
       <li>
         • O Mecenas pode: silenciar, ensurdecer, tirar da sala, trocar o apelido, trocar a foto/GIF do perfil (volta a original no fim) e soltar um efeito
@@ -163,7 +164,14 @@ function ContractTable({ c, meId }: { c: Contract; meId: string }) {
   const name = namer(people, meId);
   const [a, b] = people;
   const diff = Math.abs((c.totals[a.id] ?? 0) - (c.totals[b.id] ?? 0));
-  const leader = c.holders.length === 2 ? 'Os dois (empate com a cláusula)' : c.holders.length === 1 ? name(c.holders[0]) : 'Ninguém (empate)';
+  const leader =
+    c.holders.length === 2
+      ? 'Os dois (empate com a cláusula)'
+      : c.holders.length === 1
+        ? name(c.holders[0])
+        : c.contributedCents === 0
+          ? 'Ninguém ainda: quem apoiar primeiro'
+          : 'Ninguém (empate)';
   return (
     <div className="rounded-2xl bg-surface-1 px-4 py-2">
       <Row label="Participantes">
@@ -175,7 +183,7 @@ function ContractTable({ c, meId }: { c: Contract; meId: string }) {
       </Row>
       <Row label="Mecenas agora">{leader}</Row>
       {people.map((p) => (
-        <Row key={p.id} label={`Apoio total de ${name(p.id)}`}>
+        <Row key={p.id} label={`Apoio de ${name(p.id)} no contrato`}>
           {formatBRL(c.totals[p.id] ?? 0)}
         </Row>
       ))}

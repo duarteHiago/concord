@@ -1,5 +1,6 @@
 // Contratos de Mecenato: duas pessoas que apoiam o Concord combinam, por um prazo, que uma delas (o Mecenas)
-// pode fazer umas sacanagens com a outra. Quem é o Mecenas muda sozinho: é quem tem mais apoio confirmado.
+// pode fazer umas sacanagens com a outra. Quem é o Mecenas muda sozinho: é quem apoiou mais desde que o contrato
+// começou (todo contrato começa no 0 a 0).
 // Cada pessoa tem um Escudo (o "não perturbe" do contrato) com saldo de 3 h. As contas do Escudo e da
 // liderança ficam aqui, sem banco e sem relógio (o `now` vem de fora), iguais no servidor e no cliente.
 
@@ -102,7 +103,7 @@ export function stopShield(s: ShieldState, now: number, cooldownMs: number): { s
 // ------------------------------------------------------------------ liderança
 
 /**
- * Quem manda no contrato: quem tem mais apoio confirmado no total. No empate, quem já era o Mecenas
+ * Quem manda no contrato: quem tem mais apoio confirmado durante ele. No empate, quem já era o Mecenas
  * continua (`leaderId`); com a cláusula de empate, os dois têm os poderes enquanto o empate durar.
  */
 export function decideLeader(o: { a: string; aCents: number; b: string; bCents: number; leaderId: string | null; tieClause: boolean }) {

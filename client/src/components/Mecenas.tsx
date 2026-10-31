@@ -48,7 +48,7 @@ export function MecenasModal() {
           <span className="font-display text-[11px] font-extrabold tracking-[0.2em] text-warn uppercase">Contrato de Mecenato</span>
           <h2 className="font-display text-2xl font-extrabold text-balance">Você agora é o Mecenas</h2>
           <p className="text-sm text-fg-muted">
-            O cargo aparece no seu perfil enquanto você tiver mais apoio que <b className="text-fg">@{target.username}</b>. E enquanto isso, você pode:
+            O cargo aparece no seu perfil enquanto você tiver apoiado mais que <b className="text-fg">@{target.username}</b> neste contrato. E enquanto isso, você pode:
           </p>
         </div>
         <ul className="mx-6 my-4 space-y-2 rounded-2xl bg-surface-0 p-4">

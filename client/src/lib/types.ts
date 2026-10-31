@@ -290,7 +290,7 @@ export interface Contract extends ContractBrief {
   tie: boolean;
   /** quem tem os poderes agora (os dois no empate com a cláusula) */
   holders: string[];
-  /** total de apoio confirmado de cada um */
+  /** apoio confirmado de cada um desde que o contrato começou (decide o Mecenas) */
   totals: Record<string, number>;
   accepted: Record<string, number | null>;
   shields: Record<string, ShieldView> | null;

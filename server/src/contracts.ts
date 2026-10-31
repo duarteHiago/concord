@@ -1,7 +1,7 @@
 // Contratos de Mecenato. Duas pessoas que apoiam o Concord combinam, por até 30 dias, que quem tem mais apoio
-// confirmado (o Mecenas) pode fazer umas sacanagens com a outra: silenciar, ensurdecer, tirar da sala, trocar o
-// apelido, trocar a foto e soltar um efeito de voz surpresa. A liderança muda sozinha quando o total de apoio
-// muda (ver support.ts). Cada pessoa tem um Escudo com 3 h de saldo que bloqueia essas ações; as contas dele
+// confirmado durante o contrato (o Mecenas) pode fazer umas sacanagens com a outra: silenciar, ensurdecer, tirar
+// da sala, trocar o apelido, trocar a foto e soltar um efeito de voz surpresa. Todo contrato começa no 0 a 0, e a
+// liderança muda sozinha a cada apoio confirmado (ver support.ts). Cada pessoa tem um Escudo com 3 h de saldo que bloqueia essas ações; as contas dele
 // estão em shared/contracts.ts. Rescindir antes do prazo gera multa (R$ 25 + 10% do que os dois apoiaram
 // durante o contrato), cobrada pelo mesmo Pix do apoio.
 //
@@ -71,7 +71,7 @@ const participants = (c: ContractRow) => [c.creator_id, c.invitee_id];
 const isParticipant = (c: ContractRow, userId: string) => c.creator_id === userId || c.invitee_id === userId;
 const otherOf = (c: ContractRow, userId: string) => (c.creator_id === userId ? c.invitee_id : c.creator_id);
 
-/** Total de apoio confirmado (o support.ts já tira os estornos). */
+/** Total de apoio confirmado da vida toda (o support.ts já tira os estornos): só decide quem pode entrar em contratos. */
 const totalOf = (userId: string) => get<{ c: number }>('SELECT support_total_cents AS c FROM users WHERE id = ?', userId)?.c ?? 0;
 
 const openFine = (userId: string) => get<ContractFineRow>("SELECT * FROM contract_fines WHERE user_id = ? AND status = 'open' LIMIT 1", userId);
@@ -158,9 +158,16 @@ function shieldJson(s: ShieldState) {
 
 // ------------------------------------------------------------------ liderança e selos
 
+/** O que cada um apoiou desde o início do contrato: todo contrato começa no 0 a 0, o apoio de antes não conta. */
+function totalsOf(c: ContractRow) {
+  const totals = { [c.creator_id]: 0, [c.invitee_id]: 0 };
+  for (const p of contributedDuring(c, c.ended_at ?? now())) totals[p.user_id] += p.amount_cents;
+  return totals;
+}
+
 /** Quem manda no contrato agora. Se mudou, grava, registra e avisa. */
 function leadership(c: ContractRow) {
-  const totals = { [c.creator_id]: totalOf(c.creator_id), [c.invitee_id]: totalOf(c.invitee_id) };
+  const totals = totalsOf(c);
   const r = decideLeader({
     a: c.creator_id,
     aCents: totals[c.creator_id],
@@ -184,11 +191,12 @@ let badges = new Map<string, { mecenas?: true; mecenasBy?: string }>();
 function refreshBadges() {
   const next = new Map<string, { mecenas?: true; mecenasBy?: string }>();
   for (const c of all<ContractRow>("SELECT * FROM contracts WHERE status = 'active'")) {
+    const totals = totalsOf(c);
     const { holders } = decideLeader({
       a: c.creator_id,
-      aCents: totalOf(c.creator_id),
+      aCents: totals[c.creator_id],
       b: c.invitee_id,
-      bCents: totalOf(c.invitee_id),
+      bCents: totals[c.invitee_id],
       leaderId: c.leader_id,
       tieClause: !!c.tie_clause,
     });
@@ -718,7 +726,7 @@ export function registerContractRoutes(api: Router) {
         const other = otherOf(both, me);
         if (!(totalOf(other) > 0)) fail(409, `@${lite(other).username} está sem apoio confirmado no momento`);
         run("UPDATE contracts SET status = 'active', started_at = ?, ends_at = ? WHERE id = ?", t, t + both.duration_ms, c.id);
-        log(c.id, 'started', { data: { endsAt: t + both.duration_ms, totals: { [both.creator_id]: totalOf(both.creator_id), [both.invitee_id]: totalOf(both.invitee_id) } } });
+        log(c.id, 'started', { data: { endsAt: t + both.duration_ms } });
       }
     });
     const started = byId(c.id)!;

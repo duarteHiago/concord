@@ -135,7 +135,7 @@ export function ContractDetail({ id }: { id: string }) {
                 <p>Mecenas agora: {c.holders.length ? c.holders.map(name).join(' e ') : '—'}</p>
                 {people.map((p) => (
                   <p key={p.id}>
-                    Apoio total de @{p.username}: {formatBRL(c.totals[p.id] ?? 0)}
+                    Apoio de @{p.username} no contrato: {formatBRL(c.totals[p.id] ?? 0)}
                   </p>
                 ))}
                 {c.shields &&
