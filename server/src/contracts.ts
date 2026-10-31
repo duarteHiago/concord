@@ -19,6 +19,7 @@ import {
   VOICE_FX_MAX_MS,
   VOICE_FX_MIN_MS,
   VOICE_FX_WINDOW_MAX_MS,
+  avatarFlipDelay,
   decideLeader,
   fineCents,
   freshShield,
@@ -427,7 +428,8 @@ export function mecenasNickname(me: string, target: string, serverId: string, ni
   logPower(c, me, target, 'nickname', { serverId, nickname });
 }
 
-// ---- foto/GIF: o Mecenas troca, a original fica guardada e volta no fim do contrato
+// ---- foto/GIF: o Mecenas troca, a original fica guardada e volta no fim do contrato. Enquanto isso, a foto
+// do Mecenas aparece e some sozinha (flipAvatars, na varredura), como um easter egg no perfil.
 
 /** A foto da pessoa foi escolhida pelo Mecenas (e ela não pode trocar até o contrato acabar)? */
 export function avatarLocked(userId: string): boolean {
@@ -435,15 +437,26 @@ export function avatarLocked(userId: string): boolean {
   return !!c && c.status === 'active' && !!get('SELECT 1 FROM contract_avatars WHERE contract_id = ? AND user_id = ?', c.id, userId);
 }
 
+/** Até quando a foto fica como está agora (aparecendo ou escondida). */
+const flipAt = (showing: boolean) => now() + avatarFlipDelay(showing, randomInt(0, 1_000_000) / 1_000_000);
+
 function setAvatar(me: string, target: string, body: unknown) {
   const c = requirePower(me, target);
   const url = saveImage('avatars', target, body);
   const previous = tx(() => {
     const row = get<{ current_url: string | null }>('SELECT current_url FROM contract_avatars WHERE contract_id = ? AND user_id = ?', c.id, target);
-    if (row) run('UPDATE contract_avatars SET current_url = ? WHERE contract_id = ? AND user_id = ?', url, c.id, target);
+    // a foto nova aparece na hora (o Mecenas vê que funcionou) e depois entra no aparece-e-some
+    if (row) run('UPDATE contract_avatars SET current_url = ?, showing = 1, next_flip_at = ? WHERE contract_id = ? AND user_id = ?', url, flipAt(true), c.id, target);
     else {
       const original = get<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id = ?', target)?.avatar_url ?? null;
-      run('INSERT INTO contract_avatars (contract_id, user_id, original_url, current_url) VALUES (?, ?, ?, ?)', c.id, target, original, url);
+      run(
+        'INSERT INTO contract_avatars (contract_id, user_id, original_url, current_url, showing, next_flip_at) VALUES (?, ?, ?, ?, 1, ?)',
+        c.id,
+        target,
+        original,
+        url,
+        flipAt(true),
+      );
     }
     run('UPDATE users SET avatar_url = ? WHERE id = ?', url, target);
     return row?.current_url ?? null;
@@ -465,6 +478,24 @@ function restoreAvatars(contractId: string, onlyUser?: string) {
     run('DELETE FROM contract_avatars WHERE contract_id = ? AND user_id = ?', contractId, r.user_id);
     removeUpload(r.current_url);
     log(contractId, 'avatar_restored', { userId: r.user_id });
+    hooks.profileChanged(r.user_id);
+    hooks.meUpdated(r.user_id);
+  }
+}
+
+/** Aparece-e-some: a foto do Mecenas que passou da hora troca de lado (some, ou volta a aparecer). */
+function flipAvatars() {
+  const rows = all<{ contract_id: string; user_id: string; original_url: string | null; current_url: string | null; showing: number }>(
+    `SELECT a.contract_id, a.user_id, a.original_url, a.current_url, a.showing FROM contract_avatars a
+     JOIN contracts c ON c.id = a.contract_id WHERE c.status = 'active' AND (a.next_flip_at IS NULL OR a.next_flip_at <= ?)`,
+    now(),
+  );
+  for (const r of rows) {
+    const showing = !r.showing;
+    tx(() => {
+      run('UPDATE contract_avatars SET showing = ?, next_flip_at = ? WHERE contract_id = ? AND user_id = ?', showing ? 1 : 0, flipAt(showing), r.contract_id, r.user_id);
+      run('UPDATE users SET avatar_url = ? WHERE id = ?', showing ? r.current_url : r.original_url, r.user_id);
+    });
     hooks.profileChanged(r.user_id);
     hooks.meUpdated(r.user_id);
   }
@@ -1005,6 +1036,7 @@ function sweep() {
     if (c) afterChange(c);
     else emitToUser(user_id, 'contract:updated', {});
   }
+  flipAvatars();
 }
 
 /**

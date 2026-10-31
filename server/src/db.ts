@@ -435,6 +435,9 @@ db.exec(`
     PRIMARY KEY (contract_id, user_id)
   );
 `);
+// a foto do Mecenas aparece e some sozinha (ver flipAvatars em contracts.ts): qual está no perfil agora, e até quando
+addColumn('contract_avatars', 'showing', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('contract_avatars', 'next_flip_at', 'INTEGER');
 
 // página do perfil: conta da Steam (SteamID64, confirmada pelo login da Steam; ver integrations.ts)
 addColumn('users', 'steam_id', 'TEXT');

@@ -3,7 +3,10 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import {
+  AVATAR_HIDE_MS,
+  AVATAR_SHOW_MS,
   FINE_FIXED_CENTS,
+  avatarFlipDelay,
   SHIELD_MAX_MS,
   SHIELD_RESTORE_MS,
   decideLeader,
@@ -113,6 +116,14 @@ describe('liderança e multa (contas)', () => {
     assert.equal(fineCents(2_000), 2_700);
     assert.equal(fineCents(30_000), 5_500);
     assert.equal(fineCents(1), 2_501, 'arredonda para cima no centavo');
+  });
+
+  it('foto do Mecenas: aparece por pouco tempo e some por mais tempo, dentro das faixas', () => {
+    assert.equal(avatarFlipDelay(true, 0), AVATAR_SHOW_MS[0]);
+    assert.ok(avatarFlipDelay(true, 0.999_999) < AVATAR_SHOW_MS[1]);
+    assert.equal(avatarFlipDelay(false, 0), AVATAR_HIDE_MS[0]);
+    assert.ok(avatarFlipDelay(false, 0.999_999) < AVATAR_HIDE_MS[1]);
+    assert.equal(avatarFlipDelay(false, 7), AVATAR_HIDE_MS[1], 'sorteio fora da faixa não passa do máximo');
   });
 });
 

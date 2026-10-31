@@ -32,7 +32,17 @@ export const VOICE_FX_MAX_MS = 5_000;
 export const VOICE_FX_MIN_MS = 1_000;
 export const VOICE_FX_WINDOW_MAX_MS = 3 * 60_000;
 
-export const isPrankEffect = (v: unknown): v is PrankEffect => (PRANK_EFFECTS as readonly unknown[]).includes(v);
+/** Foto escolhida pelo Mecenas: um easter egg que aparece por um tempo, some, e volta a aparecer, sorteado a cada vez. */
+export const AVATAR_SHOW_MS = [60_000, 5 * 60_000] as const;
+export const AVATAR_HIDE_MS = [10 * 60_000, 60 * 60_000] as const;
+
+/** Quanto tempo a foto fica no estado em que acabou de entrar (`showing`: aparecendo). `r` é um sorteio em [0, 1). */
+export function avatarFlipDelay(showing: boolean, r: number) {
+  const [min, max] = showing ? AVATAR_SHOW_MS : AVATAR_HIDE_MS;
+  return min + Math.floor(Math.min(Math.max(r, 0), 1) * (max - min));
+}
+
+export const isPrankEffect =(v: unknown): v is PrankEffect => (PRANK_EFFECTS as readonly unknown[]).includes(v);
 
 // ------------------------------------------------------------------ Escudo
 
