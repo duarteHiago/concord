@@ -58,7 +58,7 @@ function Terms({ days, cooldownHours, tieClause }: { days: number; cooldownHours
         passar, vira o Mecenas na hora (o prazo não muda).
       </li>
       <li>
-        • O Mecenas pode: silenciar, ensurdecer, tirar da sala, trocar o apelido, trocar a foto/GIF do perfil (volta a original no fim) e soltar um efeito
+        • O Mecenas pode: silenciar, ensurdecer, tirar da sala, trocar o apelido, trocar a foto/GIF do perfil (aparece e some sem aviso; a original volta no fim) e soltar um efeito
         de voz surpresa de até 5 s.
       </li>
       <li>
@@ -707,7 +707,10 @@ export function PranksModal() {
                 <h4 className="flex items-center gap-2 text-sm font-bold">
                   <ImagePlus size={15} /> Foto do perfil
                 </h4>
-                <p className="text-xs text-fg-muted">Foto ou GIF. {other.displayName} não consegue trocar até o fim do contrato, quando a original volta.</p>
+                <p className="text-xs text-fg-muted">
+                  Foto ou GIF. Ela aparece no perfil de {other.displayName} de vez em quando, por uns minutos, e some de novo, sem aviso. {other.displayName} não
+                  consegue trocar a foto até o fim do contrato, quando a original volta de vez.
+                </p>
               </div>
               <div className="flex gap-2">
                 {c.avatarOverrides.includes(other.id) && (
