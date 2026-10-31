@@ -152,7 +152,10 @@ describe('contratos (API)', () => {
     const accepted = await b.post(`/contracts/${created.body.id}/accept`, { acceptTerms: true });
     assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
     assert.equal(accepted.body.status, 'active');
-    assert.equal(accepted.body.leaderId, a.id);
+    // o apoio de antes não conta: começa no 0 a 0, sem Mecenas
+    assert.deepEqual(accepted.body.totals, { [a.id]: 0, [b.id]: 0 });
+    assert.equal(accepted.body.leaderId, null);
+    assert.deepEqual(accepted.body.holders, []);
   });
 
   it('um contrato por pessoa, contando convites em aberto', async () => {
@@ -185,18 +188,24 @@ describe('contratos (API)', () => {
     assert.equal((await b.post(`/contracts/${id}/accept`, { acceptTerms: true })).status, 200);
     const nick = (c: Client, nickname: string) => c.post(`/contracts/${id}/powers`, { power: 'nickname', serverId: srv.body.id, nickname });
 
-    // a manda: b não pode, a pode
+    // 0 a 0 no começo (o R$ 5 de a antes do contrato não conta): ninguém manda
+    assert.equal((await nick(a, 'capacho')).status, 403);
+    assert.equal((await nick(b, 'chefe')).status, 403);
+
+    // a apoia primeiro: manda; b não pode, a pode
+    await support(a, 200);
     assert.equal((await nick(b, 'chefe')).status, 403);
     assert.equal((await nick(a, 'capacho')).status, 200);
     // selo público
     assert.equal((await b.get(`/users/${a.id}/profile`)).body.user.mecenas, true);
     assert.equal((await a.get(`/users/${b.id}/profile`)).body.user.mecenasBy, a.username);
 
-    // b apoia mais durante o contrato (300 + 300 > 500): vira o Mecenas
+    // b apoia mais durante o contrato (300 > 200, mesmo com menos no total): vira o Mecenas
     await support(b, 300);
     const now = (await a.get('/contracts/me')).body.current;
     assert.equal(now.leaderId, b.id);
-    assert.equal(now.contributedCents, 300);
+    assert.deepEqual(now.totals, { [a.id]: 200, [b.id]: 300 });
+    assert.equal(now.contributedCents, 500);
     assert.equal((await nick(a, 'chefe')).status, 403);
     assert.equal((await nick(b, 'ex-chefe')).status, 200);
 
@@ -217,12 +226,12 @@ describe('contratos (API)', () => {
     assert.ok(events.some((e) => e.type === 'leader_changed'));
     assert.ok(events.some((e) => e.type === 'power'));
 
-    // rescisão: precisa confirmar o valor; R$ 25 + 10% de R$ 3 (só o que entrou durante o contrato)
-    assert.equal(now.fineEstimateCents, 2_530);
+    // rescisão: precisa confirmar o valor; R$ 25 + 10% de R$ 5 (só o que entrou durante o contrato)
+    assert.equal(now.fineEstimateCents, 2_550);
     assert.equal((await a.post(`/contracts/${id}/rescind`, { confirmCents: 100 })).status, 409);
-    const rescinded = await a.post(`/contracts/${id}/rescind`, { confirmCents: 2_530 });
+    const rescinded = await a.post(`/contracts/${id}/rescind`, { confirmCents: 2_550 });
     assert.equal(rescinded.status, 200, JSON.stringify(rescinded.body));
-    assert.equal(rescinded.body.fine.amountCents, 2_530);
+    assert.equal(rescinded.body.fine.amountCents, 2_550);
     assert.equal((await a.get('/contracts/me')).body.current, null);
     assert.equal((await b.get(`/users/${a.id}/profile`)).body.user.mecenasBy, undefined);
 
@@ -234,7 +243,7 @@ describe('contratos (API)', () => {
     const before = (await a.get('/me')).body.supportTotal;
     const pix = await a.post(`/contracts/fines/${rescinded.body.fine.id}/pix`);
     assert.equal(pix.status, 200);
-    assert.equal(pix.body.amountCents, 2_530);
+    assert.equal(pix.body.amountCents, 2_550);
     await a.post(`/support/pix/${pix.body.id}/simulate`);
     assert.equal((await a.get('/me')).body.supportTotal, before);
     assert.equal((await a.get('/contracts/me')).body.fines[0].status, 'paid');
