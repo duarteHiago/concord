@@ -8,6 +8,9 @@ services:
   app:
     image: concord-app:test
     environment:
+      # a imagem é a de produção, mas o LiveKit --dev só aceita a chave de exemplo (devkey/secret), que o
+      # servidor recusa em produção
+      NODE_ENV: e2e
       JWT_SECRET: e2e
       LIVEKIT_API_URL: http://livekit:7880
       LIVEKIT_PUBLIC_URL: ws://livekit:7880
