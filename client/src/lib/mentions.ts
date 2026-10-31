@@ -1,9 +1,10 @@
 // Menções (@usuario e @todos): som e notificação para quem foi mencionado.
 import { useApp } from '../store/app';
+import { toast } from '../store/toast';
 import { desktop } from './desktop';
 import { notifySettings } from './nudge';
 import { playSound } from './sounds';
-import type { DirectChannel, Message } from './types';
+import type { DirectChannel, Message, User } from './types';
 
 export interface MentionEvent {
   message: Message;
@@ -45,6 +46,31 @@ export function receiveDirectMessage(dm: DirectChannel, message: Message) {
   n.onclick = () => {
     window.focus();
     useApp.getState().openDmById(dm.id);
+    n.close();
+  };
+}
+
+/** Pedido de amizade recebido: aviso no app, som e notificação (o clique abre a tela de Amigos). */
+export function receiveFriendRequest(from: User) {
+  const me = useApp.getState().me;
+  if (!me) return;
+  toast.info(`${from.displayName} quer ser seu amigo. Veja em Mensagens > Amigos.`);
+  if (me.settings.status === 'dnd') return;
+  const prefs = notifySettings(me);
+  if (!prefs.mentions) return;
+  if (prefs.sound) playSound('mention');
+  if (!prefs.mentionDesktop) return;
+  const title = 'Pedido de amizade';
+  const body = `${from.displayName} (@${from.username}) quer ser seu amigo.`;
+  if (desktop?.notify) {
+    void desktop.notify({ title, body, data: { friends: true } });
+    return;
+  }
+  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const n = new Notification(title, { body, icon: from.avatarUrl ?? '/icon-192.png', tag: `friend-${from.id}` });
+  n.onclick = () => {
+    window.focus();
+    useApp.getState().openFriends();
     n.close();
   };
 }

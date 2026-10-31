@@ -116,8 +116,9 @@ export async function sendNudge(serverId: string, userId: string, name: string, 
 
 if (typeof window !== 'undefined' && desktop?.onNotificationClick) {
   desktop.onNotificationClick((data) => {
-    const d = data as { dmId?: string } & NudgeEvent;
+    const d = data as { dmId?: string; friends?: boolean } & NudgeEvent;
     if (d?.dmId) useApp.getState().openDmById(d.dmId);
+    else if (d?.friends) useApp.getState().openFriends();
     else goToNudge(d);
   });
 }

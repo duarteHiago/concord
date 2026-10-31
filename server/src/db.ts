@@ -543,6 +543,17 @@ addColumn('dm_messages', 'reply_to', 'TEXT');
 // Mecenato de cortesia: a equipe libera contratos para testers sem apoio por Pix (ver contracts.ts)
 addColumn('users', 'mecenato_courtesy', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('contracts', 'courtesy', 'INTEGER NOT NULL DEFAULT 0');
+// amigos e bloqueios (ver friends.ts): uma linha por lado da relação
+db.exec(`
+  CREATE TABLE IF NOT EXISTS relationships (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    other_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, other_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_relationships_other ON relationships(other_id);
+`);
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // Banidos de um servidor: saem e não voltam por convite enquanto o ban existir.
 db.exec(`

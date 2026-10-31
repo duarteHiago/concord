@@ -413,6 +413,15 @@ export interface Message {
   replyTo?: ReplyPreview | null;
 }
 
+/** Como eu vejo a pessoa: amigo, pedido que eu mandei, pedido que recebi, ou bloqueada por mim. */
+export type RelationType = 'friend' | 'outgoing' | 'incoming' | 'blocked';
+
+export interface Relationship {
+  user: User;
+  type: RelationType;
+  since: number;
+}
+
 /** Prévia da mensagem respondida. `deleted`: a original foi apagada. */
 export type ReplyPreview =
   | { id: string; deleted: true }

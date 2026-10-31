@@ -70,6 +70,7 @@ import { registerClientErrorRoutes } from './clientErrors.ts';
 import { registerCspReportRoutes } from './security.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerForumRoutes } from './forum.ts';
+import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
 import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
 import * as google from './google.ts';
@@ -2712,8 +2713,9 @@ api.post('/dms', (req, res) => {
   if (!get('SELECT 1 FROM users WHERE id = ?', other)) fail(404, 'Usuário não encontrado');
   const [a, b] = me < other ? [me, other] : [other, me];
   let dm = get<DmChannelRow>('SELECT * FROM dm_channels WHERE user_a = ? AND user_b = ?', a, b);
+  if (blockedBetween(me, other)) fail(403, 'Não é possível conversar com essa pessoa.');
   if (!dm) {
-    if (!sharesServer(me, other)) fail(403, 'Vocês precisam estar em algum servidor em comum');
+    if (!sharesServer(me, other) && !areFriends(me, other)) fail(403, 'Vocês precisam ser amigos ou estar em algum servidor em comum');
     dm = { id: randomUUID(), user_a: a, user_b: b, created_at: now(), last_message_at: now() };
     run('INSERT INTO dm_channels (id, user_a, user_b, created_at, last_message_at) VALUES (?, ?, ?, ?, ?)', dm.id, a, b, dm.created_at, dm.last_message_at);
   }
@@ -2737,6 +2739,7 @@ function insertDmMessage(
   files: AttachmentRow[] = [],
   replyTo: string | null = null,
 ) {
+  if (blockedBetween(me, otherOf(dm, me))) fail(403, 'Não é possível mandar mensagens para essa pessoa.');
   const id = randomUUID();
   const at = now();
   run(
@@ -2978,6 +2981,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 // ============================================================ Fórum
 
 registerForumRoutes(api, authorJson);
+registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);
 registerSupportRoutes(api);
 registerDiagnosticRoutes(api);
@@ -2995,9 +2999,10 @@ registerIntegrationRoutes(api, {
 
 // ============================================================ Página do perfil
 
-/** Dá para ver o perfil completo de alguém: o próprio, quem divide servidor ou tem conversa privada com a pessoa. */
+/** Dá para ver o perfil completo de alguém: o próprio, quem divide servidor, tem conversa privada ou relação (amigo, pedido) com a pessoa. */
 function canSeeProfile(me: string, userId: string): boolean {
   if (me === userId) return true;
+  if (relationOf(me, userId)) return true;
   if (get('SELECT 1 FROM members a JOIN members b ON a.server_id = b.server_id WHERE a.user_id = ? AND b.user_id = ? LIMIT 1', me, userId)) return true;
   return !!get('SELECT 1 FROM dm_channels WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?)', me, userId, userId, me);
 }
@@ -3016,6 +3021,9 @@ api.get('/users/:id/profile', (req, res) => {
     page: pageJson(parseStyle(u!.profile_style).page),
     steamLinked: !!u!.steam_id && integrationsStatus().steam,
     mutualServers: me === u!.id ? [] : mutual.map(serverJson),
+    // como eu vejo a pessoa: amigo, pedido mandado/recebido, bloqueado (null = nada)
+    relationship: me === u!.id ? null : relationOf(me, u!.id),
+    mutualFriends: me === u!.id ? [] : mutualFriends(me, u!.id).map(userJson),
   });
 });
 

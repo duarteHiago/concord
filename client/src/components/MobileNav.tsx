@@ -1,5 +1,6 @@
 import { Gamepad2, MessageCircle, Server, Settings, ArrowLeft } from 'lucide-react';
 import { deckAvailable, openDeck } from './Deck';
+import { usePendingCount } from '../lib/friends';
 import { useMobile } from '../lib/mobile';
 import { HOME, useApp } from '../store/app';
 import { cx } from './ui';
@@ -25,7 +26,9 @@ export function MobileBottomNav() {
   const openServer = useApp((s) => s.openServer);
   const openSettings = useApp((s) => s.openSettings);
   const setMobileView = useApp((s) => s.setMobileView);
-  const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0));
+  // mensagens não lidas + pedidos de amizade esperando resposta (igual ao ícone da fileira de servidores)
+  const pending = usePendingCount();
+  const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0)) + pending;
 
   if (!mobile) return null;
 

@@ -5,7 +5,7 @@ import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { applyTheme, DEFAULT_THEME, normalizeTheme } from '../lib/theme';
-import { receiveDirectMessage, receiveMention, type MentionEvent } from '../lib/mentions';
+import { receiveDirectMessage, receiveFriendRequest, receiveMention, type MentionEvent } from '../lib/mentions';
 import { directorShake, receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
 import { installShortcuts, syncGlobalShortcuts } from '../lib/shortcuts';
@@ -19,10 +19,12 @@ import type {
   Message,
   NudgeEvent,
   Presence,
+  Relationship,
   ServerDetail,
   ServerSummary,
   Sound,
   ThemeSettings,
+  User,
   UserSettings,
   VoiceState,
 } from '../lib/types';
@@ -104,6 +106,11 @@ interface AppState {
   /** link de "esqueci minha senha" aberto do e-mail: a tela pede a senha nova */
   emailReset: string | null;
   emailResetSubmit: (newPassword: string) => Promise<void>;
+  /** amigos, pedidos e bloqueados (null = ainda não carregou) */
+  relationships: Relationship[] | null;
+  loadRelationships: () => Promise<void>;
+  /** tela de Amigos (a "casa" das Mensagens, sem conversa aberta) */
+  openFriends: () => void;
   /** mensagem sendo respondida em cada canal/conversa (a faixa em cima do campo de texto) */
   replying: Record<string, Message>;
   setReplying: (conversationId: string, message: Message | null) => void;
@@ -223,7 +230,10 @@ export const useApp = create<AppState>((set, get) => {
 
     socket.on('connect', () => {
       // conta antiga sem e-mail: o servidor só libera o resto depois do e-mail (ver EmailGateScreen)
-      if (!needsEmail(get().me)) void get().loadServers();
+      if (!needsEmail(get().me)) {
+        void get().loadServers();
+        void get().loadRelationships();
+      }
       useVoice.getState().resync();
       // contrato de Mecenato: a renovação do contrato antigo aparece logo ao entrar (ver Mecenato.tsx)
       void useContracts.getState().load();
@@ -357,6 +367,9 @@ export const useApp = create<AppState>((set, get) => {
       dropReplying(message.channelId, message.id);
       upsertDm(dm);
     });
+    socket.on('relationships:changed', () => void get().loadRelationships());
+    socket.on('friend:request', ({ from }: { from: User }) => receiveFriendRequest(from));
+    socket.on('friend:accepted', ({ user }: { user: User }) => toast.success(`${user.displayName} aceitou seu pedido de amizade.`));
     socket.on('typing', ({ channelId, userId }: { channelId: string; userId: string }) => {
       if (userId === get().me?.id) return;
       set({ typing: { ...get().typing, [channelId]: { ...get().typing[channelId], [userId]: Date.now() + 6000 } } });
@@ -397,6 +410,19 @@ export const useApp = create<AppState>((set, get) => {
     emailReset: null,
     mfaTicket: null,
     replying: {},
+    relationships: null,
+    loadRelationships: async () => {
+      try {
+        set({ relationships: await api.get<Relationship[]>('/friends') });
+      } catch {
+        // sem rede agora: a lista atualiza na próxima reconexão
+      }
+    },
+    openFriends: () => {
+      set({ activeServerId: HOME, activeDmId: null, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' });
+      saveLast(HOME, get().activeChannels);
+      void get().loadDms();
+    },
     setReplying: (conversationId, message) => {
       const { [conversationId]: _old, ...rest } = get().replying;
       set({ replying: message ? { ...rest, [conversationId]: message } : rest });
@@ -555,7 +581,7 @@ export const useApp = create<AppState>((set, get) => {
       disconnectSocket();
       setToken(null);
       applyTheme(DEFAULT_THEME);
-      set({ me: null, servers: [], details: {}, activeServerId: null, messages: {}, voiceStates: {}, modal: null, mfaTicket: null });
+      set({ me: null, servers: [], details: {}, activeServerId: null, messages: {}, voiceStates: {}, modal: null, mfaTicket: null, relationships: null });
     },
 
     setMe: (me) => set({ me }),

@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
 import { useUnseenReleases } from '../releases';
 import { HOME, useApp } from '../store/app';
+import { usePendingCount } from '../lib/friends';
 import { useVoice } from '../store/voice';
 import { useCommunity, usePendingCommunity } from '../store/community';
 import { DragGhost, DrawerLine, pinnedServers, RAIL_MAX, ServerDrawerPanel, useServerDrag } from './ServerDrawer';
@@ -16,7 +17,9 @@ export function ServerStrip() {
   const openServer = useApp((s) => s.openServer);
   const openModal = useApp((s) => s.openModal);
   const voiceServer = useVoice((s) => s.serverId);
-  const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0));
+  // mensagens não lidas + pedidos de amizade esperando resposta
+  const pending = usePendingCount();
+  const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0)) + pending;
   const releasesOpen = useApp((s) => s.releasesOpen);
   const openReleases = useApp((s) => s.openReleases);
   const closeReleases = useApp((s) => s.closeReleases);
