@@ -1,6 +1,6 @@
 // Login com Google. No navegador é um redirecionamento normal. No app desktop o Google não deixa
-// entrar dentro do Electron, então o login abre no navegador padrão e o app busca o resultado
-// por um código de uso único (handoff).
+// entrar dentro do Electron, então o login abre no navegador padrão e volta para um endereço local do
+// próprio app (ver desktop/main.cjs), que troca o código pelo resultado com um segredo só dele.
 import { Check, Link2, Unlink } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
@@ -26,42 +26,38 @@ export function useGoogleEnabled() {
 
 type HandoffResult = { token: string } | { mfa: string } | { signup: string } | { linked: true } | { error: string };
 
-const newHandoffId = () => {
-  const b = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-
-/** Abre o login no navegador padrão e espera o resultado (até 10 min). */
+/** Abre o login no navegador padrão e espera ele voltar para o app (até 10 min). */
 function useDesktopHandoff(onResult: (r: HandoffResult) => void) {
   const [waiting, setWaiting] = useState(false);
-  const timer = useRef<number | null>(null);
-  const stop = () => {
-    if (timer.current) window.clearInterval(timer.current);
-    timer.current = null;
+  const alive = useRef(true);
+  const cancel = () => {
+    void desktop?.googleAuthCancel?.();
     setWaiting(false);
   };
-  useEffect(() => stop, []);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      void desktop?.googleAuthCancel?.();
+    };
+  }, []);
 
-  function start(extra = '') {
-    const id = newHandoffId();
-    // links externos (http/https) abrem no navegador padrão pelo app desktop
-    window.open(`${location.origin}/api/auth/google/start?handoff=${id}${extra}`, '_blank');
+  async function start(link?: string) {
+    if (!desktop?.googleAuth) {
+      onResult({ error: 'Atualize o app do Concord para entrar com o Google: feche e abra o app de novo, ou baixe a versão nova no site.' });
+      return;
+    }
     setWaiting(true);
-    const until = Date.now() + 10 * 60_000;
-    timer.current = window.setInterval(async () => {
-      if (Date.now() > until) return stop();
-      try {
-        const r = await api.get<HandoffResult | undefined>(`/auth/handoff/${id}`);
-        if (r) {
-          stop();
-          onResult(r);
-        }
-      } catch {
-        // ainda não chegou (ou rede oscilou): tenta de novo
-      }
-    }, 2000);
+    try {
+      const back = await desktop.googleAuth(link);
+      if (back && alive.current) onResult(await api.post<HandoffResult>('/auth/handoff', back));
+    } catch (err) {
+      if (alive.current) onResult({ error: (err as Error).message });
+    } finally {
+      if (alive.current) setWaiting(false);
+    }
   }
-  return { waiting, start, cancel: stop };
+  return { waiting, start, cancel };
 }
 
 function GoogleLogo() {
@@ -105,7 +101,7 @@ export function GoogleButton() {
           type="button"
           onClick={() => {
             setError('');
-            if (desktop) start();
+            if (desktop) void start();
             else location.href = '/api/auth/google/start';
           }}
           className="flex h-11 w-full items-center justify-center gap-3 rounded-full bg-white font-display text-sm font-bold text-[#1f1f1f] transition-colors hover:bg-[#f1f1f1]"
@@ -252,7 +248,7 @@ export function GoogleAccountSection() {
   async function connect() {
     try {
       const { ticket } = await api.post<{ ticket: string }>('/me/google/link-ticket');
-      if (desktop) start(`&link=${encodeURIComponent(ticket)}`);
+      if (desktop) void start(ticket);
       else location.href = `/api/auth/google/start?link=${encodeURIComponent(ticket)}`;
     } catch (err) {
       toast.error(err);

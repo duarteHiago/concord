@@ -13,25 +13,38 @@ export const redirectUri = () => `${config.publicUrl}/api/auth/google/callback`;
 
 export type GoogleMode = 'login' | 'link';
 
+/**
+ * App desktop: o Google não deixa entrar dentro do Electron, então o login abre no navegador padrão e o
+ * resultado volta para um servidorzinho do próprio app em http://127.0.0.1:<port> (RFC 8252). O endereço
+ * local só existe no computador de quem fez o login: quem mandar o link para outra pessoa não recebe nada.
+ * O código entregue ali só é trocado pelo resultado com o `verifier` que o app guardou (challenge = sha256).
+ */
+export interface DesktopReturn {
+  port: number;
+  challenge: string;
+}
+
 interface Pending {
   verifier: string;
   mode: GoogleMode;
   userId?: string; // conectar conta (mode = link)
-  handoff?: string; // app desktop: o login volta por aqui
+  desktop?: DesktopReturn;
   at: number;
 }
 
 /** Guardados em memória: valem 10 minutos e são de uso único. */
 const states = new Map<string, Pending>();
-const signups = new Map<string, { sub: string; handoff?: string; at: number }>();
-const handoffs = new Map<string, { result: HandoffResult; at: number }>();
+const signups = new Map<string, { sub: string; desktop?: DesktopReturn; at: number }>();
+const handoffs = new Map<string, { result: HandoffResult; challenge: string; at: number }>();
 const linkTickets = new Map<string, { userId: string; at: number }>();
+/** conectar o Google: espera a pessoa confirmar, na página, para qual conta do Concord vai */
+const linkConfirms = new Map<string, { sub: string; userId: string; desktop?: DesktopReturn; at: number }>();
 
 export type HandoffResult = { token: string } | { mfa: string } | { signup: string } | { linked: true } | { error: string };
 
 function sweep() {
   const old = Date.now() - TTL;
-  for (const m of [states, signups, handoffs, linkTickets] as Map<string, { at: number }>[]) {
+  for (const m of [states, signups, handoffs, linkTickets, linkConfirms] as Map<string, { at: number }>[]) {
     for (const [k, v] of m) if (v.at < old) m.delete(k);
   }
 }
@@ -44,10 +57,18 @@ const take = <T extends { at: number }>(m: Map<string, T>, k: string): T | null 
   return v && v.at > Date.now() - TTL ? v : null;
 };
 
-export const isHandoffId = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{32,64}$/.test(s);
+const sha256 = (s: string) => createHash('sha256').update(s).digest('base64url');
+
+/** A volta para o app desktop pedida no início do login (porta local e o hash do segredo do app). */
+export function desktopReturn(port: unknown, challenge: unknown): DesktopReturn | undefined {
+  const p = Number(port);
+  if (!Number.isInteger(p) || p < 1024 || p > 65535) return undefined;
+  if (typeof challenge !== 'string' || !/^[\w-]{43}$/.test(challenge)) return undefined;
+  return { port: p, challenge };
+}
 
 /** Começa o login: devolve o endereço do Google para onde o navegador vai. */
-export function startUrl(opts: { mode: GoogleMode; userId?: string; handoff?: string }) {
+export function startUrl(opts: { mode: GoogleMode; userId?: string; desktop?: DesktopReturn }) {
   const state = rand();
   const verifier = rand(48);
   states.set(state, { verifier, ...opts, at: Date.now() });
@@ -102,9 +123,9 @@ export async function finish(state: string, code: string): Promise<{ sub: string
 }
 
 /** Conta Google nova: a pessoa ainda escolhe o nome de usuário (ticket de 10 minutos). */
-export function newSignup(sub: string, handoff?: string) {
+export function newSignup(sub: string, desktop?: DesktopReturn) {
   const ticket = rand();
-  signups.set(ticket, { sub, handoff, at: Date.now() });
+  signups.set(ticket, { sub, desktop, at: Date.now() });
   return ticket;
 }
 export const takeSignup = (ticket: string) => take(signups, ticket);
@@ -113,9 +134,27 @@ export const peekSignup = (ticket: string) => {
   return v && v.at > Date.now() - TTL ? v : null;
 };
 
-/** App desktop: o resultado fica esperando o app buscar (uma vez). */
-export const putHandoff = (id: string, result: HandoffResult) => handoffs.set(id, { result, at: Date.now() });
-export const takeHandoff = (id: string) => take(handoffs, id)?.result ?? null;
+/** App desktop: guarda o resultado e devolve o endereço local do app, com o código de uso único. */
+export function desktopRedirect(desktop: DesktopReturn, result: HandoffResult) {
+  const code = rand();
+  handoffs.set(code, { result, challenge: desktop.challenge, at: Date.now() });
+  return `http://127.0.0.1:${desktop.port}/google?code=${code}`;
+}
+
+/** O app troca o código pelo resultado, provando que é ele com o segredo do início (uma vez só). */
+export function takeHandoff(code: unknown, verifier: unknown): HandoffResult | null {
+  if (typeof code !== 'string' || typeof verifier !== 'string') return null;
+  const h = take(handoffs, code);
+  return h && sha256(verifier) === h.challenge ? h.result : null;
+}
+
+/** Conectar o Google: guarda o pedido até a pessoa confirmar a conta na página (uso único). */
+export function newLinkConfirm(sub: string, userId: string, desktop?: DesktopReturn) {
+  const nonce = rand();
+  linkConfirms.set(nonce, { sub, userId, desktop, at: Date.now() });
+  return nonce;
+}
+export const takeLinkConfirm = (nonce: unknown) => (typeof nonce === 'string' ? take(linkConfirms, nonce) : null);
 
 /** Conectar Google a uma conta já logada: o navegador não manda o token, então vai um ticket de uso único. */
 export function newLinkTicket(userId: string) {

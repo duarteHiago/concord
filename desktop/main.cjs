@@ -3,7 +3,9 @@
 // seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
 const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, screen, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -385,6 +387,65 @@ handle('concord:set-server', async (_e, url) => {
 });
 
 handle('concord:reload', () => void win?.loadURL(config.server));
+
+// ------------------------------------------------------------------ login com Google
+//
+// O Google não deixa entrar dentro do Electron: o login abre no navegador padrão e o resultado volta para um
+// servidorzinho do app em 127.0.0.1, numa porta sorteada (RFC 8252). Esse endereço só existe neste computador,
+// e o código que chega nele só vira login com o segredo (verifier) que fica aqui: um link de login mandado por
+// outra pessoa não entrega nada a ela.
+
+const GOOGLE_DONE_HTML = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Concord</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140f19;color:#f3ecf7;font-family:system-ui,sans-serif;text-align:center}
+.c{max-width:420px;padding:32px}h1{font-size:24px;margin:0 0 8px}p{color:#b3a6c2;line-height:1.5}</style></head>
+<body><div class="c"><h1>Pronto!</h1><p>Pode fechar esta aba e voltar para o app do Concord.</p></div></body></html>`;
+
+let googleAuth = null; // { cancel } do login em andamento
+
+handle('concord:google-auth', (_e, link) => {
+  googleAuth?.cancel();
+  return new Promise((resolve, reject) => {
+    const verifier = crypto.randomBytes(32).toString('base64url');
+    const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      server.close();
+      if (googleAuth?.server === server) googleAuth = null;
+      resolve(value);
+    };
+    const server = http.createServer((req, res) => {
+      const code = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('code');
+      if (!req.url?.startsWith('/google?') || !code) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(GOOGLE_DONE_HTML);
+      finish({ code, verifier });
+      if (win) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+    });
+    const timer = setTimeout(() => finish(null), 10 * 60_000);
+    server.on('error', (err) => {
+      clearTimeout(timer);
+      if (googleAuth?.server === server) googleAuth = null;
+      reject(err);
+    });
+    googleAuth = { server, cancel: () => finish(null) };
+    server.listen(0, '127.0.0.1', () => {
+      const q = new URLSearchParams({ desktop: String(server.address().port), challenge });
+      if (typeof link === 'string' && link) q.set('link', link);
+      void shell.openExternal(`${serverOrigin()}/api/auth/google/start?${q}`);
+    });
+  });
+});
+
+handle('concord:google-auth-cancel', () => googleAuth?.cancel());
 
 // ------------------------------------------------------------------ atividade ("Jogando…", "Ouvindo…")
 //

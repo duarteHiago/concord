@@ -4,7 +4,7 @@
 //
 // As respostas ficam 10 min em memória, para visitar um perfil não virar uma chamada lá fora toda vez.
 import { randomBytes } from 'node:crypto';
-import type { Router } from 'express';
+import express, { type Router } from 'express';
 import { config } from './config.ts';
 import { get, run, type UserRow } from './db.ts';
 import { fail, uid } from './http.ts';
@@ -37,17 +37,22 @@ const STEAM_OPENID = 'https://steamcommunity.com/openid/login';
 const STEAM_ID = /^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/;
 /** pedidos de conexão em andamento: state -> quem pediu (vale 10 min) */
 const steamStates = new Map<string, { userId: string; at: number }>();
+/** conta da Steam já confirmada pela Steam, esperando a pessoa confirmar para qual conta do Concord vai */
+const steamConfirms = new Map<string, { steamId: string; userId: string; at: number }>();
+
+const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 function steamCallbackUrl() {
   return `${config.publicUrl}/api/steam/callback`;
 }
 
-function page(ok: boolean, message: string) {
-  const color = ok ? '#22c55e' : '#e5484d';
+function page(ok: boolean | null, message: string, title = ok ? 'Steam conectada!' : 'Não deu certo') {
+  const color = ok === null ? '#f3ecf7' : ok ? '#22c55e' : '#e5484d';
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Concord</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140f19;color:#f3ecf7;font-family:system-ui,sans-serif;text-align:center}
-.c{max-width:420px;padding:32px}h1{font-size:24px;margin:16px 0 8px;color:${color}}p{color:#b3a6c2;line-height:1.5}</style></head>
-<body><div class="c"><h1>${ok ? 'Steam conectada!' : 'Não deu certo'}</h1><p>${message}</p></div></body></html>`;
+.c{max-width:420px;padding:32px}h1{font-size:24px;margin:16px 0 8px;color:${color}}p{color:#b3a6c2;line-height:1.5}b{color:#f3ecf7}
+button{margin-top:8px;padding:12px 22px;border:0;border-radius:999px;background:#ff8a6b;color:#140f19;font:700 15px system-ui,sans-serif;cursor:pointer}</style></head>
+<body><div class="c"><h1>${title}</h1>${message}</div></body></html>`;
 }
 
 export interface SteamGame {
@@ -86,7 +91,7 @@ export function registerPublicIntegrationRoutes(api: Router, hooks: { meUpdated:
     const q = req.query as Record<string, string>;
     const state = steamStates.get(String(q.state ?? ''));
     steamStates.delete(String(q.state ?? ''));
-    const send = (ok: boolean, msg: string) => res.status(ok ? 200 : 400).type('html').send(page(ok, msg));
+    const send = (ok: boolean, msg: string) => res.status(ok ? 200 : 400).type('html').send(page(ok, `<p>${msg}</p>`));
     if (!state || Date.now() - state.at > 10 * 60_000) return send(false, 'O pedido para conectar a Steam expirou. Volte ao Concord e tente de novo.');
     // só aceita a volta que a gente mesmo pediu, para o nosso endereço
     if (q['openid.mode'] !== 'id_res' || !String(q['openid.return_to'] ?? '').startsWith(steamCallbackUrl())) {
@@ -106,10 +111,34 @@ export function registerPublicIntegrationRoutes(api: Router, hooks: { meUpdated:
       return send(false, 'A Steam não respondeu agora. Tente de novo daqui a pouco.');
     }
     if (!valid) return send(false, 'A Steam não confirmou a conta. Tente de novo pelo Concord.');
-    run('UPDATE users SET steam_id = NULL WHERE steam_id = ? AND id != ?', steamId, state.userId); // uma conta da Steam, um perfil
-    run('UPDATE users SET steam_id = ? WHERE id = ?', steamId, state.userId);
-    hooks.meUpdated(state.userId);
-    send(true, 'Pode fechar esta aba e voltar ao Concord: sua biblioteca já aparece no seu perfil.');
+    // a pessoa vê para qual conta do Concord a Steam vai antes de ligar: sem isso, alguém mandaria o próprio
+    // link de conexão para outra pessoa e a Steam dela iria parar no perfil dele
+    const target = get<UserRow>('SELECT username, display_name FROM users WHERE id = ?', state.userId);
+    if (!target) return send(false, 'Conta não encontrada.');
+    const nonce = randomBytes(18).toString('base64url');
+    steamConfirms.set(nonce, { steamId, userId: state.userId, at: Date.now() });
+    res.type('html').send(
+      page(
+        null,
+        `<p>Sua conta da Steam vai aparecer no perfil do Concord <b>@${escapeHtml(target.username)}</b> (${escapeHtml(target.display_name)}).</p>
+<p>Se não foi você que pediu isso no Concord, feche esta página.</p>
+<form method="post" action="/api/steam/confirm"><input type="hidden" name="nonce" value="${nonce}"><button type="submit">Conectar a @${escapeHtml(target.username)}</button></form>`,
+        'Conectar a Steam',
+      ),
+    );
+  });
+
+  api.post('/steam/confirm', express.urlencoded({ extended: false, limit: '2kb' }), (req, res) => {
+    const nonce = typeof req.body?.nonce === 'string' ? req.body.nonce : '';
+    const c = steamConfirms.get(nonce);
+    steamConfirms.delete(nonce);
+    if (!c || Date.now() - c.at > 10 * 60_000) {
+      return res.status(400).type('html').send(page(false, '<p>O pedido para conectar a Steam expirou. Volte ao Concord e tente de novo.</p>'));
+    }
+    run('UPDATE users SET steam_id = NULL WHERE steam_id = ? AND id != ?', c.steamId, c.userId); // uma conta da Steam, um perfil
+    run('UPDATE users SET steam_id = ? WHERE id = ?', c.steamId, c.userId);
+    hooks.meUpdated(c.userId);
+    res.type('html').send(page(true, '<p>Pode fechar esta aba e voltar ao Concord: sua biblioteca já aparece no seu perfil.</p>'));
   });
 }
 
@@ -118,7 +147,7 @@ export function registerIntegrationRoutes(api: Router, hooks: { meUpdated: (user
   api.post('/me/steam/link', (_req, res) => {
     if (!integrationsStatus().steam) fail(503, 'A integração com a Steam não está configurada neste servidor.');
     const state = randomBytes(18).toString('base64url');
-    for (const [k, v] of steamStates) if (Date.now() - v.at > 10 * 60_000) steamStates.delete(k);
+    for (const m of [steamStates, steamConfirms] as Map<string, { at: number }>[]) for (const [k, v] of m) if (Date.now() - v.at > 10 * 60_000) m.delete(k);
     steamStates.set(state, { userId: uid(res), at: Date.now() });
     const returnTo = `${steamCallbackUrl()}?state=${state}`;
     const params = new URLSearchParams({

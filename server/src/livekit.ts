@@ -34,7 +34,9 @@ export async function createVoiceToken(o: TokenOptions): Promise<string> {
     identity: o.identity,
     name: o.name,
     metadata: o.metadata,
-    ttl: '6h',
+    // só serve para entrar: depois o LiveKit renova sozinho para quem já está na sala. Curto para que um token
+    // guardado não sirva de porta de volta para quem foi expulso ou perdeu a permissão da sala.
+    ttl: '10m',
   });
   at.addGrant({ room: o.roomName, roomJoin: true, ...voicePermission(o) });
   return at.toJwt();
@@ -67,6 +69,18 @@ export async function muteTracks(roomName: string, identity: string, sourcesToMu
   } catch {
     // ignorado
   }
+}
+
+/** Pessoas (não gravações nem agentes) em cada sala do LiveKit agora. */
+export async function voiceParticipants(): Promise<{ room: string; identity: string }[]> {
+  const out: { room: string; identity: string }[] = [];
+  for (const room of await rooms.listRooms()) {
+    if (!room.numParticipants) continue;
+    for (const p of await rooms.listParticipants(room.name)) {
+      if (p.kind === 0) out.push({ room: room.name, identity: p.identity }); // 0 = STANDARD (gente, pelo app)
+    }
+  }
+  return out;
 }
 
 export { TrackSource };

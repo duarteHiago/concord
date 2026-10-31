@@ -214,4 +214,27 @@ describe('cargos e moderação', () => {
     const roles = (await owner.get<{ members: { id: string; roleIds: string[] }[] }>(`/servers/${serverId}`)).body.members.find((m) => m.id === member.id)!.roleIds;
     assert.ok(!roles.includes(admin.id), 'o cargo Admin não pode ter sido dado');
   });
+
+  it('nas permissões do canal, ninguém dá o que não tem nem mexe em cargo acima do seu', async () => {
+    const { owner, serverId, geral, member, modRole, detail } = await withModerator();
+    const everyone = detail.roles.find((r) => r.isDefault)!;
+    const manager = await owner.post(`/servers/${serverId}/roles`, { name: 'Gerente' });
+    await owner.patch(`/roles/${manager.body.id}`, { permissions: P.MANAGE_ROLES | P.MANAGE_CHANNELS | P.VIEW_CHANNEL | P.SEND_MESSAGES });
+    await owner.put(`/servers/${serverId}/members/${member.id}/roles`, { roleIds: [manager.body.id] });
+    // "Gerenciar mensagens" ele não tem: não dá para ninguém no canal (nem para o @everyone, onde ele está)
+    assert.equal((await member.put(`/channels/${geral}/overwrites/${everyone.id}`, { allow: P.MANAGE_MESSAGES, deny: 0 })).status, 403);
+    // o Moderador está acima dele: não tranca a moderação fora do canal
+    assert.equal((await member.put(`/channels/${geral}/overwrites/${modRole.id}`, { allow: 0, deny: P.VIEW_CHANNEL })).status, 403);
+    // o que ele tem, ele ajusta
+    assert.equal((await member.put(`/channels/${geral}/overwrites/${everyone.id}`, { allow: 0, deny: P.SEND_MESSAGES })).status, 200);
+  });
+});
+
+describe('login com Google pelo app desktop', () => {
+  it('o resultado só sai com o código que chegou no app e o segredo dele', async () => {
+    const c = new Client(server.url);
+    assert.equal((await c.post('/auth/handoff', { code: 'inventado', verifier: 'qualquer' })).status, 400);
+    // o jeito antigo (consultar por um código que qualquer um inventa) não existe mais
+    assert.notEqual((await c.get('/auth/handoff/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).status, 200);
+  });
 });

@@ -45,7 +45,7 @@ import {
 import { HttpError, color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } from './uploads.ts';
-import { allowAttempt, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
+import { allowAttempt, clientIp, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
 import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendVerifyEmail } from './mail.ts';
 import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
@@ -414,6 +414,18 @@ api.post('/auth/email/verify', (req, res) => {
   res.json({ email: row.email });
 });
 
+/** Nome da equipe (ADMIN_USERS) que ainda não tem conta: quem o criasse primeiro entraria no portal /admin. */
+function requireUnreservedName(username: string) {
+  if (config.adminUsers.has(username.toLowerCase())) fail(409, 'Esse nome de usuário está reservado');
+}
+
+// cadastro por rede: segura quem cria contas em massa (cada uma também custa um bcrypt)
+const registersPerIp = limiter(5, 60 * 60_000);
+const registerAllowed = (req: express.Request) => {
+  const ip = clientIp(req);
+  return !ip || registersPerIp(ip);
+};
+
 api.post('/auth/register', async (req, res) => {
   if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
   const username = str(req.body?.username, 'usuário', 3, 32);
@@ -422,6 +434,8 @@ api.post('/auth/register', async (req, res) => {
   // nome de exibição é opcional no cadastro: vazio vira o próprio usuário
   const displayName = optStr(req.body?.displayName?.trim?.() || undefined, 'nome', 1, 32) || username;
   if (get('SELECT 1 FROM users WHERE username = ?', username)) fail(409, 'Esse nome de usuário já está em uso');
+  requireUnreservedName(username);
+  if (!registerAllowed(req)) fail(429, 'Muitas contas criadas desta rede agora há pouco. Tente de novo mais tarde.');
 
   const user: UserRow = {
     id: randomUUID(),
@@ -460,7 +474,7 @@ api.post('/auth/reset', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
   const code = str(req.body?.code, 'código de recuperação', 8, 40);
   const password = str(req.body?.newPassword, 'nova senha', 6, 128);
-  if (!allowAttempt(username)) fail(429, 'Muitas tentativas. Espere 15 minutos e tente de novo.');
+  if (!allowAttempt(username, clientIp(req))) fail(429, 'Muitas tentativas. Espere 15 minutos e tente de novo.');
   const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
   const ok = !!user?.recovery_hash && (await bcrypt.compare(normalizeCode(code), user.recovery_hash));
   if (!ok) fail(400, 'Usuário ou código de recuperação incorretos');
@@ -473,20 +487,20 @@ api.post('/auth/reset', async (req, res) => {
 });
 
 /** Confere usuário e senha (com limite de tentativas). Usado no login e ao conectar o Google a uma conta. */
-async function checkPassword(username: string, password: string): Promise<UserRow> {
-  const wait = loginWaitMinutes(username);
-  if (wait) fail(429, `Muitas senhas erradas para esse usuário. Espere ${wait} min e tente de novo, ou use "Esqueci minha senha".`);
+async function checkPassword(username: string, password: string, ip: string): Promise<UserRow> {
+  const wait = loginWaitMinutes(username, ip);
+  if (wait) fail(429, `Muitas senhas erradas. Espere ${wait} min e tente de novo, ou use "Esqueci minha senha".`);
   const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
   // conta criada pelo Google não tem senha (password_hash vazio): não é chute, então não conta tentativa
   if (user && !user.password_hash) {
     fail(401, 'Essa conta foi criada pelo Google e não tem senha. Use "Entrar com Google" (dá para criar uma senha depois, em Configurações > Conta).');
   }
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-    const left = recordLoginFailure(username);
+    const left = recordLoginFailure(username, ip);
     fail(
       401,
       left === 0
-        ? 'Usuário ou senha incorretos. Por segurança, esse usuário ficou bloqueado por 15 min: use "Esqueci minha senha" se precisar.'
+        ? 'Usuário ou senha incorretos. Por segurança, o login dessa conta ficou bloqueado aqui por 15 min: use "Esqueci minha senha" se precisar.'
         : left <= 2
           ? `Usuário ou senha incorretos. Mais ${left} tentativa(s) erradas e o login fica bloqueado por 15 min.`
           : 'Usuário ou senha incorretos.',
@@ -498,7 +512,7 @@ async function checkPassword(username: string, password: string): Promise<UserRo
 api.post('/auth/login', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
   const password = str(req.body?.password, 'senha', 1, 128);
-  const user = await checkPassword(username, password);
+  const user = await checkPassword(username, password, clientIp(req));
   sendLogin(res, user);
 });
 
@@ -531,83 +545,112 @@ api.get('/invites/:code', (req, res) => {
 
 const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-/** Página que o navegador mostra quando o login foi pedido pelo app desktop (o resultado vai para o app). */
-function handoffPage(ok: boolean, message: string) {
+/** Página simples do login com Google (no visual do app), para quando o navegador precisa mostrar algo. */
+function authPage(title: string, body: string) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Concord</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140f19;color:#f3ecf7;font-family:system-ui,sans-serif;text-align:center}
-.c{max-width:420px;padding:32px}img{width:84px;height:84px}h1{font-size:24px;margin:16px 0 8px}p{color:#b3a6c2;line-height:1.5}</style></head>
-<body><div class="c"><img src="/brand/concord-simbolo.svg" alt=""><h1>${ok ? 'Pronto!' : 'Não deu certo'}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
+.c{max-width:420px;padding:32px}img{width:84px;height:84px}h1{font-size:24px;margin:16px 0 8px}p{color:#b3a6c2;line-height:1.5}b{color:#f3ecf7}
+button,a.b{display:inline-block;margin:8px 4px 0;padding:12px 22px;border:0;border-radius:999px;font:700 15px system-ui,sans-serif;cursor:pointer;text-decoration:none}
+button{background:#ff8a6b;color:#140f19}a.b{background:#2b2234;color:#f3ecf7}</style></head>
+<body><div class="c"><img src="/brand/concord-simbolo.svg" alt=""><h1>${escapeHtml(title)}</h1>${body}</div></body></html>`;
+}
+
+/**
+ * Conectar o Google a uma conta: antes de ligar, a pessoa vê para qual conta do Concord vai. Sem isso,
+ * alguém mandaria o próprio link de conexão para outra pessoa e a conta Google dela iria parar na dele.
+ */
+function linkConfirmPage(target: UserRow, nonce: string) {
+  return authPage(
+    'Conectar o Google',
+    `<p>A conta Google que você escolheu vai entrar na conta do Concord <b>@${escapeHtml(target.username)}</b> (${escapeHtml(target.display_name)}).</p>
+<p>Se não foi você que pediu isso no Concord, feche esta página.</p>
+<form method="post" action="/api/auth/google/link-confirm"><input type="hidden" name="nonce" value="${escapeHtml(nonce)}">
+<button type="submit">Conectar a @${escapeHtml(target.username)}</button><a class="b" href="/">Cancelar</a></form>`,
+  );
+}
+
+/** Entrega o resultado do Google: no app desktop, para o endereço local do app; no navegador, pelo #. */
+function deliverGoogle(res: express.Response, result: google.HandoffResult, desktop?: google.DesktopReturn) {
+  if (desktop && !('signup' in result)) return res.redirect(google.desktopRedirect(desktop, result));
+  const hash =
+    'token' in result
+      ? `google-token=${result.token}`
+      : 'mfa' in result
+        ? `google-mfa=${result.mfa}`
+        : 'signup' in result
+          ? `google-signup=${result.signup}`
+          : 'linked' in result
+            ? 'google-linked=1'
+            : `google-error=${encodeURIComponent(result.error)}`;
+  // o token vai no fragmento (#): não é enviado a servidor nenhum nem aparece em logs
+  res.redirect(`/#${hash}`);
+}
+
+// rotas do login com Google: por rede, para ninguém ficar chutando códigos (são longos e de uso único, mas não custa)
+const googlePerIp = limiter(60, 10 * 60_000);
+function googleLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = clientIp(req);
+  if (ip && !googlePerIp(ip)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos e tente de novo.' });
+  next();
 }
 
 api.get('/auth/google/start', (req, res) => {
   if (!google.googleEnabled()) fail(404, 'Login com Google não está configurado neste servidor');
-  const handoff = google.isHandoffId(req.query.handoff) ? req.query.handoff : undefined;
+  const desktop = google.desktopReturn(req.query.desktop, req.query.challenge);
+  if (req.query.desktop !== undefined && !desktop) fail(400, 'Pedido inválido');
   let userId: string | undefined;
   if (typeof req.query.link === 'string') {
     userId = google.takeLinkTicket(req.query.link) ?? fail(400, 'O pedido para conectar a conta expirou. Tente de novo.');
   }
-  res.redirect(google.startUrl({ mode: userId ? 'link' : 'login', userId, handoff }));
+  res.redirect(google.startUrl({ mode: userId ? 'link' : 'login', userId, desktop }));
 });
 
-api.get('/auth/google/callback', async (req, res) => {
-  const deliver = (result: google.HandoffResult, handoff?: string) => {
-    if (handoff && !('signup' in result)) {
-      google.putHandoff(handoff, result);
-      const msg =
-        'error' in result
-          ? result.error
-          : 'linked' in result
-            ? 'Conta Google conectada. Pode voltar para o app do Concord.'
-            : 'mfa' in result
-              ? 'Falta o código de verificação: volte para o app do Concord e digite o código do seu app autenticador.'
-              : 'Você entrou. Pode voltar para o app do Concord.';
-      res.type('html').send(handoffPage(!('error' in result), msg));
-      return;
-    }
-    const hash =
-      'token' in result
-        ? `google-token=${result.token}`
-        : 'mfa' in result
-          ? `google-mfa=${result.mfa}`
-          : 'signup' in result
-            ? `google-signup=${result.signup}`
-            : 'linked' in result
-              ? 'google-linked=1'
-              : `google-error=${encodeURIComponent(result.error)}`;
-    // o token vai no fragmento (#): não é enviado a servidor nenhum nem aparece em logs
-    res.redirect(`/#${hash}`);
-  };
-  if (typeof req.query.error === 'string') return deliver({ error: 'Login com Google cancelado.' });
+api.get('/auth/google/callback', googleLimit, async (req, res) => {
+  if (typeof req.query.error === 'string') return deliverGoogle(res, { error: 'Login com Google cancelado.' });
   let sub: string;
   let pending: Awaited<ReturnType<typeof google.finish>>['pending'];
   try {
     ({ sub, pending } = await google.finish(String(req.query.state ?? ''), String(req.query.code ?? '')));
   } catch (err) {
-    return deliver({ error: (err as Error).message });
+    return deliverGoogle(res, { error: (err as Error).message });
   }
   const owner = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', sub);
   if (pending.mode === 'link') {
     if (owner && owner.id !== pending.userId) {
-      return deliver(
+      return deliverGoogle(
+        res,
         { error: `Essa conta Google já está ligada a outra conta do Concord (@${owner.username}). Cada conta Google só entra em uma conta do Concord.` },
-        pending.handoff,
+        pending.desktop,
       );
     }
-    run('UPDATE users SET google_sub = ? WHERE id = ?', sub, pending.userId!);
-    return deliver({ linked: true }, pending.handoff);
+    const target = get<UserRow>('SELECT * FROM users WHERE id = ?', pending.userId!);
+    if (!target) return deliverGoogle(res, { error: 'Conta não encontrada.' }, pending.desktop);
+    return res.type('html').send(linkConfirmPage(target, google.newLinkConfirm(sub, target.id, pending.desktop)));
   }
-  if (owner) return deliver(twoFactor.loginResult(owner), pending.handoff);
-  if (!config.allowRegistration) return deliver({ error: 'Cadastro desativado neste servidor.' }, pending.handoff);
-  deliver({ signup: google.newSignup(sub, pending.handoff) });
+  if (owner) return deliverGoogle(res, twoFactor.loginResult(owner), pending.desktop);
+  if (!config.allowRegistration) return deliverGoogle(res, { error: 'Cadastro desativado neste servidor.' }, pending.desktop);
+  deliverGoogle(res, { signup: google.newSignup(sub, pending.desktop) });
+});
+
+/** A pessoa confirmou, na página, a conta do Concord que recebe o Google. */
+api.post('/auth/google/link-confirm', googleLimit, express.urlencoded({ extended: false, limit: '2kb' }), (req, res) => {
+  const c = google.takeLinkConfirm(req.body?.nonce);
+  if (!c) return deliverGoogle(res, { error: 'O pedido para conectar a conta expirou. Tente de novo.' });
+  const owner = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', c.sub);
+  if (owner && owner.id !== c.userId) {
+    return deliverGoogle(res, { error: `Essa conta Google já está ligada a outra conta do Concord (@${owner.username}).` }, c.desktop);
+  }
+  run('UPDATE users SET google_sub = ? WHERE id = ?', c.sub, c.userId);
+  deliverGoogle(res, { linked: true }, c.desktop);
 });
 
 /** Conta Google nova: confere se o ticket ainda vale (a tela de escolher o nome usa). */
 api.get('/auth/google/signup/:ticket', (req, res) => {
   const t = google.peekSignup(req.params.ticket) ?? fail(404, 'Esse cadastro expirou. Entre com o Google de novo.');
-  res.json({ ok: true, desktop: !!t.handoff });
+  res.json({ ok: true, desktop: !!t.desktop });
 });
 
-api.post('/auth/google/signup', async (req, res) => {
+api.post('/auth/google/signup', googleLimit, async (req, res) => {
   if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
   const username = str(req.body?.username, 'usuário', 3, 32);
   if (!/^[a-zA-Z0-9_.]+$/.test(username)) fail(400, 'Usuário deve conter apenas letras, números, "_" e "."');
@@ -615,10 +658,12 @@ api.post('/auth/google/signup', async (req, res) => {
   if (get('SELECT 1 FROM users WHERE username = ?', username)) {
     fail(409, 'Esse nome de usuário já está em uso. Se essa conta é sua, use "Já tenho conta" para conectar o Google a ela.');
   }
+  requireUnreservedName(username);
   const ticket = google.takeSignup(String(req.body?.ticket ?? '')) ?? fail(400, 'Esse cadastro expirou. Entre com o Google de novo.');
   const existing = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', ticket.sub);
   const id = existing?.id ?? randomUUID();
   if (!existing) {
+    if (!registerAllowed(req)) fail(429, 'Muitas contas criadas desta rede agora há pouco. Tente de novo mais tarde.');
     run(
       "INSERT INTO users (id, username, display_name, password_hash, avatar_color, google_sub, created_at) VALUES (?, ?, ?, '', ?, ?, ?)",
       id,
@@ -632,10 +677,8 @@ api.post('/auth/google/signup', async (req, res) => {
   const recoveryCode = existing ? undefined : await rotateRecoveryCode(id);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', id)!;
   const result = twoFactor.loginResult(user);
-  if (ticket.handoff) {
-    google.putHandoff(ticket.handoff, result);
-    return res.json({ handoff: true });
-  }
+  // app desktop: o navegador segue para o endereço local do app, que termina de entrar
+  if (ticket.desktop) return res.json({ desktopRedirect: google.desktopRedirect(ticket.desktop, result) });
   res.json('mfa' in result ? result : { token: result.token, user: meJson(user), recoveryCode });
 });
 
@@ -643,13 +686,13 @@ api.post('/auth/google/signup', async (req, res) => {
  * Conta Google ainda sem dono, mas a pessoa já tem conta no Concord: entra com usuário e senha e o
  * Google fica conectado a essa conta (em vez de criar uma segunda conta vazia).
  */
-api.post('/auth/google/signup/link', async (req, res) => {
+api.post('/auth/google/signup/link', googleLimit, async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
   const password = str(req.body?.password, 'senha', 1, 128);
   const ticketId = String(req.body?.ticket ?? '');
   // só olha o ticket aqui: senha errada não deve obrigar a refazer o login no Google
   if (!google.peekSignup(ticketId)) fail(400, 'Esse cadastro expirou. Entre com o Google de novo.');
-  const user = await checkPassword(username, password);
+  const user = await checkPassword(username, password, clientIp(req));
   if (user.is_bot) fail(400, 'Bots não entram com o Google.');
   const ticket = google.takeSignup(ticketId) ?? fail(400, 'Esse cadastro expirou. Entre com o Google de novo.');
   const owner = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', ticket.sub);
@@ -659,18 +702,13 @@ api.post('/auth/google/signup/link', async (req, res) => {
   }
   run('UPDATE users SET google_sub = ? WHERE id = ?', ticket.sub, user.id);
   const linked = get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!;
-  if (ticket.handoff) {
-    google.putHandoff(ticket.handoff, twoFactor.loginResult(linked));
-    return res.json({ handoff: true });
-  }
+  if (ticket.desktop) return res.json({ desktopRedirect: google.desktopRedirect(ticket.desktop, twoFactor.loginResult(linked)) });
   sendLogin(res, linked);
 });
 
-/** App desktop: busca o resultado do login feito no navegador (uma vez só). */
-api.get('/auth/handoff/:id', (req, res) => {
-  if (!google.isHandoffId(req.params.id)) fail(400, 'Pedido inválido');
-  const result = google.takeHandoff(req.params.id);
-  if (!result) return res.status(204).end();
+/** App desktop: troca o código que chegou no endereço local do app pelo resultado do login (uma vez só). */
+api.post('/auth/handoff', googleLimit, (req, res) => {
+  const result = google.takeHandoff(req.body?.code, req.body?.verifier) ?? fail(400, 'Esse login expirou. Tente entrar com o Google de novo.');
   res.json(result);
 });
 
@@ -1212,8 +1250,10 @@ api.post('/servers/:id/leave', (req, res) => {
 });
 
 function removeMember(serverId: string, userId: string) {
-  const v = getVoiceState(userId);
-  if (v?.serverId === serverId) void removeFromRoom(v.channelId, userId);
+  // de todas as salas de voz do servidor, não só da que o app mostra: alguém pode estar no LiveKit sem aparecer
+  for (const { id } of all<{ id: string }>("SELECT id FROM channels WHERE server_id = ? AND type = 'voice'", serverId)) {
+    void removeFromRoom(id, userId);
+  }
   run('DELETE FROM members WHERE server_id = ? AND user_id = ?', serverId, userId);
   leaveServerRoom(userId, serverId);
   serverChanged(serverId);
@@ -1280,8 +1320,16 @@ api.put('/channels/:id/overwrites/:roleId', (req, res) => {
   const role = getRole(req.params.roleId);
   if (role.server_id !== channel.server_id) fail(400, 'Cargo inválido');
   if (!has(serverPermissions(channel.server_id, me), P.MANAGE_ROLES)) fail(403, 'Você precisa de "Gerenciar cargos"');
+  // as mesmas regras da edição de cargos: só em cargos abaixo do seu, e só com permissões que você tem neste canal
+  // (senão daria para se dar, num canal, o que o servidor não deu, ou trancar a moderação acima de você)
+  if (!role.is_default && role.position >= highestPosition(channel.server_id, me)) {
+    fail(403, 'Você só pode mudar as permissões de cargos abaixo do seu cargo mais alto');
+  }
   const allow = int(req.body?.allow ?? 0, 'allow') & ALL_PERMISSIONS & ~P.ADMINISTRATOR;
   const deny = int(req.body?.deny ?? 0, 'deny') & ALL_PERMISSIONS & ~P.ADMINISTRATOR & ~allow;
+  const old = get<{ allow: number; deny: number }>('SELECT allow, deny FROM channel_overwrites WHERE channel_id = ? AND role_id = ?', channel.id, role.id);
+  const changed = (allow ^ (old?.allow ?? 0)) | (deny ^ (old?.deny ?? 0));
+  if (changed & ~channelPermissions(channel, me)) fail(403, 'Você não pode conceder ou negar permissões que não tem neste canal');
   if (!allow && !deny) {
     run('DELETE FROM channel_overwrites WHERE channel_id = ? AND role_id = ?', channel.id, role.id);
   } else {
@@ -1629,7 +1677,7 @@ api.post('/invites/:code', humansOnly, (req, res) => {
 api.get('/channels/:id/messages', (req, res) => {
   const channel = requireChannelPerm(req.params.id, uid(res), P.VIEW_CHANNEL);
   const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
-  const limit = Math.min(100, Number(req.query.limit) || 50);
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
   const rows = all<MessageWithAuthor>(
     `${MESSAGE_SELECT} WHERE m.channel_id = ? AND m.created_at < ? ORDER BY m.created_at DESC LIMIT ?`,
     channel.id,
@@ -2403,7 +2451,7 @@ api.post('/dms', (req, res) => {
 api.get('/dms/:id/messages', (req, res) => {
   const dm = requireDm(req.params.id, uid(res));
   const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
-  const limit = Math.min(100, Number(req.query.limit) || 50);
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
   const rows = all<MessageWithAuthor>(`${DM_SELECT} WHERE m.dm_id = ? AND m.created_at < ? ORDER BY m.created_at DESC LIMIT ?`, dm.id, before, limit);
   res.json(rows.reverse().map(messageJson));
 });

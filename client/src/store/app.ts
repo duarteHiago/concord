@@ -439,13 +439,17 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     googleSignupSubmit: async (username, displayName) => {
-      const res = await api.post<LoginResponse & { handoff?: boolean }>('/auth/google/signup', {
+      const res = await api.post<LoginResponse & { desktopRedirect?: string }>('/auth/google/signup', {
         ticket: get().googleSignup,
         username,
         displayName,
       });
       set({ googleSignup: null });
-      if (res.handoff) return 'desktop';
+      // pedido pelo app desktop: o navegador leva o resultado até o endereço local do app
+      if (res.desktopRedirect) {
+        location.href = res.desktopRedirect;
+        return 'desktop';
+      }
       if (needsCode(res)) return 'done';
       startSession(res.token!, res.user!);
       if (res.recoveryCode) set({ modal: { type: 'recoveryCode', code: res.recoveryCode, next: get().modal ?? undefined } });
@@ -453,13 +457,17 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     googleSignupLink: async (username, password) => {
-      const res = await api.post<LoginResponse & { handoff?: boolean }>('/auth/google/signup/link', {
+      const res = await api.post<LoginResponse & { desktopRedirect?: string }>('/auth/google/signup/link', {
         ticket: get().googleSignup,
         username,
         password,
       });
       set({ googleSignup: null });
-      if (res.handoff) return 'desktop';
+      // pedido pelo app desktop: o navegador leva o resultado até o endereço local do app
+      if (res.desktopRedirect) {
+        location.href = res.desktopRedirect;
+        return 'desktop';
+      }
       if (needsCode(res)) return 'done';
       startSession(res.token!, res.user!);
       toast.success('Conta Google conectada. Da próxima vez é só usar "Entrar com Google".');

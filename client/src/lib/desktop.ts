@@ -84,6 +84,12 @@ interface DesktopBridge {
   setActivitySharing?(enabled: boolean): Promise<void>;
   setGlobalShortcuts?(map: Record<string, string>): Promise<Record<string, boolean>>;
   onShortcut?(cb: (action: string) => void): () => void;
+  /**
+   * Login com Google no navegador padrão, com a volta para o próprio app (endereço local). Devolve o código e o
+   * segredo para trocar em POST /auth/handoff, ou null se cancelou/expirou. Ausente em versões antigas do app.
+   */
+  googleAuth?(link?: string): Promise<{ code: string; verifier: string } | null>;
+  googleAuthCancel?(): Promise<void>;
 }
 
 export const desktop: DesktopBridge | undefined = (window as unknown as { concordDesktop?: DesktopBridge }).concordDesktop;

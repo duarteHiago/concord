@@ -9,6 +9,10 @@ import { limiter } from './recovery.ts';
 const allow = limiter(20, 10 * 60_000);
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max).replace(/[\u0000-\u0008\u000b-\u001f]/g, '') : '');
+/** Campos de uma linha só: sem quebra, ninguém escreve uma linha falsa no log. */
+const line = (v: unknown, max: number) => text(v, max).replace(/[\t\n]+/g, ' ');
+/** Pilhas (várias linhas): cada linha vai recuada, para não se passar por outra entrada do log. */
+const indent = (v: unknown, max: number) => text(v, max).replace(/\n/g, '\n    ');
 
 export function registerClientErrorRoutes(api: Router) {
   api.post('/client-errors', (req, res) => {
@@ -16,8 +20,8 @@ export function registerClientErrorRoutes(api: Router) {
     const area = req.body?.area === 'painel' ? 'painel' : 'app';
     clientErrors.inc({ area });
     console.warn(
-      `[erro no app] ${area} ${text(req.body?.commit, 12) || '?'} ${text(req.body?.path, 120)}: ${text(req.body?.message, 500)}\n` +
-        `${text(req.body?.stack, 4000)}\n${text(req.body?.componentStack, 2000)}`,
+      `[erro no app] ${area} ${line(req.body?.commit, 12) || '?'} ${line(req.body?.path, 120)}: ${line(req.body?.message, 500)}\n` +
+        `    ${indent(req.body?.stack, 4000)}\n    ${indent(req.body?.componentStack, 2000)}`,
     );
     res.status(204).end();
   });
