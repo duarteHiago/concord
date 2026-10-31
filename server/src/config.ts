@@ -57,6 +57,8 @@ export const config = {
   // métricas do Prometheus (0 desliga). Só dentro da VPS por padrão.
   metricsPort: Number(env.METRICS_PORT ?? 9464),
   metricsHost: env.METRICS_HOST ?? '127.0.0.1',
+  // CSP só avisando, sem bloquear (ver security.ts): saída de emergência se ela quebrar algo em produção
+  cspReportOnly: env.CSP_REPORT_ONLY === 'true',
   // requisição, evento do socket ou consulta acima disto (ms) vai para o log como "[lento]"
   slowMs: Number(env.SLOW_MS ?? 100),
   // apoio voluntário por Pix (ver support.ts). Sem token, o botão de apoiar some do app.

@@ -1,5 +1,5 @@
 import { ClipCard } from './Clip';
-import { Hash, Pencil, Reply, Trash2, Users } from 'lucide-react';
+import { Hash, ImageIcon, Pencil, Reply, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
 import { P, has } from '../../../shared/permissions.ts';
@@ -316,11 +316,47 @@ export function RichText({ text }: { text: string }) {
         ),
       )}
       {images.map((src) => (
-        <a key={src} href={src} target="_blank" rel="noreferrer noopener" className="mt-2 block">
-          <img src={src} alt="" loading="lazy" className="max-h-80 max-w-full rounded-xl" />
-        </a>
+        <ChatImage key={src} src={src} />
       ))}
     </>
+  );
+}
+
+/** Site de onde a imagem vem, ou null se é do próprio Concord. */
+function externalHost(src: string) {
+  try {
+    const url = new URL(src, location.href);
+    return url.origin === location.origin ? null : url.hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Imagem colada no chat. As de outros sites só carregam com um clique: carregar sozinha entregaria o IP (e a
+ * hora em que leu) de todo mundo que abriu a conversa para o dono daquele site.
+ */
+function ChatImage({ src }: { src: string }) {
+  const host = externalHost(src);
+  const [show, setShow] = useState(!host);
+  if (!show) {
+    return (
+      <button
+        type="button"
+        onClick={() => setShow(true)}
+        className="mt-2 flex max-w-full items-center gap-2 rounded-xl bg-surface-3 px-3 py-2 text-left text-xs text-fg-muted ring-1 ring-line transition-colors hover:bg-surface-4 hover:text-fg"
+      >
+        <ImageIcon size={15} className="shrink-0" />
+        <span className="min-w-0 truncate">
+          Mostrar imagem de <b className="text-fg">{host}</b>
+        </span>
+      </button>
+    );
+  }
+  return (
+    <a href={src} target="_blank" rel="noreferrer noopener" className="mt-2 block">
+      <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" className="max-h-80 max-w-full rounded-xl" />
+    </a>
   );
 }
 

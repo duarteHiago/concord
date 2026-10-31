@@ -1,9 +1,9 @@
 // Cabeçalhos de segurança de todas as respostas, e o relatório da Content-Security-Policy.
 //
-// A CSP completa vai como Report-Only: o navegador não bloqueia nada, só manda para /api/csp-report o que
-// bloquearia. Quando o log ficar limpo, ela passa a valer (troca o nome do cabeçalho). Já vale de verdade
-// a parte que não tem como quebrar o app: ninguém embute o Concord num iframe (clickjacking), nem <object>,
-// nem <base> apontando para outro site.
+// A CSP vale de verdade: script de fora (ou injetado numa mensagem) não roda, nem com uma falha no app. O que ela
+// bloquear vai para /api/csp-report (log e Grafana). Se ela quebrar alguma coisa em produção, CSP_REPORT_ONLY=true
+// volta ao modo de só avisar, sem mudar o código; a parte que não tem como quebrar o app (ninguém embute o
+// Concord num iframe, nem <object>, nem <base> apontando para outro site) continua valendo sempre.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -35,15 +35,15 @@ const origin = (url: string) => {
 
 const ENFORCED = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
 
-function reportOnlyPolicy() {
+function fullPolicy() {
   // LiveKit em outro endereço (no dev, ws://localhost:7880): o websocket e o /rtc/validate por HTTP, que o
   // livekit-client chama quando a conexão falha. Em produção ele fica no mesmo domínio (/livekit) e 'self' basta.
   const lk = config.livekit.publicUrl ? origin(config.livekit.publicUrl) : '';
   const livekit = lk ? `${lk} ${lk.replace(/^ws/, 'http')}` : '';
   return [
     "default-src 'self'",
-    // wasm: supressão de ruído e efeitos de voz
-    `script-src 'self' 'wasm-unsafe-eval' ${inlineScriptHashes().join(' ')}`,
+    // wasm: supressão de ruído e efeitos de voz; blob: os processadores de áudio (AudioWorklet) que o app monta na hora
+    `script-src 'self' 'wasm-unsafe-eval' blob: ${inlineScriptHashes().join(' ')}`,
     // React usa style="" e o CSS personalizado de cada pessoa vira um <style>
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
@@ -53,17 +53,22 @@ function reportOnlyPolicy() {
     `connect-src 'self'${livekit ? ` ${livekit}` : ''}`,
     "worker-src 'self' blob:",
     "frame-src 'none'",
-    "form-action 'self'",
+    // a confirmação de conectar o Google, no app desktop, termina no endereço local do app (ver google.ts)
+    "form-action 'self' http://127.0.0.1:*",
     ENFORCED,
     'report-uri /api/csp-report',
   ].join('; ');
 }
 
 export function securityHeaders() {
-  const reportOnly = reportOnlyPolicy();
+  const policy = fullPolicy();
   return (req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('Content-Security-Policy', ENFORCED);
-    res.setHeader('Content-Security-Policy-Report-Only', reportOnly);
+    if (config.cspReportOnly) {
+      res.setHeader('Content-Security-Policy', ENFORCED);
+      res.setHeader('Content-Security-Policy-Report-Only', policy);
+    } else {
+      res.setHeader('Content-Security-Policy', policy);
+    }
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
