@@ -47,42 +47,73 @@ export function limiter(max: number, windowMs: number) {
   };
 }
 
-// limite de tentativas por usuário: 5 a cada 15 minutos
-const attempts = new Map<string, number[]>();
-export function allowAttempt(username: string): boolean {
-  const key = username.toLowerCase();
-  const now = Date.now();
-  const recent = (attempts.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
-  if (recent.length >= 5) {
-    attempts.set(key, recent);
-    return false;
-  }
-  recent.push(now);
-  attempts.set(key, recent);
+/** IP de quem chama, para os limites por rede. Vazio quando não dá para saber (atrás de um proxy sem o IP real). */
+export function clientIp(req: { ip?: string }): string {
+  const ip = req.ip ?? '';
+  return /^(127\.|::1$|::ffff:127\.)/.test(ip) ? '' : ip;
+}
+
+/** Janela deslizante de eventos por chave (tentativas erradas etc.). */
+function windowCounter(max: number, windowMs: number) {
+  const hits = new Map<string, number[]>();
+  setInterval(() => {
+    const old = Date.now() - windowMs;
+    for (const [k, v] of hits) if (v.every((t) => t < old)) hits.delete(k);
+  }, windowMs).unref();
+  const recent = (key: string) => {
+    const now = Date.now();
+    const list = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    hits.set(key, list);
+    return list;
+  };
+  return {
+    /** minutos até liberar (0 = liberado) */
+    wait(key: string) {
+      const list = recent(key);
+      return list.length < max ? 0 : Math.max(1, Math.ceil((list[0] + windowMs - Date.now()) / 60_000));
+    },
+    /** registra um evento e devolve quantos ainda cabem */
+    add(key: string) {
+      const list = recent(key);
+      list.push(Date.now());
+      return Math.max(0, max - list.length);
+    },
+  };
+}
+
+// Erros de senha (e de código de recuperação). O bloqueio é por usuário NA MESMA REDE: errar de propósito
+// a senha de alguém não tranca essa pessoa do lado de fora. Por cima, um teto por rede (quem testa uma senha
+// em muitas contas) e um teto alto por usuário (quem tenta de muitas redes ao mesmo tempo).
+const MINUTES = 60_000;
+const loginUserIp = windowCounter(5, 15 * MINUTES);
+const loginIp = windowCounter(30, 15 * MINUTES);
+const loginUser = windowCounter(100, 60 * MINUTES);
+const recoveryUserIp = windowCounter(5, 15 * MINUTES);
+const recoveryIp = windowCounter(20, 15 * MINUTES);
+const recoveryUser = windowCounter(30, 60 * MINUTES);
+
+const userKey = (username: string) => username.toLowerCase();
+
+/** Código de recuperação: pode tentar agora? (cada chamada conta como tentativa) */
+export function allowAttempt(username: string, ip: string): boolean {
+  const u = userKey(username);
+  if (recoveryUserIp.wait(`${u}|${ip}`) || recoveryUser.wait(u) || (ip && recoveryIp.wait(ip))) return false;
+  recoveryUserIp.add(`${u}|${ip}`);
+  recoveryUser.add(u);
+  if (ip) recoveryIp.add(ip);
   return true;
 }
 
-// mesma ideia pro login, mas só conta senha ERRADA: login certo não deve contar contra o limite
-// (senão alguém entrando em várias janelas/dispositivos em pouco tempo cairia no bloqueio)
-const LOGIN_MAX = 5;
-const LOGIN_WINDOW = 15 * 60_000;
-const loginFailures = new Map<string, number[]>();
-function recentFailures(username: string) {
-  const key = username.toLowerCase();
-  const now = Date.now();
-  const recent = (loginFailures.get(key) ?? []).filter((t) => now - t < LOGIN_WINDOW);
-  loginFailures.set(key, recent);
-  return recent;
-}
 /** 0 = pode tentar; senão, quantos minutos faltam para liberar. */
-export function loginWaitMinutes(username: string): number {
-  const recent = recentFailures(username);
-  if (recent.length < LOGIN_MAX) return 0;
-  return Math.max(1, Math.ceil((recent[0] + LOGIN_WINDOW - Date.now()) / 60_000));
+export function loginWaitMinutes(username: string, ip: string): number {
+  const u = userKey(username);
+  return Math.max(loginUserIp.wait(`${u}|${ip}`), loginUser.wait(u), ip ? loginIp.wait(ip) : 0);
 }
-/** Registra uma senha errada e devolve quantas tentativas ainda restam. */
-export function recordLoginFailure(username: string): number {
-  const recent = recentFailures(username);
-  recent.push(Date.now());
-  return Math.max(0, LOGIN_MAX - recent.length);
+
+/** Registra uma senha errada e devolve quantas tentativas ainda restam (para esse usuário nessa rede). */
+export function recordLoginFailure(username: string, ip: string): number {
+  const u = userKey(username);
+  loginUser.add(u);
+  if (ip) loginIp.add(ip);
+  return loginUserIp.add(`${u}|${ip}`);
 }

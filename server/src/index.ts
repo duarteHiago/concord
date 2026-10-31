@@ -13,7 +13,8 @@ import { securityHeaders } from './security.ts';
 
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', true);
+// só o proxy da própria máquina (Caddy) diz o IP de quem chamou: um X-Forwarded-For vindo de fora não vale
+app.set('trust proxy', 'loopback');
 app.use(httpMetrics);
 app.use(securityHeaders());
 app.use(express.json({ limit: '1mb' }));

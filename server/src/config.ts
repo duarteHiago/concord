@@ -83,6 +83,12 @@ if (!config.downloadsDir) config.downloadsDir = join(dirname(config.dbPath), 'do
 if (!config.diagnosticsDir) config.diagnosticsDir = join(dirname(config.dbPath), 'diagnostics');
 if (!config.backup.dir) config.backup.dir = join(dirname(config.dbPath), 'backups');
 
-if (env.NODE_ENV === 'production' && config.jwtSecret === 'dev-secret-troque-isto') {
-  console.warn('[aviso] JWT_SECRET não definido — defina um valor aleatório em produção!');
+// com os segredos de exemplo, qualquer um forja sessões (JWT) ou entradas nas salas de voz (LiveKit): em produção
+// o servidor nem sobe assim
+if (env.NODE_ENV === 'production') {
+  const missing = [
+    config.jwtSecret === 'dev-secret-troque-isto' && 'JWT_SECRET',
+    config.livekit.apiSecret === 'secret' && 'LIVEKIT_API_SECRET',
+  ].filter(Boolean);
+  if (missing.length) throw new Error(`Defina ${missing.join(' e ')} com valores aleatórios (veja deploy/setup.sh).`);
 }

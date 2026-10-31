@@ -4,6 +4,7 @@ import { P, has } from '../../shared/permissions.ts';
 import { channelPermissions, getChannel } from './access.ts';
 import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, verifyToken } from './http.ts';
+import { removeFromRoom, updateVoicePermission, voiceParticipants } from './livekit.ts';
 import { socketEvents, timedSocket } from './metrics.ts';
 
 export interface VoiceState {
@@ -151,6 +152,20 @@ export function dropVoice(userId: string, reason: string) {
   broadcastVoice(v.serverId);
 }
 
+/**
+ * Silenciado/ensurdecido pelo servidor: o LiveKit (por onde passa o áudio) passa a recusar o microfone ou o
+ * som. Só avisar o app não basta: um app modificado ignoraria o aviso e continuaria falando.
+ */
+function syncVoicePermission(v: VoiceState) {
+  let perms = 0;
+  try {
+    perms = channelPermissions(getChannel(v.channelId), v.userId);
+  } catch {
+    // sala apagada: sem permissão nenhuma
+  }
+  void updateVoicePermission(v.channelId, v.userId, { perms, serverMuted: v.serverMuted, serverDeafened: v.serverDeafened });
+}
+
 export function setServerMute(serverId: string, userId: string, muted: boolean) {
   const key = `${serverId}:${userId}`;
   if (muted) serverMutes.add(key);
@@ -159,6 +174,7 @@ export function setServerMute(serverId: string, userId: string, muted: boolean) 
   if (v && v.serverId === serverId) {
     v.serverMuted = muted;
     if (muted) v.muted = true;
+    syncVoicePermission(v);
     io.to(v.socketId).emit('voice:server-mute', { muted });
     broadcastVoice(serverId);
   }
@@ -172,6 +188,7 @@ export function setServerDeafen(serverId: string, userId: string, deafened: bool
   if (v && v.serverId === serverId) {
     v.serverDeafened = deafened;
     if (deafened) v.deafened = true;
+    syncVoicePermission(v);
     io.to(v.socketId).emit('voice:server-deafen', { deafened });
     broadcastVoice(serverId);
   }
@@ -276,7 +293,39 @@ export function liveStats() {
 
 const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping']);
 
+// Faxina das salas de voz. O LiveKit aceita qualquer um com token válido, mas só vale estar numa sala quem entrou
+// pelo app (aparece na lista dela) e ainda pode conectar nela. Sai quem foi expulso do servidor, perdeu a
+// permissão, teve a sala apagada ou entrou "invisível" (direto no LiveKit, sem avisar o app). Uma volta de
+// folga antes de tirar: quem acabou de entrar, ou teve a conexão do app caindo por um instante, ainda não aparece.
+let voiceStrikes = new Set<string>();
+async function sweepVoiceRooms() {
+  let list: { room: string; identity: string }[];
+  try {
+    list = await voiceParticipants();
+  } catch {
+    return; // LiveKit fora do ar (ou não configurado nos testes)
+  }
+  const next = new Set<string>();
+  for (const p of list) {
+    let ok = voice.get(p.identity)?.channelId === p.room;
+    if (ok) {
+      try {
+        ok = has(channelPermissions(getChannel(p.room), p.identity), P.CONNECT);
+      } catch {
+        ok = false; // sala apagada
+      }
+    }
+    if (ok) continue;
+    const key = `${p.room}:${p.identity}`;
+    if (voiceStrikes.has(key)) await removeFromRoom(p.room, p.identity);
+    else next.add(key);
+  }
+  voiceStrikes = next;
+}
+
 export function setupRealtime(httpServer: HttpServer) {
+  setInterval(() => void sweepVoiceRooms(), 30_000).unref();
+
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
 
   io.use((socket, next) => {

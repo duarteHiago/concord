@@ -16,6 +16,13 @@ export function isAdmin(userId: string): boolean {
   return !!u && config.adminUsers.has(u.username.toLowerCase());
 }
 
+// nome da lista sem conta fica reservado (ninguém consegue criar, nem a própria pessoa): crie a conta antes
+for (const name of config.adminUsers) {
+  if (!get('SELECT 1 FROM users WHERE username = ? AND is_bot = 0', name)) {
+    console.warn(`[admin] @${name} está em ADMIN_USERS mas não tem conta: o nome fica reservado. Crie a conta antes de pôr na lista.`);
+  }
+}
+
 /** Para quem não é da equipe, o portal nem existe. */
 function requireAdmin(_req: Request, res: Response, next: NextFunction) {
   if (!isAdmin(uid(res))) return res.status(404).json({ error: 'Rota não encontrada' });

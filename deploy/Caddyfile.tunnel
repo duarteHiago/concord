@@ -3,6 +3,11 @@
 	auto_https off
 	# métricas para o monitoramento (lidas pelo Prometheus em 127.0.0.1:2019)
 	metrics
+	# quem chega aqui é o cloudflared, na própria máquina: o IP de verdade vem no X-Forwarded-For dele
+	# (o servidor do Concord usa o IP nos limites de login e cadastro)
+	servers {
+		trusted_proxies static 127.0.0.1/32 ::1/128
+	}
 }
 
 :8090 {

@@ -32,12 +32,12 @@ import {
   type ShieldEvent,
   type ShieldState,
 } from '../../shared/contracts.ts';
-import { channelPermissions, getChannel, isMember } from './access.ts';
+import { isMember } from './access.ts';
 import { config } from './config.ts';
 import { all, get, run, tx, type ContractFineRow, type ContractRow, type PaymentRow, type UserRow } from './db.ts';
 import { fail, humansOnly, int, str, uid } from './http.ts';
-import { TrackSource, muteTracks, removeFromRoom, updateVoicePermission } from './livekit.ts';
-import { dropVoice, emitToUser, getVoiceState, isServerMuted, serverChanged, setServerDeafen, setServerMute } from './realtime.ts';
+import { TrackSource, muteTracks, removeFromRoom } from './livekit.ts';
+import { dropVoice, emitToUser, getVoiceState, serverChanged, setServerDeafen, setServerMute } from './realtime.ts';
 import { createPix, onPayment } from './support.ts';
 import { removeUpload, saveImage } from './uploads.ts';
 
@@ -350,18 +350,6 @@ function noteApplied(contractId: string, kind: 'mute' | 'deafen', serverId: stri
   else set.delete(key);
 }
 
-async function setDeafen(serverId: string, userId: string, deafened: boolean) {
-  setServerDeafen(serverId, userId, deafened);
-  const v = getVoiceState(userId);
-  if (v?.serverId === serverId) {
-    await updateVoicePermission(v.channelId, userId, {
-      perms: channelPermissions(getChannel(v.channelId), userId),
-      serverMuted: isServerMuted(serverId, userId),
-      serverDeafened: deafened,
-    });
-  }
-}
-
 async function liftApplied(contractId: string, onlyUser?: string) {
   const set = applied.get(contractId);
   if (!set) return;
@@ -370,7 +358,7 @@ async function liftApplied(contractId: string, onlyUser?: string) {
     if (onlyUser && userId !== onlyUser) continue;
     set.delete(key);
     if (kind === 'mute') setServerMute(serverId, userId, false);
-    else await setDeafen(serverId, userId, false);
+    else setServerDeafen(serverId, userId, false);
   }
   if (!set.size) applied.delete(contractId);
 }
@@ -406,7 +394,7 @@ export async function mecenasMute(me: string, target: string, muted: boolean, se
 export async function mecenasDeafen(me: string, target: string, deafened: boolean, serverId?: string) {
   const c = requirePower(me, target);
   const { serverId: sid } = voiceServer(me, target, serverId);
-  await setDeafen(sid, target, deafened);
+  setServerDeafen(sid, target, deafened);
   noteApplied(c.id, 'deafen', sid, target, deafened);
   logPower(c, me, target, deafened ? 'deafen' : 'undeafen', { serverId: sid });
 }
