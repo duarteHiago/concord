@@ -39,8 +39,10 @@ describe('cabeçalhos de segurança', () => {
     }
   });
 
-  it('a CSP em teste libera o script inline da página pelo hash, sem unsafe-inline', async () => {
-    const policy = (await fetch(`${server.url}/`)).headers.get('content-security-policy-report-only') ?? '';
+  it('a CSP vale de verdade e libera o script inline da página pelo hash, sem unsafe-inline', async () => {
+    const res = await fetch(`${server.url}/`);
+    assert.equal(res.headers.get('content-security-policy-report-only'), null);
+    const policy = res.headers.get('content-security-policy') ?? '';
     const script = policy.split('; ').find((d) => d.startsWith('script-src'))!;
     assert.ok(script.includes(`'sha256-${createHash('sha256').update(INLINE).digest('base64')}'`), script);
     assert.ok(!script.includes("'unsafe-inline'"));
