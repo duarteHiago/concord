@@ -113,6 +113,8 @@ interface UserDetailData extends Omit<UserSummary, 'servers'> {
   bots: { id: string; username: string }[];
   servers: { id: string; name: string; iconUrl: string | null; iconColor: string; owner: boolean; joinedAt: number; nickname: string | null; roles: { name: string; color: string | null }[] }[];
   diagnostics: DiagnosticMeta[];
+  email: string | null;
+  emailPending: string | null;
   ban: { at: number; reason: string | null; by: string | null } | null;
   actions: { id: number; action: string; reason: string | null; at: number; by: string | null }[];
 }
@@ -241,6 +243,18 @@ export function UserDetail({ id }: { id: string }) {
               <span>Conta criada em {fmtDate(u.createdAt)}</span>
               <span>{u.online ? 'Online agora' : 'Offline'}</span>
               <span>{fmtNumber(u.messages)} mensagem(ns) em canais</span>
+              <span>
+                {u.email ? (
+                  <>
+                    E-mail: <b className="text-fg select-all">{u.email}</b>
+                  </>
+                ) : u.google ? (
+                  'Entra pelo Google (sem e-mail guardado)'
+                ) : (
+                  'Sem e-mail confirmado'
+                )}
+                {u.emailPending && u.emailPending !== u.email && ` · esperando confirmação de ${u.emailPending}`}
+              </span>
               <UserFlags u={{ ...u, servers: u.servers.length }} />
             </div>
 

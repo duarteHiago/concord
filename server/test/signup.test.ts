@@ -215,6 +215,8 @@ describe('conta antiga sem e-mail, suspensão e exclusão', () => {
     assert.equal(login.status, 403);
     const detail = await chefe.get(`/admin/users/${old.id}`);
     assert.equal(detail.body.ban.reason, 'conta de teste em massa');
+    // a equipe vê o e-mail confirmado da conta
+    assert.match(detail.body.email, /@yahoo\.com\.br$/);
     assert.equal(detail.body.actions[0].action, 'ban');
     assert.equal((await chefe.post(`/admin/users/${old.id}/unban`, {})).status, 200);
     assert.equal((await new Client(server.url).post('/auth/login', { username: old.username, password: 'senha-forte-123' })).status, 200);

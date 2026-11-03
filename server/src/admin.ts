@@ -1,6 +1,7 @@
 // Portal da equipe (/admin no app): só quem está em ADMIN_USERS entra. Mostra os diagnósticos enviados e uma
 // visão geral da instalação (contas, servidores, cargos e membros). A única ação sobre pessoas é suspender ou
-// apagar uma conta, sempre com o motivo registrado. Não mostra mensagens, e-mails nem senhas.
+// apagar uma conta, sempre com o motivo registrado. O e-mail aparece só no detalhe da conta (moderação e
+// suporte); mensagens e senhas nunca.
 import type { NextFunction, Request, Response, Router } from 'express';
 import { P, has } from '../../shared/permissions.ts';
 import { config } from './config.ts';
@@ -260,6 +261,10 @@ export function registerAdminRoutes(api: Router) {
     res.json({
       ...userSummary({ ...u, servers: servers.length }, new Set(onlineUserIds())),
       messages: count('SELECT COUNT(*) AS n FROM messages WHERE author_id = ?', u.id),
+      // e-mail da conta (para moderação e suporte): o confirmado e, se houver, o que espera o clique no link
+      email: u.email ?? null,
+      emailPending:
+        get<{ email: string }>("SELECT email FROM email_tokens WHERE user_id = ? AND kind = 'verify' AND expires_at > ?", u.id, Date.now())?.email ?? null,
       bots: all<{ id: string; username: string }>('SELECT id, username FROM users WHERE bot_owner_id = ?', u.id),
       servers: servers.map((s) => ({
         id: s.id,

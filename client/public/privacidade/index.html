@@ -23,7 +23,7 @@
     <li>Não vendemos dados, não mostramos anúncios e não usamos rastreadores.</li>
     <li>Voz, vídeo e transmissões de tela passam em tempo real e <b>não são gravados</b>.</li>
     <li>Entrando com o Google, guardamos só um identificador da conta: nada de e-mail, foto ou acesso aos seus dados do Google.</li>
-    <li>Conta com senha precisa de um e-mail confirmado (Gmail, Outlook/Hotmail, Yahoo ou iCloud). Ele serve para confirmar que a conta é de uma pessoa e para recuperar a senha. Ninguém vê o seu e-mail e não mandamos propaganda.</li>
+    <li>Conta com senha precisa de um e-mail confirmado (Gmail, Outlook/Hotmail, Yahoo ou iCloud). Ele serve para confirmar que a conta é de uma pessoa e para recuperar a senha. Outras pessoas não veem o seu e-mail (só a equipe do Concord, para moderação e suporte) e não mandamos propaganda.</li>
     <li>Você pode pedir uma cópia ou a exclusão dos seus dados a qualquer momento.</li>
   </ul>
 </div>
@@ -37,7 +37,7 @@
   <thead><tr><th>Dado</th><th>Para quê</th></tr></thead>
   <tbody>
     <tr><td><b>Conta:</b> nome de usuário, nome de exibição, senha (guardada só como <i>hash</i> bcrypt, nunca em texto) e código de recuperação (também só o <i>hash</i>)</td><td>Entrar na conta e recuperar o acesso</td></tr>
-    <tr><td><b>E-mail (obrigatório nas contas com senha):</b> o endereço confirmado no cadastro (por um código de 6 dígitos) ou em Configurações → Conta. Só aceitamos Gmail, Outlook/Hotmail, Yahoo e iCloud, e cada caixa de entrada vale para uma conta. Enquanto o cadastro não termina, o pedido (com a senha só em <i>hash</i>) fica guardado por no máximo 15 minutos</td><td>Confirmar que cada conta é de uma pessoa (contra contas falsas em massa), mandar o link de "Esqueci minha senha" e avisar quando a senha ou o e-mail da conta mudarem. Não mandamos propaganda nem newsletter, e o e-mail não aparece para outras pessoas</td></tr>
+    <tr><td><b>E-mail (obrigatório nas contas com senha):</b> o endereço confirmado no cadastro (por um código de 6 dígitos) ou em Configurações → Conta. Só aceitamos Gmail, Outlook/Hotmail, Yahoo e iCloud, e cada caixa de entrada vale para uma conta. Enquanto o cadastro não termina, o pedido (com a senha só em <i>hash</i>) fica guardado por no máximo 15 minutos</td><td>Confirmar que cada conta é de uma pessoa (contra contas falsas em massa), mandar o link de "Esqueci minha senha" e avisar quando a senha ou o e-mail da conta mudarem. Não mandamos propaganda nem newsletter. O e-mail não aparece para outras pessoas: só a equipe do Concord vê, no portal da equipe, para moderação e suporte (por exemplo, confirmar que uma conta é sua ou investigar contas falsas)</td></tr>
     <tr><td><b>Login com Google (opcional):</b> só o identificador da sua conta Google (<i>sub</i>)</td><td>Reconhecer você quando entra pelo Google</td></tr>
     <tr><td><b>Perfil:</b> foto, capa, bio, cor, moldura, patches e apelidos por servidor</td><td>Mostrar seu perfil para as pessoas dos seus servidores</td></tr>
     <tr><td><b>Conteúdo:</b> mensagens, mensagens privadas (DMs), posts e respostas em fóruns, stickers, sons, imagens e arquivos anexados que você envia</td><td>Entregar e exibir o que você publica para quem deve ver</td></tr>
