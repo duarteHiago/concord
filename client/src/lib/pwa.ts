@@ -1,27 +1,23 @@
 import { registerSW } from 'virtual:pwa-register';
 
-let updateReady: (() => void) | null = null;
 const listeners = new Set<(available: boolean) => void>();
+let doUpdate: ((reloadPage?: boolean) => Promise<void>) | null = null;
 
 export const pwa = {
   onUpdate: (fn: (available: boolean) => void) => {
     listeners.add(fn);
     return () => { listeners.delete(fn); };
   },
-  applyUpdate: () => updateReady?.(),
+  applyUpdate: () => void doUpdate?.(true),
   get updateAvailable() {
-    return updateReady !== null;
+    return doUpdate !== null;
   },
 };
 
 if ('serviceWorker' in navigator) {
-  registerSW({
+  const updateSW = registerSW({
     onNeedRefresh() {
-      updateReady = () => {
-        updateReady = null;
-        listeners.forEach((fn) => fn(false));
-        window.location.reload();
-      };
+      doUpdate = updateSW;
       listeners.forEach((fn) => fn(true));
     },
     onOfflineReady() {},
