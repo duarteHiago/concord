@@ -149,6 +149,8 @@ export interface Me extends User {
   isAuthority?: boolean;
   /** está em ADMIN_USERS: entra no portal da equipe (/admin) */
   isAdmin?: boolean;
+  /** conta com senha nesta instalação, que exige e-mail: sem `email` confirmado, o app pede antes de liberar o resto */
+  emailRequired?: boolean;
   /** página do perfil: contas conectadas e o que esta instalação oferece */
   steamLinked?: boolean;
   integrations?: { steam: boolean };

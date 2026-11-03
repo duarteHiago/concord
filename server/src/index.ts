@@ -17,6 +17,8 @@ app.disable('x-powered-by');
 app.set('trust proxy', 'loopback');
 app.use(httpMetrics);
 app.use(securityHeaders());
+// login, cadastro e senha têm poucos bytes: pedido grande ali é teste de limite ou ataque, e é recusado na porta
+app.use('/api/auth', express.json({ limit: '16kb' }));
 app.use(express.json({ limit: '1mb' }));
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
@@ -65,12 +67,13 @@ if (existsSync(config.publicDir)) {
   });
 }
 
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
   if (err instanceof SyntaxError) return res.status(400).json({ error: 'JSON inválido' });
   const status = (err as { status?: number }).status;
   if (status && status >= 400 && status < 500) {
-    return res.status(status).json({ error: status === 413 ? 'Arquivo muito grande' : 'Não encontrado' });
+    const tooBig = req.path.startsWith('/api/auth') ? 'Pedido grande demais' : 'Arquivo muito grande';
+    return res.status(status).json({ error: status === 413 ? tooBig : 'Não encontrado' });
   }
   console.error(err);
   res.status(500).json({ error: 'Erro interno do servidor' });

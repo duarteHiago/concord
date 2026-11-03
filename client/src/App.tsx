@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { AuthScreen } from './components/AuthScreen';
-import { EmailResetScreen, useEmailPrompt } from './components/EmailRecovery';
+import { EmailGateScreen, EmailResetScreen, useEmailPrompt } from './components/EmailRecovery';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { ChatView } from './components/ChatView';
 import { DevWindow } from './components/DevWindow';
@@ -25,7 +25,7 @@ import { useWhatsNewPrompt } from './components/modals/WhatsNewModal';
 import { DropClaimModal, DropPage, useClaimAfterLogin, useDrop } from './components/PatchDrop';
 import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
-import { HOME, useActiveDetail, useApp } from './store/app';
+import { HOME, needsEmail, useActiveDetail, useApp } from './store/app';
 import { DmView } from './components/DirectMessages';
 import { useDevStatsPublisher } from './lib/devStats';
 import { setMotionPref } from './lib/motion';
@@ -124,7 +124,7 @@ function MainApp() {
 
   return (
     <>
-      {emailReset ? <EmailResetScreen /> : dropStage === 'page' ? <DropPage /> : me ? <Shell /> : <AuthScreen />}
+      {emailReset ? <EmailResetScreen /> : dropStage === 'page' ? <DropPage /> : me ? (needsEmail(me) ? <EmailGateScreen /> : <Shell />) : <AuthScreen />}
       {me && dropStage === 'claim' && <DropClaimModal />}
       <ModalHost />
       <Toasts />

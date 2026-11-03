@@ -32,6 +32,9 @@ export type SettingsTab = 'profile' | 'account' | 'privacy' | 'support' | 'mecen
 
 /** activeServerId especial: a tela de conversas privadas. */
 export const HOME = '@me';
+
+/** Conta com senha de antes do e-mail obrigatório, ainda sem e-mail confirmado: o app mostra só a tela do e-mail. */
+export const needsEmail = (me: Me | null) => !!me?.emailRequired && !me.email;
 import { toast } from './toast';
 import { FORUM_STATUSES } from '../../../shared/forum.ts';
 import { useVoice } from './voice';
@@ -113,7 +116,10 @@ interface AppState {
   googleSignupSubmit: (username: string, displayName: string) => Promise<'done' | 'desktop'>;
   /** já tem conta no Concord: entra com usuário e senha e conecta o Google a ela */
   googleSignupLink: (username: string, password: string) => Promise<'done' | 'desktop'>;
-  register: (username: string, password: string, displayName: string) => Promise<void>;
+  /** cadastro direto (instalação sem e-mail obrigatório) */
+  register: (username: string, password: string, displayName: string, captchaToken: string) => Promise<void>;
+  /** cadastro com e-mail: o código que chegou na caixa de entrada cria a conta */
+  registerConfirm: (signupId: string, code: string) => Promise<void>;
   resetPassword: (username: string, code: string, newPassword: string) => Promise<void>;
   logout: () => void;
   setMe: (me: Me) => void;
@@ -212,7 +218,8 @@ export const useApp = create<AppState>((set, get) => {
     const socket = connectSocket(token);
 
     socket.on('connect', () => {
-      void get().loadServers();
+      // conta antiga sem e-mail: o servidor só libera o resto depois do e-mail (ver EmailGateScreen)
+      if (!needsEmail(get().me)) void get().loadServers();
       useVoice.getState().resync();
       // contrato de Mecenato: a renovação do contrato antigo aparece logo ao entrar (ver Mecenato.tsx)
       void useContracts.getState().load();
@@ -285,6 +292,8 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('me:updated', (next: Me) => {
       const cur = get().me;
       if (!cur || cur.id !== next.id) return;
+      // confirmou o e-mail (pelo link, em outra aba ou no celular): agora o app carrega de verdade
+      if (needsEmail(cur) && !needsEmail(next)) setTimeout(() => void get().loadServers(), 0);
       const echo = Date.now() - localSettingsAt < 4000; // provavelmente a resposta da mudança feita aqui mesmo
       if (echo || JSON.stringify(cur.settings) === JSON.stringify(next.settings)) {
         set({ me: { ...cur, ...next, settings: cur.settings } });
@@ -505,14 +514,21 @@ export const useApp = create<AppState>((set, get) => {
       }
     },
 
-    register: async (username, password, displayName) => {
+    register: async (username, password, displayName, captchaToken) => {
       const { token, user, recoveryCode } = await api.post<{ token: string; user: Me; recoveryCode: string }>('/auth/register', {
         username,
         password,
         displayName,
+        captchaToken,
       });
       startSession(token, user);
       // mostra o código de recuperação primeiro; um convite pendente abre depois
+      set({ modal: { type: 'recoveryCode', code: recoveryCode, next: get().modal ?? undefined } });
+    },
+
+    registerConfirm: async (signupId, code) => {
+      const { token, user, recoveryCode } = await api.post<{ token: string; user: Me; recoveryCode: string }>('/auth/register/confirm', { signupId, code });
+      startSession(token, user);
       set({ modal: { type: 'recoveryCode', code: recoveryCode, next: get().modal ?? undefined } });
     },
 

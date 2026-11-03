@@ -70,6 +70,16 @@ if [ -f .integrations.env ]; then
   rm -f .integrations.env
   unset VAL
 fi
+# captcha do cadastro (Cloudflare Turnstile): a chave pública vem da variável do CI; a secreta, por .turnstile.env
+if [ -n "${TURNSTILE_SITE_KEY:-}" ]; then
+  if printf '%s' "$TURNSTILE_SITE_KEY" | grep -qE '^0x[A-Za-z0-9_-]{10,100}$'; then upsert_env TURNSTILE_SITE_KEY "$TURNSTILE_SITE_KEY"; else echo "!! TURNSTILE_SITE_KEY com formato inesperado; ignorada." >&2; fi
+fi
+if [ -f .turnstile.env ]; then
+  TKEY="$(grep '^TURNSTILE_SECRET=' .turnstile.env | cut -d= -f2-)"
+  if printf '%s' "$TKEY" | grep -qE '^0x[A-Za-z0-9_-]{10,100}$'; then upsert_env TURNSTILE_SECRET "$TKEY"; else echo "!! TURNSTILE_SECRET com formato inesperado; ignorada." >&2; fi
+  rm -f .turnstile.env
+  unset TKEY
+fi
 # backups fora da VPS (bucket do Cloudflare R2): endereço e bucket vêm das variáveis do CI; a chave, por .backup.env
 if [ -n "${BACKUP_S3_ENDPOINT:-}" ]; then
   if printf '%s' "$BACKUP_S3_ENDPOINT" | grep -qE '^https://[A-Za-z0-9.-]+(:[0-9]+)?$'; then upsert_env BACKUP_S3_ENDPOINT "$BACKUP_S3_ENDPOINT"; else echo "!! BACKUP_S3_ENDPOINT com formato inesperado (use https://<conta>.r2.cloudflarestorage.com); ignorado." >&2; fi

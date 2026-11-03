@@ -83,6 +83,7 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
           BACKUP_S3_ACCESS_KEY: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
           BACKUP_S3_SECRET: ${{ secrets.BACKUP_S3_SECRET }}
         run: |
@@ -95,6 +96,10 @@ jobs:
           # chave da biblioteca da Steam na página do perfil
           if [ -n "$STEAM_API_KEY" ]; then
             printf 'STEAM_API_KEY=%s\n' "$STEAM_API_KEY" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.integrations.env"
+          fi
+          # chave secreta do captcha do cadastro (Cloudflare Turnstile); a pública vem da variável TURNSTILE_SITE_KEY
+          if [ -n "$TURNSTILE_SECRET" ]; then
+            printf 'TURNSTILE_SECRET=%s\n' "$TURNSTILE_SECRET" | ssh "$TARGET" "mkdir -p /opt/concord && umask 077 && cat > /opt/concord/.turnstile.env"
           fi
           # chave do bucket dos backups fora da VPS (Cloudflare R2)
           if [ -n "$BACKUP_S3_ACCESS_KEY" ] && [ -n "$BACKUP_S3_SECRET" ]; then
@@ -118,7 +123,7 @@ jobs:
             && cd /opt/concord && rm -rf client server shared desktop tests examples docs \
             && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
             && cd /opt/concord && chmod +x deploy/setup.sh \
-            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
+            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} TURNSTILE_SITE_KEY=${{ vars.TURNSTILE_SITE_KEY }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
 
       # Verifica de dentro da VPS: a Cloudflare costuma bloquear (403) os runners do GitHub.
       - name: Verificar saúde

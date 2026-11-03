@@ -1,8 +1,12 @@
-import { MonitorUp, ShieldCheck, Users } from 'lucide-react';
+import { Mail, MonitorUp, ShieldCheck, Users } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { EMAIL_PROVIDER_NAMES, emailDomainAllowed } from '../../../shared/email.ts';
 import { api } from '../lib/api';
+import { useSignupConfig } from '../lib/serverConfig';
 import type { InvitePreview } from '../lib/types';
 import { useApp } from '../store/app';
+import { toast } from '../store/toast';
+import { Captcha } from './Captcha';
 import { ForgotByEmail, useEmailRecovery } from './EmailRecovery';
 import { GoogleButton, GoogleSignupForm } from './GoogleLogin';
 import { TwoFactorStep } from './TwoFactor';
@@ -23,9 +27,17 @@ export function AuthScreen() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [code, setCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [captcha, setCaptcha] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
+  // cadastro com e-mail: depois do formulário, a tela do código
+  const [signup, setSignup] = useState<{ signupId: string; email: string } | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, register, resetPassword } = useApp();
+  const signupConfig = useSignupConfig();
+  const emailRequired = !!signupConfig?.emailRequired;
+  const captchaKey = signupConfig?.captchaSiteKey ?? null;
 
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -52,14 +64,21 @@ export function AuthScreen() {
     setLoading(true);
     try {
       if (mode === 'login') await login(username, password);
-      else if (mode === 'register') await register(username, password, displayName);
+      else if (mode === 'register' && emailRequired) {
+        if (!emailDomainAllowed(email.trim())) throw new Error(`Use um e-mail do ${EMAIL_PROVIDER_NAMES}.`);
+        setSignup(await api.post<{ signupId: string; email: string }>('/auth/register/start', { username, password, displayName, email: email.trim(), captchaToken: captcha }));
+      } else if (mode === 'register') await register(username, password, displayName, captcha);
       else await resetPassword(username, code, password);
     } catch (err) {
       setError((err as Error).message);
+      // o token do captcha vale uma vez só
+      if (mode === 'register' && captchaKey) setCaptchaReset((n) => n + 1);
     } finally {
       setLoading(false);
     }
   }
+
+  const needsCaptcha = mode === 'register' && !!captchaKey && !captcha;
 
   return (
     <div className="relative flex h-full items-center justify-center overflow-hidden p-4">
@@ -101,6 +120,14 @@ export function AuthScreen() {
           <TwoFactorStep />
         ) : googleSignup ? (
           <GoogleSignupForm />
+        ) : signup && mode === 'register' ? (
+          <SignupCodeStep
+            signup={signup}
+            onBack={() => {
+              setSignup(null);
+              setCaptchaReset((n) => n + 1);
+            }}
+          />
         ) : mode === 'forgot' ? (
           <div className="space-y-4 p-8 md:p-10">
             <div className="mb-6">
@@ -138,6 +165,17 @@ export function AuthScreen() {
           {mode === 'register' && (
             <Input label="Nome de exibição" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como os outros vão te ver" />
           )}
+          {mode === 'register' && emailRequired && (
+            <Input
+              label="E-mail"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              hint={`${EMAIL_PROVIDER_NAMES}. Mandamos um código para confirmar; ninguém vê seu e-mail.`}
+              required
+            />
+          )}
           {mode === 'reset' && (
             <Input
               label="Código de recuperação"
@@ -163,9 +201,10 @@ export function AuthScreen() {
               Esqueci minha senha
             </button>
           )}
+          {mode === 'register' && captchaKey && <Captcha siteKey={captchaKey} onToken={setCaptcha} resetKey={captchaReset} />}
           {error && <p className="rounded-2xl bg-danger/10 px-4 py-2.5 text-sm text-red-300">{error}</p>}
-          <Button type="submit" loading={loading} className="h-11 w-full">
-            {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar conta' : 'Redefinir senha'}
+          <Button type="submit" loading={loading} disabled={needsCaptcha} className="h-11 w-full">
+            {mode === 'login' ? 'Entrar' : mode === 'register' ? (emailRequired ? 'Continuar' : 'Criar conta') : 'Redefinir senha'}
           </Button>
           {mode !== 'reset' && <GoogleButton />}
           {mode === 'reset' && emailOn && (
@@ -201,5 +240,79 @@ export function AuthScreen() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Segunda etapa do cadastro: o código de 6 dígitos que chegou no e-mail cria a conta. */
+function SignupCodeStep({ signup, onBack }: { signup: { signupId: string; email: string }; onBack: () => void }) {
+  const confirm = useApp((s) => s.registerConfirm);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [waitUntil, setWaitUntil] = useState(Date.now() + 60_000);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await confirm(signup.signupId, code);
+    } catch (err) {
+      setError((err as Error).message);
+      setLoading(false);
+    }
+  }
+
+  async function resend() {
+    try {
+      await api.post('/auth/register/resend', { signupId: signup.signupId });
+      setWaitUntil(Date.now() + 60_000);
+      toast.success('Mandamos um código novo.');
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
+  const wait = Math.max(0, Math.ceil((waitUntil - now) / 1000));
+  return (
+    <form onSubmit={submit} className="space-y-4 p-8 md:p-10">
+      <div className="mb-6">
+        <h2 className="flex items-center gap-2 text-2xl font-bold">
+          <Mail size={22} className="text-accent" /> Confira seu e-mail
+        </h2>
+        <p className="mt-1 text-sm text-fg-muted">
+          Mandamos um código de 6 dígitos para <b className="text-fg">{signup.email}</b>. Ele vale por 15 minutos. Olhe também o spam.
+        </p>
+      </div>
+      <Input
+        label="Código"
+        value={code}
+        onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        placeholder="000000"
+        className="text-center font-mono text-2xl tracking-[0.4em]"
+        autoFocus
+        required
+      />
+      {error && <p className="rounded-2xl bg-danger/10 px-4 py-2.5 text-sm text-red-300">{error}</p>}
+      <Button type="submit" loading={loading} disabled={code.length !== 6} className="h-11 w-full">
+        Criar conta
+      </Button>
+      <div className="flex items-center justify-between text-sm">
+        <button type="button" onClick={onBack} className="font-semibold text-fg-muted hover:text-fg">
+          Voltar
+        </button>
+        <button type="button" disabled={wait > 0} onClick={() => void resend()} className="font-semibold text-accent hover:underline disabled:text-fg-subtle disabled:no-underline">
+          {wait > 0 ? `Mandar outro código (${wait} s)` : 'Mandar outro código'}
+        </button>
+      </div>
+    </form>
   );
 }

@@ -1,7 +1,9 @@
 // Recuperação de senha sem e-mail: cada conta tem um código de recuperação (mostrado uma vez).
-import { randomBytes, randomInt } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import { config } from './config.ts';
 import { run } from './db.ts';
+import { networkOf } from './net.ts';
 
 // sem 0/O, 1/I/L para não confundir ao copiar à mão
 export const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -47,10 +49,15 @@ export function limiter(max: number, windowMs: number) {
   };
 }
 
-/** IP de quem chama, para os limites por rede. Vazio quando não dá para saber (atrás de um proxy sem o IP real). */
+/** A rede de um endereço (ver net.ts), embaralhada: o IP em si não fica guardado nem na memória. */
+export function networkKey(rawIp: string, bits: 48 | 64 = 64): string {
+  return createHash('sha256').update(`${config.jwtSecret}|${networkOf(rawIp, bits)}`).digest('base64url').slice(0, 22);
+}
+
+/** Rede de quem chama, para os limites (ver networkKey). Vazia quando não dá para saber (atrás de um proxy sem o IP real). */
 export function clientIp(req: { ip?: string }): string {
   const ip = req.ip ?? '';
-  return /^(127\.|::1$|::ffff:127\.)/.test(ip) ? '' : ip;
+  return /^(127\.|::1$|::ffff:127\.)/.test(ip) || !ip ? '' : networkKey(ip);
 }
 
 /** Janela deslizante de eventos por chave (tentativas erradas etc.). */

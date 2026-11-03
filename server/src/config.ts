@@ -17,6 +17,11 @@ export const config = {
   google: { clientId: env.GOOGLE_CLIENT_ID ?? '', clientSecret: env.GOOGLE_CLIENT_SECRET ?? '' },
   // e-mail de recuperação de senha (opcional), enviado pela API do Brevo. Sem chave, a função some do app.
   mail: { brevoKey: env.BREVO_API_KEY ?? '', from: (env.MAIL_FROM ?? '').trim(), fromName: env.MAIL_FROM_NAME || 'Concord', logoUrl: env.MAIL_LOGO_URL || '' },
+  // conta com senha precisa de um e-mail confirmado (Gmail, Outlook, Yahoo, iCloud; ver shared/email.ts).
+  // Só vale com o e-mail configurado acima; REQUIRE_EMAIL=false desliga (instalações pequenas, testes).
+  requireEmail: env.REQUIRE_EMAIL !== 'false',
+  // captcha do cadastro e do "esqueci a senha" (Cloudflare Turnstile). Sem as duas chaves, fica desligado.
+  turnstile: { siteKey: (env.TURNSTILE_SITE_KEY ?? '').trim(), secret: (env.TURNSTILE_SECRET ?? '').trim() },
   // código de um convite permanente: o app mostra "Entrar na comunidade" e a landing page ganha o botão
   communityInvite: (env.COMMUNITY_INVITE ?? '').trim().replace(/^.*\/invite\//, ''),
   // servidor cujo cargo "Administrador" vira autoridade da instalação inteira: dá o selo de verificado

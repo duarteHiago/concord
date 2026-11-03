@@ -1,6 +1,7 @@
 import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { emailKey } from '../../shared/email.ts';
 import { config } from './config.ts';
 
 mkdirSync(dirname(config.dbPath), { recursive: true });
@@ -441,6 +442,49 @@ addColumn('contract_avatars', 'next_flip_at', 'INTEGER');
 
 // página do perfil: conta da Steam (SteamID64, confirmada pelo login da Steam; ver integrations.ts)
 addColumn('users', 'steam_id', 'TEXT');
+
+// E-mail obrigatório (ver shared/email.ts): a caixa de entrada "de verdade" por trás do endereço, para valer um
+// e-mail por conta mesmo com pontos e "+algo" no Gmail. Contas antigas ganham a chave aqui, uma vez.
+addColumn('users', 'email_key', 'TEXT');
+db.exec('CREATE INDEX IF NOT EXISTS idx_users_email_key ON users(email_key)');
+for (const u of db.prepare('SELECT id, email FROM users WHERE email IS NOT NULL AND email_key IS NULL').all() as { id: string; email: string }[]) {
+  db.prepare('UPDATE users SET email_key = ? WHERE id = ?').run(emailKey(u.email), u.id);
+}
+// Cadastro com e-mail: a conta só nasce quando a pessoa digita o código que chegou na caixa de entrada.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pending_signups (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    email TEXT NOT NULL,
+    email_key TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    sends INTEGER NOT NULL DEFAULT 1,
+    last_sent_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_pending_signups_email ON pending_signups(email_key);
+`);
+// Conta suspensa pela equipe (portal /admin): não entra, e as sessões abertas caem.
+addColumn('users', 'banned_at', 'INTEGER');
+addColumn('users', 'ban_reason', 'TEXT');
+addColumn('users', 'banned_by', 'TEXT');
+// O que a equipe fez no portal (suspender, reativar, apagar), com o motivo. Fica mesmo que a conta seja apagada.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_username TEXT NOT NULL,
+    action TEXT NOT NULL,
+    reason TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_admin_actions_target ON admin_actions(target_id, id);
+`);
 // o Last.fm saiu do perfil: apaga o usuário que alguém tenha salvo
 if ((db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).some((c) => c.name === 'lastfm_user')) {
   db.exec('ALTER TABLE users DROP COLUMN lastfm_user');
@@ -593,6 +637,10 @@ export interface UserRow {
   totp_drift?: number;
   support_total_cents?: number;
   steam_id?: string | null;
+  email_key?: string | null;
+  banned_at?: number | null;
+  ban_reason?: string | null;
+  banned_by?: string | null;
   created_at: number;
 }
 

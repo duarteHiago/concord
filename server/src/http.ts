@@ -30,7 +30,9 @@ export function verifyToken(token: string | undefined): string | null {
     if (typeof payload !== 'object' || typeof payload.sub !== 'string') return null;
     // tokens de antes dessa checagem não têm "v": valem como versão 0
     const v = typeof payload.v === 'number' ? payload.v : 0;
-    return tokenVersion(payload.sub) === v ? payload.sub : null;
+    // conta suspensa pela equipe: nenhum token dela vale (nem na API, nem no socket)
+    const row = get<{ token_version: number; banned_at: number | null }>('SELECT token_version, banned_at FROM users WHERE id = ?', payload.sub);
+    return row && !row.banned_at && row.token_version === v ? payload.sub : null;
   } catch {
     return null;
   }
@@ -43,7 +45,7 @@ export function botUserId(token: unknown): string | null {
   if (typeof token !== 'string') return null;
   const raw = token.startsWith('Bot ') ? token.slice(4) : token;
   if (!raw.startsWith('cb_')) return null;
-  return get<{ id: string }>('SELECT id FROM users WHERE is_bot = 1 AND bot_token_hash = ?', hashBotToken(raw))?.id ?? null;
+  return get<{ id: string }>('SELECT id FROM users WHERE is_bot = 1 AND bot_token_hash = ? AND banned_at IS NULL', hashBotToken(raw))?.id ?? null;
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {

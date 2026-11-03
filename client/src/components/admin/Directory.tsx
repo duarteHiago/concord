@@ -1,8 +1,10 @@
 // Contas e servidores no portal: listas com busca e o detalhe de cada um (servidores da pessoa com os cargos
 // dela; cargos, canais e membros de um servidor). Só leitura: ações de moderação ficam para depois.
-import { Crown, Hash, MessagesSquare, ShieldCheck, Volume2 } from 'lucide-react';
+import { Crown, Hash, MessagesSquare, ShieldCheck, Trash2, UserX, Volume2 } from 'lucide-react';
 import { useState } from 'react';
-import { Avatar, cx } from '../ui';
+import { api } from '../../lib/api';
+import { toast } from '../../store/toast';
+import { Avatar, Button, cx } from '../ui';
 import type { DiagnosticMeta } from './Diagnostics';
 import { Badge, Loading, Page, Pager, RowLink, SearchBox, Table, fmtDate, fmtDay, fmtDuration, fmtNumber, useAdminData, useDebounced } from './parts';
 
@@ -22,6 +24,7 @@ interface UserSummary {
   supportCents: number;
   online: boolean;
   admin: boolean;
+  banned: boolean;
 }
 
 interface Paged<T> {
@@ -33,6 +36,7 @@ interface Paged<T> {
 function UserFlags({ u }: { u: UserSummary }) {
   return (
     <span className="flex flex-wrap gap-1">
+      {u.banned && <Badge tone="warn">suspensa</Badge>}
       {u.admin && <Badge tone="accent">equipe</Badge>}
       {u.bot && <Badge>bot</Badge>}
       {u.verified && <Badge tone="ok">verificado</Badge>}
@@ -109,15 +113,130 @@ interface UserDetailData extends Omit<UserSummary, 'servers'> {
   bots: { id: string; username: string }[];
   servers: { id: string; name: string; iconUrl: string | null; iconColor: string; owner: boolean; joinedAt: number; nickname: string | null; roles: { name: string; color: string | null }[] }[];
   diagnostics: DiagnosticMeta[];
+  ban: { at: number; reason: string | null; by: string | null } | null;
+  actions: { id: number; action: string; reason: string | null; at: number; by: string | null }[];
+}
+
+const ACTION_LABEL: Record<string, string> = { ban: 'Suspendeu', unban: 'Reativou', delete: 'Apagou' };
+
+/** Suspender, reativar ou apagar a conta (sempre com motivo, que fica registrado). */
+function AccountActions({ u, reload }: { u: UserDetailData; reload: () => void }) {
+  const [reason, setReason] = useState('');
+  const [confirmName, setConfirmName] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  if (u.admin) return <p className="text-sm text-fg-subtle">Contas da equipe não podem ser suspensas nem apagadas por aqui.</p>;
+
+  const act = async (key: string, run: () => Promise<unknown>, done: string) => {
+    setBusy(key);
+    try {
+      await run();
+      toast.success(done);
+      setReason('');
+      if (key === 'delete') location.hash = 'contas';
+      else reload();
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const ownsServer = u.servers.some((s) => s.owner);
+
+  return (
+    <div className="space-y-3 rounded-2xl bg-surface-3/60 p-4 ring-1 ring-line">
+      {u.ban && (
+        <p className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-red-300">
+          Suspensa em {fmtDate(u.ban.at)}
+          {u.ban.by && ` por @${u.ban.by}`}: {u.ban.reason}
+        </p>
+      )}
+      <textarea
+        value={reason}
+        maxLength={500}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Motivo (fica registrado)"
+        className="h-16 w-full resize-none rounded-xl bg-surface-1 p-3 text-sm outline-none"
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        {u.ban ? (
+          <Button
+            variant="secondary"
+            loading={busy === 'unban'}
+            onClick={() => void act('unban', () => api.post(`/admin/users/${u.id}/unban`, { reason }), 'Conta reativada.')}
+          >
+            <ShieldCheck size={15} /> Reativar
+          </Button>
+        ) : (
+          <Button
+            variant="danger"
+            disabled={!reason.trim()}
+            loading={busy === 'ban'}
+            onClick={() => void act('ban', () => api.post(`/admin/users/${u.id}/ban`, { reason }), 'Conta suspensa: as sessões dela caíram.')}
+          >
+            <UserX size={15} /> Suspender
+          </Button>
+        )}
+      </div>
+      <details className="text-sm">
+        <summary className="cursor-pointer font-semibold text-fg-muted">Apagar de vez</summary>
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-fg-muted">
+            Some a conta, as mensagens, as conversas privadas e os bots dela. Não dá para desfazer. Use para contas falsas ou vazias; no resto, prefira suspender.
+          </p>
+          {ownsServer ? (
+            <p className="text-xs text-warn">Essa conta é dona de servidor: suspenda em vez de apagar.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={confirmName}
+                onChange={(e) => setConfirmName(e.target.value)}
+                placeholder={`Digite ${u.username} para confirmar`}
+                className="h-9 min-w-0 flex-1 rounded-xl bg-surface-1 px-3 text-sm outline-none"
+              />
+              <Button
+                variant="danger"
+                disabled={confirmName !== u.username}
+                loading={busy === 'delete'}
+                onClick={() =>
+                  void act(
+                    'delete',
+                    () => api.del(`/admin/users/${u.id}?confirm=${encodeURIComponent(confirmName)}&reason=${encodeURIComponent(reason)}`),
+                    'Conta apagada.',
+                  )
+                }
+              >
+                <Trash2 size={15} /> Apagar
+              </Button>
+            </div>
+          )}
+        </div>
+      </details>
+      {u.actions.length > 0 && (
+        <ul className="space-y-1 border-t border-line pt-3 text-xs text-fg-muted">
+          {u.actions.map((a) => (
+            <li key={a.id}>
+              {fmtDate(a.at)} · {ACTION_LABEL[a.action] ?? a.action}
+              {a.by && ` (@${a.by})`}
+              {a.reason && `: ${a.reason}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export function UserDetail({ id }: { id: string }) {
-  const { data, error } = useAdminData<UserDetailData>(`/admin/users/${id}`);
+  const { data, error, reload } = useAdminData<UserDetailData>(`/admin/users/${id}`);
   return (
     <Loading data={data} error={error}>
       {(u) => (
         <Page back="#contas" title={<Person name={u.displayName} username={u.username} color={u.avatarColor} src={u.avatarUrl} online={u.online} size={48} />}>
           <div className="space-y-6">
+            <section>
+              <h2 className="mb-2 text-sm font-bold">Ações da equipe</h2>
+              <AccountActions u={u} reload={reload} />
+            </section>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-fg-muted">
               <span>Conta criada em {fmtDate(u.createdAt)}</span>
               <span>{u.online ? 'Online agora' : 'Offline'}</span>

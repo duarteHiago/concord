@@ -1,14 +1,16 @@
 // Portal da equipe (/admin no app): só quem está em ADMIN_USERS entra. Mostra os diagnósticos enviados e uma
-// visão geral só de leitura da instalação (contas, servidores, cargos e membros). Não mostra mensagens,
-// e-mails nem senhas: conteúdo das pessoas fica fora daqui.
+// visão geral da instalação (contas, servidores, cargos e membros). A única ação sobre pessoas é suspender ou
+// apagar uma conta, sempre com o motivo registrado. Não mostra mensagens, e-mails nem senhas.
 import type { NextFunction, Request, Response, Router } from 'express';
 import { P, has } from '../../shared/permissions.ts';
 import { config } from './config.ts';
 import { registerCostRoutes } from './costs.ts';
-import { all, get, type UserRow } from './db.ts';
+import { all, get, run, tx, type UserRow } from './db.ts';
 import { DIAGNOSTIC_RETENTION_DAYS, deleteDiagnostic, readDiagnostic } from './diagnostics.ts';
 import { fail, uid } from './http.ts';
-import { liveStats, onlineUserIds } from './realtime.ts';
+import { removeFromRoom } from './livekit.ts';
+import { dropVoice, getVoiceState, liveStats, onlineUserIds, revokeSockets } from './realtime.ts';
+import { removeUpload } from './uploads.ts';
 
 export function isAdmin(userId: string): boolean {
   if (!config.adminUsers.size) return false;
@@ -73,8 +75,55 @@ function userSummary(u: UserRow & { servers?: number }, online: Set<string>) {
     supportCents: u.support_total_cents ?? 0,
     online: online.has(u.id),
     admin: config.adminUsers.has(u.username.toLowerCase()),
+    banned: !!u.banned_at,
   };
 }
+
+// ------------------------------------------------------------------ suspender e apagar contas
+
+interface AdminActionRow {
+  id: number;
+  admin_id: string;
+  target_id: string;
+  target_username: string;
+  action: string;
+  reason: string | null;
+  created_at: number;
+}
+
+function logAction(adminId: string, target: UserRow, action: 'ban' | 'unban' | 'delete', reason: string | null) {
+  run(
+    'INSERT INTO admin_actions (admin_id, target_id, target_username, action, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    adminId,
+    target.id,
+    target.username,
+    action,
+    reason,
+    Date.now(),
+  );
+}
+
+/** Tira a conta do ar agora: derruba as sessões (sobe a versão do token e fecha os sockets) e tira das salas. */
+async function kickEverywhere(userId: string) {
+  run('UPDATE users SET token_version = token_version + 1 WHERE id = ?', userId);
+  const v = getVoiceState(userId);
+  dropVoice(userId, 'Sua conta foi suspensa.');
+  if (v) await removeFromRoom(v.channelId, userId);
+  await revokeSockets(userId);
+}
+
+/** A conta que a equipe quer mexer: não vale a própria, nem a de outra pessoa da equipe. */
+function actionTarget(adminId: string, id: string) {
+  const u = get<UserRow>('SELECT * FROM users WHERE id = ?', id) ?? fail(404, 'Conta não encontrada');
+  if (u!.id === adminId) fail(400, 'Você não pode fazer isso com a sua própria conta');
+  if (config.adminUsers.has(u!.username.toLowerCase())) fail(400, 'Contas da equipe ficam de fora (tire de ADMIN_USERS antes)');
+  return u!;
+}
+
+const reasonOf = (body: unknown) => {
+  const r = (body as { reason?: unknown } | undefined)?.reason;
+  return typeof r === 'string' && r.trim() ? r.trim().slice(0, 500) : null;
+};
 
 interface DiagnosticRow {
   id: string;
@@ -113,6 +162,58 @@ const DIAG_SELECT = 'SELECT d.*, u.username, u.display_name FROM diagnostics d L
 export function registerAdminRoutes(api: Router) {
   api.use('/admin', requireAdmin);
   registerCostRoutes(api);
+
+  /** Suspender: a conta (e os bots dela) não entra mais e cai de onde estiver. Dá para desfazer. */
+  api.post('/admin/users/:id/ban', async (req, res) => {
+    const me = uid(res);
+    const target = actionTarget(me, req.params.id);
+    const reason = reasonOf(req.body) ?? fail(400, 'Escreva o motivo (fica registrado)');
+    const bots = all<UserRow>('SELECT * FROM users WHERE bot_owner_id = ? AND banned_at IS NULL', target.id);
+    for (const u of [target, ...bots]) {
+      run('UPDATE users SET banned_at = ?, ban_reason = ?, banned_by = ? WHERE id = ?', Date.now(), reason, me, u.id);
+      await kickEverywhere(u.id);
+      logAction(me, u, 'ban', u.id === target.id ? reason : `bot de @${target.username}: ${reason}`);
+    }
+    console.log(`[portal] conta @${target.username} suspensa`);
+    res.json({ ok: true, bots: bots.length });
+  });
+
+  api.post('/admin/users/:id/unban', (req, res) => {
+    const me = uid(res);
+    const target = actionTarget(me, req.params.id);
+    if (!target.banned_at) fail(400, 'Essa conta não está suspensa');
+    const bots = all<UserRow>('SELECT * FROM users WHERE bot_owner_id = ? AND banned_at IS NOT NULL', target.id);
+    for (const u of [target, ...bots]) {
+      run('UPDATE users SET banned_at = NULL, ban_reason = NULL, banned_by = NULL WHERE id = ?', u.id);
+      logAction(me, u, 'unban', reasonOf(req.body));
+    }
+    res.json({ ok: true });
+  });
+
+  /**
+   * Apagar de vez (para contas falsas ou vazias): some a conta, as mensagens, as DMs e os bots dela. Quem é
+   * dono de servidor não pode ser apagado aqui (o servidor iria junto): suspenda a conta.
+   */
+  api.delete('/admin/users/:id', async (req, res) => {
+    const me = uid(res);
+    const target = actionTarget(me, req.params.id);
+    if (req.query.confirm !== target.username) fail(400, 'Confirme digitando o nome de usuário da conta');
+    if (get('SELECT 1 FROM servers WHERE owner_id = ?', target.id)) fail(409, 'Essa conta é dona de servidor. Suspenda em vez de apagar.');
+    const bots = all<UserRow>('SELECT * FROM users WHERE bot_owner_id = ?', target.id);
+    if (bots.some((b) => get('SELECT 1 FROM servers WHERE owner_id = ?', b.id))) fail(409, 'Um bot dessa conta é dono de servidor. Suspenda em vez de apagar.');
+    const reason = reasonOf(req.body ?? { reason: req.query.reason });
+    for (const u of [...bots, target]) {
+      await kickEverywhere(u.id);
+      logAction(me, u, 'delete', reason);
+      tx(() => {
+        run('DELETE FROM contract_locks WHERE user_id = ?', u.id);
+        run('DELETE FROM users WHERE id = ?', u.id);
+      });
+      for (const url of [u.avatar_url, u.banner_url]) removeUpload(url);
+    }
+    console.log(`[portal] conta @${target.username} apagada`);
+    res.json({ ok: true, bots: bots.length });
+  });
 
   api.get('/admin/overview', (_req, res) => {
     const live = liveStats();
@@ -171,6 +272,13 @@ export function registerAdminRoutes(api: Router) {
         roles: roles.filter((r) => r.server_id === s.id).map((r) => ({ name: r.name, color: r.color })),
       })),
       diagnostics: all<DiagnosticRow>(`${DIAG_SELECT} WHERE d.user_id = ? ORDER BY d.created_at DESC`, u.id).map(diagnosticJson),
+      ban: u.banned_at
+        ? { at: u.banned_at, reason: u.ban_reason, by: get<{ username: string }>('SELECT username FROM users WHERE id = ?', u.banned_by ?? '')?.username ?? null }
+        : null,
+      actions: all<AdminActionRow & { admin_username: string | null }>(
+        'SELECT a.*, u.username AS admin_username FROM admin_actions a LEFT JOIN users u ON u.id = a.admin_id WHERE a.target_id = ? ORDER BY a.id DESC LIMIT 50',
+        u.id,
+      ).map((a) => ({ id: a.id, action: a.action, reason: a.reason, at: a.created_at, by: a.admin_username })),
     });
   });
 

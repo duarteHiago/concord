@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import bcrypt from 'bcryptjs';
@@ -46,7 +46,9 @@ import { HttpError, color, fail, hashBotToken, humansOnly, int, optStr, requireA
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, clientIp, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
-import { isEmail, mailEnabled, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendVerifyEmail } from './mail.ts';
+import { isEmail, mailEnabled, maskEmail, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendSignupCode, sendVerifyEmail } from './mail.ts';
+import { EMAIL_PROVIDER_NAMES, emailDomainAllowed, emailKey } from '../../shared/email.ts';
+import { SIGNUP_LIMITED, captchaSiteKey, emailRequired, requireCaptcha, signupAllowed } from './signupGuard.ts';
 import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
 import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
@@ -229,6 +231,8 @@ const meJson = (u: UserRow) => {
     isAuthority: isInstanceAuthority(u.id),
     // entra no portal da equipe (/admin, ver admin.ts)
     isAdmin: isAdmin(u.id),
+    // conta com senha sem e-mail confirmado (de antes da regra): o app pede o e-mail antes de liberar o resto
+    emailRequired: emailRequired() && !u.google_sub && !u.is_bot,
     // é o Mecenas de um contrato agora: o cargo e sobre quem tem os poderes
     mecenasPowers: mecenasOfMe(u.id),
     // página do perfil: contas conectadas e o que esta instalação oferece
@@ -337,6 +341,9 @@ api.get('/config', (_req, res) => {
     communityInvite: config.communityInvite || null,
     googleLogin: google.googleEnabled(),
     emailRecovery: mailEnabled(),
+    // cadastro com senha pede e-mail (com código) e, se configurado, o captcha da Cloudflare
+    emailRequired: emailRequired(),
+    captchaSiteKey: captchaSiteKey(),
     // seção "apoie" da landing page
     support: supportPublicConfig(),
   });
@@ -376,11 +383,12 @@ const forgotTotal = limiter(200, 60 * 60_000);
 const verifyPerUser = limiter(5, 60 * 60_000);
 
 /** Esqueci a senha (por e-mail): manda o link se a conta tiver e-mail confirmado. */
-api.post('/auth/forgot', (req, res) => {
+api.post('/auth/forgot', async (req, res) => {
   if (!mailEnabled()) fail(404, 'Recuperação por e-mail não está configurada neste servidor');
   const login = str(req.body?.login, 'usuário ou e-mail', 1, 254);
+  await requireCaptcha(req, req.body?.captchaToken);
   const user = login.includes('@')
-    ? get<UserRow>('SELECT * FROM users WHERE email = ?', login.toLowerCase())
+    ? get<UserRow>('SELECT * FROM users WHERE email_key = ?', emailKey(login))
     : get<UserRow>('SELECT * FROM users WHERE username = ?', login);
   // a resposta é sempre a mesma: não dá para descobrir quem tem conta ou e-mail cadastrado
   if (user?.email && !user.is_bot && forgotPerAccount(user.id) && forgotTotal('all')) {
@@ -407,8 +415,9 @@ api.post('/auth/email/verify', (req, res) => {
   const expired = 'Esse link de confirmação expirou ou já foi usado. Cadastre o e-mail de novo em Configurações > Conta.';
   const row = takeEmailToken(String(req.body?.token ?? ''), 'verify') ?? fail(400, expired);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', row.user_id) ?? fail(400, expired);
-  if (get('SELECT 1 FROM users WHERE email = ? AND id != ?', row.email, user.id)) fail(409, 'Esse e-mail já está confirmado em outra conta do Concord.');
-  run('UPDATE users SET email = ? WHERE id = ?', row.email, user.id);
+  const key = emailKey(row.email);
+  if (get('SELECT 1 FROM users WHERE email_key = ? AND id != ?', key, user.id)) fail(409, 'Esse e-mail já está confirmado em outra conta do Concord.');
+  run('UPDATE users SET email = ?, email_key = ? WHERE id = ?', row.email, key, user.id);
   if (user.email && user.email !== row.email) sendEmailChanged(user.email, user.username, row.email).catch(mailError);
   emitToUser(user.id, 'me:updated', meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!));
   res.json({ email: row.email });
@@ -419,54 +428,182 @@ function requireUnreservedName(username: string) {
   if (config.adminUsers.has(username.toLowerCase())) fail(409, 'Esse nome de usuário está reservado');
 }
 
-// cadastro por rede: segura quem cria contas em massa (cada uma também custa um bcrypt)
-const registersPerIp = limiter(5, 60 * 60_000);
-const registerAllowed = (req: express.Request) => {
-  const ip = clientIp(req);
-  return !ip || registersPerIp(ip);
-};
-
-api.post('/auth/register', async (req, res) => {
-  if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
-  const username = str(req.body?.username, 'usuário', 3, 32);
+/** Campos do cadastro com senha (os dois jeitos de cadastrar usam). */
+function signupFields(body: Record<string, unknown> | undefined) {
+  const username = str(body?.username, 'usuário', 3, 32);
   if (!/^[a-zA-Z0-9_.]+$/.test(username)) fail(400, 'Usuário deve conter apenas letras, números, "_" e "."');
-  const password = str(req.body?.password, 'senha', 6, 128);
+  const password = str(body?.password, 'senha', 6, 128);
   // nome de exibição é opcional no cadastro: vazio vira o próprio usuário
-  const displayName = optStr(req.body?.displayName?.trim?.() || undefined, 'nome', 1, 32) || username;
+  const dn = body?.displayName;
+  const displayName = optStr((typeof dn === 'string' ? dn.trim() : '') || undefined, 'nome', 1, 32) || username;
   if (get('SELECT 1 FROM users WHERE username = ?', username)) fail(409, 'Esse nome de usuário já está em uso');
   requireUnreservedName(username);
-  if (!registerAllowed(req)) fail(429, 'Muitas contas criadas desta rede agora há pouco. Tente de novo mais tarde.');
+  return { username, password, displayName };
+}
 
-  const user: UserRow = {
-    id: randomUUID(),
-    username,
-    display_name: displayName,
-    password_hash: await bcrypt.hash(password, 10),
-    avatar_color: pickColor(),
-    avatar_url: null,
-    banner_url: null,
-    is_bot: 0,
-    bot_owner_id: null,
-    bot_token_hash: null,
-    profile_style: '{}',
-    banner_color: null,
-    bio: '',
-    settings: '{}',
-    recovery_hash: null,
-    verified: 0,
-    created_at: now(),
-  };
+/** E-mail da conta: formato, provedor aceito e um por conta (contando os apelidos da mesma caixa, ver shared/email.ts). */
+function accountEmail(raw: unknown, exceptUserId = '') {
+  const email = str(raw, 'e-mail', 3, 254).toLowerCase();
+  if (!isEmail(email)) fail(400, 'E-mail inválido');
+  // com o e-mail obrigatório, só dos provedores grandes (fora disso, quem hospeda o Concord aceita qualquer um)
+  if (emailRequired() && !emailDomainAllowed(email)) fail(400, `Use um e-mail do ${EMAIL_PROVIDER_NAMES}.`);
+  const key = emailKey(email);
+  if (get('SELECT 1 FROM users WHERE email_key = ? AND id != ?', key, exceptUserId)) fail(409, 'Esse e-mail já está em uma conta do Concord.');
+  return { email, key };
+}
+
+function createPasswordUser(f: { username: string; displayName: string; passwordHash: string; email?: string; emailKey?: string }) {
+  const id = randomUUID();
   run(
-    'INSERT INTO users (id, username, display_name, password_hash, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    user.id,
-    user.username,
-    user.display_name,
-    user.password_hash,
-    user.avatar_color,
-    user.created_at,
+    'INSERT INTO users (id, username, display_name, password_hash, avatar_color, email, email_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    id,
+    f.username,
+    f.displayName,
+    f.passwordHash,
+    pickColor(),
+    f.email ?? null,
+    f.emailKey ?? null,
+    now(),
   );
-  const recoveryCode = await rotateRecoveryCode(user.id);
-  res.json({ token: signToken(user.id), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', user.id)!), recoveryCode });
+  return id;
+}
+
+async function sendNewAccount(res: express.Response, userId: string) {
+  const recoveryCode = await rotateRecoveryCode(userId);
+  res.json({ token: signToken(userId), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', userId)!), recoveryCode });
+}
+
+/** Cadastro direto, sem e-mail: só em instalações sem e-mail configurado (ou com REQUIRE_EMAIL=false). */
+api.post('/auth/register', async (req, res) => {
+  if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
+  if (emailRequired()) fail(400, 'Para criar uma conta agora é preciso confirmar um e-mail. Recarregue a página e tente de novo.');
+  const f = signupFields(req.body);
+  await requireCaptcha(req, req.body?.captchaToken);
+  if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
+  const id = createPasswordUser({ username: f.username, displayName: f.displayName, passwordHash: await bcrypt.hash(f.password, 10) });
+  await sendNewAccount(res, id);
+});
+
+// ---- Cadastro com e-mail: a conta só nasce quando a pessoa digita o código que chegou na caixa de entrada.
+// Script sem caixa de e-mail de verdade não cria conta nenhuma (e não sobra conta vazia no banco).
+
+const SIGNUP_CODE_TTL = 15 * 60_000;
+const SIGNUP_MAX_ATTEMPTS = 5;
+const SIGNUP_MAX_SENDS = 3;
+const SIGNUP_RESEND_GAP = 60_000;
+// por caixa de e-mail e no total: ninguém usa o Concord para encher a caixa de alguém nem para mandar e-mail em massa
+const signupMailPerKey = limiter(5, 60 * 60_000);
+const signupMailTotal = limiter(300, 60 * 60_000);
+
+interface PendingSignupRow {
+  id: string;
+  username: string;
+  display_name: string;
+  password_hash: string;
+  email: string;
+  email_key: string;
+  code_hash: string;
+  attempts: number;
+  sends: number;
+  last_sent_at: number;
+  expires_at: number;
+}
+
+const newSignupCode = () => String(randomInt(0, 1_000_000)).padStart(6, '0');
+const signupCodeHash = (id: string, code: string) => hashToken(`${id}:${code}`);
+
+/** Primeira etapa: confere tudo, guarda o pedido (com a senha já em hash) e manda o código. */
+api.post('/auth/register/start', async (req, res) => {
+  if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
+  if (!emailRequired()) fail(404, 'Rota não encontrada');
+  const f = signupFields(req.body);
+  const { email, key } = accountEmail(req.body?.email);
+  await requireCaptcha(req, req.body?.captchaToken);
+  if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
+  if (!signupMailPerKey(key) || !signupMailTotal('all')) fail(429, 'Muitos códigos enviados agora. Espere alguns minutos e tente de novo.');
+
+  run('DELETE FROM pending_signups WHERE expires_at < ? OR email_key = ?', now(), key);
+  const id = randomUUID();
+  const code = newSignupCode();
+  const t = now();
+  run(
+    `INSERT INTO pending_signups (id, username, display_name, password_hash, email, email_key, code_hash, last_sent_at, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    f.username,
+    f.displayName,
+    await bcrypt.hash(f.password, 10),
+    email,
+    key,
+    signupCodeHash(id, code),
+    t,
+    t + SIGNUP_CODE_TTL,
+    t,
+  );
+  try {
+    await sendSignupCode(email, f.username, code);
+  } catch (err) {
+    mailError(err);
+    run('DELETE FROM pending_signups WHERE id = ?', id);
+    fail(500, 'Não foi possível enviar o e-mail agora. Tente de novo em instantes.');
+  }
+  res.json({ signupId: id, email: maskEmail(email), expiresAt: t + SIGNUP_CODE_TTL });
+});
+
+const pendingSignup = (id: unknown) => {
+  const p = typeof id === 'string' ? get<PendingSignupRow>('SELECT * FROM pending_signups WHERE id = ?', id) : undefined;
+  if (!p || p.expires_at < now()) fail(400, 'Esse código expirou. Comece o cadastro de novo.');
+  return p!;
+};
+
+/** Segunda etapa: o código certo cria a conta, já com o e-mail confirmado. */
+api.post('/auth/register/confirm', async (req, res) => {
+  const p = pendingSignup(req.body?.signupId);
+  const code = String(req.body?.code ?? '').replace(/\D/g, '');
+  const a = Buffer.from(signupCodeHash(p.id, code));
+  const b = Buffer.from(p.code_hash);
+  if (code.length !== 6 || a.length !== b.length || !timingSafeEqual(a, b)) {
+    const left = SIGNUP_MAX_ATTEMPTS - p.attempts - 1;
+    if (left <= 0) {
+      run('DELETE FROM pending_signups WHERE id = ?', p.id);
+      fail(400, 'Código errado muitas vezes. Comece o cadastro de novo.');
+    }
+    run('UPDATE pending_signups SET attempts = attempts + 1 WHERE id = ?', p.id);
+    fail(400, `Código incorreto. Mais ${left} tentativa(s).`);
+  }
+  // entre o código e agora, alguém pode ter pegado o nome ou o e-mail
+  const id = tx(() => {
+    run('DELETE FROM pending_signups WHERE id = ?', p.id);
+    if (get('SELECT 1 FROM users WHERE username = ?', p.username)) fail(409, 'Esse nome de usuário acabou de ser usado. Comece de novo com outro nome.');
+    if (get('SELECT 1 FROM users WHERE email_key = ?', p.email_key)) fail(409, 'Esse e-mail já está em uma conta do Concord.');
+    return createPasswordUser({ username: p.username, displayName: p.display_name, passwordHash: p.password_hash, email: p.email, emailKey: p.email_key });
+  });
+  await sendNewAccount(res, id);
+});
+
+/** Não chegou: manda outro código (no máximo 3 por cadastro, com 1 minuto entre eles). */
+api.post('/auth/register/resend', async (req, res) => {
+  const p = pendingSignup(req.body?.signupId);
+  const wait = p.last_sent_at + SIGNUP_RESEND_GAP - now();
+  if (wait > 0) fail(429, `Espere ${Math.ceil(wait / 1000)} s para pedir outro código.`);
+  if (p.sends >= SIGNUP_MAX_SENDS) fail(429, 'Já mandamos vários códigos. Confira o spam ou comece o cadastro de novo.');
+  if (!signupMailPerKey(p.email_key) || !signupMailTotal('all')) fail(429, 'Muitos códigos enviados agora. Espere alguns minutos e tente de novo.');
+  const code = newSignupCode();
+  const t = now();
+  run(
+    'UPDATE pending_signups SET code_hash = ?, attempts = 0, sends = sends + 1, last_sent_at = ?, expires_at = ? WHERE id = ?',
+    signupCodeHash(p.id, code),
+    t,
+    t + SIGNUP_CODE_TTL,
+    p.id,
+  );
+  try {
+    await sendSignupCode(p.email, p.username, code);
+  } catch (err) {
+    mailError(err);
+    fail(500, 'Não foi possível enviar o e-mail agora. Tente de novo em instantes.');
+  }
+  res.json({ ok: true, expiresAt: t + SIGNUP_CODE_TTL });
 });
 
 /** Esqueci a senha: usuário + código de recuperação + nova senha. O código é trocado após o uso. */
@@ -506,8 +643,12 @@ async function checkPassword(username: string, password: string, ip: string): Pr
           : 'Usuário ou senha incorretos.',
     );
   }
+  // só depois da senha certa: quem chuta senha não descobre que a conta existe e está suspensa
+  if (user!.banned_at) fail(403, BANNED);
   return user!;
 }
+
+const BANNED = 'Esta conta foi suspensa pela equipe do Concord.';
 
 api.post('/auth/login', async (req, res) => {
   const username = str(req.body?.username, 'usuário', 1, 32);
@@ -627,6 +768,7 @@ api.get('/auth/google/callback', googleLimit, async (req, res) => {
     if (!target) return deliverGoogle(res, { error: 'Conta não encontrada.' }, pending.desktop);
     return res.type('html').send(linkConfirmPage(target, google.newLinkConfirm(sub, target.id, pending.desktop)));
   }
+  if (owner?.banned_at) return deliverGoogle(res, { error: BANNED }, pending.desktop);
   if (owner) return deliverGoogle(res, twoFactor.loginResult(owner), pending.desktop);
   if (!config.allowRegistration) return deliverGoogle(res, { error: 'Cadastro desativado neste servidor.' }, pending.desktop);
   deliverGoogle(res, { signup: google.newSignup(sub, pending.desktop) });
@@ -663,7 +805,7 @@ api.post('/auth/google/signup', googleLimit, async (req, res) => {
   const existing = get<UserRow>('SELECT * FROM users WHERE google_sub = ?', ticket.sub);
   const id = existing?.id ?? randomUUID();
   if (!existing) {
-    if (!registerAllowed(req)) fail(429, 'Muitas contas criadas desta rede agora há pouco. Tente de novo mais tarde.');
+    if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
     run(
       "INSERT INTO users (id, username, display_name, password_hash, avatar_color, google_sub, created_at) VALUES (?, ?, ?, '', ?, ?, ?)",
       id,
@@ -756,6 +898,16 @@ registerClientErrorRoutes(api);
 registerCspReportRoutes(api);
 
 api.use(requireAuth);
+
+// Conta com senha e sem e-mail confirmado (criada antes do e-mail obrigatório): até confirmar um e-mail, só dá
+// para ver a própria conta e cadastrar o e-mail. Quem entra pelo Google e os bots não passam por isso.
+const EMAIL_GATE_OPEN = new Set(['GET /me', 'PUT /me/email', 'PATCH /me']);
+api.use((req, res, next) => {
+  if (res.locals.isBot || !emailRequired() || EMAIL_GATE_OPEN.has(`${req.method} ${req.path}`)) return next();
+  const u = get<{ email: string | null; google_sub: string | null }>('SELECT email, google_sub FROM users WHERE id = ?', uid(res));
+  if (!u || u.email || u.google_sub) return next();
+  res.status(403).json({ error: 'Confirme um e-mail para continuar usando o Concord.', code: 'email_required' });
+});
 
 api.get('/me', (_req, res) => {
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', uid(res)) ?? fail(401, 'Sessão inválida');
@@ -1763,9 +1915,17 @@ setInterval(() => {
   }
 }, 60 * 60_000).unref();
 
+// anti-flood: por pessoa (ou bot), somando canais e conversas privadas. Uma conversa animada não chega perto disso.
+const messagesBurst = limiter(10, 10_000);
+const messagesMinute = limiter(30, 60_000);
+function requireMessageQuota(me: string) {
+  if (!messagesBurst(me) || !messagesMinute(me)) fail(429, 'Calma! Você está mandando mensagens rápido demais. Espere alguns segundos.');
+}
+
 api.post('/channels/:id/messages', async (req, res) => {
   const me = uid(res);
   const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
+  requireMessageQuota(me);
   if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
   const files = pendingAttachments(req.body?.attachments, me);
   const content = messageContent(req.body?.content, files.length > 0);
@@ -2497,6 +2657,7 @@ function insertDmMessage(
 api.post('/dms/:id/messages', (req, res) => {
   const me = uid(res);
   const dm = requireDm(req.params.id, me);
+  requireMessageQuota(me);
   const files = pendingAttachments(req.body?.attachments, me);
   const replyTo = replyTarget(req.body?.replyTo, 'dm_messages', 'dm_id', dm.id);
   res.json(insertDmMessage(dm, me, messageContent(req.body?.content, files.length > 0), 'text', null, files, replyTo));
@@ -2559,9 +2720,8 @@ api.put('/me/email', humansOnly, async (req, res) => {
   if (!mailEnabled()) fail(404, 'Recuperação por e-mail não está configurada neste servidor');
   const me = uid(res);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
-  const email = str(req.body?.email, 'e-mail', 3, 254).toLowerCase();
-  if (!isEmail(email)) fail(400, 'E-mail inválido');
-  if (email === user.email) fail(400, 'Esse já é o e-mail confirmado da sua conta');
+  if (String(req.body?.email ?? '').trim().toLowerCase() === user.email) fail(400, 'Esse já é o e-mail confirmado da sua conta');
+  const { email } = accountEmail(req.body?.email, me);
   if (!verifyPerUser(me)) fail(429, 'Muitas tentativas. Espere um pouco e tente de novo.');
   // pede a senha: quem pegou a sessão de alguém não consegue trocar o e-mail e depois a senha
   if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
@@ -2580,8 +2740,9 @@ api.put('/me/email', humansOnly, async (req, res) => {
 api.delete('/me/email', humansOnly, (_req, res) => {
   const me = uid(res);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
+  if (emailRequired() && !user.google_sub) fail(400, 'O e-mail é obrigatório nas contas com senha. Dá para trocar por outro, mas não para remover.');
   run('DELETE FROM email_tokens WHERE user_id = ?', me);
-  run('UPDATE users SET email = NULL WHERE id = ?', me);
+  run('UPDATE users SET email = NULL, email_key = NULL WHERE id = ?', me);
   if (user.email && mailEnabled()) sendEmailChanged(user.email, user.username, null).catch(mailError);
   res.json(meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!));
 });

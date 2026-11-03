@@ -1,11 +1,14 @@
 // E-mail de recuperação (opcional): cadastrar o endereço nas configurações, pedir o link em
 // "Esqueci minha senha" e escolher a senha nova pelo link que chega no e-mail.
-import { Check, Mail } from 'lucide-react';
+import { Check, LogOut, Mail } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { EMAIL_PROVIDER_NAMES, emailDomainAllowed } from '../../../shared/email.ts';
 import { api } from '../lib/api';
+import { useSignupConfig } from '../lib/serverConfig';
 import type { Me } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
+import { Captcha } from './Captcha';
 import { TwoFactorCodeInput } from './TwoFactor';
 import { Button, Input, Modal } from './ui';
 
@@ -28,18 +31,22 @@ export function ForgotByEmail({ login, setLogin }: { login: string; setLogin: (v
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const captchaKey = useSignupConfig()?.captchaSiteKey ?? null;
+  const [captcha, setCaptcha] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await api.post('/auth/forgot', { login });
+      await api.post('/auth/forgot', { login, captchaToken: captcha });
       setSent(true);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      if (captchaKey) setCaptchaReset((n) => n + 1);
     }
   }
 
@@ -59,8 +66,9 @@ export function ForgotByEmail({ login, setLogin }: { login: string; setLogin: (v
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Input label="Usuário ou e-mail" value={login} onChange={(e) => setLogin(e.target.value)} autoFocus autoComplete="username" required />
+      {captchaKey && <Captcha siteKey={captchaKey} onToken={setCaptcha} resetKey={captchaReset} />}
       {error && <p className="rounded-2xl bg-danger/10 px-4 py-2.5 text-sm text-red-300">{error}</p>}
-      <Button type="submit" loading={loading} className="h-11 w-full">
+      <Button type="submit" loading={loading} disabled={!!captchaKey && !captcha} className="h-11 w-full">
         Enviar link
       </Button>
     </form>
@@ -134,7 +142,8 @@ export function useEmailPrompt() {
       const s = useApp.getState();
       if (promptChecked || !s.me || s.modal) return;
       promptChecked = true;
-      if (!s.me.email && !s.me.emailPending && !s.me.settings.emailPromptDismissed) openModal({ type: 'emailPrompt' });
+      // e-mail obrigatório: quem não tem já vê a tela própria (EmailGateScreen), sem este aviso opcional
+      if (!s.me.email && !s.me.emailPending && !s.me.emailRequired && !s.me.settings.emailPromptDismissed) openModal({ type: 'emailPrompt' });
     }, 1500);
     return () => window.clearTimeout(t);
   }, [enabled, me, modal, openModal]);
@@ -186,6 +195,7 @@ export function EmailSection() {
   const showForm = enabled && (editing || !me.email);
 
   async function save() {
+    if (me.emailRequired && !emailDomainAllowed(email.trim())) return toast.error(`Use um e-mail do ${EMAIL_PROVIDER_NAMES}.`);
     setLoading(true);
     try {
       setMe(await api.put<Me>('/me/email', { email, password, twoFactorCode }));
@@ -222,6 +232,8 @@ export function EmailSection() {
             </span>{' '}
             recebe o link se você esquecer a senha.
           </>
+        ) : me.emailRequired ? (
+          `Obrigatório nas contas com senha: ${EMAIL_PROVIDER_NAMES}. Ele não aparece para ninguém e serve para confirmar que a conta é de uma pessoa e para recuperar a senha.`
         ) : (
           'Opcional. Cadastre um e-mail para receber um link se esquecer a senha. Ele não aparece para ninguém e não é usado para mais nada.'
         )}
@@ -260,11 +272,40 @@ export function EmailSection() {
               Trocar
             </Button>
           )}
-          <Button variant="ghost" className="h-9" onClick={() => void remove()}>
-            Remover
-          </Button>
+          {!me.emailRequired && (
+            <Button variant="ghost" className="h-9" onClick={() => void remove()}>
+              Remover
+            </Button>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Conta com senha de antes do e-mail obrigatório: no lugar do app, só esta tela, até confirmar um e-mail
+ * (o servidor também recusa o resto). Quem entra pelo Google nunca vê isto.
+ */
+export function EmailGateScreen() {
+  const me = useApp((s) => s.me)!;
+  const logout = useApp((s) => s.logout);
+  return (
+    <div className="flex h-full items-center justify-center overflow-y-auto p-4">
+      <div className="w-full max-w-md animate-pop-in space-y-5 rounded-3xl border border-line bg-surface-2/80 p-8 shadow-2xl md:p-10">
+        <img src="/brand/concord-logo.png" alt="Concord" className="h-9 w-auto" />
+        <div>
+          <h2 className="text-2xl font-bold">Confirme um e-mail para continuar</h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            Oi, @{me.username}! Para proteger o Concord de contas falsas, toda conta com senha agora precisa de um e-mail confirmado. Cadastre o seu e
+            clique no link que vai chegar: o app libera na hora.
+          </p>
+        </div>
+        <EmailSection />
+        <button type="button" onClick={logout} className="flex items-center gap-1.5 text-sm font-semibold text-fg-muted hover:text-fg">
+          <LogOut size={14} /> Sair da conta
+        </button>
+      </div>
     </div>
   );
 }

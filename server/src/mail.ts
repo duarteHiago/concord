@@ -1,5 +1,5 @@
-// E-mails do Concord (confirmar o endereço e recuperar a senha), enviados pela API transacional do Brevo.
-// O e-mail é opcional: sem BREVO_API_KEY e MAIL_FROM, a função não aparece no app.
+// E-mails do Concord (código do cadastro, confirmar o endereço e recuperar a senha), enviados pela API
+// transacional do Brevo. Sem BREVO_API_KEY e MAIL_FROM, o e-mail some do app e o cadastro não pede e-mail.
 import { config } from './config.ts';
 
 // (o endereço só muda nos testes, para não mandar e-mail de verdade)
@@ -68,6 +68,18 @@ export const sendVerifyEmail = (to: string, username: string, url: string) =>
     lines: [`Oi, @${username}! Este e-mail foi cadastrado na sua conta do Concord para recuperar a senha se você esquecer.`, 'Confirme clicando no botão abaixo. O link vale por 24 horas.'],
     button: { label: 'Confirmar e-mail', url },
     footer: NOT_YOU,
+  });
+
+/** Código de 6 dígitos para terminar o cadastro (a conta só é criada depois dele). */
+export const sendSignupCode = (to: string, username: string, code: string) =>
+  send(to, {
+    subject: `${code} é o seu código do Concord`,
+    lines: [
+      `Oi! Alguém está criando a conta @${username} no Concord com este e-mail.`,
+      `Para terminar o cadastro, digite este código no app: ${code}`,
+      'O código vale por 15 minutos.',
+    ],
+    footer: 'Se não foi você, ignore este e-mail: nenhuma conta é criada sem o código.',
   });
 
 export const sendResetEmail = (to: string, username: string, url: string) =>

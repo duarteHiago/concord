@@ -40,10 +40,12 @@ function reportOnlyPolicy() {
   // livekit-client chama quando a conexão falha. Em produção ele fica no mesmo domínio (/livekit) e 'self' basta.
   const lk = config.livekit.publicUrl ? origin(config.livekit.publicUrl) : '';
   const livekit = lk ? `${lk} ${lk.replace(/^ws/, 'http')}` : '';
+  // captcha do cadastro (Cloudflare Turnstile): o script e a moldura dele vêm desse endereço
+  const turnstile = config.turnstile.siteKey && config.turnstile.secret ? 'https://challenges.cloudflare.com' : '';
   return [
     "default-src 'self'",
     // wasm: supressão de ruído e efeitos de voz
-    `script-src 'self' 'wasm-unsafe-eval' ${inlineScriptHashes().join(' ')}`,
+    `script-src 'self' 'wasm-unsafe-eval' ${inlineScriptHashes().join(' ')}${turnstile ? ` ${turnstile}` : ''}`,
     // React usa style="" e o CSS personalizado de cada pessoa vira um <style>
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
@@ -52,7 +54,7 @@ function reportOnlyPolicy() {
     "media-src 'self' data: blob:",
     `connect-src 'self'${livekit ? ` ${livekit}` : ''}`,
     "worker-src 'self' blob:",
-    "frame-src 'none'",
+    turnstile ? `frame-src ${turnstile}` : "frame-src 'none'",
     "form-action 'self'",
     ENFORCED,
     'report-uri /api/csp-report',
