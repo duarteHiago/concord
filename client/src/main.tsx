@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
+import './lib/pwa';
 import { getToken } from './lib/api';
 import { applyTheme, cachedTheme, DEFAULT_THEME } from './lib/theme';
 

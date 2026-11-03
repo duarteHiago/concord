@@ -9,6 +9,7 @@ import { ForumView } from './components/ForumView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
 import { Spinner, Toasts } from './components/ui';
+import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard, NudgeMessageToast } from './components/NudgeCard';
 import { GameOverlay } from './components/GameOverlay';
@@ -129,6 +130,7 @@ function MainApp() {
       <ModalHost />
       <Toasts />
       <UpdateBanner />
+      <PwaUpdateBanner />
       {me && <NudgeCard />}
       {me && <NudgeMessageToast />}
       {me && <GameOverlay />}
