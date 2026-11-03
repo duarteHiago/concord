@@ -1018,10 +1018,17 @@ api.post('/me/2fa/backup-codes', humansOnly, (req, res) => {
 
 const imageBody = express.raw({ type: () => true, limit: '9mb' });
 
+// anti-abuso: todas as trocas de imagem do perfil (avatar, banner, card, background, patch) somadas
+const profileImageUploads = limiter(10, 60 * 60_000);
+function requireProfileUploadQuota(me: string) {
+  if (!profileImageUploads(me)) fail(429, 'Muitas trocas de imagem em pouco tempo. Espere um pouco.');
+}
+
 const AVATAR_LOCKED = 'Seu Mecenas escolheu sua foto. Ela volta ao normal quando o contrato acabar.';
 
 api.post('/me/avatar', imageBody, (req, res) => {
   const me = uid(res);
+  requireProfileUploadQuota(me);
   if (avatarLocked(me)) fail(403, AVATAR_LOCKED);
   const old = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url;
   const url = saveImage('avatars', me, req.body);
@@ -1043,6 +1050,7 @@ api.delete('/me/avatar', (_req, res) => {
 /** Capa do perfil (aceita GIF animado). */
 api.post('/me/banner', imageBody, (req, res) => {
   const me = uid(res);
+  requireProfileUploadQuota(me);
   const old = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.banner_url;
   const url = saveImage('banners', me, req.body);
   run('UPDATE users SET banner_url = ? WHERE id = ?', url, me);
@@ -1149,6 +1157,7 @@ api.patch('/me/style', (req, res) => {
 /** Fundo do mini perfil (imagem ou GIF). */
 api.post('/me/card-bg', imageBody, (req, res) => {
   const me = uid(res);
+  requireProfileUploadQuota(me);
   const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
   const old = style.cardBg;
   style.cardBg = saveImage('cards', me, req.body);
@@ -1168,12 +1177,14 @@ api.delete('/me/card-bg', (_req, res) => {
 
 /** Imagem de um patch (logo do time etc.). Só passa a valer quando o patch é salvo. */
 api.post('/me/patch-image', imageBody, (req, res) => {
+  requireProfileUploadQuota(uid(res));
   res.json({ url: saveImage('patches', uid(res), req.body) });
 });
 
 /** Fundo do tema: guardado no servidor para aparecer igual no navegador e no app desktop. */
 api.post('/me/background', imageBody, (req, res) => {
   const me = uid(res);
+  requireProfileUploadQuota(me);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
   let previous: string | undefined;
   try {
@@ -1196,8 +1207,14 @@ api.get('/servers', (_req, res) => {
   res.json(rows.map(serverJson));
 });
 
+const MAX_OWNED_SERVERS = 5;
+const serverCreateRate = limiter(3, 60 * 60_000);
+
 api.post('/servers', humansOnly, (req, res) => {
   const me = uid(res);
+  const owned = get<{ n: number }>('SELECT COUNT(*) AS n FROM servers WHERE owner_id = ?', me)!.n;
+  if (owned >= MAX_OWNED_SERVERS) fail(400, `Você já é dono de ${MAX_OWNED_SERVERS} servidores. Apague algum antes de criar outro.`);
+  if (!serverCreateRate(me)) fail(429, 'Você já criou servidores agora há pouco. Espere um pouco.');
   const name = str(req.body?.name, 'nome', 2, 50);
   const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, verified: 0, created_at: now() };
 
@@ -1317,7 +1334,10 @@ api.patch('/servers/:id', (req, res) => {
   res.json(serverJson(getServer(server.id)));
 });
 
+const serverIconRate = limiter(5, 60 * 60_000);
+
 api.post('/servers/:id/icon', imageBody, (req, res) => {
+  if (!serverIconRate(req.params.id)) fail(429, 'Muitas trocas de ícone em pouco tempo. Espere um pouco.');
   const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
   const url = saveImage('icons', server.id, req.body);
   run('UPDATE servers SET icon_url = ? WHERE id = ?', url, server.id);
@@ -1689,6 +1709,8 @@ api.post('/servers/:id/members/:userId/voice-disconnect', async (req, res) => {
 
 const NUDGE_COOLDOWN_MS = 15_000;
 const lastNudge = new Map<string, number>(); // `${de}:${para}` -> quando
+// proteção contra bombardeio com várias contas: no máximo 6 nudges por minuto na mesma pessoa
+const nudgesPerTarget = limiter(6, 60_000);
 
 interface NudgePrefs {
   status?: string;
@@ -1718,6 +1740,7 @@ api.post('/servers/:id/members/:userId/nudge', (req, res) => {
   const key = `${me}:${target}`;
   const wait = (lastNudge.get(key) ?? 0) + NUDGE_COOLDOWN_MS - now();
   if (wait > 0) fail(429, `Calma! Espere ${Math.ceil(wait / 1000)}s para chamar de novo`);
+  if (!nudgesPerTarget(target)) fail(429, `${name} já recebeu chamadas demais agora. Espere um pouco.`);
   lastNudge.set(key, now());
 
   // mensagem opcional junto da tremida (sem opção de copiar do lado de quem recebe, ver NudgeCard.tsx)
@@ -1774,8 +1797,11 @@ api.get('/servers/:id/invites', (req, res) => {
   res.json(rows.filter((i) => inviteValid(i) && (canManage || i.creator_id === me)).map(inviteJson));
 });
 
+const inviteCreateRate = limiter(10, 60 * 60_000);
+
 api.post('/servers/:id/invites', (req, res) => {
   const me = uid(res);
+  if (!inviteCreateRate(me)) fail(429, 'Muitos convites criados em pouco tempo. Espere um pouco.');
   const server = requireServerPerm(req.params.id, me, P.CREATE_INVITE);
   const maxUses = Math.max(0, Math.min(1000, Number(req.body?.maxUses ?? 0) | 0));
   const expiresIn = Number(req.body?.expiresIn ?? 7 * 24 * 3600) | 0; // segundos; 0 = nunca
@@ -2283,8 +2309,11 @@ api.get('/channels/:id/stickers', (req, res) => {
   res.json(placedIn(channel.id));
 });
 
+const placeStickerRate = limiter(10, 60_000);
+
 api.post('/channels/:id/stickers', humansOnly, (req, res) => {
   const me = uid(res);
+  if (!placeStickerRate(me)) fail(429, 'Muitos stickers em pouco tempo. Espere um pouco.');
   const channel = requireChannelPerm(req.params.id, me, P.CONNECT);
   if (channel.type !== 'voice') fail(400, 'Stickers só podem ser colados em salas de voz');
   const sticker = String(req.body?.sticker ?? '');
@@ -2470,6 +2499,7 @@ api.delete('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
 
 api.post('/channels/:id/games', async (req, res) => {
   const me = uid(res);
+  requireMessageQuota(me);
   const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
   if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
   const { content, data } = playGame(req.body);
@@ -2492,6 +2522,7 @@ api.post('/channels/:id/games', async (req, res) => {
 
 api.post('/channels/:id/sticker-messages', async (req, res) => {
   const me = uid(res);
+  requireMessageQuota(me);
   const channel = requireChannelPerm(req.params.id, me, P.SEND_MESSAGES);
   if (channel.type === 'forum') fail(400, 'Num fórum, crie um post');
   const data = stickerMessageData(req.body?.stickerId, me);
@@ -2665,6 +2696,7 @@ api.post('/dms/:id/messages', (req, res) => {
 
 api.post('/dms/:id/games', (req, res) => {
   const me = uid(res);
+  requireMessageQuota(me);
   const dm = requireDm(req.params.id, me);
   const { content, data } = playGame(req.body);
   res.json(insertDmMessage(dm, me, content, 'game', data));
@@ -2672,6 +2704,7 @@ api.post('/dms/:id/games', (req, res) => {
 
 api.post('/dms/:id/sticker-messages', (req, res) => {
   const me = uid(res);
+  requireMessageQuota(me);
   const dm = requireDm(req.params.id, me);
   res.json(insertDmMessage(dm, me, STICKER_MESSAGE_TEXT, 'sticker', stickerMessageData(req.body?.stickerId, me)));
 });
