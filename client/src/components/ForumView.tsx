@@ -8,6 +8,7 @@ import { useActiveDetail, useApp } from '../store/app';
 import { profileTriggers } from '../store/popover';
 import { toast } from '../store/toast';
 import { RichText } from './ChatView';
+import { MobileBackButton } from './MobileNav';
 import { Avatar, Button, IconButton, Spinner, cx } from './ui';
 
 type Sort = 'hot' | 'top' | 'new' | 'active';
@@ -66,10 +67,11 @@ export function ForumView({ channel }: { channel: Channel }) {
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 px-6 pt-5 pb-3">
+      <header className="flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-6 md:pt-5">
+        <MobileBackButton />
         <MessagesSquare size={24} className="text-fg-subtle" />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold">{channel.name}</h1>
+          <h1 className="truncate text-xl font-bold md:text-2xl">{channel.name}</h1>
           {channel.topic && <p className="truncate text-sm text-fg-muted">{channel.topic}</p>}
         </div>
         {canPost && !composing && (

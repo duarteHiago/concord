@@ -318,7 +318,7 @@ export function Modal({
 export function Toasts() {
   const { toasts, dismiss } = useToasts();
   return (
-    <div className="pointer-events-none fixed bottom-6 left-1/2 z-[100] flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="pointer-events-none fixed bottom-16 left-1/2 z-[100] flex -translate-x-1/2 flex-col items-center gap-2 md:bottom-6">
       {toasts.map((t) => (
         <button
           key={t.id}

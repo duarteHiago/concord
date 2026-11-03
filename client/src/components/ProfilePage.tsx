@@ -2,7 +2,8 @@
 // escolhido vira uma capa de cinema que se dissolve na página, o nome vem grande, e embaixo ficam só números soltos
 // e as seções que importam: os jogos que a pessoa escolheu em destaque (capas em pé, o favorito maior), os mais
 // jogados e o que vocês têm em comum. A personalização fica na própria página (botão "Personalizar").
-import { Check, ChevronLeft, ChevronRight, Gamepad2, Headphones, ImagePlus, LayoutGrid, List, Paintbrush, Search, Star, Trash2, X, Zap } from 'lucide-react';
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Gamepad2, Headphones, ImagePlus, LayoutGrid, List, Paintbrush, Search, Star, Trash2, X, Zap } from 'lucide-react';
+import { useMobile } from '../lib/mobile';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
@@ -202,6 +203,20 @@ export function ProfilePage() {
 
 // ------------------------------------------------------------------ capa
 
+function MobileBack({ onClose }: { onClose: () => void }) {
+  const mobile = useMobile();
+  if (!mobile) return null;
+  return (
+    <button
+      onClick={onClose}
+      className="absolute top-4 left-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur hover:bg-black/60"
+      aria-label="Voltar"
+    >
+      <ArrowLeft size={20} />
+    </button>
+  );
+}
+
 function Hero({
   user,
   page,
@@ -250,6 +265,7 @@ function Hero({
           <X size={18} />
         </IconButton>
       </div>
+      <MobileBack onClose={onClose} />
 
       <div className="absolute inset-x-0 bottom-8 mx-auto flex max-w-5xl flex-wrap items-end gap-x-7 gap-y-4 px-6 md:px-10">
         <div className="shrink-0 rounded-full ring-[6px] ring-surface-2">

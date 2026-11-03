@@ -12,6 +12,7 @@ import { GameCard, GameMenuButton } from './Games';
 import { StickerButton, StickerMessage } from './StickerPicker';
 import { activityLabel } from './MemberList';
 import { ReplyBar, ReplyQuote, startReply } from './Replies';
+import { MobileBackButton } from './MobileNav';
 import { Avatar, IconButton, Spinner, cx } from './ui';
 
 const EMPTY: Message[] = [];
@@ -145,7 +146,8 @@ function DmHeader({ dm }: { dm: DirectChannel }) {
       : presence.customStatus || (presence.status === 'dnd' ? 'Não perturbe' : 'Online');
 
   return (
-    <header className="flex shrink-0 items-center gap-3 px-6 pt-5 pb-3">
+    <header className="flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-6 md:pt-5">
+      <MobileBackButton />
       <Avatar name={dm.user.displayName} color={dm.user.avatarColor} src={dm.user.avatarUrl} frame={dm.user.frame} size={42} status={presence?.status ?? 'offline'} />
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-xl font-bold">{dm.user.displayName}</h1>
@@ -210,7 +212,7 @@ function DmFeed({ dm }: { dm: DirectChannel }) {
           <Spinner />
         </div>
       ) : (
-        <div className="flex min-h-full flex-col justify-end px-6 pb-3">
+        <div className="flex min-h-full flex-col justify-end px-4 pb-3 md:px-6">
           {!hasMore && (
             <div className="pt-6 pb-4">
               <Avatar name={dm.user.displayName} color={dm.user.avatarColor} src={dm.user.avatarUrl} frame={dm.user.frame} size={72} />
@@ -291,7 +293,7 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
           </button>
         )}
       </div>
-      <div className="flex max-w-[70%] min-w-0 flex-col items-start">
+      <div className="flex max-w-[85%] min-w-0 flex-col items-start md:max-w-[70%]">
         {message.replyTo && <ReplyQuote reply={message.replyTo} nameOf={nameOf} />}
         {(!grouped || message.replyTo) && (
           <div className="mb-1 flex items-baseline gap-2 px-1">
@@ -368,7 +370,7 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
   };
 
   return (
-    <div className="relative shrink-0 px-6 pb-5">
+    <div className="relative shrink-0 px-4 pb-3 md:px-6 md:pb-5">
       <ReplyBar conversationId={dm.id} name={(m) => (m.author.id === dm.user.id ? m.author.displayName : 'você mesmo')} />
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => e.preventDefault()} onDrop={files.onDrop}>

@@ -8,7 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ForumView } from './components/ForumView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
-import { Spinner, Toasts } from './components/ui';
+import { Spinner, Toasts, cx } from './components/ui';
 import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard, NudgeMessageToast } from './components/NudgeCard';
@@ -28,6 +28,8 @@ import { VoiceView } from './components/VoiceView';
 import { WelcomeView } from './components/WelcomeView';
 import { HOME, needsEmail, useActiveDetail, useApp } from './store/app';
 import { DmView } from './components/DirectMessages';
+import { MobileBottomNav } from './components/MobileNav';
+import { useMobile } from './lib/mobile';
 import { useDevStatsPublisher } from './lib/devStats';
 import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
@@ -147,6 +149,8 @@ function Shell() {
   useWhatsNewPrompt();
   useMecenasReveal();
   useContractRenewal();
+  const mobile = useMobile();
+  const mobileView = useApp((s) => s.mobileView);
   const releasesOpen = useApp((s) => s.releasesOpen);
   const profileOpen = useApp((s) => !!s.profile);
   const settingsOpen = useApp((s) => !!s.settings);
@@ -155,44 +159,53 @@ function Shell() {
   const channelId = useApp((s) => (s.activeServerId ? s.activeChannels[s.activeServerId] : undefined));
   const memberListOpen = useApp((s) => s.memberListOpen);
   const channel = detail?.channels.find((c) => c.id === channelId);
-  // erro na área do meio fica só nela (a barra lateral continua); trocar de canal ou página tenta de novo
   const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}`;
 
-  return (
-    <div className="flex h-full gap-4 bg-surface-1 p-4">
-      <ChannelSidebar />
-      <ErrorBoundary area="painel" resetKey={view}>
-        {settingsOpen ? (
-          <SettingsPage />
-        ) : profileOpen ? (
-          <ProfilePage />
-        ) : releasesOpen ? (
-          <ReleasesView />
-        ) : activeServerId === HOME ? (
-          <DmView />
-        ) : activeServerId ? (
-          channel?.type === 'voice' ? (
-            <VoiceView channel={channel} />
-          ) : (
-            <>
-              <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
-                {channel?.type === 'forum' ? (
-                  <ForumView channel={channel} />
-                ) : channel ? (
-                  <ChatView channel={channel} />
-                ) : (
-                  <div className="flex flex-1 items-center justify-center">
-                    <Spinner />
-                  </div>
-                )}
-              </main>
-              {memberListOpen && channel && <MemberList />}
-            </>
-          )
+  const showSidebar = !mobile || mobileView === 'sidebar';
+  const showContent = !mobile || mobileView === 'chat';
+
+  const content = (
+    <ErrorBoundary area="painel" resetKey={view}>
+      {settingsOpen ? (
+        <SettingsPage />
+      ) : profileOpen ? (
+        <ProfilePage />
+      ) : releasesOpen ? (
+        <ReleasesView />
+      ) : activeServerId === HOME ? (
+        <DmView />
+      ) : activeServerId ? (
+        channel?.type === 'voice' ? (
+          <VoiceView channel={channel} />
         ) : (
-          <WelcomeView />
-        )}
-      </ErrorBoundary>
+          <>
+            <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
+              {channel?.type === 'forum' ? (
+                <ForumView channel={channel} />
+              ) : channel ? (
+                <ChatView channel={channel} />
+              ) : (
+                <div className="flex flex-1 items-center justify-center">
+                  <Spinner />
+                </div>
+              )}
+            </main>
+            {memberListOpen && channel && !mobile && <MemberList />}
+          </>
+        )
+      ) : (
+        <WelcomeView />
+      )}
+    </ErrorBoundary>
+  );
+
+  return (
+    <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')}>
+      <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
+        {showSidebar && <ChannelSidebar />}
+        {showContent && content}
+      </div>
+      <MobileBottomNav />
     </div>
   );
 }

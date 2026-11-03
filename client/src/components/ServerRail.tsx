@@ -36,7 +36,7 @@ export function ServerStrip() {
 
   const home = activeId === HOME && !releasesOpen;
   return (
-    <nav aria-label="Servidores" className="flex flex-wrap gap-2 border-b border-line p-4">
+    <nav aria-label="Servidores" className="flex gap-2 overflow-x-auto border-b border-line p-4 md:flex-wrap">
       <button
         title="Mensagens privadas"
         aria-label={`Mensagens privadas${unread ? ` (${unread} não lidas)` : ''}`}

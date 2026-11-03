@@ -52,6 +52,9 @@ body,
 #root {
   height: 100%;
 }
+#root {
+  padding-top: env(safe-area-inset-top, 0px);
+}
 
 body {
   margin: 0;
@@ -82,6 +85,11 @@ h3,
 .panel {
   background: var(--color-surface-2);
   border-radius: var(--radius-panel);
+}
+@media (max-width: 767px) {
+  .panel {
+    border-radius: 0;
+  }
 }
 
 .text-brand {
@@ -548,6 +556,7 @@ video::-webkit-media-controls {
 /* ---------- barra de controles da sala: encolhe quando falta espaço ---------- */
 .control-dock {
   container: dock / inline-size;
+  overflow-x: auto;
 }
 @container dock (max-width: 860px) {
   .dock-row {

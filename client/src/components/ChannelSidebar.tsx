@@ -32,14 +32,18 @@ import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
 import { ServerStrip } from './ServerRail';
 import { DeviceSplitButton } from './DeviceMenu';
+import { useMobile } from '../lib/mobile';
 import { Avatar, AvatarStack, IconButton, LivePill, VerifiedBadge, cx } from './ui';
 
 export function ChannelSidebar() {
   const detail = useActiveDetail();
   const home = useApp((s) => s.activeServerId === HOME);
+  const mobile = useMobile();
   return (
-    // janelas estreitas (notebooks, app desktop sem maximizar): a barra de canais encolhe um pouco
-    <aside className="panel flex w-[250px] shrink-0 flex-col overflow-hidden lg:w-[290px]">
+    <aside className={cx(
+      'panel flex shrink-0 flex-col overflow-hidden',
+      mobile ? 'w-full' : 'w-[250px] lg:w-[290px]',
+    )}>
       <ServerStrip />
       {home ? (
         <DmSidebar />
