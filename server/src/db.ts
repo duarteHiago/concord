@@ -512,6 +512,10 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 `);
+// custo que não vem todo mês (Cloudflare anual...): cobra no start_month ('AAAA-MM') e depois a cada every_months.
+// start_month vazio é o mês em que o custo foi cadastrado.
+addColumn('costs', 'every_months', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('costs', 'start_month', 'TEXT');
 
 // Diagnósticos que as pessoas mandam do app (ver diagnostics.ts). O arquivo em si fica fora do banco,
 // compactado, numa pasta que não é servida para fora; aqui fica só o resumo para a lista do portal.
