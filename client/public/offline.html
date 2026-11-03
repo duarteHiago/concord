@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#17121c" />
+    <title>Concord · Sem conexão</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: 'Nunito Sans', system-ui, sans-serif;
+        background: #17121c;
+        color: #e2dfe8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100dvh;
+        text-align: center;
+        padding: 2rem;
+      }
+      .card {
+        max-width: 360px;
+      }
+      img {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 1.5rem;
+        opacity: .6;
+      }
+      h1 {
+        font-family: 'Outfit', system-ui, sans-serif;
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: .5rem;
+      }
+      p {
+        color: #9e97ad;
+        line-height: 1.5;
+        margin-bottom: 1.5rem;
+      }
+      button {
+        background: #8b5cf6;
+        color: #fff;
+        border: none;
+        border-radius: 9999px;
+        padding: .6rem 1.5rem;
+        font-size: .9rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background .15s;
+      }
+      button:hover { background: #7c3aed; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img src="/icon-192.png" alt="Concord" />
+      <h1>Sem conexão</h1>
+      <p>Verifique sua internet e tente de novo.</p>
+      <button onclick="location.reload()">Tentar de novo</button>
+    </div>
+  </body>
+</html>
