@@ -141,6 +141,9 @@ interface AppState {
   openModal: (modal: Modal) => void;
   closeModal: () => void;
   toggleMemberList: () => void;
+  /** No mobile, qual "tela" está aberta (desktop ignora). */
+  mobileView: 'sidebar' | 'chat';
+  setMobileView: (view: 'sidebar' | 'chat') => void;
 }
 
 const LAST_KEY = 'concord.last';
@@ -661,7 +664,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openDmById: (dmId) => {
-      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false, profile: null, settings: null });
+      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' });
       saveLast(HOME, get().activeChannels);
       if (!get().messages[dmId]) void get().loadDmMessages(dmId);
       get().markDmRead(dmId);
@@ -690,7 +693,7 @@ export const useApp = create<AppState>((set, get) => {
 
     openChannel: (serverId, channelId) => {
       const activeChannels = { ...get().activeChannels, [serverId]: channelId };
-      set({ activeChannels, releasesOpen: false, profile: null, settings: null });
+      set({ activeChannels, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' });
       saveLast(serverId, activeChannels);
       const ch = get().details[serverId]?.channels.find((c) => c.id === channelId);
       if (ch?.type === 'text' && !get().messages[channelId]) void get().loadMessages(channelId);
@@ -718,15 +721,17 @@ export const useApp = create<AppState>((set, get) => {
         : set({ modal }),
     closeModal: () => set({ modal: null }),
     toggleMemberList: () => set({ memberListOpen: !get().memberListOpen }),
+    mobileView: 'sidebar' as const,
+    setMobileView: (view) => set({ mobileView: view }),
     releasesOpen: false,
-    openReleases: () => set({ releasesOpen: true, profile: null, settings: null }),
+    openReleases: () => set({ releasesOpen: true, profile: null, settings: null, mobileView: 'chat' }),
     profile: null,
-    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false, settings: null }),
+    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false, settings: null, mobileView: 'chat' }),
     settings: null,
-    openSettings: (tab = 'profile') => set({ settings: tab, profile: null, releasesOpen: false }),
-    closeSettings: () => set({ settings: null }),
-    closeProfile: () => set({ profile: null }),
-    closeReleases: () => set({ releasesOpen: false }),
+    openSettings: (tab = 'profile') => set({ settings: tab, profile: null, releasesOpen: false, mobileView: 'chat' }),
+    closeSettings: () => set({ settings: null, mobileView: 'sidebar' }),
+    closeProfile: () => set({ profile: null, mobileView: 'sidebar' }),
+    closeReleases: () => set({ releasesOpen: false, mobileView: 'sidebar' }),
   };
 });
 

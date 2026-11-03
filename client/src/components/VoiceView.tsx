@@ -42,6 +42,7 @@ import { CodecRequests, H265Help, ShareCodecBadge } from './H265Help';
 import { isPoppedOut, popOutVideo } from '../lib/popout';
 import { toast } from '../store/toast';
 import { onVisibilityChange } from '../lib/visibility';
+import { MobileBackButton } from './MobileNav';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
 
 /**
@@ -107,7 +108,8 @@ export function VoiceView({ channel }: { channel: Channel }) {
     <>
       <main className="flex min-w-0 flex-1 flex-col gap-3.5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1.5 pt-2">
-          <h1 className="text-[30px] leading-tight font-bold">{channel.name}</h1>
+          <MobileBackButton />
+          <h1 className="text-2xl leading-tight font-bold md:text-[30px]">{channel.name}</h1>
           <span className="text-sm text-fg-muted">
             {streamerMember ? `${memberName(streamerMember)} está transmitindo` : inRoom.length ? `${inRoom.length} na sala` : 'Sala vazia'}
           </span>

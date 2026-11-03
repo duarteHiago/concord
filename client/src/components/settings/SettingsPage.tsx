@@ -5,10 +5,12 @@
 import { Search, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../../store/app';
+import { useMobile } from '../../lib/mobile';
 import { MecenatoTab } from '../Mecenato';
 import { SupportTab } from '../Support';
 import { BotsTab } from '../modals/BotsTab';
 import { ShortcutsTab } from '../modals/ShortcutsTab';
+import { MobileBackButton } from '../MobileNav';
 import { IconButton, cx } from '../ui';
 import { Account, Appearance, Audio, DevTab, MyProfile, Notifications, Privacy, type SettingsTab } from './SettingsSections';
 
@@ -124,8 +126,10 @@ export function SettingsPage() {
   const openSettings = useApp((s) => s.openSettings);
   const closeSettings = useApp((s) => s.closeSettings);
   const logout = useApp((s) => s.logout);
+  const mobile = useMobile();
   const [query, setQuery] = useState('');
-  const current = ALL.find((i) => i.id === tab) ?? ALL[0];
+  const [mobileSection, setMobileSection] = useState<SettingsTab | null>(null);
+  const current = ALL.find((i) => i.id === (mobile ? (mobileSection ?? tab) : tab)) ?? ALL[0];
 
   const matches = useMemo(() => {
     const q = norm(query.trim());
@@ -133,73 +137,98 @@ export function SettingsPage() {
     return new Set(ALL.filter((i) => norm(`${i.label} ${i.subtitle} ${i.words}`).includes(q)).map((i) => i.id));
   }, [query]);
 
-  return (
-    <>
-      <nav aria-label="Configurações" className="panel flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto p-3">
-        <div className="px-2 pt-1 pb-3 font-display text-xl font-bold">Configurações</div>
-        <label className="relative mb-3">
-          <Search size={14} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-subtle" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter vai para o primeiro resultado
-              if (e.key === 'Enter' && matches?.size) {
-                openSettings([...matches][0]);
-                setQuery('');
-              }
-            }}
-            placeholder="Buscar: senha, tremer…"
-            aria-label="Buscar nas configurações"
-            className="h-9 w-full rounded-full bg-surface-3 pr-3 pl-8 text-sm outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60"
-          />
-        </label>
-        {GROUPS.map((g) => {
-          const items = matches ? g.items.filter((i) => matches.has(i.id)) : g.items;
-          if (!items.length) return null;
-          return (
-            <div key={g.title} className="mb-1">
-              <div className="px-3 pt-2 pb-1 text-[11px] font-bold tracking-widest text-fg-subtle uppercase">{g.title}</div>
-              {items.map((i) => (
-                <button
-                  key={i.id}
-                  onClick={() => {
-                    openSettings(i.id);
-                    setQuery('');
-                  }}
-                  aria-current={tab === i.id ? 'page' : undefined}
-                  className={cx(
-                    'w-full rounded-2xl px-3 py-2 text-left text-sm font-semibold transition-colors',
-                    tab === i.id ? 'bg-accent text-on-accent' : 'text-fg-muted hover:bg-surface-3 hover:text-fg',
-                  )}
-                >
-                  {i.label}
-                </button>
-              ))}
-            </div>
-          );
-        })}
-        {matches && matches.size === 0 && <p className="px-3 py-2 text-sm text-fg-subtle">Nada com esse nome.</p>}
-        <button onClick={logout} className="mt-auto rounded-2xl px-3 py-2 text-left text-sm font-bold text-danger hover:bg-danger/10">
-          Sair da conta
-        </button>
-      </nav>
+  const showMenu = !mobile || !mobileSection;
+  const showContent = !mobile || !!mobileSection;
 
-      <main className="panel min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-8 py-8">
-          <header className="mb-8 flex items-start gap-4">
-            <div className="min-w-0 flex-1">
-              <h1 className="font-display text-[28px] font-bold">{current.label}</h1>
-              <p className="mt-1 text-sm text-fg-muted">{current.subtitle}</p>
-            </div>
+  const nav = (
+    <nav aria-label="Configurações" className={cx(
+      'panel flex shrink-0 flex-col gap-0.5 overflow-y-auto p-3',
+      mobile ? 'w-full flex-1' : 'w-60',
+    )}>
+      <div className="flex items-center gap-2 px-2 pt-1 pb-3">
+        <span className="flex-1 font-display text-xl font-bold">Configurações</span>
+        {mobile && (
+          <IconButton label="Fechar" className="h-9 w-9 shrink-0" onClick={closeSettings}>
+            <X size={18} />
+          </IconButton>
+        )}
+      </div>
+      <label className="relative mb-3">
+        <Search size={14} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-subtle" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && matches?.size) {
+              const first = [...matches][0];
+              openSettings(first);
+              if (mobile) setMobileSection(first);
+              setQuery('');
+            }
+          }}
+          placeholder="Buscar: senha, tremer…"
+          aria-label="Buscar nas configurações"
+          className="h-9 w-full rounded-full bg-surface-3 pr-3 pl-8 text-sm outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60"
+        />
+      </label>
+      {GROUPS.map((g) => {
+        const items = matches ? g.items.filter((i) => matches.has(i.id)) : g.items;
+        if (!items.length) return null;
+        return (
+          <div key={g.title} className="mb-1">
+            <div className="px-3 pt-2 pb-1 text-[11px] font-bold tracking-widest text-fg-subtle uppercase">{g.title}</div>
+            {items.map((i) => (
+              <button
+                key={i.id}
+                onClick={() => {
+                  openSettings(i.id);
+                  if (mobile) setMobileSection(i.id);
+                  setQuery('');
+                }}
+                aria-current={tab === i.id ? 'page' : undefined}
+                className={cx(
+                  'w-full rounded-2xl px-3 py-2 text-left text-sm font-semibold transition-colors',
+                  tab === i.id && !mobile ? 'bg-accent text-on-accent' : 'text-fg-muted hover:bg-surface-3 hover:text-fg',
+                )}
+              >
+                {i.label}
+                {mobile && <span className="block text-xs font-normal text-fg-muted">{i.subtitle}</span>}
+              </button>
+            ))}
+          </div>
+        );
+      })}
+      {matches && matches.size === 0 && <p className="px-3 py-2 text-sm text-fg-subtle">Nada com esse nome.</p>}
+      <button onClick={logout} className="mt-auto rounded-2xl px-3 py-2 text-left text-sm font-bold text-danger hover:bg-danger/10">
+        Sair da conta
+      </button>
+    </nav>
+  );
+
+  const content = (
+    <main className="panel min-w-0 flex-1 overflow-y-auto">
+      <div className={cx('mx-auto max-w-5xl', mobile ? 'px-4 py-5' : 'px-8 py-8')}>
+        <header className="mb-8 flex items-start gap-4">
+          {mobile && <MobileBackButton onClick={() => setMobileSection(null)} />}
+          <div className="min-w-0 flex-1">
+            <h1 className={cx('font-display font-bold', mobile ? 'text-xl' : 'text-[28px]')}>{current.label}</h1>
+            <p className="mt-1 text-sm text-fg-muted">{current.subtitle}</p>
+          </div>
+          {!mobile && (
             <IconButton label="Fechar as configurações" className="h-9 w-9 shrink-0" onClick={closeSettings}>
               <X size={18} />
             </IconButton>
-          </header>
-          {/* key: cada seção começa do zero ao trocar (formulários não carregam valores de outra) */}
-          <div key={current.id}>{current.render()}</div>
-        </div>
-      </main>
+          )}
+        </header>
+        <div key={current.id}>{current.render()}</div>
+      </div>
+    </main>
+  );
+
+  return (
+    <>
+      {showMenu && nav}
+      {showContent && content}
     </>
   );
 }

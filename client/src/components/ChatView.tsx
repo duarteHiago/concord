@@ -17,6 +17,7 @@ import { GameCard, GameMenuButton } from './Games';
 import { StickerButton, StickerMessage } from './StickerPicker';
 import { JamCard, useJamInMessage } from './Jam';
 import { ReplyBar, ReplyQuote, startReply } from './Replies';
+import { MobileBackButton } from './MobileNav';
 
 const EMPTY: Message[] = [];
 
@@ -26,13 +27,14 @@ export function ChatView({ channel }: { channel: Channel }) {
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 px-6 pt-5 pb-3">
+      <header className="flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-6 md:pt-5">
+        <MobileBackButton />
         <Hash size={24} className="text-fg-subtle" />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold">{channel.name}</h1>
+          <h1 className="truncate text-xl font-bold md:text-2xl">{channel.name}</h1>
           {channel.topic && <p className="truncate text-sm text-fg-muted">{channel.topic}</p>}
         </div>
-        <IconButton label="Lista de membros" active={memberListOpen} className="h-10 w-10" onClick={toggleMemberList}>
+        <IconButton label="Lista de membros" active={memberListOpen} className="hidden h-10 w-10 md:flex" onClick={toggleMemberList}>
           <Users size={20} />
         </IconButton>
       </header>
@@ -103,7 +105,7 @@ export function MessageFeed({ channel, compact = false }: { channel: Channel; co
           <Spinner />
         </div>
       ) : (
-        <div className={cx('flex min-h-full flex-col justify-end pb-3', compact ? 'px-4' : 'px-6')}>
+        <div className={cx('flex min-h-full flex-col justify-end pb-3', compact ? 'px-4' : 'px-4 md:px-6')}>
           {!hasMore &&
             (compact ? (
               messages.length === 0 && <p className="pb-4 text-center text-sm text-fg-muted">Ninguém falou nada ainda. Puxa assunto!</p>
@@ -223,7 +225,7 @@ function Bubble({
           </button>
         )}
       </div>
-      <div className={cx('flex min-w-0 flex-col items-start', compact ? 'max-w-[82%]' : 'max-w-[70%]')}>
+      <div className={cx('flex min-w-0 flex-col items-start', compact ? 'max-w-[82%]' : 'max-w-[85%] md:max-w-[70%]')}>
         {message.replyTo && <ReplyQuote reply={message.replyTo} nameOf={nameOf} />}
         {(!grouped || message.replyTo) && (
           <div className="mb-1 flex items-baseline gap-2 px-1">
@@ -499,12 +501,12 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
         : `Mensagem em #${channel.name} (/ para comandos)`;
 
   return (
-    <div className={cx('relative shrink-0', compact ? 'px-3 pb-3' : 'px-6 pb-5')}>
+    <div className={cx('relative shrink-0', compact ? 'px-3 pb-3' : 'px-4 pb-3 md:px-6 md:pb-5')}>
       {open && (
         <div
           role="listbox"
           aria-label={commandMatch ? 'Comandos' : 'Pessoas'}
-          className={cx('absolute bottom-full z-20 mb-2 max-h-72 animate-pop-in overflow-y-auto rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line', compact ? 'inset-x-3' : 'inset-x-6')}
+          className={cx('absolute bottom-full z-20 mb-2 max-h-72 animate-pop-in overflow-y-auto rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line', compact ? 'inset-x-3' : 'inset-x-4 md:inset-x-6')}
         >
           <div className="px-3 pt-1 pb-1.5 text-xs font-bold text-fg-subtle">{commandMatch ? 'Comandos' : 'Mencionar'}</div>
           {suggestions.map((s, i) => (

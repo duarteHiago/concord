@@ -8,7 +8,7 @@ export function WelcomeView() {
   const community = usePendingCommunity();
   const joinCommunity = useCommunity((s) => s.join);
   return (
-    <div className="panel flex flex-1 items-center justify-center p-8">
+    <div className="panel flex flex-1 items-center justify-center p-4 md:p-8">
       <div className="max-w-md animate-slide-up text-center">
         <img src="/brand/concord-simbolo.svg" alt="" className="mx-auto mb-6 h-24 w-24" />
         <h1 className="text-3xl font-extrabold">Seu espaço começa aqui</h1>
