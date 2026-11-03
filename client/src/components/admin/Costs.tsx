@@ -1,5 +1,7 @@
 // Aba Custos do portal: os gastos mensais do Concord e quanto os Pix de apoio já cobriram no mês. A barra
 // paga as faturas na ordem do vencimento, então cada custo mostra se já está coberto (ver server/src/costs.ts).
+// A sobra dos meses anteriores entra no caixa do mês junto com os apoios. Custo que não vem todo mês (anual...)
+// só entra na meta dos meses em que cobra.
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { formatBRL } from '../../../../shared/supporter.ts';
@@ -14,14 +16,20 @@ interface Cost {
   amountCents: number;
   dueDay: number;
   note: string;
+  /** cobra a cada quantos meses (1 = todo mês, 12 = anual) */
+  everyMonths: number;
+  /** mês da primeira cobrança, AAAA-MM */
+  startMonth: string;
 }
 
 interface CostsData {
   month: string;
   start: number;
   end: number;
-  costs: Cost[];
+  costs: (Cost & { charged: boolean })[];
   raisedCents: number;
+  /** sobra dos meses anteriores que passou para este */
+  carriedCents: number;
   payments: { id: string; amountCents: number; paidAt: number; user: { username: string; displayName: string | null } | null }[];
   history: { month: string; raisedCents: number }[];
 }
@@ -34,6 +42,27 @@ const shiftMonth = (key: string, delta: number) => {
   const d = new Date(Date.UTC(y, m - 1 + delta, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
+
+const monthIndex = (key: string) => {
+  const [y, m] = key.split('-').map(Number);
+  return y * 12 + m - 1;
+};
+
+/** Próximo mês (AAAA-MM) depois de `month` em que o custo cobra. */
+function nextCharge(cost: Cost, month: string) {
+  const diff = monthIndex(month) - monthIndex(cost.startMonth);
+  const ahead = diff < 0 ? -diff : cost.everyMonths - (diff % cost.everyMonths);
+  return shiftMonth(month, ahead);
+}
+
+const EVERY = [
+  [1, 'Todo mês'],
+  [3, 'A cada 3 meses'],
+  [6, 'A cada 6 meses'],
+  [12, 'Todo ano'],
+] as const;
+
+const everyLabel = (n: number) => EVERY.find(([v]) => v === n)?.[1].toLowerCase() ?? `a cada ${n} meses`;
 
 /** "49,90", "1.234,56", "R$ 30" -> centavos (null se não der para ler). */
 function parseBRL(raw: string): number | null {
@@ -69,8 +98,10 @@ export function CostsPage() {
     >
       <Loading data={data} error={error}>
         {(d) => {
-          const goal = d.costs.reduce((n, c) => n + c.amountCents, 0);
-          const rows = allocate(d.costs, d.raisedCents);
+          const charged = d.costs.filter((c) => c.charged);
+          const skipped = d.costs.filter((c) => !c.charged);
+          const goal = charged.reduce((n, c) => n + c.amountCents, 0);
+          const rows = allocate(charged, d.raisedCents + d.carriedCents);
           const current = Date.now() >= d.start && Date.now() < d.end;
           return (
             <div className="space-y-8">
@@ -89,11 +120,12 @@ export function CostsPage() {
                 )}
               </div>
 
-              <Progress goal={goal} raised={d.raisedCents} rows={rows} start={d.start} end={d.end} current={current} />
+              <Progress goal={goal} raised={d.raisedCents} carried={d.carriedCents} month={d.month} rows={rows} start={d.start} end={d.end} current={current} />
 
               {editing && (
                 <CostForm
                   cost={editing === 'new' ? null : editing}
+                  month={d.month}
                   onDone={() => {
                     setEditing(null);
                     reload();
@@ -104,10 +136,12 @@ export function CostsPage() {
 
               <section>
                 <h2 className="mb-2 text-sm font-bold">Faturas do mês</h2>
-                {rows.length === 0 ? (
+                {d.costs.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-line-strong p-8 text-center text-sm text-fg-muted">
                     Nenhum custo cadastrado. Adicione o servidor, o domínio e o que mais vocês pagam todo mês.
                   </div>
+                ) : rows.length === 0 ? (
+                  <p className="text-sm text-fg-subtle">Nenhuma fatura cai neste mês.</p>
                 ) : (
                   <ul className="divide-y divide-line rounded-3xl ring-1 ring-line">
                     {rows.map((c) => (
@@ -116,6 +150,28 @@ export function CostsPage() {
                   </ul>
                 )}
               </section>
+
+              {skipped.length > 0 && (
+                <section>
+                  <h2 className="mb-2 text-sm font-bold">Não cobram neste mês</h2>
+                  <ul className="divide-y divide-line rounded-3xl ring-1 ring-line">
+                    {skipped.map((c) => (
+                      <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-fg-muted">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold">{c.name}</div>
+                          <div className="text-xs">
+                            {everyLabel(c.everyMonths)} · próxima cobrança em {monthLabel(nextCharge(c, d.month))}
+                          </div>
+                        </div>
+                        <b className="font-display tabular-nums">{formatBRL(c.amountCents)}</b>
+                        <button aria-label={`Editar ${c.name}`} onClick={() => setEditing(c)} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-surface-3 hover:text-fg">
+                          <Pencil size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               <div className="grid gap-6 lg:grid-cols-2">
                 <section>
@@ -149,6 +205,8 @@ export function CostsPage() {
 function Progress({
   goal,
   raised,
+  carried,
+  month,
   rows,
   start,
   end,
@@ -156,23 +214,31 @@ function Progress({
 }: {
   goal: number;
   raised: number;
+  carried: number;
+  month: string;
   rows: (Cost & { covered: number })[];
   start: number;
   end: number;
   current: boolean;
 }) {
-  const missing = Math.max(0, goal - raised);
-  const extra = Math.max(0, raised - goal);
-  const pct = goal ? Math.min(100, (raised / goal) * 100) : 0;
+  const total = raised + carried;
+  const missing = Math.max(0, goal - total);
+  const extra = Math.max(0, total - goal);
+  const pct = goal ? Math.min(100, (total / goal) * 100) : 0;
   const daysLeft = Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
   return (
     <section className="rounded-3xl bg-surface-3/60 p-5 ring-1 ring-line">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
         <div>
-          <span className="text-xs font-semibold text-fg-muted">Apoios no mês</span>
+          <span className="text-xs font-semibold text-fg-muted">{carried > 0 ? 'Em caixa no mês' : 'Apoios no mês'}</span>
           <div className="font-display text-3xl font-extrabold tabular-nums">
-            {formatBRL(raised)} <span className="text-lg font-bold text-fg-muted">de {formatBRL(goal)}</span>
+            {formatBRL(total)} <span className="text-lg font-bold text-fg-muted">de {formatBRL(goal)}</span>
           </div>
+          {carried > 0 && (
+            <div className="text-xs text-fg-muted tabular-nums">
+              {formatBRL(raised)} de apoios + <b className="text-ok">{formatBRL(carried)}</b> que sobraram até {monthLabel(shiftMonth(month, -1), false)}
+            </div>
+          )}
         </div>
         <div className="text-right">
           {goal === 0 ? (
@@ -192,7 +258,7 @@ function Progress({
       </div>
 
       {/* uma fatia por custo, do tamanho do valor, enchendo na ordem do vencimento */}
-      <div className="mt-4 flex h-5 gap-[3px] overflow-hidden rounded-full" role="progressbar" aria-valuemin={0} aria-valuemax={goal} aria-valuenow={raised} aria-label={`${Math.round(pct)}% dos custos do mês cobertos`}>
+      <div className="mt-4 flex h-5 gap-[3px] overflow-hidden rounded-full" role="progressbar" aria-valuemin={0} aria-valuemax={goal} aria-valuenow={total} aria-label={`${Math.round(pct)}% dos custos do mês cobertos`}>
         {goal === 0 ? (
           <div className="flex-1 bg-surface-4" />
         ) : (
@@ -251,6 +317,7 @@ function CostRow({ cost, month, current, onEdit, onDeleted }: { cost: Cost & { c
         <div className="font-semibold">{cost.name}</div>
         <div className={cx('text-xs', current && !paidUp && days >= 0 && days <= 3 ? 'font-semibold text-danger' : 'text-fg-muted')}>
           {when}
+          {cost.everyMonths > 1 && ` · ${everyLabel(cost.everyMonths)}`}
           {cost.note && ` · ${cost.note}`}
         </div>
       </div>
@@ -283,11 +350,13 @@ function CostRow({ cost, month, current, onEdit, onDeleted }: { cost: Cost & { c
 
 // ------------------------------------------------------------------ cadastro
 
-function CostForm({ cost, onDone, onCancel }: { cost: Cost | null; onDone: () => void; onCancel: () => void }) {
+function CostForm({ cost, month, onDone, onCancel }: { cost: Cost | null; month: string; onDone: () => void; onCancel: () => void }) {
   const [name, setName] = useState(cost?.name ?? '');
   const [amount, setAmount] = useState(cost ? (cost.amountCents / 100).toFixed(2).replace('.', ',') : '');
   const [dueDay, setDueDay] = useState(String(cost?.dueDay ?? ''));
   const [note, setNote] = useState(cost?.note ?? '');
+  const [everyMonths, setEveryMonths] = useState(cost?.everyMonths ?? 1);
+  const [startMonth, setStartMonth] = useState(cost?.startMonth ?? month);
   const [saving, setSaving] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -296,9 +365,10 @@ function CostForm({ cost, onDone, onCancel }: { cost: Cost | null; onDone: () =>
     const day = Number(dueDay);
     if (!amountCents) return toast.error('Digite o valor, por exemplo 49,90.');
     if (!Number.isInteger(day) || day < 1 || day > 31) return toast.error('O dia do vencimento vai de 1 a 31.');
+    if (!/^\d{4}-\d{2}$/.test(startMonth)) return toast.error('Escolha o mês da primeira cobrança.');
     setSaving(true);
     try {
-      const body = { name, amountCents, dueDay: day, note };
+      const body = { name, amountCents, dueDay: day, note, everyMonths, startMonth };
       if (cost) await api.put(`/admin/costs/${cost.id}`, body);
       else await api.post('/admin/costs', body);
       toast.success(cost ? 'Custo atualizado.' : 'Custo adicionado.');
@@ -314,8 +384,26 @@ function CostForm({ cost, onDone, onCancel }: { cost: Cost | null; onDone: () =>
       <h2 className="text-sm font-bold">{cost ? `Editar ${cost.name}` : 'Novo custo mensal'}</h2>
       <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
         <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="VPS, domínio, Cloudflare..." required autoFocus />
-        <Input label="Valor por mês (R$)" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="49,90" required />
+        <Input label="Valor da cobrança (R$)" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="49,90" required />
         <Input label="Dia do vencimento" value={dueDay} onChange={(e) => setDueDay(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={2} placeholder="10" required />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-fg-muted">Repete</span>
+          <select
+            value={everyMonths}
+            onChange={(e) => setEveryMonths(Number(e.target.value))}
+            className="h-11 w-full rounded-2xl border border-transparent bg-surface-3 px-4 text-sm text-fg outline-none focus:border-accent"
+          >
+            {EVERY.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+            {!EVERY.some(([v]) => v === everyMonths) && <option value={everyMonths}>A cada {everyMonths} meses</option>}
+          </select>
+        </label>
+        <Input label="Primeira cobrança" type="month" value={startMonth} onChange={(e) => setStartMonth(e.target.value)} required />
       </div>
       <Input label="Observação (opcional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="cartão do Hiago, cobrança em dólar..." />
       <div className="flex justify-end gap-2">
