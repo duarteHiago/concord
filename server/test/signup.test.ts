@@ -177,7 +177,16 @@ describe('conta antiga sem e-mail, suspensão e exclusão', () => {
     server = await startServer({ ...mailEnv(), DB_PATH: dbPath, ADMIN_USERS: chefe.username });
     old.base = server.url;
     chefe.base = server.url;
+    // a equipe também é conta com senha: confirma um e-mail antes de usar o portal
+    await confirmEmail(chefe, `${uniq('chefe')}@outlook.com`);
   });
+
+  /** Cadastra o e-mail nas configurações e clica no link que chegou. */
+  async function confirmEmail(c: Client, email: string) {
+    assert.equal((await c.put('/me/email', { email, password: 'senha-forte-123' })).status, 200);
+    const token = lastMailTo(email).text.match(/verify-email=([\w-]+)/)![1];
+    assert.equal((await new Client(server.url).post('/auth/email/verify', { token })).status, 200);
+  }
   after(async () => {
     await server.stop();
     rmSync(dir, { recursive: true, force: true });
@@ -190,12 +199,9 @@ describe('conta antiga sem e-mail, suspensão e exclusão', () => {
     const blocked = await old.get('/servers');
     assert.equal(blocked.status, 403);
     assert.equal(blocked.body.code, 'email_required');
-    // não dá para remover o e-mail obrigatório
-    const email = `${uniq('antigo')}@yahoo.com.br`;
-    assert.equal((await old.put('/me/email', { email, password: 'senha-forte-123' })).status, 200);
-    const token = lastMailTo(email).text.match(/verify-email=([\w-]+)/)![1];
-    assert.equal((await new Client(server.url).post('/auth/email/verify', { token })).status, 200);
+    await confirmEmail(old, `${uniq('antigo')}@yahoo.com.br`);
     assert.equal((await old.get('/servers')).status, 200);
+    // não dá para remover o e-mail obrigatório
     assert.equal((await old.del('/me/email')).status, 400);
   });
 
