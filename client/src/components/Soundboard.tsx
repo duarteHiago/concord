@@ -7,6 +7,7 @@ import type { Sound } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
+import { DockMenu } from './DockMenu';
 import { Button, Spinner, cx } from './ui';
 
 const MAX_SECONDS = 15;
@@ -14,11 +15,16 @@ const MAX_SECONDS = 15;
 /** Botão + painel da mesa de sons, usado na barra de controles da sala. */
 export function SoundboardButton() {
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onKey);
@@ -34,7 +40,10 @@ export function SoundboardButton() {
         title="Mesa de sons"
         aria-label="Mesa de sons"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setAnchor(ref.current?.getBoundingClientRect() ?? null);
+          setOpen(!open);
+        }}
         className={cx(
           'flex h-[52px] w-[52px] items-center justify-center rounded-full transition-all hover:scale-105',
           open ? 'bg-fg text-surface-1' : 'bg-surface-3 text-fg hover:bg-surface-4',
@@ -42,7 +51,11 @@ export function SoundboardButton() {
       >
         <Music2 size={20} />
       </button>
-      {open && <SoundboardPanel />}
+      {open && anchor && (
+        <DockMenu ref={menuRef} anchor={anchor}>
+          <SoundboardPanel />
+        </DockMenu>
+      )}
     </div>
   );
 }
@@ -73,7 +86,7 @@ function SoundboardPanel() {
   }
 
   return (
-    <div className="absolute bottom-full left-1/2 z-30 mb-3 w-[min(420px,90vw)] -translate-x-1/2 animate-pop-in rounded-[24px] bg-popover p-4 shadow-2xl ring-1 ring-line">
+    <div className="w-[min(420px,90vw)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-base font-bold">Mesa de sons</h3>
         <label className="flex items-center gap-2 text-xs text-fg-muted" title="Volume dos sons para você">

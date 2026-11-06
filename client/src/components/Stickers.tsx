@@ -9,6 +9,7 @@ import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import { useActiveDetail, useApp } from '../store/app';
 import { useStickers } from '../store/stickers';
 import { toast } from '../store/toast';
+import { DockMenu } from './DockMenu';
 import { ImageHint, cx } from './ui';
 
 const FINISH_NAMES: Record<StickerFinish, string> = { gloss: 'Brilho', holo: 'Holográfico', gold: 'Ouro', glitter: 'Glitter' };
@@ -241,6 +242,7 @@ export function StickerButton({ channel }: { channel: Channel }) {
   const detail = useActiveDetail();
   const serverId = detail?.server.id;
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const [tab, setTab] = useState<'preset' | 'server'>('preset');
   const [finish, setFinish] = useState<StickerFinish>('holo');
   const [uploading, setUploading] = useState(false);
@@ -249,13 +251,17 @@ export function StickerButton({ channel }: { channel: Channel }) {
   const setHidden = useStickers((s) => s.setHidden);
   const meId = useApp((s) => s.me?.id);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const canPlace = has(channel.permissions, P.CONNECT);
   const canModerate = has(channel.permissions, P.MANAGE_MESSAGES);
 
   useEffect(() => {
     if (!open) return;
     if (serverId) void useStickers.getState().loadCustom(serverId);
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
@@ -303,7 +309,10 @@ export function StickerButton({ channel }: { channel: Channel }) {
         title="Stickers"
         aria-label="Stickers"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setAnchor(ref.current?.getBoundingClientRect() ?? null);
+          setOpen(!open);
+        }}
         className={cx(
           'flex h-[52px] w-[52px] items-center justify-center rounded-full transition-all hover:scale-105',
           open ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg hover:bg-surface-4',
@@ -312,8 +321,8 @@ export function StickerButton({ channel }: { channel: Channel }) {
         <Sticker size={20} />
       </button>
 
-      {open && (
-        <div className="absolute bottom-full left-1/2 z-50 mb-3 w-[min(440px,92vw)] -translate-x-1/2 animate-pop-in rounded-[24px] bg-popover p-3 shadow-2xl ring-1 ring-line">
+      {open && anchor && (
+        <DockMenu ref={menuRef} anchor={anchor} className="w-[min(440px,92vw)] p-3">
           <div className="mb-2 flex items-center gap-1">
             <div role="tablist" className="flex flex-1 gap-1 rounded-full bg-surface-0 p-1">
               {(
@@ -414,7 +423,7 @@ export function StickerButton({ channel }: { channel: Channel }) {
               </button>
             )}
           </div>
-        </div>
+        </DockMenu>
       )}
     </div>
   );
