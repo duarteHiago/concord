@@ -30,7 +30,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/uploads\//, /^\/inicio\//, /^\/privacidade\//, /^\/termos\//, /^\/contribuir\//, /^\/offline\.html/],
+        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/uploads\//, /^\/inicio\//, /^\/instalar\//, /^\/privacidade\//, /^\/termos\//, /^\/contribuir\//, /^\/offline\.html/],
         offlineGoogleAnalytics: false,
         runtimeCaching: [
           {

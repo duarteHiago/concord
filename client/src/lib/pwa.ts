@@ -21,5 +21,8 @@ if ('serviceWorker' in navigator) {
       listeners.forEach((fn) => fn(true));
     },
     onOfflineReady() {},
+    onRegisteredSW(_url, registration) {
+      if (registration) setInterval(() => void registration.update(), 15 * 60 * 1000);
+    },
   });
 }
