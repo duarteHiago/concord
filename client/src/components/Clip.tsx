@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CLIP_EVENT, clipSettings, copyText, shareClip, type ClipEvent } from '../lib/clip';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
+import { DockMenu } from './DockMenu';
 import { Toggle, cx } from './ui';
 
 /** Cartão do código dentro do papo da sala, com botão de copiar. */
@@ -39,16 +40,21 @@ export function ClipCard({ text, author }: { text: string; author: string }) {
 /** Botão da barra da sala: digitar e mandar um código para todo mundo da sala. */
 export function ClipButton() {
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const me = useApp((s) => s.me);
   const saveSettings = useApp((s) => s.saveSettings);
   const prefs = clipSettings(me);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
   }, [open]);
@@ -68,7 +74,10 @@ export function ClipButton() {
         title="Compartilhar código com a sala"
         aria-label="Compartilhar código com a sala"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setAnchor(ref.current?.getBoundingClientRect() ?? null);
+          setOpen(!open);
+        }}
         className={cx(
           'flex h-[52px] w-[52px] items-center justify-center rounded-full transition-all hover:scale-105',
           open ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg hover:bg-surface-4',
@@ -76,8 +85,8 @@ export function ClipButton() {
       >
         <ClipboardCopy size={20} />
       </button>
-      {open && (
-        <div className="absolute bottom-full left-1/2 z-50 mb-3 w-[340px] -translate-x-1/2 animate-pop-in rounded-[24px] bg-popover p-4 shadow-2xl ring-1 ring-line">
+      {open && anchor && (
+        <DockMenu ref={menuRef} anchor={anchor} className="w-[min(340px,90vw)] p-4">
           <div className="mb-1 font-display font-bold">Compartilhar código</div>
           <p className="mb-3 text-xs text-fg-muted">Aparece por cima da tela de quem está na sala, até dentro do jogo. É só apertar Ctrl+C para copiar.</p>
           <form
@@ -110,7 +119,7 @@ export function ClipButton() {
             <span className="text-xs text-fg-muted">Receber códigos da sala</span>
             <Toggle checked={prefs.receive} onChange={(receive) => void saveSettings({ clips: { ...prefs, receive } })} />
           </div>
-        </div>
+        </DockMenu>
       )}
     </div>
   );

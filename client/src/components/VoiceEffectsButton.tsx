@@ -2,6 +2,7 @@ import { Check, Wand2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { EFFECTS } from '../lib/voiceEffects';
 import { useVoice } from '../store/voice';
+import { DockMenu } from './DockMenu';
 import { cx } from './ui';
 
 /** Botão de efeitos de voz na barra de controles da sala. */
@@ -9,11 +10,16 @@ export function VoiceEffectsButton() {
   const effect = useVoice((s) => s.effect);
   const setEffect = useVoice((s) => s.setEffect);
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onKey);
@@ -31,7 +37,10 @@ export function VoiceEffectsButton() {
         title={active ? `Efeito de voz: ${EFFECTS.find((e) => e.id === effect)?.label}` : 'Efeitos de voz'}
         aria-label="Efeitos de voz"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setAnchor(ref.current?.getBoundingClientRect() ?? null);
+          setOpen(!open);
+        }}
         className={cx(
           'flex h-[52px] w-[52px] items-center justify-center rounded-full transition-all hover:scale-105',
           active ? 'bg-accent text-on-accent' : open ? 'bg-fg text-surface-1' : 'bg-surface-3 text-fg hover:bg-surface-4',
@@ -39,8 +48,8 @@ export function VoiceEffectsButton() {
       >
         <Wand2 size={20} />
       </button>
-      {open && (
-        <div role="menu" className="absolute bottom-full left-1/2 z-30 mb-3 w-64 -translate-x-1/2 animate-pop-in rounded-[24px] bg-popover p-2 shadow-2xl ring-1 ring-line">
+      {open && anchor && (
+        <DockMenu ref={menuRef} anchor={anchor} className="w-64 p-2">
           <div className="px-3 pt-2 pb-1 text-sm font-bold">Efeitos de voz</div>
           <p className="px-3 pb-2 text-xs text-fg-muted">Todo mundo na sala ouve sua voz com o efeito.</p>
           {EFFECTS.map((e) => (
@@ -58,7 +67,7 @@ export function VoiceEffectsButton() {
               {effect === e.id && <Check size={16} className="text-accent" />}
             </button>
           ))}
-        </div>
+        </DockMenu>
       )}
     </div>
   );
