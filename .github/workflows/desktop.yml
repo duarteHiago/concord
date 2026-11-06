@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-win:
     name: Instalador Windows
     runs-on: windows-latest
     steps:
@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: concord-desktop
+          name: concord-desktop-win
           path: |
             desktop/release/Concord-Setup-*.exe
             desktop/release/Concord-Setup-*.exe.blockmap
@@ -93,9 +93,59 @@ jobs:
             desktop/release/latest.yml
           if-no-files-found: error
 
+  build-mac:
+    name: Instalador macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Dependências
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+
+      - name: Definir versão
+        working-directory: desktop
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
+      - name: Gerar instalador
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --publish never
+
+      - name: Assinar a atualização
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: desktop
+        env:
+          DESKTOP_UPDATE_KEY: ${{ secrets.DESKTOP_UPDATE_KEY }}
+        run: node scripts/sign-update.cjs
+
+      - name: Conferir pacote
+        working-directory: desktop
+        run: |
+          ls release
+          cat release/latest-mac.yml
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: concord-desktop-mac
+          path: |
+            desktop/release/Concord-*.dmg
+            desktop/release/Concord-*.dmg.blockmap
+            desktop/release/Concord-*.dmg.sig
+            desktop/release/Concord-*.zip
+            desktop/release/Concord-*.zip.blockmap
+            desktop/release/Concord-*.zip.sig
+            desktop/release/latest-mac.yml
+          if-no-files-found: error
+
   publish:
     name: Publicar na VPS
-    needs: build
+    needs: [build-win, build-mac]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.VPS_HOST != ''
     runs-on: ubuntu-latest
     env:
@@ -103,7 +153,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: concord-desktop
+          name: concord-desktop-win
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: concord-desktop-mac
 
       - name: Configurar SSH
         run: |
@@ -113,8 +167,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
       # O app serve <dados>/downloads em https://DOMINIO/downloads/.
-      # O latest.yml vai por último: só depois que o instalador e a assinatura estão lá os apps veem a versão nova.
-      - name: Publicar versão
+      # Os latest*.yml vão por último: só depois que os instaladores e assinaturas estão lá os apps veem a versão nova.
+      - name: Publicar Windows
         run: |
           D=/opt/concord/data/downloads
           FILE=$(ls Concord-Setup-*.exe | head -1)
@@ -124,5 +178,21 @@ jobs:
           scp -q latest.yml "$TARGET:$D/latest.yml.tmp"
           ssh "$TARGET" "cd $D && mv latest.yml.tmp latest.yml \
             && cp '$FILE' Concord-Setup.exe.tmp && mv Concord-Setup.exe.tmp Concord-Setup.exe \
-            && ls -t Concord-Setup-*.exe | tail -n +4 | while read f; do rm -f \"\$f\" \"\$f.blockmap\" \"\$f.sig\"; done \
+            && ls -t Concord-Setup-*.exe | tail -n +4 | while read f; do rm -f \"\$f\" \"\$f.blockmap\" \"\$f.sig\"; done"
+
+      - name: Publicar macOS
+        run: |
+          D=/opt/concord/data/downloads
+          DMG=$(ls Concord-*.dmg | head -1)
+          ZIP=$(ls Concord-*.zip | head -1)
+          scp -q "$DMG" "$TARGET:$D/"
+          [ -f "$DMG.blockmap" ] && scp -q "$DMG.blockmap" "$TARGET:$D/"
+          [ -f "$DMG.sig" ] && scp -q "$DMG.sig" "$TARGET:$D/"
+          scp -q "$ZIP" "$TARGET:$D/"
+          [ -f "$ZIP.blockmap" ] && scp -q "$ZIP.blockmap" "$TARGET:$D/"
+          [ -f "$ZIP.sig" ] && scp -q "$ZIP.sig" "$TARGET:$D/"
+          scp -q latest-mac.yml "$TARGET:$D/latest-mac.yml.tmp"
+          ssh "$TARGET" "cd $D && mv latest-mac.yml.tmp latest-mac.yml \
+            && cp '$DMG' Concord.dmg.tmp && mv Concord.dmg.tmp Concord.dmg \
+            && ls -t Concord-[0-9]*.dmg | tail -n +4 | while read f; do rm -f \"\$f\" \"\$f.blockmap\" \"\$f.sig\"; done \
             && ls -la"
