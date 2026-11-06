@@ -388,7 +388,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
       <a href="/instalar/">Instalar</a>
     </nav>
     <a class="btn btn-ghost nav-login" href="/?entrar">Entrar</a>
-    <a class="btn btn-primary" href="/downloads/Concord-Setup.exe">Baixar</a>
+    <a class="btn btn-primary" id="nav-download" href="/downloads/Concord-Setup.exe">Baixar</a>
   </div>
 </header>
 
@@ -401,7 +401,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
         <h1><span class="line">Sua galera.</span><span class="line">Sua call.</span><span class="line">Seu jeito.</span></h1>
         <p class="lede">O Concord é o app de voz e transmissão de tela feito pra jogar junto: live a 60 fps pela placa de vídeo, voz limpa com IA, stickers que brilham, patches bordados e um botão que faz a tela do seu amigo tremer.</p>
         <div class="hero-cta">
-          <a class="btn btn-primary" href="/downloads/Concord-Setup.exe">⬇ Baixar para Windows</a>
+          <a class="btn btn-primary download-btn" href="/downloads/Concord-Setup.exe" data-win="/downloads/Concord-Setup.exe" data-mac="/downloads/Concord.dmg">⬇ Baixar para Windows</a>
+          <a class="btn btn-ghost download-alt" href="/downloads/Concord.dmg" hidden>macOS</a>
           <a class="btn btn-ghost" href="/?entrar">Abrir no navegador</a>
         </div>
         <div class="hero-note">
@@ -686,7 +687,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
       <span class="eyebrow">chama a galera</span>
       <h2>Bora pra call?</h2>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="/downloads/Concord-Setup.exe">⬇ Baixar para Windows</a>
+        <a class="btn btn-primary download-btn" href="/downloads/Concord-Setup.exe" data-win="/downloads/Concord-Setup.exe" data-mac="/downloads/Concord.dmg">⬇ Baixar para Windows</a>
+        <a class="btn btn-ghost download-alt" href="/downloads/Concord.dmg" hidden>macOS</a>
         <a class="btn btn-ghost" href="/?entrar">Abrir no navegador</a>
       </div>
     </div>
@@ -702,6 +704,40 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space
 </footer>
 
 <script>
+// ---------------------------------------------------------- detecção de OS para o botão de download
+(() => {
+  const ua = navigator.userAgent;
+  const mac = /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua);
+  const mobile = /Android|iPhone|iPad|iPod/i.test(ua);
+
+  if (mobile) {
+    // no celular, troca o botão principal por "Instalar app" e esconde as alternativas
+    document.querySelectorAll('.download-btn').forEach((btn) => {
+      btn.href = '/instalar/';
+      btn.textContent = '⬇ Instalar app';
+    });
+    document.querySelectorAll('.download-alt').forEach((a) => a.remove());
+    const nav = document.getElementById('nav-download');
+    if (nav) { nav.href = '/instalar/'; nav.textContent = 'Instalar'; }
+  } else if (mac) {
+    // no macOS, o botão principal vira Mac e a alternativa vira Windows
+    document.querySelectorAll('.download-btn').forEach((btn) => {
+      btn.href = btn.dataset.mac;
+      btn.textContent = '⬇ Baixar para macOS';
+    });
+    document.querySelectorAll('.download-alt').forEach((a) => {
+      a.href = '/downloads/Concord-Setup.exe';
+      a.textContent = 'Windows';
+      a.hidden = false;
+    });
+    const nav = document.getElementById('nav-download');
+    if (nav) nav.href = '/downloads/Concord.dmg';
+  } else {
+    // Windows (ou Linux/desconhecido): mantém Windows como principal, mostra macOS como alternativa
+    document.querySelectorAll('.download-alt').forEach((a) => { a.hidden = false; });
+  }
+})();
+
 // ---------------------------------------------------------- patch de apoiador (o mesmo desenho do app: SupporterPatch.tsx)
 function supporterSvg(tier, uid) {
   const F = {
