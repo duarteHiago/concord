@@ -73,6 +73,7 @@ import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } f
 import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
 import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
+import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
 import {
   ART_OFFSET,
   ART_SCALE,
@@ -478,6 +479,7 @@ api.post('/auth/register', async (req, res) => {
   if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
   if (emailRequired()) fail(400, 'Para criar uma conta agora é preciso confirmar um e-mail. Recarregue a página e tente de novo.');
   const f = signupFields(req.body);
+  if (!stagingAllows(f.username)) fail(403, STAGING_BLOCKED);
   await requireCaptcha(req, req.body?.captchaToken);
   if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
   const id = createPasswordUser({ username: f.username, displayName: f.displayName, passwordHash: await bcrypt.hash(f.password, 10) });
@@ -517,6 +519,8 @@ api.post('/auth/register/start', async (req, res) => {
   if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
   if (!emailRequired()) fail(404, 'Rota não encontrada');
   const f = signupFields(req.body);
+  // antes de mandar o código: o Concord de testes não manda e-mail para quem não está na lista
+  if (!stagingAllows(f.username)) fail(403, STAGING_BLOCKED);
   const { email, key } = accountEmail(req.body?.email);
   await requireCaptcha(req, req.body?.captchaToken);
   if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
@@ -645,6 +649,7 @@ async function checkPassword(username: string, password: string, ip: string): Pr
   }
   // só depois da senha certa: quem chuta senha não descobre que a conta existe e está suspensa
   if (user!.banned_at) fail(403, BANNED);
+  if (!stagingAllows(user!.username)) fail(403, STAGING_BLOCKED);
   return user!;
 }
 
@@ -769,6 +774,7 @@ api.get('/auth/google/callback', googleLimit, async (req, res) => {
     return res.type('html').send(linkConfirmPage(target, google.newLinkConfirm(sub, target.id, pending.desktop)));
   }
   if (owner?.banned_at) return deliverGoogle(res, { error: BANNED }, pending.desktop);
+  if (owner && !stagingAllows(owner.username)) return deliverGoogle(res, { error: STAGING_BLOCKED }, pending.desktop);
   if (owner) return deliverGoogle(res, twoFactor.loginResult(owner), pending.desktop);
   if (!config.allowRegistration) return deliverGoogle(res, { error: 'Cadastro desativado neste servidor.' }, pending.desktop);
   deliverGoogle(res, { signup: google.newSignup(sub, pending.desktop) });
@@ -796,6 +802,7 @@ api.post('/auth/google/signup', googleLimit, async (req, res) => {
   if (!config.allowRegistration) fail(403, 'Cadastro desativado neste servidor');
   const username = str(req.body?.username, 'usuário', 3, 32);
   if (!/^[a-zA-Z0-9_.]+$/.test(username)) fail(400, 'Usuário deve conter apenas letras, números, "_" e "."');
+  if (!stagingAllows(username)) fail(403, STAGING_BLOCKED);
   const displayName = optStr(req.body?.displayName?.trim?.() || undefined, 'nome', 1, 32) || username;
   if (get('SELECT 1 FROM users WHERE username = ?', username)) {
     fail(409, 'Esse nome de usuário já está em uso. Se essa conta é sua, use "Já tenho conta" para conectar o Google a ela.');

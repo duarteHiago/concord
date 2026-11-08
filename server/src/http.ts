@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { config } from './config.ts';
 import { get } from './db.ts';
+import { stagingAllows } from './staging.ts';
 
 export class HttpError extends Error {
   status: number;
@@ -31,8 +32,12 @@ export function verifyToken(token: string | undefined): string | null {
     // tokens de antes dessa checagem não têm "v": valem como versão 0
     const v = typeof payload.v === 'number' ? payload.v : 0;
     // conta suspensa pela equipe: nenhum token dela vale (nem na API, nem no socket)
-    const row = get<{ token_version: number; banned_at: number | null }>('SELECT token_version, banned_at FROM users WHERE id = ?', payload.sub);
-    return row && !row.banned_at && row.token_version === v ? payload.sub : null;
+    // e no Concord de testes, quem saiu da lista também perde as sessões abertas
+    const row = get<{ token_version: number; banned_at: number | null; username: string }>(
+      'SELECT token_version, banned_at, username FROM users WHERE id = ?',
+      payload.sub,
+    );
+    return row && !row.banned_at && row.token_version === v && stagingAllows(row.username) ? payload.sub : null;
   } catch {
     return null;
   }

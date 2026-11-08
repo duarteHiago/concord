@@ -17,6 +17,16 @@ app.disable('x-powered-by');
 app.set('trust proxy', 'loopback');
 app.use(httpMetrics);
 app.use(securityHeaders());
+if (config.staging) {
+  // Concord de testes: fora dos buscadores (o cabeçalho vale até para as páginas que o robots.txt não cobre)
+  app.use((_req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    next();
+  });
+  app.get('/robots.txt', (_req, res) => {
+    res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+  });
+}
 // login, cadastro e senha têm poucos bytes: pedido grande ali é teste de limite ou ataque, e é recusado na porta
 app.use('/api/auth', express.json({ limit: '16kb' }));
 app.use(express.json({ limit: '1mb' }));

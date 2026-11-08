@@ -5,12 +5,17 @@
 #   2. Instala a chave pública na VPS (pede a senha da VPS uma última vez)
 #   3. Salva a chave privada e a impressão digital da VPS como secrets do repositório
 #   4. Cria as variáveis do deploy (host, usuário, domínio, modo)
+#
+# Concord de testes (homologação, ver deploy/STAGING.md), em outra VPS. Só mexe nas variáveis STAGING_*:
+#   powershell -ExecutionPolicy Bypass -File .\deploy\setup-cicd.ps1 -Staging -VpsHost IP -Domain teste.seudominio.com -Users "voce,amigo"
 param(
   [Parameter(Mandatory = $true)][string]$VpsHost,  # IP ou nome da VPS
   [string]$VpsUser = "root",
   [Parameter(Mandatory = $true)][string]$Domain,   # ex.: concord.seudominio.com
   [string]$Mode = "tunnel",
-  [string]$Repo = ""
+  [string]$Repo = "",
+  [switch]$Staging,                                # configura o Concord de testes em vez da produção
+  [string]$Users = ""                              # só com -Staging: quem pode entrar (nomes de usuário, separados por vírgula)
 )
 $ErrorActionPreference = "Stop"
 if (-not $Repo) { $Repo = (gh repo view --json nameWithOwner -q .nameWithOwner) }
@@ -31,10 +36,30 @@ Write-Host ">> Testando acesso pela chave..."
 ssh -i $key -o BatchMode=yes "$VpsUser@$VpsHost" "echo chave OK"
 
 Write-Host ">> Salvando secrets e variáveis no GitHub..."
-cmd /c "gh secret set VPS_SSH_KEY -R $Repo < `"$key`""
 # usa a identificação da VPS que este PC já confia (gravada no known_hosts ao conectar acima)
 $known = Join-Path $env:TEMP "concord_known_hosts"
 cmd /c "ssh-keygen -F $VpsHost | findstr /v /b # > `"$known`""
+
+if ($Staging) {
+  # secrets próprios do teste: não toca no VPS_SSH_KEY da produção (que pode ter vindo de outro PC)
+  cmd /c "gh secret set STAGING_VPS_SSH_KEY -R $Repo < `"$key`""
+  cmd /c "gh secret set STAGING_VPS_KNOWN_HOSTS -R $Repo < `"$known`""
+  Remove-Item $known
+  gh variable set STAGING_VPS_HOST -R $Repo -b $VpsHost
+  gh variable set STAGING_VPS_USER -R $Repo -b $VpsUser
+  gh variable set STAGING_DOMAIN -R $Repo -b $Domain
+  gh variable set STAGING_DEPLOY_MODE -R $Repo -b $Mode
+  # o portal /admin do teste (STAGING_ADMIN_USERS) fica para depois: nome em ADMIN_USERS sem conta fica reservado,
+  # e ninguém consegue criá-la. Crie a conta no teste primeiro e só então ponha o nome lá.
+  if ($Users) { gh variable set STAGING_USERS -R $Repo -b $Users }
+  Write-Host ""
+  Write-Host ">> Pronto! Todo push na branch staging agora testa e faz deploy no Concord de testes."
+  Write-Host ">> Para subir a main no teste: git push origin main:staging"
+  Write-Host ">> Não esqueça: no Google Cloud, acrescente https://$Domain/api/auth/google/callback nas URIs de redirecionamento."
+  exit 0
+}
+
+cmd /c "gh secret set VPS_SSH_KEY -R $Repo < `"$key`""
 cmd /c "gh secret set VPS_KNOWN_HOSTS -R $Repo < `"$known`""
 Remove-Item $known
 gh variable set VPS_HOST -R $Repo -b $VpsHost

@@ -118,6 +118,24 @@ if [ -n "${ADMIN_USERS:-}" ]; then
   fi
 fi
 
+# Concord de testes (homologação, ver deploy/STAGING.md): STAGING=true troca a logo, põe a faixa no app, tira dos
+# buscadores e só deixa entrar quem está em STAGING_USERS (nomes de usuário separados por vírgula) ou em ADMIN_USERS.
+if [ -n "${STAGING:-}" ]; then
+  if [ "$STAGING" = "true" ] || [ "$STAGING" = "false" ]; then
+    upsert_env STAGING "$STAGING"
+    [ "$STAGING" = "true" ] && upsert_env MAIL_FROM_NAME "Concord Teste"
+  else
+    echo "!! STAGING deve ser true ou false; ignorado." >&2
+  fi
+fi
+if [ -n "${STAGING_USERS:-}" ]; then
+  if printf '%s' "$STAGING_USERS" | grep -qE '^[A-Za-z0-9_.,@ ]{1,2000}$'; then
+    upsert_env STAGING_USERS "$STAGING_USERS"
+  else
+    echo "!! STAGING_USERS com formato inesperado (use: usuario1,usuario2); ignorado." >&2
+  fi
+fi
+
 # Dupla antiga de Mecenas: "quem>sobre-quem". Vem da variável do CI. Só serve para criar, uma vez, o convite
 # de renovação de contrato dessa dupla (ver server/src/contracts.ts#migrateLegacyPair).
 if [ -n "${MECENAS:-}" ]; then
@@ -151,6 +169,11 @@ if [ "$MODE" = "tunnel" ]; then
   fi
 
   if [ ! -f "$HOME/.cloudflared/cert.pem" ]; then
+    # no CI não tem ninguém para abrir o link (e o log é público): o login na Cloudflare é feito uma vez, à mão
+    if [ ! -t 0 ]; then
+      echo "!! Esta VPS ainda não entrou na Cloudflare. Rode uma vez, por SSH: cloudflared tunnel login" >&2
+      exit 1
+    fi
     echo
     echo ">> Abra o link abaixo no seu navegador, entre na Cloudflare e escolha o domínio:"
     cloudflared tunnel login
