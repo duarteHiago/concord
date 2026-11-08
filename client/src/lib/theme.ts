@@ -1,3 +1,4 @@
+import { applyBrandIcon, type BrandIcon } from './brandIcon';
 import type { ThemeSettings } from './types';
 
 /** Tokens de cor que um tema define. São as mesmas variáveis do @theme em index.css. */
@@ -22,6 +23,10 @@ export interface ThemePreset {
   id: string;
   name: string;
   palette: ThemePalette;
+  /** tema claro: controles nativos e barras de rolagem também ficam claros */
+  light?: boolean;
+  /** cores da logo deste tema: trocam o ícone da aba e, no app desktop, o da barra de tarefas */
+  icon?: BrandIcon;
 }
 
 const dark = (p: Partial<ThemePalette>): ThemePalette => ({
@@ -39,6 +44,31 @@ const dark = (p: Partial<ThemePalette>): ThemePalette => ({
   'accent-2': '#22d3ee',
   'on-accent': '#ffffff',
   ...p,
+});
+
+/** Azulejo: branco e azul-cobalto, em teste com quatro cores secundárias. O `accent-2` aparece
+ * como texto (selo BOT, títulos das Novidades), então no app ele é um tom mais escuro da cor
+ * do balão da logo, para dar contraste no branco. */
+const azulejo = (id: string, name: string, accent2: string, bubble: string): ThemePreset => ({
+  id,
+  name,
+  light: true,
+  icon: { body: '#1f4fd1', bubble, ink: '#0f1b3d' },
+  palette: {
+    'surface-0': '#dde4f2',
+    'surface-1': '#ecf0f9',
+    'surface-2': '#ffffff',
+    'surface-3': '#f0f3fa',
+    'surface-4': '#dfe6f3',
+    line: 'rgb(15 27 61 / 0.09)',
+    'line-strong': 'rgb(15 27 61 / 0.16)',
+    fg: '#0f1b3d',
+    'fg-muted': '#45537a',
+    'fg-subtle': '#66739a',
+    accent: '#1f4fd1',
+    'accent-2': accent2,
+    'on-accent': '#ffffff',
+  },
 });
 
 export const PRESETS: ThemePreset[] = [
@@ -86,9 +116,14 @@ export const PRESETS: ThemePreset[] = [
     name: 'Brasa',
     palette: dark({ 'surface-0': '#120c0a', 'surface-1': '#1a1210', 'surface-2': '#201714', 'surface-3': '#2a1e1a', 'surface-4': '#372822', fg: '#f6ebe6', 'fg-muted': '#c8b0a6', 'fg-subtle': '#9a8078', accent: '#f97316', 'accent-2': '#fbbf24', 'on-accent': '#2a1206' }),
   },
+  azulejo('azulejo-coral', 'Azulejo coral', '#d4483b', '#ff7a6a'),
+  azulejo('azulejo-celeste', 'Azulejo celeste', '#1e7bc4', '#8ccbff'),
+  azulejo('azulejo-menta', 'Azulejo menta', '#0e8a70', '#3ed6b2'),
+  azulejo('azulejo-chiclete', 'Azulejo chiclete', '#cf2f74', '#ff6fae'),
   {
     id: 'light',
     name: 'Claro',
+    light: true,
     palette: {
       'surface-0': '#e3e5ea',
       'surface-1': '#eef0f3',
@@ -169,7 +204,8 @@ export function applyTheme(theme: ThemeSettings) {
   }
   root.style.setProperty('--color-accent-hover', `color-mix(in srgb, ${palette.accent} 82%, black)`);
   root.style.setProperty('--color-popover', palette['surface-3']);
-  root.style.colorScheme = preset.id === 'light' ? 'light' : 'dark';
+  root.style.colorScheme = preset.light ? 'light' : 'dark';
+  applyBrandIcon(preset.icon);
   root.style.fontSize = `${Math.round(16 * Math.min(1.3, Math.max(0.75, theme.scale)))}px`;
 
   let layer = document.getElementById('concord-bg');

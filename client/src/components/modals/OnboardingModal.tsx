@@ -59,7 +59,7 @@ const SLIDES: Slide[] = [
   {
     art: AppearanceArt,
     title: 'Deixe com a sua cara',
-    text: 'Em Configurações → Aparência: 7 temas, cor de destaque, imagem de fundo e até CSS personalizado. Você também pode ter um apelido diferente em cada servidor.',
+    text: 'Em Configurações → Aparência: vários temas, cor de destaque, imagem de fundo e até CSS personalizado. Você também pode ter um apelido diferente em cada servidor.',
   },
   {
     art: ShortcutsArt,
