@@ -27,6 +27,10 @@ RUN cd server && npm ci --omit=dev --no-audit --no-fund \
 COPY server/src ./server/src
 COPY --from=client /app/client/dist ./client/dist
 WORKDIR /app/server
+# O servidor roda sem root (usuário "node", uid 1000). Ele usa a rede do host, que pode ter outros serviços:
+# uma falha no app não vira controle da máquina. Tudo o que ele grava fica em /data.
+RUN mkdir -p /data && chown node:node /data
+USER node
 VOLUME /data
 EXPOSE 3000
 CMD ["node", "--disable-warning=ExperimentalWarning", "src/index.ts"]
