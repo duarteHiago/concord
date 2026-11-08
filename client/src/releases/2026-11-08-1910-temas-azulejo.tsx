@@ -1,24 +1,29 @@
 import { Frame, Tag } from '../components/modals/OnboardingArt';
 import { brandIconUrl } from '../lib/brandIcon';
-import { PRESETS } from '../lib/theme';
 import { useApp } from '../store/app';
 import type { Release } from './index';
 
-// os cartões da escolha de tema, só com os Azulejo
+// os cartões da escolha de tema como estavam no teste (os quatro temas já saíram: o coral ganhou)
+const TESTED = [
+  ['Azulejo coral', '#ff7a6a'],
+  ['Azulejo celeste', '#8ccbff'],
+  ['Azulejo menta', '#3ed6b2'],
+  ['Azulejo chiclete', '#ff6fae'],
+] as const;
+
 function AzulejoArt() {
-  const themes = PRESETS.filter((p) => p.id.startsWith('azulejo-'));
   return (
     <Frame className="grid h-[170px] grid-cols-2 content-center gap-2 px-4">
-      {themes.map((p) => (
-        <div key={p.id} className="overflow-hidden rounded-lg border border-line">
-          <div className="relative flex h-9" style={{ background: p.palette['surface-0'] }}>
-            <div className="w-5" style={{ background: p.palette['surface-1'] }} />
-            <div className="flex flex-1 items-end p-1" style={{ background: p.palette['surface-2'] }}>
-              <div className="h-1.5 w-1/2 rounded-full" style={{ background: p.palette.accent }} />
+      {TESTED.map(([name, bubble]) => (
+        <div key={name} className="overflow-hidden rounded-lg border border-line">
+          <div className="relative flex h-9 bg-[#dde4f2]">
+            <div className="w-5 bg-[#ecf0f9]" />
+            <div className="flex flex-1 items-end bg-white p-1">
+              <div className="h-1.5 w-1/2 rounded-full bg-[#1f4fd1]" />
             </div>
-            {p.icon && <img src={brandIconUrl(p.icon)} alt="" className="absolute top-1 right-1 h-6 w-6" />}
+            <img src={brandIconUrl({ body: '#1f4fd1', bubble, ink: '#0f1b3d' })} alt="" className="absolute top-1 right-1 h-6 w-6" />
           </div>
-          <div className="bg-surface-0 px-1.5 py-0.5 text-[10px] font-semibold">{p.name}</div>
+          <div className="bg-surface-0 px-1.5 py-0.5 text-[10px] font-semibold">{name}</div>
         </div>
       ))}
       <Tag className="right-3 bottom-2">Em teste</Tag>

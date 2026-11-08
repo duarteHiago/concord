@@ -47,11 +47,11 @@ function steamCallbackUrl() {
 }
 
 function page(ok: boolean | null, message: string, title = ok ? 'Steam conectada!' : 'Não deu certo') {
-  const color = ok === null ? '#f3ecf7' : ok ? '#22c55e' : '#e5484d';
+  const color = ok === null ? '#0f1b3d' : ok ? '#15935a' : '#d42f47';
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Concord</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140f19;color:#f3ecf7;font-family:system-ui,sans-serif;text-align:center}
-.c{max-width:420px;padding:32px}h1{font-size:24px;margin:16px 0 8px;color:${color}}p{color:#b3a6c2;line-height:1.5}b{color:#f3ecf7}
-button{margin-top:8px;padding:12px 22px;border:0;border-radius:999px;background:#ff8a6b;color:#140f19;font:700 15px system-ui,sans-serif;cursor:pointer}</style></head>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fd;color:#0f1b3d;font-family:system-ui,sans-serif;text-align:center}
+.c{max-width:420px;padding:32px}h1{font-size:24px;margin:16px 0 8px;color:${color}}p{color:#52608a;line-height:1.5}b{color:#0f1b3d}
+button{margin-top:8px;padding:12px 22px;border:0;border-radius:999px;background:#1f4fd1;color:#fff;font:700 15px system-ui,sans-serif;cursor:pointer}</style></head>
 <body><div class="c"><h1>${title}</h1>${message}</div></body></html>`;
 }
 

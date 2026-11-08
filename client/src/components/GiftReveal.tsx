@@ -9,7 +9,7 @@ import { SupporterPatch } from './SupporterPatch';
 
 type Phase = 'shake' | 'open' | 'done';
 
-const CONFETTI_COLORS = ['#ff8a6b', '#c4a5ff', '#5eead4', '#f5c451', '#ff6fae', '#fbf1e8'];
+const CONFETTI_COLORS = ['#ff7a6a', '#1f4fd1', '#5eead4', '#f5c451', '#ff6fae', '#fbf1e8'];
 
 export function GiftReveal({ tier, children }: { tier: SupporterTier; children: ReactNode }) {
   const [reduced] = useState(reduceMotion);
@@ -69,19 +69,19 @@ export function GiftReveal({ tier, children }: { tier: SupporterTier; children: 
           <svg viewBox="0 0 120 120" width={150} height={150} className={phase === 'shake' ? 'gift-box gift-shake absolute' : 'gift-box gift-drop absolute'}>
             <defs>
               <linearGradient id="gift-body" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#ff8a6b" />
+                <stop offset="0" stopColor="#ff7a6a" />
                 <stop offset="1" stopColor="#e8613f" />
               </linearGradient>
             </defs>
             {/* corpo */}
             <rect x="18" y="54" width="84" height="58" rx="8" fill="url(#gift-body)" />
-            <rect x="52" y="54" width="16" height="58" fill="#c4a5ff" />
+            <rect x="52" y="54" width="16" height="58" fill="#1f4fd1" />
             <rect x="18" y="54" width="84" height="8" fill="#000" opacity="0.15" />
             {/* tampa e laço */}
             <g className={phase === 'open' ? 'gift-lid-off' : undefined}>
-              <rect x="12" y="40" width="96" height="18" rx="6" fill="#ff8a6b" />
-              <rect x="52" y="40" width="16" height="18" fill="#c4a5ff" />
-              <path d="M60 40 C46 18 26 26 36 38 C40 42 52 41 60 40 Z" fill="#c4a5ff" />
+              <rect x="12" y="40" width="96" height="18" rx="6" fill="#ff7a6a" />
+              <rect x="52" y="40" width="16" height="18" fill="#1f4fd1" />
+              <path d="M60 40 C46 18 26 26 36 38 C40 42 52 41 60 40 Z" fill="#1f4fd1" />
               <path d="M60 40 C74 18 94 26 84 38 C80 42 68 41 60 40 Z" fill="#b48cff" />
               <circle cx="60" cy="40" r="5" fill="#9d72ff" />
             </g>

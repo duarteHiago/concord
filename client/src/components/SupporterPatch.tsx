@@ -240,14 +240,14 @@ export function SupporterPatch({
       {/* símbolo bordado em ponto cetim, com a costura de contorno */}
       <g clipPath={`url(#c${id})`}>
         <g transform={LOGO}>
-          <g fill="#140f19" stroke="#140f19" strokeWidth="16" strokeLinejoin="round" opacity="0.55" transform="translate(5 7)">
+          <g fill="#0f1b3d" stroke="#0f1b3d" strokeWidth="16" strokeLinejoin="round" opacity="0.55" transform="translate(5 7)">
             <path d={LOGO_C} />
             <circle cx="139.6" cy="60.4" r="22" />
             <circle cx="139.6" cy="139.6" r="22" />
             <circle cx="160" cy="100" r="26" />
             <path d={LOGO_TAIL} />
           </g>
-          <g fill="#ff8a6b" stroke="#7a2e1c" strokeWidth="5" strokeLinejoin="round">
+          <g fill="#1f4fd1" stroke="#0f2a7a" strokeWidth="5" strokeLinejoin="round">
             <path d={LOGO_C} />
             <circle cx="139.6" cy="60.4" r="22" />
             <circle cx="139.6" cy="139.6" r="22" />
@@ -258,7 +258,7 @@ export function SupporterPatch({
             <circle cx="139.6" cy="139.6" r="22" />
           </g>
           <path d="M44,88 A60,60 0 0,1 72,48" fill="none" stroke="#ffd0c2" strokeWidth="9" strokeLinecap="round" strokeDasharray="7 4" />
-          <g fill="#c4a5ff" stroke="#4b2f8a" strokeWidth="5" strokeLinejoin="round">
+          <g fill="#ff7a6a" stroke="#9c2f24" strokeWidth="5" strokeLinejoin="round">
             <circle cx="160" cy="100" r="26" />
             <path d={LOGO_TAIL} />
           </g>
@@ -266,7 +266,7 @@ export function SupporterPatch({
             <circle cx="160" cy="100" r="26" />
             <path d={LOGO_TAIL} />
           </g>
-          <g fill="#140f19">
+          <g fill="#0f1b3d">
             <circle cx="149" cy="100" r="4.5" />
             <circle cx="160" cy="100" r="4.5" />
             <circle cx="171" cy="100" r="4.5" />

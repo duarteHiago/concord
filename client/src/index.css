@@ -4,23 +4,23 @@
   --font-sans: 'Nunito Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Outfit', 'Nunito Sans', ui-sans-serif, system-ui, sans-serif;
 
-  /* Tema padrão "Noturno": fundo ameixa, painéis flutuantes, destaque coral */
-  --color-surface-0: #120e16;
-  --color-surface-1: #17121c;
-  --color-surface-2: #211a28;
-  --color-surface-3: #2b2234;
-  --color-surface-4: #362c41;
-  --color-line: rgb(255 255 255 / 0.07);
-  --color-line-strong: rgb(255 255 255 / 0.13);
-  --color-fg: #f3ecf7;
-  --color-fg-muted: #b3a6c2;
-  --color-fg-subtle: #9486a6;
-  --color-accent: #ff8a6b;
-  --color-accent-hover: #ff7350;
-  --color-accent-2: #c4a5ff;
-  --color-on-accent: #2a1410;
+  /* Tema padrão "Azulejo": branco, azul-cobalto e coral (o mesmo de lib/theme.ts) */
+  --color-surface-0: #dde4f2;
+  --color-surface-1: #ecf0f9;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #f0f3fa;
+  --color-surface-4: #dfe6f3;
+  --color-line: rgb(15 27 61 / 0.09);
+  --color-line-strong: rgb(15 27 61 / 0.16);
+  --color-fg: #0f1b3d;
+  --color-fg-muted: #45537a;
+  --color-fg-subtle: #66739a;
+  --color-accent: #1f4fd1;
+  --color-accent-hover: #1a43b2;
+  --color-accent-2: #d4483b;
+  --color-on-accent: #ffffff;
   /* menus e janelinhas flutuantes: sempre opacos, mesmo com imagem de fundo */
-  --color-popover: #2b2234;
+  --color-popover: #f0f3fa;
   --color-ok: #22c55e;
   --color-danger: #e5484d;
   --color-warn: #f5c451;
