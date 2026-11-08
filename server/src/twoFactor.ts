@@ -11,11 +11,14 @@ const STEP_SECONDS = 30;
 const DIGITS = 6;
 const BACKUP_CODES = 10;
 
-// Chaves derivadas do JWT_SECRET (nada novo para configurar). Trocar o JWT_SECRET desliga o 2FA de
-// todo mundo na prática: os segredos guardados deixam de abrir (aí é usar o cli.ts disable-2fa).
-const sealKey = createHash('sha256').update(`${config.jwtSecret}:2fa-seal`).digest();
-const backupKey = createHash('sha256').update(`${config.jwtSecret}:2fa-backup`).digest();
-// segredo próprio para o "ticket" do login: assim ele nunca vale como token de sessão
+// Os segredos do 2FA guardados no banco são cifrados com uma chave derivada de TWOFA_SECRET, ou do JWT_SECRET
+// quando ele não está definido. Ao trocar o JWT_SECRET (sessões vazadas, por exemplo), ponha o valor antigo em
+// TWOFA_SECRET: senão os segredos guardados deixam de abrir e ninguém com 2FA entra.
+const dataSecret = config.twoFactorSecret || config.jwtSecret;
+const sealKey = createHash('sha256').update(`${dataSecret}:2fa-seal`).digest();
+const backupKey = createHash('sha256').update(`${dataSecret}:2fa-backup`).digest();
+// O "ticket" entre a senha e o código dura minutos e não fica guardado: vai sempre com o JWT_SECRET atual,
+// para um JWT_SECRET antigo (vazado) não servir para pular a etapa da senha. Nunca vale como token de sessão.
 const ticketSecret = `${config.jwtSecret}:2fa-ticket`;
 
 // ---- Base32 (o formato do segredo nos apps autenticadores) ----
