@@ -30,7 +30,25 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/uploads\//, /^\/inicio\//, /^\/instalar\//, /^\/privacidade\//, /^\/termos\//, /^\/contribuir\//, /^\/offline\.html/],
+        // Navegação para estes caminhos vai para a rede. O resto recebe o app guardado no cache (navigateFallback),
+        // então tudo que não é o app precisa estar aqui: sem isso o service worker devolve o app no lugar.
+        navigateFallbackDenylist: [
+          /^\/api\//,
+          /^\/socket\.io\//,
+          /^\/uploads\//,
+          // páginas do site (HTML próprio, servidas pelo Express)
+          /^\/inicio\//,
+          /^\/instalar\//,
+          /^\/privacidade\//,
+          /^\/termos\//,
+          /^\/contribuir\//,
+          /^\/offline\.html/,
+          // instaladores: clicar em "Baixar" abria o app em vez de baixar o .exe/.dmg
+          /^\/downloads\//,
+          // servidos pelo Caddy, fora do app: o Grafana caía no login do Concord
+          /^\/grafana/,
+          /^\/livekit\//,
+        ],
         offlineGoogleAnalytics: false,
         runtimeCaching: [
           {
