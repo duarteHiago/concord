@@ -59,12 +59,29 @@ Cada push substitui o que estava no ar. Para voltar ao estado da produção: `gi
 
 ## Mudar quem entra
 
-No GitHub, em Settings → Secrets and variables → Actions → Variables, edite `STAGING_USERS`. Vale a partir
-do próximo deploy.
+A lista é um **secret** do environment `staging`, e não uma variável: o repositório é público, e o log do
+deploy mostraria os nomes. Aí alguém poderia criar a conta com o nome de quem ainda não se cadastrou.
 
-**Portal `/admin` do teste:** primeiro crie a sua conta no teste e só depois ponha o nome em
-`STAGING_ADMIN_USERS`. Como na produção, nome que está na lista de admins e ainda não tem conta fica reservado,
-e ninguém consegue criá-la, nem você.
+```bash
+gh secret set STAGING_USERS --env staging -b "voce,amigo"
+gh workflow run ci-cd.yml --ref staging   # novo deploy, para valer
+```
+
+**Portal `/admin` do teste:** primeiro crie a sua conta no teste e só depois rode
+`gh secret set STAGING_ADMIN_USERS --env staging -b "voce"`. Como na produção, nome que está na lista de admins
+e ainda não tem conta fica reservado, e ninguém consegue criá-la, nem você.
+
+## Segurança
+
+- **Chave SSH própria** (`~/.ssh/concord_deploy_staging`): o teste roda código ainda não revisado, então a chave
+  dele não pode abrir a produção. O `setup-cicd.ps1 -Staging` também tira a chave da produção desta VPS.
+- **Secrets no environment `staging`**, que só aceita deploy da branch `staging`: workflow de outra branch não
+  lê a chave.
+- **E-mail:** crie uma chave da Brevo só para o teste e grave em `STAGING_BREVO_API_KEY` (no environment
+  `staging`). Se vazar, você revoga sem parar o e-mail da produção. Enquanto ela não existir, o teste usa a da
+  produção. A Brevo também precisa ter o IP da VPS do teste em Security → Authorised IPs.
+- **A VPS é compartilhada** com outros sistemas. O app roda sem root, mas o ideal de longo prazo é o teste ter
+  uma VPS só dele.
 
 ## Variáveis
 
@@ -73,7 +90,14 @@ e ninguém consegue criá-la, nem você.
 | `STAGING_VPS_HOST`, `STAGING_VPS_USER` | Acesso SSH à VPS de testes |
 | `STAGING_DOMAIN` | Domínio do teste (ex.: `teste.seudominio.com`) |
 | `STAGING_DEPLOY_MODE` | `tunnel` (padrão) ou `direct` |
+| `STAGING_FIREWALL` | `off` se a VPS já tem outros serviços e você cuida do firewall à mão |
+| `STAGING_GOOGLE_CLIENT_ID` | Opcional: cliente OAuth próprio do teste (com o secret `STAGING_GOOGLE_CLIENT_SECRET`) |
+
+Secrets (no environment `staging`):
+
+| Secret | Para quê |
+|---|---|
 | `STAGING_USERS` | Quem pode entrar (nomes de usuário, separados por vírgula) |
 | `STAGING_ADMIN_USERS` | Quem entra no portal `/admin` do teste |
-| `STAGING_FIREWALL` | `off` se a VPS já tem outros serviços e você cuida do firewall à mão |
-| Secrets `STAGING_VPS_SSH_KEY`, `STAGING_VPS_KNOWN_HOSTS` | Chave do deploy e identificação da VPS |
+| `STAGING_VPS_SSH_KEY`, `STAGING_VPS_KNOWN_HOSTS` | Chave do deploy e identificação da VPS |
+| `STAGING_BREVO_API_KEY` | Chave da Brevo só do teste (sem ela, usa a da produção) |

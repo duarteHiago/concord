@@ -136,6 +136,7 @@ jobs:
 
   # Concord de testes (homologação): push na branch staging, numa VPS separada (deploy/STAGING.md).
   # Variáveis próprias (STAGING_*): se faltarem, o job não roda. Nunca cai na VPS de produção por engano.
+  # Os secrets ficam no environment "staging" (só a branch staging) e a chave SSH é outra, que não abre a produção.
   # Não leva o backup no bucket (ele apagaria os backups de produção) nem o captcha (a chave é presa ao domínio).
   deploy-staging:
     name: Deploy no Concord de testes
@@ -167,13 +168,14 @@ jobs:
             --exclude=dist --exclude=.env .
           scp -q /tmp/concord-deploy.tgz "$TARGET:/tmp/concord-staging-deploy.tgz"
 
-      # O e-mail é o mesmo da produção (só quem está em STAGING_USERS recebe). O Google só com um cliente OAuth
-      # próprio do teste (STAGING_GOOGLE_*): o da produção tem a marca verificada presa ao domínio dela.
+      # E-mail: de preferência uma chave da Brevo só do teste (STAGING_BREVO_API_KEY), que dá para revogar sem
+      # parar a produção; sem ela, usa a da produção. Só quem está em STAGING_USERS recebe. O Google só com um
+      # cliente OAuth próprio do teste (STAGING_GOOGLE_*): o da produção tem a marca verificada presa ao domínio dela.
+      # A chave da Steam fica de fora: o teste não precisa dela.
       - name: Enviar segredos
         env:
           GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
-          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
-          STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          BREVO_API_KEY: ${{ secrets.STAGING_BREVO_API_KEY || secrets.BREVO_API_KEY }}
         run: |
           if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
             printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET" | ssh "$TARGET" "mkdir -p $DIR && umask 077 && cat > $DIR/.google.env"
@@ -181,19 +183,20 @@ jobs:
           if [ -n "$BREVO_API_KEY" ]; then
             printf 'BREVO_API_KEY=%s\n' "$BREVO_API_KEY" | ssh "$TARGET" "mkdir -p $DIR && umask 077 && cat > $DIR/.brevo.env"
           fi
-          if [ -n "$STEAM_API_KEY" ]; then
-            printf 'STEAM_API_KEY=%s\n' "$STEAM_API_KEY" | ssh "$TARGET" "mkdir -p $DIR && umask 077 && cat > $DIR/.integrations.env"
-          fi
 
+      # A lista de quem entra vem de secrets (mascarados no log público) e chega pelo ambiente, não pelo script.
       - name: Instalar e reiniciar
+        env:
+          STAGING_USERS: ${{ secrets.STAGING_USERS }}
+          STAGING_ADMIN_USERS: ${{ secrets.STAGING_ADMIN_USERS }}
         run: |
           ssh "$TARGET" "mkdir -p $DIR \
             && cd $DIR && rm -rf client server shared desktop tests examples docs \
             && tar -xzf /tmp/concord-staging-deploy.tgz -C $DIR \
             && cd $DIR && chmod +x deploy/setup.sh \
             && MODE=${{ vars.STAGING_DEPLOY_MODE || 'tunnel' }} DOMAIN=${{ vars.STAGING_DOMAIN }} TUNNEL_NAME=concord-teste \
-               FIREWALL=${{ vars.STAGING_FIREWALL || 'on' }} STAGING=true STAGING_USERS='${{ vars.STAGING_USERS }}' \
-               ADMIN_USERS='${{ vars.STAGING_ADMIN_USERS }}' GOOGLE_CLIENT_ID=${{ vars.STAGING_GOOGLE_CLIENT_ID || 'off' }} MAIL_FROM=${{ vars.MAIL_FROM }} \
+               FIREWALL=${{ vars.STAGING_FIREWALL || 'on' }} STAGING=true STAGING_USERS='$STAGING_USERS' \
+               ADMIN_USERS='$STAGING_ADMIN_USERS' GOOGLE_CLIENT_ID=${{ vars.STAGING_GOOGLE_CLIENT_ID || 'off' }} MAIL_FROM=${{ vars.MAIL_FROM }} \
                ./deploy/setup.sh"
 
       - name: Verificar saúde
