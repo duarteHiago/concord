@@ -426,6 +426,18 @@ export interface Invite {
   createdAt: number;
 }
 
+/** Quem está banido de um servidor (aba Banidos das configurações). */
+export interface ServerBan {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarColor: string;
+  avatarUrl: string | null;
+  reason: string | null;
+  bannedBy: string | null;
+  createdAt: number;
+}
+
 export interface InvitePreview {
   code: string;
   server: ServerSummary;

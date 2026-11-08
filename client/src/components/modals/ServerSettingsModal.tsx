@@ -1,11 +1,11 @@
 import { memberName } from '../../lib/types';
-import { ArrowDown, ArrowUp, Crown, ImagePlus, Link2, Plus, Search, Shield, Shirt, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Ban, Crown, ImagePlus, Link2, Plus, Search, Shield, Shirt, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
 import { ServerPatchesPanel } from '../ServerPatches';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useEffect, useState } from 'react';
 import { P, PERMISSION_INFO, has, type PermissionInfo } from '../../../../shared/permissions.ts';
 import { api } from '../../lib/api';
-import type { Invite, Role, ServerDetail } from '../../lib/types';
+import type { Invite, Role, ServerBan, ServerDetail } from '../../lib/types';
 import { memberPosition, useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { Avatar, Button, IconButton, ImageHint, Input, RoleDot, Toggle, VerifiedBadge, cx } from '../ui';
@@ -31,6 +31,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
     { id: 'roles', label: 'Cargos', icon: <Shield size={16} />, show: has(perms, P.MANAGE_ROLES) },
     { id: 'members', label: 'Membros', icon: <Users size={16} />, show: true },
     { id: 'invites', label: 'Convites', icon: <Link2 size={16} />, show: has(perms, P.CREATE_INVITE) },
+    { id: 'bans', label: 'Banidos', icon: <Ban size={16} />, show: has(perms, P.BAN_MEMBERS) },
     { id: 'patches', label: 'Patches', icon: <Shirt size={16} />, show: true },
   ].filter((t) => t.show);
   const current = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id;
@@ -61,6 +62,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
           {current === 'roles' && <Roles detail={detail} />}
           {current === 'members' && <Members detail={detail} />}
           {current === 'invites' && <Invites detail={detail} />}
+          {current === 'bans' && <Bans detail={detail} />}
           {current === 'patches' && (
             <section>
               <h2 className="text-xl font-bold">Patches do servidor</h2>
@@ -366,6 +368,7 @@ function Members({ detail }: { detail: ServerDetail }) {
   const myPos = memberPosition(detail, me.id);
   const canRoles = has(detail.permissions, P.MANAGE_ROLES);
   const canKick = has(detail.permissions, P.KICK_MEMBERS);
+  const canBan = has(detail.permissions, P.BAN_MEMBERS);
   const assignable = detail.roles.filter((r) => !r.isDefault && r.position < myPos);
   const list = detail.members.filter((m) => `${m.displayName} ${m.nickname ?? ""} ${m.username}`.toLowerCase().includes(query.toLowerCase()));
 
@@ -431,6 +434,24 @@ function Members({ detail }: { detail: ServerDetail }) {
                     <UserX size={16} />
                   </IconButton>
                 )}
+                {canBan && manageable && m.id !== me.id && (
+                  <IconButton
+                    label="Banir"
+                    danger
+                    className="h-8 w-8"
+                    onClick={() =>
+                      openModal({
+                        type: 'ban',
+                        serverId: detail.server.id,
+                        userId: m.id,
+                        name: memberName(m),
+                        then: () => useApp.getState().openModal({ type: 'serverSettings', serverId: detail.server.id, tab: 'members' }),
+                      })
+                    }
+                  >
+                    <Ban size={16} />
+                  </IconButton>
+                )}
               </div>
               {editing === m.id && (
                 <div className="mt-3 flex flex-wrap gap-2 pl-12">
@@ -460,6 +481,54 @@ function Members({ detail }: { detail: ServerDetail }) {
 }
 
 // ------------------------------------------------------------------ Convites
+
+function Bans({ detail }: { detail: ServerDetail }) {
+  const [bans, setBans] = useState<ServerBan[] | null>(null);
+  const load = () => api.get<ServerBan[]>(`/servers/${detail.server.id}/bans`).then(setBans).catch(toast.error);
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.server.id]);
+
+  async function unban(b: ServerBan) {
+    try {
+      await api.del(`/servers/${detail.server.id}/bans/${b.userId}`);
+      toast.success(`${b.displayName} foi desbanido e pode voltar com um convite`);
+      void load();
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="mb-1 text-xl font-bold">Banidos</h2>
+      <p className="mb-4 text-sm text-fg-muted">Quem está aqui não consegue voltar ao servidor, nem com convite.</p>
+      <div className="divide-y divide-line rounded-xl bg-surface-1">
+        {bans?.length === 0 && <p className="p-4 text-sm text-fg-muted">Ninguém banido.</p>}
+        {bans?.map((b) => (
+          <div key={b.userId} className="flex items-center gap-3 px-4 py-3">
+            <Avatar name={b.displayName} color={b.avatarColor} src={b.avatarUrl} size={36} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-semibold">
+                {b.displayName} <span className="text-xs font-normal text-fg-subtle">@{b.username}</span>
+              </div>
+              <div className="truncate text-xs text-fg-muted">
+                {b.reason ? `Motivo: ${b.reason}` : 'Sem motivo informado'}
+                {' · '}
+                {b.bannedBy ? `por ${b.bannedBy}, ` : ''}
+                {new Date(b.createdAt).toLocaleDateString('pt-BR')}
+              </div>
+            </div>
+            <Button variant="secondary" onClick={() => void unban(b)}>
+              Desbanir
+            </Button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function Invites({ detail }: { detail: ServerDetail }) {
   const [invites, setInvites] = useState<Invite[] | null>(null);

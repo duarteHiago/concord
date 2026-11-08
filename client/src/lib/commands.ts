@@ -213,6 +213,16 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: 'ban',
+    usage: '/ban @pessoa',
+    description: 'Bane alguém do servidor: não volta nem com convite (moderação)',
+    permission: P.BAN_MEMBERS,
+    run: (ctx, args) => {
+      const target = requireMember(ctx, args, '/ban @pessoa');
+      useApp.getState().openModal({ type: 'ban', serverId: ctx.detail.server.id, userId: target.id, name: memberName(target) });
+    },
+  },
+  {
     name: 'leave',
     usage: '/leave',
     description: 'Sai da sala de voz',

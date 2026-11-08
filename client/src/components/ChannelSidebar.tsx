@@ -119,7 +119,7 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
           {has(perms, P.CREATE_INVITE) && item('Convidar amigos', <UserPlus size={16} />, () => openModal({ type: 'invite', serverId: detail.server.id }))}
           {(has(perms, P.CHANGE_NICKNAME) || has(perms, P.MANAGE_NICKNAMES)) &&
             item('Meu apelido aqui', <Pencil size={16} />, () => openModal({ type: 'nickname', serverId: detail.server.id, userId: me.id }))}
-          {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS) || me.isAuthority) &&
+          {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS) || has(perms, P.BAN_MEMBERS) || me.isAuthority) &&
             item('Configurações do servidor', <Settings size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id }))}
           {item('Patches do servidor', <Shirt size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id, tab: 'patches' }))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar sala ou canal', <Plus size={16} />, () => openModal({ type: 'createChannel', serverId: detail.server.id, kind: 'voice' }))}

@@ -63,6 +63,7 @@ export type Modal =
   | { type: 'pranks' }
   | { type: 'contractRenewal' }
   | { type: 'finePix'; fineId: string; amountCents: number }
+  | { type: 'ban'; serverId: string; userId: string; name: string; then?: () => void }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {

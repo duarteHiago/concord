@@ -13,6 +13,7 @@ import { OnboardingModal } from './OnboardingModal';
 import { WhatsNewModal } from './WhatsNewModal';
 import { EmailPromptModal } from '../EmailRecovery';
 import { ServerSettingsModal } from './ServerSettingsModal';
+import { BanModal } from './BanModal';
 import { ShareScreenModal } from './ShareScreenModal';
 import { SupportModal } from '../Support';
 import { MecenasModal } from '../Mecenas';
@@ -51,6 +52,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <ShareScreenModal />;
     case 'confirm':
       return <ConfirmModal {...modal} />;
+    case 'ban':
+      return <BanModal serverId={modal.serverId} userId={modal.userId} name={modal.name} then={modal.then} />;
     case 'nickname':
       return <NicknameModal serverId={modal.serverId} userId={modal.userId} />;
     case 'recoveryCode':

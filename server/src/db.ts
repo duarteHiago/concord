@@ -541,6 +541,17 @@ db.exec(`
 addColumn('dm_messages', 'attachments', 'TEXT');
 addColumn('dm_messages', 'reply_to', 'TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+// Banidos de um servidor: saem e não voltam por convite enquanto o ban existir.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS server_bans (
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT,
+    banned_by TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (server_id, user_id)
+  );
+`);
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
 if (version < 2) {
   // v2: permissão "Alterar o próprio apelido" (1 << 14) passa a vir no @everyone
