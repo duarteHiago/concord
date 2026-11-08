@@ -19,8 +19,11 @@ const MAX_JSON = 80 * 1024 * 1024;
 mkdirSync(config.diagnosticsDir, { recursive: true });
 
 const fileOf = (id: string) => join(config.diagnosticsDir, `${id}.json.gz`);
+// o id chega pela URL do portal (o Express decodifica %2F): só um UUID vira caminho de arquivo
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function readDiagnostic(id: string): Buffer | null {
+  if (!UUID.test(id)) return null;
   try {
     return readFileSync(fileOf(id));
   } catch {
@@ -29,6 +32,7 @@ export function readDiagnostic(id: string): Buffer | null {
 }
 
 export function deleteDiagnostic(id: string) {
+  if (!UUID.test(id)) return;
   run('DELETE FROM diagnostics WHERE id = ?', id);
   rmSync(fileOf(id), { force: true });
 }
