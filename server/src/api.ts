@@ -2052,7 +2052,19 @@ api.post('/channels/:id/messages', async (req, res) => {
 const JAM_LINK = /https:\/\/(?:open\.spotify\.com\/socialsession\/[A-Za-z0-9]+|spotify\.link\/[A-Za-z0-9]+|spotify\.app\.link\/[A-Za-z0-9]+)(?:\?[^\s<>"]*)?/;
 const JAM_SESSION = /https:\/\/open\.spotify\.com\/socialsession\/[A-Za-z0-9]+/;
 const SHORT_LINK = /https:\/\/(?:spotify\.link|spotify\.app\.link)\/[A-Za-z0-9]+/;
-const spotifyHost = (h: string) => h === 'spotify.link' || h === 'spotify.app.link' || h === 'spotify.com' || h.endsWith('.spotify.com');
+// O servidor só busca nestes endereços: a origem vem desta lista, nunca do texto da pessoa nem do redirecionamento
+const SPOTIFY_ORIGINS = ['https://spotify.link', 'https://spotify.app.link', 'https://open.spotify.com', 'https://www.spotify.com'];
+/** O mesmo endereço, mas com a origem tirada da lista fixa; null se for de fora do Spotify. */
+function spotifyUrl(href: string, base?: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(href, base);
+  } catch {
+    return null;
+  }
+  const origin = SPOTIFY_ORIGINS.find((o) => o === u.origin);
+  return origin ? origin + u.pathname + u.search : null;
+}
 
 /**
  * O link da Jam, no formato completo (open.spotify.com/socialsession/...). O link curto do celular
@@ -2072,8 +2084,8 @@ async function resolveJamLink(text: string): Promise<string | null> {
   try {
     // redirecionamento manual: o servidor só busca endereços do Spotify, nunca um destino qualquer
     const signal = AbortSignal.timeout(5000);
-    let url = short;
-    for (let hop = 0; hop < 5 && !jamUrl; hop++) {
+    let url = spotifyUrl(short);
+    for (let hop = 0; hop < 5 && url && !jamUrl; hop++) {
       const res = await fetch(url, { redirect: 'manual', signal, headers: { 'User-Agent': 'Mozilla/5.0 Concord' } });
       const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
       if (!location) {
@@ -2081,10 +2093,8 @@ async function resolveJamLink(text: string): Promise<string | null> {
         if (res.ok) jamUrl = JAM_SESSION.exec((await res.text()).slice(0, 300_000))?.[0] ?? null;
         break;
       }
-      const next = new URL(location, url);
-      jamUrl = JAM_SESSION.exec(next.href)?.[0] ?? null;
-      if (next.protocol !== 'https:' || !spotifyHost(next.hostname)) break;
-      url = next.href;
+      jamUrl = JAM_SESSION.exec(location)?.[0] ?? null;
+      url = spotifyUrl(location, url);
     }
   } catch {
     return null; // sem resposta do Spotify: não guarda, tenta de novo na próxima
