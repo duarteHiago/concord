@@ -13,7 +13,7 @@ import { cspReports } from './metrics.ts';
 
 /** Hash dos <script> inline das páginas (o redirecionamento para a landing no index.html etc.). */
 function inlineScriptHashes(): string[] {
-  const pages = ['index.html', 'inicio/index.html', 'privacidade/index.html', 'termos/index.html', 'contribuir/index.html'];
+  const pages = ['index.html', 'offline.html', 'inicio/index.html', 'instalar/index.html', 'privacidade/index.html', 'termos/index.html', 'contribuir/index.html'];
   const hashes = new Set<string>();
   for (const page of pages) {
     const file = join(config.publicDir, page);
@@ -78,6 +78,25 @@ export function securityHeaders() {
 }
 
 // cada violação diferente vai para o log no máximo uma vez por hora; o contador conta todas
+// Os campos vêm de fora e sem login: corta o tamanho antes de qualquer regex e tira quebras de linha
+// (ninguém escreve uma linha falsa no log).
+const field = (v: unknown, max: number) => String(v ?? '').slice(0, max).replace(/[\u0000-\u001f\u007f]+/g, ' ');
+/** Só a origem (https://site.com) de um endereço; o resto pode ter dado pessoal. */
+function originOf(s: string): string {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : s;
+  } catch {
+    return s;
+  }
+}
+function pathOf(s: string): string {
+  try {
+    return new URL(s).pathname;
+  } catch {
+    return s;
+  }
+}
 const lastLogged = new Map<string, number>();
 
 export function registerCspReportRoutes(api: Router) {
@@ -87,14 +106,14 @@ export function registerCspReportRoutes(api: Router) {
     const reports = Array.isArray(body) ? body.map((r) => r?.body) : [body?.['csp-report']];
     for (const r of reports) {
       if (!r) continue;
-      const directive = String(r['violated-directive'] ?? r.effectiveDirective ?? r['effective-directive'] ?? '?').split(' ')[0].slice(0, 40);
-      const blocked = String(r['blocked-uri'] ?? r.blockedURL ?? '?').replace(/^(https?:\/\/[^/]+).*$/, '$1').slice(0, 120);
+      const directive = field(r['violated-directive'] ?? r.effectiveDirective ?? r['effective-directive'] ?? '?', 200).split(' ')[0].slice(0, 40);
+      const blocked = originOf(field(r['blocked-uri'] ?? r.blockedURL ?? '?', 2000)).slice(0, 120);
       cspReports.inc({ directive });
       const key = `${directive} ${blocked}`;
       if (Date.now() - (lastLogged.get(key) ?? 0) < 3_600_000) continue;
       if (lastLogged.size > 500) lastLogged.clear();
       lastLogged.set(key, Date.now());
-      const where = String(r['document-uri'] ?? r.documentURL ?? '').replace(/^https?:\/\/[^/]+/, '').slice(0, 80);
+      const where = pathOf(field(r['document-uri'] ?? r.documentURL ?? '', 2000)).slice(0, 80);
       console.warn(`[csp] bloquearia ${directive} ${blocked} (em ${where || '?'})`);
     }
     res.status(204).end();

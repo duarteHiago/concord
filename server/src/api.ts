@@ -401,7 +401,10 @@ api.post('/auth/forgot', async (req, res) => {
 });
 
 /** Link do e-mail: escolhe a senha nova e já entra na conta. */
+const resetEmailPerIp = limiter(20, 15 * 60_000);
+
 api.post('/auth/reset-email', async (req, res) => {
+  if (!resetEmailPerIp(clientIp(req))) fail(429, 'Muitas tentativas. Espere 15 minutos e tente de novo.');
   const password = str(req.body?.newPassword, 'nova senha', 6, 128);
   const expired = 'Esse link expirou ou já foi usado. Peça outro em "Esqueci minha senha".';
   const row = takeEmailToken(String(req.body?.token ?? ''), 'reset') ?? fail(400, expired);
@@ -678,7 +681,11 @@ api.post('/auth/2fa', async (req, res) => {
 });
 
 // Prévia do convite é pública: aparece na tela de login de quem recebeu o link.
+// convites e links de presente abrem sem login: limite por IP contra quem tenta adivinhar códigos
+const publicLookups = limiter(120, 60_000);
+
 api.get('/invites/:code', (req, res) => {
+  if (!publicLookups(clientIp(req))) fail(429, 'Muitas consultas. Tente daqui a pouco.');
   const invite = get<InviteRow>('SELECT * FROM invites WHERE code = ?', req.params.code);
   if (!invite || !inviteValid(invite)) fail(404, 'Convite inválido ou expirado');
   const server = getServer(invite!.server_id);
@@ -871,6 +878,7 @@ const claimedPatch = (d: PatchDropRow): Patch => ({ ...(JSON.parse(d.patch) as P
 
 /** Prévia pública: aparece na página de resgate, antes do login. */
 api.get('/drops/:code', (req, res) => {
+  if (!publicLookups(clientIp(req))) fail(429, 'Muitas consultas. Tente daqui a pouco.');
   const drop = findDrop(req.params.code) ?? fail(404, 'Este link de presente não existe');
   const creator = get<UserRow>('SELECT * FROM users WHERE id = ?', drop.creator_id)!;
   const header = req.headers.authorization;
@@ -2044,6 +2052,7 @@ api.post('/channels/:id/messages', async (req, res) => {
 const JAM_LINK = /https:\/\/(?:open\.spotify\.com\/socialsession\/[A-Za-z0-9]+|spotify\.link\/[A-Za-z0-9]+|spotify\.app\.link\/[A-Za-z0-9]+)(?:\?[^\s<>"]*)?/;
 const JAM_SESSION = /https:\/\/open\.spotify\.com\/socialsession\/[A-Za-z0-9]+/;
 const SHORT_LINK = /https:\/\/(?:spotify\.link|spotify\.app\.link)\/[A-Za-z0-9]+/;
+const spotifyHost = (h: string) => h === 'spotify.link' || h === 'spotify.app.link' || h === 'spotify.com' || h.endsWith('.spotify.com');
 
 /**
  * O link da Jam, no formato completo (open.spotify.com/socialsession/...). O link curto do celular
@@ -2061,8 +2070,22 @@ async function resolveJamLink(text: string): Promise<string | null> {
   if (known && (known.jam_url || now() - known.checked_at < 86_400_000)) return known.jam_url;
   let jamUrl: string | null = null;
   try {
-    const res = await fetch(short, { redirect: 'follow', signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'Mozilla/5.0 Concord' } });
-    jamUrl = JAM_SESSION.exec(res.url)?.[0] ?? JAM_SESSION.exec((await res.text()).slice(0, 300_000))?.[0] ?? null;
+    // redirecionamento manual: o servidor só busca endereços do Spotify, nunca um destino qualquer
+    const signal = AbortSignal.timeout(5000);
+    let url = short;
+    for (let hop = 0; hop < 5 && !jamUrl; hop++) {
+      const res = await fetch(url, { redirect: 'manual', signal, headers: { 'User-Agent': 'Mozilla/5.0 Concord' } });
+      const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!location) {
+        // a página do link curto traz o destino no HTML
+        if (res.ok) jamUrl = JAM_SESSION.exec((await res.text()).slice(0, 300_000))?.[0] ?? null;
+        break;
+      }
+      const next = new URL(location, url);
+      jamUrl = JAM_SESSION.exec(next.href)?.[0] ?? null;
+      if (next.protocol !== 'https:' || !spotifyHost(next.hostname)) break;
+      url = next.href;
+    }
   } catch {
     return null; // sem resposta do Spotify: não guarda, tenta de novo na próxima
   }

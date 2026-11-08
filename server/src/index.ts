@@ -69,8 +69,8 @@ if (existsSync(config.publicDir)) {
   app.get('/inicio/', (_req, res) => {
     res.sendFile(join(config.publicDir, 'inicio', 'index.html'));
   });
-  // páginas de texto: política de privacidade, termos de serviço e como contribuir
-  for (const page of ['privacidade', 'termos', 'contribuir']) {
+  // páginas do site: política de privacidade, termos de serviço, como contribuir e como instalar no celular
+  for (const page of ['privacidade', 'termos', 'contribuir', 'instalar']) {
     app.get(`/${page}/`, (_req, res) => res.sendFile(join(config.publicDir, page, 'index.html')));
   }
   // SPA: qualquer outra rota devolve o index.html

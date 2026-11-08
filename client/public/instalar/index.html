@@ -7,376 +7,119 @@
 <meta name="description" content="Como instalar o Concord no celular: passo a passo para Android (Chrome) e iPhone/iPad (Safari). Sem loja, direto do navegador.">
 <meta property="og:title" content="Instalar o Concord no celular">
 <meta property="og:description" content="Passo a passo para instalar o Concord no Android e no iPhone/iPad, direto do navegador.">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>Instalar · Concord</title>
-<link rel="icon" type="image/svg+xml" href="/icon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<title>Instalar o Concord</title>
+<link rel="icon" type="image/svg+xml" href="/brand/concord-simbolo.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,800&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/site.css">
 <style>
-:root {
-  --night: #140f19;
-  --plum: #211a28;
-  --plum-2: #2c2336;
-  --line: #3a2f47;
-  --cream: #fbf1e8;
-  --muted: #b6a8c6;
-  --coral: #ff8a6b;
-  --coral-deep: #e8613f;
-  --lilac: #c4a5ff;
-  --mint: #5eead4;
-  --sun: #f5c451;
-  --ink: #1a1024;
-  --display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
-  --body: "Nunito Sans", "Segoe UI", system-ui, sans-serif;
-  --mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
-  --radius: 22px;
-  color-scheme: dark;
-}
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body {
-  margin: 0;
-  background: var(--night);
-  color: var(--cream);
-  font-family: var(--body);
-  font-size: 17px;
-  line-height: 1.55;
-  overflow-x: hidden;
-}
-body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--night); }
-a { color: inherit; }
-:focus-visible { outline: 3px solid var(--sun); outline-offset: 3px; border-radius: 8px; }
-.wrap { width: 100%; max-width: 860px; margin-inline: auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
-h1, h2, h3 { font-family: var(--display); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
-h2 { font-size: clamp(28px, 5vw, 42px); font-weight: 800; }
-h3 { font-size: 22px; font-weight: 800; }
-p { margin: 0; }
-.eyebrow { font-family: var(--mono); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--coral); }
-.lede { color: var(--muted); font-size: 19px; max-width: 58ch; }
-.btn {
-  display: inline-flex; align-items: center; gap: 10px; height: 54px; padding: 0 26px; border-radius: 999px; border: 0;
-  font-family: var(--display); font-weight: 800; font-size: 17px; text-decoration: none; cursor: pointer;
-  transition: transform .15s ease, background .15s ease, box-shadow .15s ease;
-}
-.btn:hover { transform: translateY(-2px) rotate(-1deg); }
-.btn:active { transform: translateY(1px) scale(.98); }
-.btn-primary { background: var(--coral); color: var(--ink); box-shadow: 0 6px 0 var(--coral-deep), 0 18px 40px -12px rgb(255 138 107 / .6); }
-.btn-primary:hover { box-shadow: 0 8px 0 var(--coral-deep), 0 22px 50px -12px rgb(255 138 107 / .7); }
-.btn-ghost { background: var(--plum-2); color: var(--cream); box-shadow: inset 0 0 0 2px var(--line); }
+/* O que importa aqui é o passo a passo do SEU celular: a página já abre no sistema certo. */
+.picker { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--plum); justify-self: start; }
+.picker button { height: 44px; padding: 0 20px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: 700 15px var(--type); cursor: pointer; }
+.picker button:hover { color: var(--cream); }
+.picker button[aria-selected="true"] { background: var(--cream); color: var(--ink); }
 
-/* ------------------------------------------------ nav */
-.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; backdrop-filter: blur(14px); background: rgb(20 15 25 / .78); border-bottom: 1px solid rgb(58 47 71 / .6); }
-.nav .wrap { display: flex; align-items: center; gap: 18px; height: 68px; }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--display); font-weight: 800; font-size: 24px; letter-spacing: -0.03em; }
-.brand img { height: 40px; width: auto; display: block; }
-.nav-links { display: flex; gap: 22px; margin-left: auto; font-weight: 700; font-size: 15px; color: var(--muted); }
-.nav-links a { text-decoration: none; }
-.nav-links a:hover { color: var(--cream); }
-.nav .btn { height: 42px; padding: 0 18px; font-size: 15px; box-shadow: 0 4px 0 var(--coral-deep); }
-.nav .nav-login { box-shadow: inset 0 0 0 2px var(--line); margin-left: auto; }
-@media (max-width: 600px) { .nav-links { display: none; } }
+.guide { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; padding-bottom: clamp(64px, 9vw, 104px); }
+@media (max-width: 860px) { .guide { grid-template-columns: minmax(0, 1fr); } }
+.panel[hidden] { display: none; }
+.steps-box { border-radius: var(--r-stage); background: var(--plum); padding: clamp(24px, 3vw, 36px); }
+.steps-box h2 { font-size: 23px; margin-bottom: 8px; }
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.steps li { counter-increment: step; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 16px; padding: 18px 0; }
+.steps li + li { border-top: 1px solid var(--line); }
+.steps li::before { content: counter(step); display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--cream); color: var(--ink); font-weight: 800; font-size: 17px; }
+.steps b { display: block; font-size: 19px; line-height: 1.3; }
+.steps span { display: block; margin-top: 4px; color: var(--muted); }
+.steps kbd { font-family: var(--type); font-weight: 700; color: var(--cream); padding: 0 6px; border-radius: 6px; background: var(--plum-2); }
 
-/* ------------------------------------------------ hero */
-.hero { position: relative; padding: 56px 0 40px; overflow: hidden; }
-.hero::before { content: ""; position: absolute; inset: -20% -10% auto; height: 120%; background: radial-gradient(500px 320px at 70% 20%, rgb(196 165 255 / .14), transparent 70%), radial-gradient(400px 280px at 20% 40%, rgb(255 138 107 / .12), transparent 70%); pointer-events: none; }
-.hero .wrap { position: relative; text-align: center; }
-.hero h1 { font-size: clamp(38px, 7vw, 72px); font-weight: 800; letter-spacing: -0.04em; }
-.hero h1 em { font-style: normal; color: var(--coral); }
-.hero .lede { margin: 18px auto 0; }
+.side { display: grid; gap: 20px; align-content: start; }
+.side .note { margin-top: 0; }
+.side .note p + p { margin-top: 8px; }
 
-/* ------------------------------------------------ phone mockup */
-.phone-row { display: flex; justify-content: center; gap: 32px; margin-top: 48px; flex-wrap: wrap; }
-.phone {
-  width: 140px; flex-shrink: 0;
-  background: var(--plum);
-  border-radius: 28px;
-  padding: 12px 10px;
-  box-shadow: 0 30px 60px -20px rgb(0 0 0 / .7), inset 0 0 0 2px var(--line);
-}
-.phone-screen {
-  border-radius: 18px;
-  background: var(--plum-2);
-  overflow: hidden;
-  aspect-ratio: 9/16;
-  display: flex;
-  flex-direction: column;
-}
-.phone-bar { height: 14px; background: var(--night); display: flex; align-items: center; justify-content: center; gap: 3px; }
-.phone-bar i { width: 24px; height: 5px; border-radius: 3px; background: var(--ink); }
-.phone-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; }
-.phone-logo { width: 36px; height: 36px; border-radius: 10px; }
-.phone-label { font: 700 9px var(--display); color: var(--cream); letter-spacing: -0.02em; text-align: center; }
-.phone-nav { height: 20px; background: var(--night); display: flex; align-items: center; justify-content: center; gap: 16px; }
-.phone-nav i { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); opacity: .3; }
-.phone-nav i.active { opacity: 1; background: var(--coral); }
-.phone-badge { font: 800 8px var(--mono); color: var(--ink); background: var(--mint); padding: 2px 6px; border-radius: 6px; margin-top: 2px; }
+.after { border-top: 1px solid var(--line-soft); }
+.after .wrap { padding-block: clamp(64px, 9vw, 104px); }
+.after h2 { font-size: clamp(30px, 4vw, 40px); line-height: 1.1; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 32px 48px; margin: 40px 0 0; }
+.facts dt { font-weight: 800; font-size: 19px; }
+.facts dd { margin: 6px 0 0; color: var(--muted); max-width: 36ch; }
 
-/* ------------------------------------------------ sections */
-.section { padding: 56px 0; }
-.section + .section { border-top: 1px solid var(--line); }
-.section-head { margin-bottom: 36px; }
-.section-head .eyebrow { margin-bottom: 8px; }
-.section-head .lede { margin-top: 12px; }
-
-/* platform columns */
-.platforms { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-@media (max-width: 700px) { .platforms { grid-template-columns: 1fr; } }
-.platform {
-  background: var(--plum);
-  border-radius: var(--radius);
-  padding: 32px 28px;
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.platform-icon { font-size: 40px; margin-bottom: 12px; }
-.platform h3 { margin-bottom: 16px; }
-
-/* steps */
-.steps { list-style: none; padding: 0; margin: 0; counter-reset: step; }
-.steps li {
-  counter-increment: step;
-  display: flex; gap: 14px; align-items: flex-start;
-  padding: 14px 0;
-}
-.steps li + li { border-top: 1px solid rgb(58 47 71 / .5); }
-.steps li::before {
-  content: counter(step);
-  flex-shrink: 0;
-  display: grid; place-items: center;
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  background: var(--coral);
-  color: var(--ink);
-  font: 800 15px var(--display);
-}
-.steps .step-text { flex: 1; }
-.steps .step-text strong { color: var(--cream); }
-.steps .step-text span { display: block; color: var(--muted); font-size: 15px; margin-top: 2px; }
-
-.highlight {
-  margin-top: 18px;
-  padding: 14px 18px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgb(255 138 107 / .1), rgb(196 165 255 / .08));
-  box-shadow: inset 0 0 0 1px var(--line);
-  font-size: 15px;
-  color: var(--muted);
-}
-.highlight strong { color: var(--cream); }
-
-/* ------------------------------------------------ tips */
-.tips { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 24px; }
-.tip {
-  padding: 22px 20px;
-  border-radius: var(--radius);
-  background: var(--plum);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.tip-icon { font-size: 28px; margin-bottom: 8px; }
-.tip h3 { font-size: 17px; margin-bottom: 6px; }
-.tip p { font-size: 15px; color: var(--muted); }
-
-/* ------------------------------------------------ CTA */
-.cta { text-align: center; padding: 56px 0 64px; }
-.cta h2 { margin-bottom: 12px; }
-.cta .lede { margin: 0 auto 28px; }
-.cta-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
-
-/* ------------------------------------------------ footer */
-footer { border-top: 1px solid var(--line); padding: 24px 0 36px; }
-footer .wrap {
-  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
-  color: var(--muted); font-size: 14px;
-}
-footer a { color: var(--muted); text-decoration: none; }
-footer a:hover { color: var(--cream); }
-
-@media (prefers-reduced-motion: no-preference) {
-  .hero h1 { animation: rise .8s cubic-bezier(.2, 1.2, .3, 1) both; }
-  .phone { animation: pop-in .7s cubic-bezier(.2, 1.2, .3, 1) both; }
-  .phone:nth-child(2) { animation-delay: .12s; }
-}
-@keyframes rise { from { transform: translateY(40px) rotate(-2deg); } }
-@keyframes pop-in { from { transform: translateY(30px) scale(.94) rotate(2deg); } }
+.final { border-top: 1px solid var(--line-soft); }
+.final .wrap { padding-block: clamp(64px, 9vw, 96px); display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between; }
+.final h2 { font-size: clamp(30px, 4vw, 53px); line-height: 1.05; max-width: 18ch; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
 </style>
 </head>
 <body>
 
-<header class="nav">
-  <div class="wrap">
-    <a class="brand" href="/inicio/">
-      <img src="/brand/concord-simbolo-16px.svg" alt="" width="40" height="40"> Concord
-    </a>
-    <nav class="nav-links">
-      <a href="/inicio/">Início</a>
-      <a href="/contribuir/">Contribuir</a>
-    </nav>
-    <a class="btn btn-ghost nav-login" href="/?entrar">Entrar</a>
-    <a class="btn btn-primary" href="/?entrar">Abrir o app</a>
-  </div>
-</header>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="/inicio/"><img src="/brand/concord-simbolo.svg" alt="" width="32" height="32">Concord</a>
+  <nav class="nav-links" aria-label="Site"><a href="/inicio/#recursos">Recursos</a><a href="/inicio/#open-source">Open source</a><a href="/inicio/#apoiar">Apoiar</a></nav>
+  <div class="nav-actions"><a class="entrar" href="/?entrar">Entrar</a><a class="btn btn-primary" data-dl="nav" data-mobile-text="Abrir o app" data-mobile-href="/?entrar" href="/downloads/Concord-Setup.exe">Baixar</a></div>
+</div></header>
 
 <main>
-  <!-- HERO -->
-  <section class="hero">
-    <div class="wrap">
-      <span class="eyebrow">guia de instalação</span>
-      <h1>Concord no <em>bolso</em></h1>
-      <p class="lede">O Concord funciona direto do navegador no celular, mas você pode instalar como um app de verdade: ícone na tela inicial, tela cheia, notificações. Sem loja, sem download pesado.</p>
+  <div class="wrap page-head">
+    <h1>Instale o Concord no celular.</h1>
+    <p class="lede">Sem loja: o navegador instala o Concord como um app, com ícone na tela inicial e em tela cheia. Leva menos de um minuto.</p>
+    <div class="picker" role="tablist" aria-label="Sistema do celular">
+      <button role="tab" id="tab-android" aria-controls="pn-android" aria-selected="true">Android</button>
+      <button role="tab" id="tab-ios" aria-controls="pn-ios" aria-selected="false" tabindex="-1">iPhone e iPad</button>
+    </div>
+  </div>
 
-      <div class="phone-row">
-        <div class="phone">
-          <div class="phone-screen">
-            <div class="phone-bar"><i></i></div>
-            <div class="phone-body">
-              <img class="phone-logo" src="/icon-192.png" alt="" width="36" height="36">
-              <span class="phone-label">Concord</span>
-              <span class="phone-badge">INSTALADO</span>
-            </div>
-            <div class="phone-nav">
-              <i class="active"></i><i></i><i></i>
-            </div>
-          </div>
-        </div>
-        <div class="phone">
-          <div class="phone-screen">
-            <div class="phone-bar"><i></i></div>
-            <div class="phone-body">
-              <img class="phone-logo" src="/icon-192.png" alt="" width="36" height="36">
-              <span class="phone-label">Concord</span>
-              <span class="phone-badge">TELA CHEIA</span>
-            </div>
-            <div class="phone-nav">
-              <i></i><i class="active"></i><i></i>
-            </div>
-          </div>
-        </div>
+  <div class="wrap guide">
+    <div>
+      <section class="panel steps-box" id="pn-android" role="tabpanel" aria-labelledby="tab-android">
+        <h2>No Android, pelo Chrome</h2>
+        <ol class="steps">
+          <li><div><b>Abra o Concord no Chrome</b><span>Entre em concord-community.com, ou no endereço do seu servidor.</span></div></li>
+          <li><div><b>Toque no menu <kbd>⋮</kbd></b><span>São os três pontinhos no canto de cima, à direita.</span></div></li>
+          <li><div><b>Toque em “Instalar aplicativo”</b><span>Se não aparecer, procure “Adicionar à tela inicial”. Dá no mesmo.</span></div></li>
+          <li><div><b>Confirme em “Instalar”</b><span>O ícone do Concord aparece na tela inicial.</span></div></li>
+        </ol>
+      </section>
+      <section class="panel steps-box" id="pn-ios" role="tabpanel" aria-labelledby="tab-ios">
+        <h2>No iPhone e no iPad, pelo Safari</h2>
+        <ol class="steps">
+          <li><div><b>Abra o Concord no Safari</b><span>Entre em concord-community.com, ou no endereço do seu servidor. Tem que ser o Safari.</span></div></li>
+          <li><div><b>Toque em compartilhar</b><span>É o quadrado com uma seta pra cima, na barra de baixo.</span></div></li>
+          <li><div><b>Toque em “Adicionar à Tela de Início”</b><span>Role a lista até achar. O ícone é um quadrado com um +.</span></div></li>
+          <li><div><b>Confirme em “Adicionar”</b><span>Pode trocar o nome, se quiser. O Concord aparece na tela de início.</span></div></li>
+        </ol>
+      </section>
+    </div>
+
+    <aside class="side">
+      <div class="note note-warn" id="note-android">
+        <p><b>Apareceu uma faixa “Adicionar Concord à tela inicial”?</b> É só tocar nela, sem passar pelo menu.</p>
       </div>
+      <div class="note note-warn" id="note-ios">
+        <p><b>No iPhone, só o Safari instala.</b> Chrome, Firefox e os outros navegadores do iOS não mostram essa opção.</p>
+      </div>
+      <div class="note" data-desktop-only>
+        <p><b>Está no computador?</b> Lá o melhor é o app instalado.</p>
+        <p><a class="text-link" data-dl="main" href="/downloads/Concord-Setup.exe">Baixar para Windows</a></p>
+      </div>
+    </aside>
+  </div>
+
+  <section class="after">
+    <div class="wrap">
+      <h2>Depois de instalar</h2>
+      <dl class="facts">
+        <div><dt>Abre em tela cheia</dt><dd>Sem a barra de endereço do navegador, como os outros apps do celular.</dd></div>
+        <div><dt>Atualiza sozinho</dt><dd>Quando sai versão nova, o app avisa e atualiza com um toque. Nada de loja.</dd></div>
+        <div><dt>Avisa quando cai a internet</dt><dd>Sem conexão, aparece uma tela pra tentar de novo com um toque.</dd></div>
+        <div><dt>Sai fácil</dt><dd>Pra desinstalar, segura o ícone e remove, como qualquer app.</dd></div>
+      </dl>
     </div>
   </section>
 
-  <!-- PASSO A PASSO -->
-  <section class="section">
+  <section class="final">
     <div class="wrap">
-      <div class="section-head">
-        <span class="eyebrow">passo a passo</span>
-        <h2>Escolha seu sistema</h2>
-        <p class="lede">O processo leva menos de 30 segundos. Toque no seu sistema abaixo.</p>
-      </div>
-
-      <div class="platforms">
-        <!-- ANDROID -->
-        <div class="platform" id="android">
-          <div class="platform-icon">🤖</div>
-          <h3>Android (Chrome)</h3>
-          <ol class="steps">
-            <li>
-              <div class="step-text">
-                <strong>Abra o Concord no Chrome</strong>
-                <span>Acesse o endereço do seu servidor no navegador Chrome.</span>
-              </div>
-            </li>
-            <li>
-              <div class="step-text">
-                <strong>Toque no menu ⋮</strong>
-                <span>O botão de três pontinhos fica no canto superior direito do Chrome.</span>
-              </div>
-            </li>
-            <li>
-              <div class="step-text">
-                <strong>Toque em "Instalar aplicativo"</strong>
-                <span>Se não aparecer, procure "Adicionar à tela inicial". O efeito é o mesmo.</span>
-              </div>
-            </li>
-            <li>
-              <div class="step-text">
-                <strong>Confirme a instalação</strong>
-                <span>Toque em "Instalar" no pop-up. Pronto — o ícone aparece na sua tela inicial.</span>
-              </div>
-            </li>
-          </ol>
-          <div class="highlight">
-            <strong>Dica:</strong> se o Chrome mostrar um banner "Adicionar Concord à tela inicial" na parte de baixo, é só tocar nele.
-          </div>
-        </div>
-
-        <!-- iOS -->
-        <div class="platform" id="ios">
-          <div class="platform-icon">🍎</div>
-          <h3>iPhone e iPad (Safari)</h3>
-          <ol class="steps">
-            <li>
-              <div class="step-text">
-                <strong>Abra o Concord no Safari</strong>
-                <span>No iOS, só o Safari consegue instalar apps da web. Use ele, não o Chrome.</span>
-              </div>
-            </li>
-            <li>
-              <div class="step-text">
-                <strong>Toque no botão de compartilhar</strong>
-                <span>É o ícone de quadrado com seta pra cima, na barra de baixo do Safari.</span>
-              </div>
-            </li>
-            <li>
-              <div class="step-text">
-                <strong>Toque em "Adicionar à Tela de Início"</strong>
-                <span>Role a lista de opções até encontrar. O ícone é um quadrado com um +.</span>
-              </div>
-            </li>
-            <li>
-              <div class="step-text">
-                <strong>Toque em "Adicionar"</strong>
-                <span>Pode mudar o nome se quiser. Confirme e o Concord aparece como um app no seu iPhone.</span>
-              </div>
-            </li>
-          </ol>
-          <div class="highlight">
-            <strong>Importante:</strong> no iOS, use sempre o Safari. Outros navegadores não conseguem instalar apps da web no iPhone.
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- DICAS -->
-  <section class="section">
-    <div class="wrap">
-      <div class="section-head">
-        <span class="eyebrow">bom saber</span>
-        <h2>Depois de instalar</h2>
-      </div>
-      <div class="tips">
-        <div class="tip">
-          <div class="tip-icon">🖥️</div>
-          <h3>Tela cheia</h3>
-          <p>O app abre sem a barra de endereço do navegador, ocupando a tela toda — igual a um app nativo.</p>
-        </div>
-        <div class="tip">
-          <div class="tip-icon">🔄</div>
-          <h3>Atualiza sozinho</h3>
-          <p>Quando a gente solta uma versão nova, o app avisa e atualiza com um toque. Sem ir em loja nenhuma.</p>
-        </div>
-        <div class="tip">
-          <div class="tip-icon">📡</div>
-          <h3>Funciona offline</h3>
-          <p>Sem internet? O app abre igual e mostra um aviso. Quando a conexão volta, tudo sincroniza.</p>
-        </div>
-        <div class="tip">
-          <div class="tip-icon">🪶</div>
-          <h3>Leve e rápido</h3>
-          <p>Sem download de 200 MB. O app pesa poucos megas e carrega na hora, sem ocupar espaço no celular.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- CTA -->
-  <section class="cta">
-    <div class="wrap">
-      <h2>Bora instalar?</h2>
-      <p class="lede">Abre o Concord no navegador do celular e segue o passo a passo. Menos de 30 segundos.</p>
-      <div class="cta-buttons">
+      <h2>Abre no celular e segue os passos.</h2>
+      <div class="cta">
         <a class="btn btn-primary" href="/?entrar">Abrir o Concord</a>
         <a class="btn btn-ghost" href="/inicio/">Conhecer o app</a>
       </div>
@@ -384,12 +127,38 @@ footer a:hover { color: var(--cream); }
   </section>
 </main>
 
-<footer>
-  <div class="wrap">
-    <span style="display:flex;align-items:center;gap:8px"><img src="/brand/concord-simbolo-16px.svg" alt="" width="24" height="24"> Concord · feito pela galera, pra galera</span>
-    <span>Código aberto (MIT) · <a href="https://github.com/duarteHiago/concord">GitHub</a> · <a href="/contribuir/">Contribuir</a> · <a href="/privacidade/">Privacidade</a> · <a href="/termos/">Termos</a></span>
-  </div>
-</footer>
+<footer class="foot"><div class="wrap">
+  <span class="foot-brand"><img src="/brand/concord-simbolo-16px.svg" alt="" width="22" height="22">Feito pela galera, pra galera.</span>
+  <nav aria-label="Rodapé"><a href="/instalar/" aria-current="page">Instalar</a><a href="/contribuir/">Contribuir</a><a href="https://github.com/duarteHiago/concord">GitHub</a><a href="/privacidade/">Privacidade</a><a href="/termos/">Termos</a></nav>
+</div></footer>
 
+<script>
+(() => {
+  // abre no sistema de quem está lendo; sem JS, os dois passo a passo aparecem um embaixo do outro
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  const notes = { android: document.getElementById('note-android'), ios: document.getElementById('note-ios') };
+  function select(t) {
+    tabs.forEach((x) => {
+      const on = x === t;
+      x.setAttribute('aria-selected', String(on));
+      x.tabIndex = on ? 0 : -1;
+      document.getElementById(x.getAttribute('aria-controls')).hidden = !on;
+      notes[x.id.slice(4)].hidden = !on;
+    });
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => select(t));
+    t.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const n = tabs[(i + 1) % tabs.length];
+      select(n); n.focus();
+    });
+  });
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  select(ios ? tabs[1] : tabs[0]);
+})();
+</script>
+<script src="/site.js" defer></script>
 </body>
 </html>
