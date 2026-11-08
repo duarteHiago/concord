@@ -5,7 +5,11 @@ COPY shared ./shared
 COPY client/package.json client/package-lock.json ./client/
 RUN cd client && npm ci --no-audit --no-fund
 COPY client ./client
-RUN cd client && npm run build
+# Concord de testes (homologação): logo e ícones com outras cores (client/staging/public) e a faixa no app
+ARG STAGING=false
+ENV VITE_STAGING=$STAGING
+RUN if [ "$STAGING" = "true" ]; then cp -r client/staging/public/. client/public/; fi \
+    && cd client && npm run build
 
 # ---------- imagem final ----------
 FROM node:26-alpine

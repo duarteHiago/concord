@@ -33,6 +33,12 @@ DOMAIN="$(grep ^DOMAIN= .env | cut -d= -f2)"
 # Login com Google: o ID do cliente vem da variável do CI; o secret chega por um arquivo temporário
 # (.google.env, escrito pelo CI via stdin) para não aparecer em linha de comando nem em log.
 upsert_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }
+# GOOGLE_CLIENT_ID=off desliga o login com Google (o Concord de testes, sem um cliente OAuth próprio)
+if [ "${GOOGLE_CLIENT_ID:-}" = "off" ]; then
+  sed -i '/^GOOGLE_CLIENT_ID=/d; /^GOOGLE_CLIENT_SECRET=/d' .env
+  rm -f .google.env
+  GOOGLE_CLIENT_ID=""
+fi
 if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
   if printf '%s' "$GOOGLE_CLIENT_ID" | grep -qE '^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$'; then
     upsert_env GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID"
@@ -118,6 +124,24 @@ if [ -n "${ADMIN_USERS:-}" ]; then
   fi
 fi
 
+# Concord de testes (homologação, ver deploy/STAGING.md): STAGING=true troca a logo, põe a faixa no app, tira dos
+# buscadores e só deixa entrar quem está em STAGING_USERS (nomes de usuário separados por vírgula) ou em ADMIN_USERS.
+if [ -n "${STAGING:-}" ]; then
+  if [ "$STAGING" = "true" ] || [ "$STAGING" = "false" ]; then
+    upsert_env STAGING "$STAGING"
+    [ "$STAGING" = "true" ] && upsert_env MAIL_FROM_NAME "Concord Teste"
+  else
+    echo "!! STAGING deve ser true ou false; ignorado." >&2
+  fi
+fi
+if [ -n "${STAGING_USERS:-}" ]; then
+  if printf '%s' "$STAGING_USERS" | grep -qE '^[A-Za-z0-9_.,@ ]{1,2000}$'; then
+    upsert_env STAGING_USERS "$STAGING_USERS"
+  else
+    echo "!! STAGING_USERS com formato inesperado (use: usuario1,usuario2); ignorado." >&2
+  fi
+fi
+
 # Dupla antiga de Mecenas: "quem>sobre-quem". Vem da variável do CI. Só serve para criar, uma vez, o convite
 # de renovação de contrato dessa dupla (ver server/src/contracts.ts#migrateLegacyPair).
 if [ -n "${MECENAS:-}" ]; then
@@ -151,6 +175,11 @@ if [ "$MODE" = "tunnel" ]; then
   fi
 
   if [ ! -f "$HOME/.cloudflared/cert.pem" ]; then
+    # no CI não tem ninguém para abrir o link (e o log é público): o login na Cloudflare é feito uma vez, à mão
+    if [ ! -t 0 ]; then
+      echo "!! Esta VPS ainda não entrou na Cloudflare. Rode uma vez, por SSH: cloudflared tunnel login" >&2
+      exit 1
+    fi
     echo
     echo ">> Abra o link abaixo no seu navegador, entre na Cloudflare e escolha o domínio:"
     cloudflared tunnel login
@@ -195,7 +224,15 @@ EOF
   fi
 
   echo ">> Criando o subdomínio $DOMAIN na Cloudflare..."
-  cloudflared tunnel route dns --overwrite-dns "$TUNNEL_ID" "$DOMAIN"
+  # O login da VPS na Cloudflare vale para um domínio só. Com um subdomínio de outro domínio da conta, o
+  # cloudflared não falha: cria "DOMINIO.dominio-do-login", que não serve. Aí o CNAME é criado à mão.
+  ROUTE_OUT="$(cloudflared tunnel route dns --overwrite-dns "$TUNNEL_ID" "$DOMAIN" 2>&1)" || true
+  echo "$ROUTE_OUT"
+  if ! printf '%s' "$ROUTE_OUT" | grep -qF -e "CNAME $DOMAIN which" -e "INF $DOMAIN is already"; then
+    echo "!! O DNS de $DOMAIN não foi criado (o login desta VPS na Cloudflare é de outro domínio)." >&2
+    echo "!! No painel da Cloudflare, crie um CNAME com proxy: $DOMAIN -> ${TUNNEL_ID}.cfargotunnel.com" >&2
+    echo "!! E apague o registro errado que aparecer acima, se houver." >&2
+  fi
 
   if [ "${TUNNEL_UNCHANGED:-0}" = 1 ]; then
     echo ">> Túnel sem alterações, não precisa reiniciar."

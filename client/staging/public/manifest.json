@@ -1,0 +1,39 @@
+{
+  "name": "Concord (teste)",
+  "short_name": "Concord teste",
+  "description": "Ambiente de testes do Concord",
+  "start_url": "/?entrar",
+  "display": "standalone",
+  "theme_color": "#17121c",
+  "background_color": "#17121c",
+  "orientation": "any",
+  "categories": [
+    "social",
+    "communication"
+  ],
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

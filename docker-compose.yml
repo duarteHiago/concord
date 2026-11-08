@@ -3,7 +3,11 @@
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Concord de testes (ver deploy/STAGING.md): outra logo e a faixa "Ambiente de testes" no app
+        STAGING: ${STAGING:-false}
     restart: unless-stopped
     network_mode: host
     environment:
@@ -14,6 +18,9 @@ services:
       COMMUNITY_INVITE: ${COMMUNITY_INVITE:-}
       AUTHORITY_SERVER_ID: ${AUTHORITY_SERVER_ID:-}
       ADMIN_USERS: ${ADMIN_USERS:-}
+      # Concord de testes: fora dos buscadores e só entra quem está em STAGING_USERS (ou em ADMIN_USERS)
+      STAGING: ${STAGING:-false}
+      STAGING_USERS: ${STAGING_USERS:-}
       MECENAS: ${MECENAS:-}
       PUBLIC_URL: https://${DOMAIN}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

@@ -34,6 +34,15 @@ export const config = {
       .map((u) => u.trim().replace(/^@/, '').toLowerCase())
       .filter(Boolean),
   ),
+  // Concord de testes (homologação, ver deploy/STAGING.md): fora dos buscadores e só entra quem está na lista
+  // (STAGING_USERS, nomes de usuário separados por vírgula) ou é da equipe (ADMIN_USERS).
+  staging: env.STAGING === 'true',
+  stagingUsers: new Set(
+    (env.STAGING_USERS ?? '')
+      .split(',')
+      .map((u) => u.trim().replace(/^@/, '').toLowerCase())
+      .filter(Boolean),
+  ),
   // Dupla antiga de Mecenas ("quem>sobre-quem", por nome de usuário). Não dá mais poderes: no primeiro início
   // vira um convite de renovação de contrato para as duas pessoas (ver contracts.ts#migrateLegacyPair).
   mecenas: (() => {

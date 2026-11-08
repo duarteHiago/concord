@@ -2,7 +2,8 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    # staging: o Concord de testes (homologação), numa VPS separada — ver deploy/STAGING.md
+    branches: [main, staging]
   pull_request:
   workflow_dispatch:
 
@@ -132,3 +133,73 @@ jobs:
             && echo && (curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:13001/api/health >/dev/null \
               && echo 'Grafana: ok' || echo 'Grafana: não respondeu') \
             && docker ps --filter label=com.docker.compose.project=concord --format '{{.Names}}: {{.Status}}'"
+
+  # Concord de testes (homologação): push na branch staging, numa VPS separada (deploy/STAGING.md).
+  # Variáveis próprias (STAGING_*): se faltarem, o job não roda. Nunca cai na VPS de produção por engano.
+  # Os secrets ficam no environment "staging" (só a branch staging) e a chave SSH é outra, que não abre a produção.
+  # Não leva o backup no bucket (ele apagaria os backups de produção) nem o captcha (a chave é presa ao domínio).
+  deploy-staging:
+    name: Deploy no Concord de testes
+    needs: test
+    if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request' && vars.STAGING_VPS_HOST != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://${{ vars.STAGING_DOMAIN }}
+    env:
+      TARGET: ${{ vars.STAGING_VPS_USER || 'root' }}@${{ vars.STAGING_VPS_HOST }}
+      # pasta própria: não mistura com uma instalação antiga que esteja em /opt/concord
+      DIR: /opt/concord-staging
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.STAGING_VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.STAGING_VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Enviar projeto
+        run: |
+          echo "${GITHUB_SHA::7}" > client/build-commit.txt
+          tar -czf /tmp/concord-deploy.tgz \
+            --exclude=.git --exclude=node_modules --exclude=./data --exclude=./data-dev \
+            --exclude=dist --exclude=.env .
+          scp -q /tmp/concord-deploy.tgz "$TARGET:/tmp/concord-staging-deploy.tgz"
+
+      # E-mail: de preferência uma chave da Brevo só do teste (STAGING_BREVO_API_KEY), que dá para revogar sem
+      # parar a produção; sem ela, usa a da produção. Só quem está em STAGING_USERS recebe. O Google só com um
+      # cliente OAuth próprio do teste (STAGING_GOOGLE_*): o da produção tem a marca verificada presa ao domínio dela.
+      # A chave da Steam fica de fora: o teste não precisa dela.
+      - name: Enviar segredos
+        env:
+          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
+          BREVO_API_KEY: ${{ secrets.STAGING_BREVO_API_KEY || secrets.BREVO_API_KEY }}
+        run: |
+          if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
+            printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET" | ssh "$TARGET" "mkdir -p $DIR && umask 077 && cat > $DIR/.google.env"
+          fi
+          if [ -n "$BREVO_API_KEY" ]; then
+            printf 'BREVO_API_KEY=%s\n' "$BREVO_API_KEY" | ssh "$TARGET" "mkdir -p $DIR && umask 077 && cat > $DIR/.brevo.env"
+          fi
+
+      # A lista de quem entra vem de secrets (mascarados no log público) e chega pelo ambiente, não pelo script.
+      - name: Instalar e reiniciar
+        env:
+          STAGING_USERS: ${{ secrets.STAGING_USERS }}
+          STAGING_ADMIN_USERS: ${{ secrets.STAGING_ADMIN_USERS }}
+        run: |
+          ssh "$TARGET" "mkdir -p $DIR \
+            && cd $DIR && rm -rf client server shared desktop tests examples docs \
+            && tar -xzf /tmp/concord-staging-deploy.tgz -C $DIR \
+            && cd $DIR && chmod +x deploy/setup.sh \
+            && MODE=${{ vars.STAGING_DEPLOY_MODE || 'tunnel' }} DOMAIN=${{ vars.STAGING_DOMAIN }} TUNNEL_NAME=concord-teste \
+               FIREWALL=${{ vars.STAGING_FIREWALL || 'on' }} STAGING=true STAGING_USERS='$STAGING_USERS' \
+               ADMIN_USERS='$STAGING_ADMIN_USERS' GOOGLE_CLIENT_ID=${{ vars.STAGING_GOOGLE_CLIENT_ID || 'off' }} MAIL_FROM=${{ vars.MAIL_FROM }} \
+               ./deploy/setup.sh"
+
+      - name: Verificar saúde
+        run: |
+          ssh "$TARGET" "curl -fsS --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:3000/health \
+            && echo && docker ps --filter label=com.docker.compose.project=concord-staging --format '{{.Names}}: {{.Status}}'"

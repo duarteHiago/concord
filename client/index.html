@@ -13,9 +13,9 @@
     <title>Concord</title>
     <script>
       // Visitante sem login cai na landing page; o app desktop, o link "Entrar" (/?entrar) e as voltas do Google
-      // e dos links de e-mail (confirmar, trocar senha) vão direto para o app
+      // e dos links de e-mail (confirmar, trocar senha) vão direto para o app. O Concord de testes não tem landing.
       try {
-        if (location.pathname === '/' && !localStorage.getItem('concord.token') && !/Electron\//.test(navigator.userAgent) && !/[?&]entrar\b/.test(location.search) && !/google-|verify-email=|reset-email=/.test(location.hash)) {
+        if ('%VITE_STAGING%' !== 'true' && location.pathname === '/' && !localStorage.getItem('concord.token') && !/Electron\//.test(navigator.userAgent) && !/[?&]entrar\b/.test(location.search) && !/google-|verify-email=|reset-email=/.test(location.hash)) {
           location.replace('/inicio/');
         }
       } catch {}
