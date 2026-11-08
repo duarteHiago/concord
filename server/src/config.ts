@@ -56,6 +56,8 @@ export const config = {
   steamApiKey: (env.STEAM_API_KEY ?? '').trim(),
   // diagnósticos enviados ficam ao lado do banco, fora de /uploads (que é público)
   diagnosticsDir: env.DIAGNOSTICS_DIR ?? '',
+  // provas das denúncias (imagens da transmissão, cópia dos anexos): ao lado do banco, fora de /uploads (público)
+  reportsDir: env.REPORTS_DIR ?? '',
   // backup diário do banco (ver backup.ts): quantos dias guardar (0 desliga) e a partir de que hora (UTC)
   backup: {
     dir: env.BACKUP_DIR ?? '',
@@ -98,6 +100,7 @@ export const config = {
 if (!config.uploadsDir) config.uploadsDir = join(dirname(config.dbPath), 'uploads');
 if (!config.downloadsDir) config.downloadsDir = join(dirname(config.dbPath), 'downloads');
 if (!config.diagnosticsDir) config.diagnosticsDir = join(dirname(config.dbPath), 'diagnostics');
+if (!config.reportsDir) config.reportsDir = join(dirname(config.dbPath), 'reports');
 if (!config.backup.dir) config.backup.dir = join(dirname(config.dbPath), 'backups');
 
 // com os segredos de exemplo, qualquer um forja sessões (JWT) ou entradas nas salas de voz (LiveKit): em produção

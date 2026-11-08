@@ -64,6 +64,7 @@ export type Modal =
   | { type: 'contractRenewal' }
   | { type: 'finePix'; fineId: string; amountCents: number }
   | { type: 'ban'; serverId: string; userId: string; name: string; then?: () => void }
+  | { type: 'report'; target: { kind: 'message' | 'dm_message'; id: string; authorName: string } | { kind: 'user'; userId: string; name: string } }
   | { type: 'confirm'; title: string; message: string; confirmLabel: string; danger?: boolean; onConfirm: () => Promise<void> | void };
 
 interface AppState {
