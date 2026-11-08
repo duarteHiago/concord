@@ -20,9 +20,16 @@ próximo pedido.
   - põe a faixa "Ambiente de testes" no app e pula a landing page;
   - tira o site dos buscadores (`robots.txt` e `X-Robots-Tag`);
   - libera a entrada só para `STAGING_USERS` e `ADMIN_USERS`.
-- O login com Google e o e-mail (Brevo) são os mesmos da produção. O captcha fica desligado (a chave é presa
-  ao domínio da produção) e os backups ficam só no disco da VPS. O bucket de backups é o da produção, e
-  usá-lo aqui misturaria e apagaria os backups de verdade.
+- **Login:** usuário e senha, com o código por e-mail (o mesmo Brevo da produção). O login com Google fica
+  desligado: o cliente OAuth da produção tem a marca verificada presa ao domínio dela, e mexer nisso pode
+  pedir uma nova verificação. Para ter Google no teste, crie um projeto separado no Google Cloud em modo
+  "Teste" (sem verificação; só as contas Google listadas lá entram), com a URI
+  `https://DOMINIO_DO_TESTE/api/auth/google/callback`, e preencha a variável `STAGING_GOOGLE_CLIENT_ID` e o
+  secret `STAGING_GOOGLE_CLIENT_SECRET`.
+- O captcha fica desligado (a chave é presa ao domínio da produção) e os backups ficam só no disco da VPS.
+  O bucket de backups é o da produção, e usá-lo aqui misturaria e apagaria os backups de verdade.
+- **Domínio:** precisa estar na mesma conta da Cloudflare que o túnel da VPS (o login de `cloudflared` dela).
+  Um CNAME de outra conta para o túnel dá o erro 1033.
 - **Não copie o banco da produção para cá.** São dados de pessoas que não autorizaram esse uso (LGPD).
   Crie contas de teste.
 
@@ -40,9 +47,7 @@ próximo pedido.
    ```
 
    Esse comando cria só variáveis e secrets `STAGING_*`. Os da produção ficam como estão.
-4. **Google:** no Google Cloud Console, no cliente OAuth do Concord, acrescente
-   `https://teste.seudominio.com/api/auth/google/callback` nas URIs de redirecionamento autorizadas.
-5. **Primeiro deploy:** `git push origin main:staging`.
+4. **Primeiro deploy:** `git push origin main:staging`.
 
 ## Testar uma branch
 

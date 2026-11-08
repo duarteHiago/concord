@@ -55,7 +55,7 @@ if ($Staging) {
   Write-Host ""
   Write-Host ">> Pronto! Todo push na branch staging agora testa e faz deploy no Concord de testes."
   Write-Host ">> Para subir a main no teste: git push origin main:staging"
-  Write-Host ">> Não esqueça: no Google Cloud, acrescente https://$Domain/api/auth/google/callback nas URIs de redirecionamento."
+  Write-Host ">> O login com Google fica desligado no teste (ver deploy/STAGING.md para ligar com um cliente OAuth próprio)."
   exit 0
 }
 

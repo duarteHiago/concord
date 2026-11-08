@@ -167,10 +167,11 @@ jobs:
             --exclude=dist --exclude=.env .
           scp -q /tmp/concord-deploy.tgz "$TARGET:/tmp/concord-staging-deploy.tgz"
 
-      # o mesmo login com Google e o mesmo e-mail da produção (só quem está em STAGING_USERS consegue usar)
+      # O e-mail é o mesmo da produção (só quem está em STAGING_USERS recebe). O Google só com um cliente OAuth
+      # próprio do teste (STAGING_GOOGLE_*): o da produção tem a marca verificada presa ao domínio dela.
       - name: Enviar segredos
         env:
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
         run: |
@@ -192,7 +193,7 @@ jobs:
             && cd $DIR && chmod +x deploy/setup.sh \
             && MODE=${{ vars.STAGING_DEPLOY_MODE || 'tunnel' }} DOMAIN=${{ vars.STAGING_DOMAIN }} TUNNEL_NAME=concord-teste \
                FIREWALL=${{ vars.STAGING_FIREWALL || 'on' }} STAGING=true STAGING_USERS='${{ vars.STAGING_USERS }}' \
-               ADMIN_USERS='${{ vars.STAGING_ADMIN_USERS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} \
+               ADMIN_USERS='${{ vars.STAGING_ADMIN_USERS }}' GOOGLE_CLIENT_ID=${{ vars.STAGING_GOOGLE_CLIENT_ID || 'off' }} MAIL_FROM=${{ vars.MAIL_FROM }} \
                ./deploy/setup.sh"
 
       - name: Verificar saúde

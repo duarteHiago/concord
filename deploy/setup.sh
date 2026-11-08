@@ -33,6 +33,12 @@ DOMAIN="$(grep ^DOMAIN= .env | cut -d= -f2)"
 # Login com Google: o ID do cliente vem da variável do CI; o secret chega por um arquivo temporário
 # (.google.env, escrito pelo CI via stdin) para não aparecer em linha de comando nem em log.
 upsert_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }
+# GOOGLE_CLIENT_ID=off desliga o login com Google (o Concord de testes, sem um cliente OAuth próprio)
+if [ "${GOOGLE_CLIENT_ID:-}" = "off" ]; then
+  sed -i '/^GOOGLE_CLIENT_ID=/d; /^GOOGLE_CLIENT_SECRET=/d' .env
+  rm -f .google.env
+  GOOGLE_CLIENT_ID=""
+fi
 if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
   if printf '%s' "$GOOGLE_CLIENT_ID" | grep -qE '^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$'; then
     upsert_env GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID"
