@@ -120,8 +120,12 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --mac --publish never
 
+      # o mesmo do Windows: em PR de fork e do Dependabot o segredo não existe, então só monta, sem assinar
       - name: Assinar a atualização
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: >-
+          github.event_name != 'pull_request' ||
+          (github.event.pull_request.head.repo.full_name == github.repository &&
+           github.event.pull_request.user.login != 'dependabot[bot]')
         working-directory: desktop
         env:
           DESKTOP_UPDATE_KEY: ${{ secrets.DESKTOP_UPDATE_KEY }}
