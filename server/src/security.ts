@@ -13,7 +13,7 @@ import { cspReports } from './metrics.ts';
 
 /** Hash dos <script> inline das páginas (o redirecionamento para a landing no index.html etc.). */
 function inlineScriptHashes(): string[] {
-  const pages = ['index.html', 'inicio/index.html', 'privacidade/index.html', 'termos/index.html', 'contribuir/index.html'];
+  const pages = ['index.html', 'offline.html', 'inicio/index.html', 'instalar/index.html', 'privacidade/index.html', 'termos/index.html', 'contribuir/index.html'];
   const hashes = new Set<string>();
   for (const page of pages) {
     const file = join(config.publicDir, page);
