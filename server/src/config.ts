@@ -7,6 +7,9 @@ export const config = {
   port: Number(env.PORT ?? 3000),
   host: env.HOST ?? '0.0.0.0',
   jwtSecret: env.JWT_SECRET ?? 'dev-secret-troque-isto',
+  // Chave que cifra os segredos do 2FA guardados no banco (ver twoFactor.ts). Vazia: usa o JWT_SECRET.
+  // Para trocar o JWT_SECRET (sessões) sem desligar o 2FA de todo mundo, ponha aqui o JWT_SECRET antigo.
+  twoFactorSecret: (env.TWOFA_SECRET ?? '').trim(),
   dbPath: env.DB_PATH ?? fileURLToPath(new URL('../data/concord.db', import.meta.url)),
   uploadsDir: env.UPLOADS_DIR ?? '',
   downloadsDir: env.DOWNLOADS_DIR ?? '',

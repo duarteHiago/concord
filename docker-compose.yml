@@ -10,6 +10,8 @@ services:
       HOST: 127.0.0.1
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      # cifra os segredos do 2FA no banco; vazio usa o JWT_SECRET (ver server/src/twoFactor.ts)
+      TWOFA_SECRET: ${TWOFA_SECRET:-}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       COMMUNITY_INVITE: ${COMMUNITY_INVITE:-}
       AUTHORITY_SERVER_ID: ${AUTHORITY_SERVER_ID:-}
