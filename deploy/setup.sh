@@ -311,7 +311,12 @@ if [ "${MONITORING:-on}" != "off" ]; then
 fi
 
 mkdir -p data
-"${COMPOSE[@]}" up -d --build --remove-orphans
+# O app roda como o usuário "node" (uid 1000, ver Dockerfile): os dados precisam ser dele. Para o app antes de
+# trocar o dono, senão a versão antiga (root) ainda cria arquivos do banco (-wal, -shm) que a nova não abre.
+"${COMPOSE[@]}" build
+"${COMPOSE[@]}" stop app >/dev/null 2>&1 || true
+find data ! -user 1000 -exec chown -h 1000:1000 {} +
+"${COMPOSE[@]}" up -d --remove-orphans
 # recarrega o Caddyfile caso ele tenha mudado (o compose não detecta mudança no arquivo montado)
 "${COMPOSE[@]}" restart caddy
 # o LiveKit só lê a configuração ao iniciar: reinicia só se ela mudou (derruba as chamadas por alguns segundos)
