@@ -13,6 +13,10 @@ concurrency:
   group: desktop-${{ github.ref }}
   cancel-in-progress: true
 
+# o token do GitHub só lê o código: o deploy é por SSH e nenhum job escreve no repositório
+permissions:
+  contents: read
+
 jobs:
   build-win:
     name: Instalador Windows
@@ -24,7 +28,7 @@ jobs:
         with:
           node-version: 24
 
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
       - name: Compilar o capturador de áudio (C++)
         working-directory: desktop/native
