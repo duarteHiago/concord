@@ -218,7 +218,11 @@ EOF
   fi
 
   echo ">> Criando o subdomínio $DOMAIN na Cloudflare..."
-  cloudflared tunnel route dns --overwrite-dns "$TUNNEL_ID" "$DOMAIN"
+  # o login da VPS na Cloudflare vale para um domínio só: subdomínio de outro domínio da conta é criado à mão
+  if ! cloudflared tunnel route dns --overwrite-dns "$TUNNEL_ID" "$DOMAIN"; then
+    echo "!! Não consegui criar o DNS de $DOMAIN. No painel da Cloudflare, crie um CNAME (com proxy):" >&2
+    echo "!!   $DOMAIN -> ${TUNNEL_ID}.cfargotunnel.com" >&2
+  fi
 
   if [ "${TUNNEL_UNCHANGED:-0}" = 1 ]; then
     echo ">> Túnel sem alterações, não precisa reiniciar."
