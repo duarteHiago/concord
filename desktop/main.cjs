@@ -128,7 +128,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     title: 'Concord',
-    backgroundColor: '#0a0b0f',
+    backgroundColor: '#ecf0f9',
     autoHideMenuBar: true,
     icon: APP_ICON,
     webPreferences: {
@@ -328,7 +328,7 @@ handle('concord:open-dev-window', () => {
     minWidth: 480,
     minHeight: 420,
     title: 'Concord · Diagnóstico',
-    backgroundColor: '#120e16',
+    backgroundColor: '#ecf0f9',
     autoHideMenuBar: true,
     icon: APP_ICON,
     webPreferences: { contextIsolation: true, sandbox: true },
@@ -396,8 +396,8 @@ handle('concord:reload', () => void win?.loadURL(config.server));
 // outra pessoa não entrega nada a ela.
 
 const GOOGLE_DONE_HTML = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Concord</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140f19;color:#f3ecf7;font-family:system-ui,sans-serif;text-align:center}
-.c{max-width:420px;padding:32px}h1{font-size:24px;margin:0 0 8px}p{color:#b3a6c2;line-height:1.5}</style></head>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fd;color:#0f1b3d;font-family:system-ui,sans-serif;text-align:center}
+.c{max-width:420px;padding:32px}h1{font-size:24px;margin:0 0 8px}p{color:#52608a;line-height:1.5}</style></head>
 <body><div class="c"><h1>Pronto!</h1><p>Pode fechar esta aba e voltar para o app do Concord.</p></div></body></html>`;
 
 let googleAuth = null; // { cancel } do login em andamento
@@ -626,17 +626,17 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 function clipHtml(text, from, copied) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;user-select:none;cursor:pointer}
-  .card{box-sizing:border-box;margin:8px;height:calc(100% - 16px);border-radius:22px;background:#211a28;border:1px solid #ffffff22;
+  .card{box-sizing:border-box;margin:8px;height:calc(100% - 16px);border-radius:22px;background:#131e38;border:1px solid #ffffff22;
     box-shadow:0 12px 32px #000a;padding:14px 18px;color:#f3ecf7;display:flex;flex-direction:column;justify-content:center;gap:6px;position:relative;overflow:hidden;
     animation:pop .35s cubic-bezier(.2,1.5,.4,1)}
   @keyframes pop{from{transform:translateY(-14px) scale(.96);opacity:0}}
   .top{font-size:12px;color:#b3a6c2;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .top b{color:#f3ecf7}
-  .code{font:700 26px Consolas,"Cascadia Mono",monospace;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ff8a6b}
+  .code{font:700 26px Consolas,"Cascadia Mono",monospace;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ff7a6a}
   .hint{font-size:13px;color:#b3a6c2}
   kbd{background:#ffffff1a;border:1px solid #ffffff33;border-bottom-width:2px;border-radius:6px;padding:1px 6px;font:600 12px "Segoe UI",sans-serif;color:#f3ecf7}
   .ok .code{color:#5cffb0}
-  .bar{position:absolute;left:0;bottom:0;height:3px;background:#ff8a6b;animation:shrink ${CLIP_SHOW_MS}ms linear forwards}
+  .bar{position:absolute;left:0;bottom:0;height:3px;background:#ff7a6a;animation:shrink ${CLIP_SHOW_MS}ms linear forwards}
   .ok .bar{display:none}
   @keyframes shrink{from{width:100%}to{width:0}}
   </style></head><body><div class="card ${copied ? 'ok' : ''}" onclick="document.title='copy-'+Date.now()">
@@ -745,14 +745,14 @@ let nudgeMsgTimer = null;
 function nudgeMsgHtml(text, from) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;user-select:none}
-  .card{box-sizing:border-box;margin:8px;height:calc(100% - 16px);border-radius:22px;background:#211a28;border:1px solid #ffffff22;
+  .card{box-sizing:border-box;margin:8px;height:calc(100% - 16px);border-radius:22px;background:#131e38;border:1px solid #ffffff22;
     box-shadow:0 12px 32px #000a;padding:14px 18px;color:#f3ecf7;display:flex;flex-direction:column;justify-content:center;gap:6px;position:relative;overflow:hidden;
     animation:pop .35s cubic-bezier(.2,1.5,.4,1)}
   @keyframes pop{from{transform:translateY(-14px) scale(.96);opacity:0}}
   .top{font-size:12px;color:#b3a6c2;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .top b{color:#f3ecf7}
-  .msg{font:700 26px Consolas,"Cascadia Mono",monospace;color:#ff8a6b;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .bar{position:absolute;left:0;bottom:0;height:3px;background:#ff8a6b;animation:shrink ${NUDGE_MSG_SHOW_MS}ms linear forwards}
+  .msg{font:700 26px Consolas,"Cascadia Mono",monospace;color:#ff7a6a;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .bar{position:absolute;left:0;bottom:0;height:3px;background:#ff7a6a;animation:shrink ${NUDGE_MSG_SHOW_MS}ms linear forwards}
   @keyframes shrink{from{width:100%}to{width:0}}
   </style></head><body><div class="card">
   <div class="top">⚡ <b>${escapeHtml(from)}</b> chamou sua atenção!</div>

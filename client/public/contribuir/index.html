@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#140f19">
+<meta name="theme-color" content="#f6f8fd">
 <title>Contribuir com o Concord</title>
 <meta name="description" content="Como contribuir com o Concord: do relato do bug ao código no ar. Issues, branches, commits, pull requests e o caminho até a produção.">
 <link rel="icon" type="image/svg+xml" href="/brand/concord-simbolo.svg">
@@ -20,7 +20,7 @@
 /* os 4 passos */
 .doc .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; margin: 8px 0 0; padding: 0; list-style: none; counter-reset: s; }
 .steps li { margin: 0; padding-top: 18px; border-top: 2px solid var(--line); counter-increment: s; }
-.steps li::before { content: counter(s); display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 12px; border-radius: 50%; background: var(--cream); color: var(--ink); font-weight: 800; }
+.steps li::before { content: counter(s); display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 12px; border-radius: 50%; background: var(--cream); color: var(--on-cream); font-weight: 800; }
 .steps b { display: block; color: var(--cream); font-size: 19px; }
 .steps span { color: var(--muted); }
 
@@ -40,11 +40,11 @@
 .state { padding: 7px 14px; border-radius: 999px; font-weight: 700; font-size: 15px; color: var(--ink); white-space: nowrap; }
 .arrow { color: var(--muted); font-weight: 800; }
 .s-open { background: #8fd3ff; }
-.s-triage { background: var(--sun); }
+.s-triage { background: var(--coral); }
 .s-ready { background: #5eead4; }
 .s-doing { background: #c4a5ff; }
 .s-pr { background: #ffb38f; }
-.s-closed { background: var(--cream); }
+.s-closed { background: var(--cream); color: var(--on-cream); }
 .s-side { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--line); }
 .life-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
 .branch { padding: 14px 16px; border-radius: 14px; background: var(--night); font-size: 15px; color: var(--text); }
@@ -55,18 +55,18 @@
 .life-steps li::before { counter-increment: l; content: counter(l); position: absolute; left: 0; top: 1px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--plum-2); font-size: 14px; font-weight: 800; color: var(--cream); }
 
 /* anatomia de branch e commit */
-.anatomy { margin-top: 18px; padding: 26px 22px 18px; border-radius: var(--r-box); background: #0e0a12; }
+.anatomy { margin-top: 18px; padding: 26px 22px 18px; border-radius: var(--r-box); background: #0f1b3d; }
 .anatomy .line { display: flex; flex-wrap: wrap; gap: 4px; font: 500 clamp(17px, 3.2vw, 23px) var(--mono); }
 .part { position: relative; padding: 4px 6px 30px; border-radius: 8px; text-align: center; }
 .part::after { content: attr(data-label); position: absolute; left: 0; right: 0; bottom: 5px; font: 500 13px var(--type); }
 .p-type { color: #ffb38f; background: rgb(255 179 143 / .1); }
 .p-scope { color: #c4a5ff; background: rgb(196 165 255 / .1); }
 .p-num { color: #5eead4; background: rgb(94 234 212 / .1); }
-.p-sep { color: var(--muted); padding-inline: 0; }
-.p-desc { color: var(--cream); background: rgb(251 241 232 / .06); flex: 1; text-align: left; }
-.p-desc::after { color: var(--muted); text-align: left; padding-left: 6px; }
+.p-sep { color: #9aa6c4; padding-inline: 0; }
+.p-desc { color: #e8edf8; background: rgb(251 241 232 / .06); flex: 1; text-align: left; }
+.p-desc::after { color: #9aa6c4; text-align: left; padding-left: 6px; }
 .p-type::after, .p-scope::after, .p-num::after { color: inherit; }
-.anatomy p { margin: 14px 0 0; font-size: 15px; color: var(--muted); }
+.anatomy p { margin: 14px 0 0; font-size: 15px; color: #9aa6c4; }
 
 .types { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 32px; margin: 14px 0 0; }
 .types div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }

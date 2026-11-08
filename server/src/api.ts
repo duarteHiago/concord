@@ -694,10 +694,10 @@ const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 /** Página simples do login com Google (no visual do app), para quando o navegador precisa mostrar algo. */
 function authPage(title: string, body: string) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Concord</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140f19;color:#f3ecf7;font-family:system-ui,sans-serif;text-align:center}
-.c{max-width:420px;padding:32px}img{width:84px;height:84px}h1{font-size:24px;margin:16px 0 8px}p{color:#b3a6c2;line-height:1.5}b{color:#f3ecf7}
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fd;color:#0f1b3d;font-family:system-ui,sans-serif;text-align:center}
+.c{max-width:420px;padding:32px}img{width:84px;height:84px}h1{font-size:24px;margin:16px 0 8px}p{color:#52608a;line-height:1.5}b{color:#0f1b3d}
 button,a.b{display:inline-block;margin:8px 4px 0;padding:12px 22px;border:0;border-radius:999px;font:700 15px system-ui,sans-serif;cursor:pointer;text-decoration:none}
-button{background:#ff8a6b;color:#140f19}a.b{background:#2b2234;color:#f3ecf7}</style></head>
+button{background:#1f4fd1;color:#fff}a.b{background:#e4ebf7;color:#0f1b3d}</style></head>
 <body><div class="c"><img src="/brand/concord-simbolo.svg" alt=""><h1>${escapeHtml(title)}</h1>${body}</div></body></html>`;
 }
 

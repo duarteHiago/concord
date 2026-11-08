@@ -46,9 +46,9 @@ export function popOutVideo(track: Track, title: string): boolean {
     video { width: 100%; height: 100%; object-fit: contain; background: #000; }
     .bar { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 8px; opacity: 0; transition: opacity .2s; }
     body:hover .bar, .bar:focus-within { opacity: 1; }
-    button { height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: rgba(23,18,28,.85);
+    button { height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: rgba(15,27,61,.85);
              color: #f3ecf7; font-weight: 700; font-size: 14px; cursor: pointer; }
-    button:hover { background: #ff8a6b; color: #2a1410; }
+    button:hover { background: #1f4fd1; color: #ffffff; }
     .ended { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; color: #b3a6c2; font-size: 18px; }
   `;
   const video = doc.createElement('video');

@@ -28,7 +28,7 @@ interface Mail {
 function html({ subject, lines, button, footer }: Mail) {
   const p = (t: string) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#3b3442">${escapeHtml(t)}</p>`;
   const btn = button
-    ? `<p style="margin:22px 0"><a href="${escapeHtml(button.url)}" style="display:inline-block;padding:12px 24px;border-radius:999px;background:#ff8a6b;color:#2a1410;font-weight:700;font-size:15px;text-decoration:none">${escapeHtml(button.label)}</a></p>
+    ? `<p style="margin:22px 0"><a href="${escapeHtml(button.url)}" style="display:inline-block;padding:12px 24px;border-radius:999px;background:#1f4fd1;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none">${escapeHtml(button.label)}</a></p>
 <p style="margin:0 0 14px;font-size:12px;line-height:1.5;color:#7a7183">Se o botão não abrir, copie este endereço no navegador:<br><span style="word-break:break-all">${escapeHtml(button.url)}</span></p>`
     : '';
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>

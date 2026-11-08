@@ -46,14 +46,12 @@ const dark = (p: Partial<ThemePalette>): ThemePalette => ({
   ...p,
 });
 
-/** Azulejo: branco e azul-cobalto, em teste com quatro cores secundárias. O `accent-2` aparece
- * como texto (selo BOT, títulos das Novidades), então no app ele é um tom mais escuro da cor
- * do balão da logo, para dar contraste no branco. */
-const azulejo = (id: string, name: string, accent2: string, bubble: string): ThemePreset => ({
-  id,
-  name,
+/** Azulejo, a cara do Concord: branco, azul-cobalto e coral. O `accent-2` aparece como texto
+ * (selo BOT, títulos das Novidades), então no claro ele é um coral mais escuro, com contraste no branco. */
+const AZULEJO: ThemePreset = {
+  id: 'azulejo',
+  name: 'Azulejo',
   light: true,
-  icon: { body: '#1f4fd1', bubble, ink: '#0f1b3d' },
   palette: {
     'surface-0': '#dde4f2',
     'surface-1': '#ecf0f9',
@@ -66,30 +64,44 @@ const azulejo = (id: string, name: string, accent2: string, bubble: string): The
     'fg-muted': '#45537a',
     'fg-subtle': '#66739a',
     accent: '#1f4fd1',
-    'accent-2': accent2,
+    'accent-2': '#d4483b',
     'on-accent': '#ffffff',
   },
-});
+};
+
+/** O Azulejo no escuro: azul-marinho, cobalto mais claro (para ler no fundo escuro) e coral. */
+const AZULEJO_ESCURO: ThemePreset = {
+  id: 'azulejo-escuro',
+  name: 'Azulejo escuro',
+  palette: dark({
+    'surface-0': '#0a1122',
+    'surface-1': '#0e172c',
+    'surface-2': '#131e38',
+    'surface-3': '#1a2745',
+    'surface-4': '#233154',
+    'line-strong': 'rgb(255 255 255 / 0.13)',
+    fg: '#e8edf8',
+    'fg-muted': '#a6b1cd',
+    'fg-subtle': '#7a87a8',
+    accent: '#4a76ff',
+    'accent-2': '#ff7a6a',
+    'on-accent': '#ffffff',
+  }),
+};
+
+/** Temas que saíram: quem tinha um deles cai no Azulejo. O Noturno era a cara antiga do Concord;
+ * os azulejo-* foram os testes de cor secundária (o coral ganhou). */
+const RETIRED: Record<string, string> = {
+  noturno: 'azulejo',
+  'azulejo-coral': 'azulejo',
+  'azulejo-celeste': 'azulejo',
+  'azulejo-menta': 'azulejo',
+  'azulejo-chiclete': 'azulejo',
+};
 
 export const PRESETS: ThemePreset[] = [
-  {
-    id: 'noturno',
-    name: 'Noturno',
-    palette: dark({
-      'surface-0': '#120e16',
-      'surface-1': '#17121c',
-      'surface-2': '#211a28',
-      'surface-3': '#2b2234',
-      'surface-4': '#362c41',
-      'line-strong': 'rgb(255 255 255 / 0.13)',
-      fg: '#f3ecf7',
-      'fg-muted': '#b3a6c2',
-      'fg-subtle': '#9486a6',
-      accent: '#ff8a6b',
-      'accent-2': '#c4a5ff',
-      'on-accent': '#2a1410',
-    }),
-  },
+  AZULEJO,
+  AZULEJO_ESCURO,
   { id: 'concord', name: 'Violeta', palette: dark({}) },
   {
     id: 'midnight',
@@ -116,10 +128,6 @@ export const PRESETS: ThemePreset[] = [
     name: 'Brasa',
     palette: dark({ 'surface-0': '#120c0a', 'surface-1': '#1a1210', 'surface-2': '#201714', 'surface-3': '#2a1e1a', 'surface-4': '#372822', fg: '#f6ebe6', 'fg-muted': '#c8b0a6', 'fg-subtle': '#9a8078', accent: '#f97316', 'accent-2': '#fbbf24', 'on-accent': '#2a1206' }),
   },
-  azulejo('azulejo-coral', 'Azulejo coral', '#d4483b', '#ff7a6a'),
-  azulejo('azulejo-celeste', 'Azulejo celeste', '#1e7bc4', '#8ccbff'),
-  azulejo('azulejo-menta', 'Azulejo menta', '#0e8a70', '#3ed6b2'),
-  azulejo('azulejo-chiclete', 'Azulejo chiclete', '#cf2f74', '#ff6fae'),
   {
     id: 'light',
     name: 'Claro',
@@ -143,7 +151,7 @@ export const PRESETS: ThemePreset[] = [
 ];
 
 export const DEFAULT_THEME: ThemeSettings = {
-  preset: 'noturno',
+  preset: 'azulejo',
   accent: null,
   background: { url: null, blur: 0, dim: 0.35 },
   scale: 1,
@@ -151,11 +159,12 @@ export const DEFAULT_THEME: ThemeSettings = {
 };
 
 export function normalizeTheme(t: Partial<ThemeSettings> | undefined): ThemeSettings {
-  return {
+  const theme = {
     ...DEFAULT_THEME,
     ...t,
     background: { ...DEFAULT_THEME.background, ...t?.background },
   };
+  return RETIRED[theme.preset] ? { ...theme, preset: RETIRED[theme.preset] } : theme;
 }
 
 const CACHE_KEY = 'concord.theme';
@@ -189,7 +198,7 @@ export function applyTheme(theme: ThemeSettings) {
     // ignorado
   }
   const root = document.documentElement;
-  const preset = PRESETS.find((p) => p.id === theme.preset) ?? PRESETS[0];
+  const preset = PRESETS.find((p) => p.id === (RETIRED[theme.preset] ?? theme.preset)) ?? PRESETS[0];
   const palette: ThemePalette = {
     ...preset.palette,
     ...(theme.accent ? { accent: theme.accent, 'on-accent': readableOn(theme.accent) } : {}),

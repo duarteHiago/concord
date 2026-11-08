@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#140f19" />
+    <meta name="theme-color" content="#f6f8fd" />
     <title>Sem conexão</title>
     <style>
       /* Só aparece sem internet: nada de fonte da web nem imagem de fora, tudo aqui dentro. */
-      :root { color-scheme: dark; }
+      :root { color-scheme: light; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
         font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
-        background: #140f19;
-        color: #fbf1e8;
+        background: #f6f8fd;
+        color: #0f1b3d;
         display: grid;
         place-items: center;
         min-height: 100dvh;
@@ -22,28 +22,28 @@
       main { max-width: 340px; display: grid; justify-items: center; gap: 14px; }
       svg { width: 88px; height: 88px; margin-bottom: 10px; }
       h1 { font-size: 30px; line-height: 1.1; font-weight: 800; letter-spacing: -0.015em; }
-      p { color: #b6a8c6; font-size: 17px; line-height: 1.5; }
+      p { color: #52608a; font-size: 17px; line-height: 1.5; }
       button {
         margin-top: 10px;
         height: 52px;
         padding: 0 28px;
         border: 0;
         border-radius: 999px;
-        background: #ff8a6b;
-        color: #1a1024;
+        background: #1f4fd1;
+        color: #ffffff;
         font: 700 17px inherit;
         font-family: inherit;
         cursor: pointer;
       }
-      button:hover { background: #ffa087; }
-      button:focus-visible { outline: 3px solid #f5c451; outline-offset: 3px; }
-      small { color: #b6a8c6; font-size: 15px; }
+      button:hover { background: #1a43b2; }
+      button:focus-visible { outline: 3px solid #ff7a6a; outline-offset: 3px; }
+      small { color: #52608a; font-size: 15px; }
     </style>
   </head>
   <body>
     <main>
       <!-- símbolo do Concord, embutido pra aparecer mesmo sem internet -->
-      <svg viewBox="0 0 216 216" aria-hidden="true"><g transform="translate(4 8)"><g fill="#FF8A6B"><path d="M155.2,44.8 A78,78 0 1,0 155.2,155.2 L124,124 A34,34 0 1,1 124,76 Z"/><circle cx="139.6" cy="60.4" r="22"/><circle cx="139.6" cy="139.6" r="22"/></g><path d="M44,88 A60,60 0 0,1 72,48" fill="none" stroke="#FFD0C2" stroke-width="9" stroke-linecap="round"/><g fill="#140F19" stroke="#140F19" stroke-width="14" stroke-linejoin="round"><circle cx="160" cy="100" r="26"/><path d="M148,118 Q156,134 182,138 Q170,128 170,110 Z"/></g><g fill="#C4A5FF"><circle cx="160" cy="100" r="26"/><path d="M148,118 Q156,134 182,138 Q170,128 170,110 Z"/></g><g fill="#140F19"><circle cx="149" cy="100" r="4"/><circle cx="160" cy="100" r="4"/><circle cx="171" cy="100" r="4"/></g></g></svg>
+      <svg viewBox="0 0 216 216" aria-hidden="true"><g transform="translate(4 8)"><g fill="#1F4FD1"><path d="M155.2,44.8 A78,78 0 1,0 155.2,155.2 L124,124 A34,34 0 1,1 124,76 Z"/><circle cx="139.6" cy="60.4" r="22"/><circle cx="139.6" cy="139.6" r="22"/></g><path d="M44,88 A60,60 0 0,1 72,48" fill="none" stroke="#9DB8FF" stroke-width="9" stroke-linecap="round"/><g fill="#0F1B3D" stroke="#0F1B3D" stroke-width="14" stroke-linejoin="round"><circle cx="160" cy="100" r="26"/><path d="M148,118 Q156,134 182,138 Q170,128 170,110 Z"/></g><g fill="#FF7A6A"><circle cx="160" cy="100" r="26"/><path d="M148,118 Q156,134 182,138 Q170,128 170,110 Z"/></g><g fill="#0F1B3D"><circle cx="149" cy="100" r="4"/><circle cx="160" cy="100" r="4"/><circle cx="171" cy="100" r="4"/></g></g></svg>
       <h1>Sem conexão</h1>
       <p>O Concord precisa de internet pra abrir. Confere o Wi-Fi ou os dados móveis.</p>
       <button type="button" id="retry">Tentar de novo</button>

@@ -922,7 +922,7 @@ function Editor({
         <div className="flex items-center gap-2">
           <input
             type="color"
-            value={page.accent ?? '#ff8a6b'}
+            value={page.accent ?? '#1f4fd1'}
             onChange={(e) => onChange({ ...page, accent: e.target.value })}
             onBlur={(e) => void save({ accent: e.target.value })}
             aria-label="Cor de destaque da página"
