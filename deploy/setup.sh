@@ -129,7 +129,9 @@ fi
 if [ -n "${STAGING:-}" ]; then
   if [ "$STAGING" = "true" ] || [ "$STAGING" = "false" ]; then
     upsert_env STAGING "$STAGING"
-    [ "$STAGING" = "true" ] && upsert_env MAIL_FROM_NAME "Concord Teste"
+    # no teste, o cadastro dispensa o e-mail: a lista de acesso já barra quem não foi liberado, e assim dá para
+    # criar contas de teste sem uma caixa de e-mail para cada uma
+    [ "$STAGING" = "true" ] && upsert_env MAIL_FROM_NAME "Concord Teste" && upsert_env REQUIRE_EMAIL false
   else
     echo "!! STAGING deve ser true ou false; ignorado." >&2
   fi
