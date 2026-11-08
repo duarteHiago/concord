@@ -20,7 +20,9 @@ próximo pedido.
   - põe a faixa "Ambiente de testes" no app e pula a landing page;
   - tira o site dos buscadores (`robots.txt` e `X-Robots-Tag`);
   - libera a entrada só para `STAGING_USERS` e `ADMIN_USERS`.
-- **Login:** usuário e senha, com o código por e-mail (o mesmo Brevo da produção). O login com Google fica
+- **Login:** usuário e senha, **sem confirmar e-mail** (`REQUIRE_EMAIL=false`): a lista de acesso já barra quem
+  não foi liberado, e assim dá para criar contas de teste sem uma caixa de e-mail para cada uma. O e-mail (o
+  mesmo Brevo da produção) continua servindo para "Esqueci minha senha". O login com Google fica
   desligado: o cliente OAuth da produção tem a marca verificada presa ao domínio dela, e mexer nisso pode
   pedir uma nova verificação. Para ter Google no teste, crie um projeto separado no Google Cloud em modo
   "Teste" (sem verificação; só as contas Google listadas lá entram), com a URI
