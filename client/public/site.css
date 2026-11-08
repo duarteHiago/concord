@@ -1,0 +1,105 @@
+/* Base das páginas do site (instalar, contribuir, privacidade, termos), igual à landing revisada.
+   Uma família tipográfica (Bricolage); mono só para código. Coral só na ação principal.
+   Escala 4:3 -> 17 / 23 / 30 / 40 / 53 / 71. */
+:root {
+  --night: #140f19;
+  --plum: #211a28;
+  --plum-2: #2c2336;
+  --line: #3a2f47;
+  --line-soft: #2a2232;
+  --cream: #fbf1e8;
+  --text: #e6dcea;
+  --muted: #b6a8c6;
+  --coral: #ff8a6b;
+  --sun: #f5c451;
+  --ink: #1a1024;
+  --type: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --r-stage: 28px;
+  --r-box: 16px;
+  --r-chip: 8px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 88px; }
+body { margin: 0; background: var(--night); color: var(--cream); font-family: var(--type); font-size: 17px; line-height: 1.6; overflow-x: hidden; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--sun); outline-offset: 3px; border-radius: 8px; }
+.wrap { width: 100%; max-width: 1200px; margin-inline: auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 800; letter-spacing: -0.015em; }
+p { margin: 0; }
+code, pre, .mono { font-family: var(--mono); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; height: 52px; padding: 0 26px; border-radius: 999px; border: 0; font: 700 17px var(--type); text-decoration: none; cursor: pointer; transition: background .15s ease, box-shadow .15s ease; }
+.btn-primary { background: var(--coral); color: var(--ink); }
+.btn-primary:hover { background: #ffa087; }
+.btn-ghost { background: transparent; color: var(--cream); box-shadow: inset 0 0 0 2px var(--line); }
+.btn-ghost:hover { box-shadow: inset 0 0 0 2px var(--muted); }
+.text-link { font-weight: 700; color: var(--cream); text-decoration: underline; text-decoration-color: var(--line); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.text-link:hover { text-decoration-color: var(--cream); }
+
+/* ------------------------------------------------ topbar (a mesma da landing) */
+.nav { position: sticky; top: 0; z-index: 30; background: rgb(20 15 25 / .88); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line-soft); padding-top: env(safe-area-inset-top, 0px); }
+.nav .wrap { display: flex; align-items: center; gap: 32px; height: 68px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 23px; letter-spacing: -0.02em; text-decoration: none; }
+.brand img { width: 32px; height: 32px; display: block; }
+.nav-links { display: flex; gap: 28px; flex: 1; font-weight: 500; font-size: 15px; color: var(--muted); }
+.nav-links a { text-decoration: none; }
+.nav-links a:hover, .nav-links a[aria-current="page"] { color: var(--cream); }
+.nav-actions { display: flex; align-items: center; gap: 20px; margin-left: auto; }
+.nav-actions .entrar { font-weight: 700; font-size: 15px; text-decoration: none; }
+.nav-actions .entrar:hover { color: var(--muted); }
+.nav .btn { height: 44px; padding: 0 20px; font-size: 15px; }
+@media (max-width: 760px) { .nav-links { display: none; } }
+
+/* ------------------------------------------------ cabeçalho de página */
+.page-head { padding-block: clamp(48px, 8vw, 80px) clamp(28px, 4vw, 40px); display: grid; gap: 16px; }
+.page-head h1 { font-size: clamp(40px, 6vw, 71px); line-height: .98; letter-spacing: -0.03em; max-width: 16ch; }
+.page-head .lede { font-size: clamp(19px, 2vw, 23px); line-height: 1.45; color: var(--muted); max-width: 46ch; }
+.updated { color: var(--muted); font-size: 15px; }
+
+/* ------------------------------------------------ texto longo (privacidade, termos, contribuir) */
+.doc { max-width: 760px; padding-bottom: 88px; }
+.doc h2 { margin: 56px 0 12px; font-size: 30px; line-height: 1.15; }
+.doc h3 { margin: 32px 0 8px; font-size: 23px; line-height: 1.2; }
+.doc p, .doc li { color: var(--text); }
+.doc p + p { margin-top: 12px; }
+.doc ul, .doc ol { padding-left: 22px; }
+.doc li { margin: 6px 0; }
+.doc a { color: var(--cream); text-decoration: underline; text-decoration-color: var(--line); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.doc a:hover { text-decoration-color: var(--cream); }
+.doc :not(pre) > code { font-size: .88em; padding: 2px 6px; border-radius: 6px; background: var(--plum); }
+
+.summary { margin-top: 8px; padding: 24px 28px; border-radius: var(--r-box); background: var(--plum); }
+.summary h2 { margin: 0 0 8px; font-size: 23px; }
+.summary ul { margin: 0; }
+
+.note { margin-top: 20px; padding: 16px 20px; border-radius: var(--r-box); background: var(--plum); color: var(--text); }
+.note b { color: var(--cream); }
+.note-warn { box-shadow: inset 4px 0 0 var(--sun); }
+
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 14px 12px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-size: 15px; font-weight: 700; }
+td:first-child { width: 58%; }
+@media (max-width: 600px) {
+  table, tbody, tr, td { display: block; width: 100% !important; }
+  thead { display: none; }
+  td { border: 0; padding: 4px 0; }
+  tr { padding: 14px 0; border-bottom: 1px solid var(--line); }
+}
+
+pre { margin: 14px 0; padding: 18px 20px; overflow-x: auto; border-radius: var(--r-box); background: #0e0a12; font-size: 14px; line-height: 1.65; color: var(--text); }
+pre .c { color: var(--muted); }
+
+/* ------------------------------------------------ rodapé (o mesmo da landing) */
+.foot { border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 15px; }
+.foot .wrap { padding-block: 32px 48px; display: flex; flex-wrap: wrap; gap: 16px 28px; justify-content: space-between; align-items: center; }
+.foot-brand { display: flex; align-items: center; gap: 10px; }
+.foot nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.foot a { text-decoration: none; }
+.foot a:hover, .foot a[aria-current="page"] { color: var(--cream); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
