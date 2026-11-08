@@ -71,6 +71,8 @@ interface DesktopBridge {
   onUpdateState?(cb: (s: UpdateState) => void): () => void;
   notify?(opts: { title: string; body: string; data?: unknown }): Promise<void>;
   shakeWindow?(): Promise<void>;
+  /** troca o ícone da janela/barra de tarefas (PNG em data URL); null volta ao ícone padrão */
+  setAppIcon?(pngDataUrl: string | null): Promise<void>;
   showClip?(data: { text: string; from: string; autoCopy: boolean }): Promise<boolean>;
   /** mensagem opcional da tremida: janelinha por cima de tudo, igual à do código compartilhado, sem copiar */
   showNudgeMessage?(data: { text: string; from: string }): Promise<boolean>;

@@ -1,7 +1,7 @@
 // Concord Desktop — processo principal do Electron.
 // Carrega o Concord do servidor configurado e adiciona o que o navegador não oferece:
 // seletor próprio de tela/janela e áudio da transmissão sem as vozes da sala (sem retorno).
-const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, screen, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -947,6 +947,20 @@ function fullscreenInFront() {
     execFile(shakerPath(), ['--fullscreen'], { windowsHide: true, timeout: 2000 }, (err) => resolve(!!err && err.code === 1));
   });
 }
+
+// ícone do tema escolhido (ex.: Azulejo): troca o da janela e da barra de tarefas enquanto o app
+// está aberto. O atalho e o instalador continuam com o ícone padrão. null volta ao padrão.
+handle('concord:set-app-icon', (_event, pngDataUrl) => {
+  let img;
+  if (typeof pngDataUrl === 'string' && pngDataUrl.startsWith('data:image/png;base64,') && pngDataUrl.length < 2_000_000) {
+    img = nativeImage.createFromDataURL(pngDataUrl);
+  } else if (pngDataUrl === null) {
+    img = nativeImage.createFromPath(APP_ICON);
+  }
+  if (!img || img.isEmpty()) return;
+  if (win && !win.isDestroyed()) win.setIcon(img);
+  if (process.platform === 'darwin') app.dock?.setIcon(pngDataUrl === null ? nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png')) : img);
+});
 
 handle('concord:shake-window', async () => {
   if (!win || shaking) return;
