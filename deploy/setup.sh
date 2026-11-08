@@ -218,10 +218,14 @@ EOF
   fi
 
   echo ">> Criando o subdomínio $DOMAIN na Cloudflare..."
-  # o login da VPS na Cloudflare vale para um domínio só: subdomínio de outro domínio da conta é criado à mão
-  if ! cloudflared tunnel route dns --overwrite-dns "$TUNNEL_ID" "$DOMAIN"; then
-    echo "!! Não consegui criar o DNS de $DOMAIN. No painel da Cloudflare, crie um CNAME (com proxy):" >&2
-    echo "!!   $DOMAIN -> ${TUNNEL_ID}.cfargotunnel.com" >&2
+  # O login da VPS na Cloudflare vale para um domínio só. Com um subdomínio de outro domínio da conta, o
+  # cloudflared não falha: cria "DOMINIO.dominio-do-login", que não serve. Aí o CNAME é criado à mão.
+  ROUTE_OUT="$(cloudflared tunnel route dns --overwrite-dns "$TUNNEL_ID" "$DOMAIN" 2>&1)" || true
+  echo "$ROUTE_OUT"
+  if ! printf '%s' "$ROUTE_OUT" | grep -qE "(CNAME|record for) ${DOMAIN//./\.}( |$)"; then
+    echo "!! O DNS de $DOMAIN não foi criado (o login desta VPS na Cloudflare é de outro domínio)." >&2
+    echo "!! No painel da Cloudflare, crie um CNAME com proxy: $DOMAIN -> ${TUNNEL_ID}.cfargotunnel.com" >&2
+    echo "!! E apague o registro errado que aparecer acima, se houver." >&2
   fi
 
   if [ "${TUNNEL_UNCHANGED:-0}" = 1 ]; then
