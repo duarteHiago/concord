@@ -8,6 +8,7 @@ import {
   HeadphoneOff,
   Headphones,
   LayoutGrid,
+  Flag,
   Maximize2,
   Mic,
   MicOff,
@@ -609,6 +610,14 @@ function Tile({
             {!isLocal && (
               <OverlayButton label="Parar de assistir" onClick={() => setWatching(p.identity, false)}>
                 <EyeOff size={16} />
+              </OverlayButton>
+            )}
+            {!isLocal && (
+              <OverlayButton
+                label="Denunciar a transmissão"
+                onClick={() => useApp.getState().openModal({ type: 'report', target: { kind: 'user', userId: p.identity, name } })}
+              >
+                <Flag size={16} />
               </OverlayButton>
             )}
             <OverlayButton label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'} onClick={toggleFullscreen}>

@@ -541,6 +541,31 @@ db.exec(`
 addColumn('dm_messages', 'attachments', 'TEXT');
 addColumn('dm_messages', 'reply_to', 'TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+// Denúncias (ver reports.ts). Só a equipe vê. O alvo fica sem chave estrangeira de propósito: apagar a conta não
+// pode apagar a prova. As provas em si (texto da mensagem, imagens) ficam em `evidence` e na pasta reports/.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    reporter_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    category TEXT NOT NULL,
+    details TEXT,
+    target_user_id TEXT NOT NULL,
+    target_username TEXT NOT NULL,
+    message_id TEXT,
+    server_id TEXT,
+    channel_id TEXT,
+    evidence TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    outcome TEXT,
+    note TEXT,
+    resolved_by TEXT,
+    resolved_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_user_id, created_at);
+`);
 // Banidos de um servidor: saem e não voltam por convite enquanto o ban existir.
 db.exec(`
   CREATE TABLE IF NOT EXISTS server_bans (

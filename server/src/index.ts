@@ -29,6 +29,8 @@ if (config.staging) {
 }
 // login, cadastro e senha têm poucos bytes: pedido grande ali é teste de limite ou ataque, e é recusado na porta
 app.use('/api/auth', express.json({ limit: '16kb' }));
+// denúncia de transmissão leva até 3 imagens da tela (cada uma conferida em reports.ts)
+app.use('/api/reports', express.json({ limit: '2mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };

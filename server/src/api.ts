@@ -73,6 +73,7 @@ import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } f
 import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
 import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
+import { registerReportRoutes } from './reports.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
 import {
   ART_OFFSET,
@@ -2966,6 +2967,34 @@ registerDiagnosticRoutes(api);
 registerAdminRoutes(api);
 // depois do admin: as rotas /admin/contracts* ficam atrás do requireAdmin
 registerContractRoutes(api);
+// também depois do admin: /admin/reports* só para a equipe
+registerReportRoutes(api, {
+  deleteMessage: async (id) => {
+    const msg = get<MessageRow>('SELECT * FROM messages WHERE id = ?', id);
+    if (!msg) return false;
+    const channel = getChannel(msg.channel_id);
+    run('DELETE FROM messages WHERE id = ?', msg.id);
+    deleteAttachments(msg.id);
+    await emitToChannel(channel, 'message:delete', { id: msg.id, channelId: channel.id });
+    return true;
+  },
+  deleteDmMessage: async (id) => {
+    const row = get<{ dm_id: string }>('SELECT dm_id FROM dm_messages WHERE id = ?', id);
+    const dm = row && get<DmChannelRow>('SELECT * FROM dm_channels WHERE id = ?', row.dm_id);
+    if (!dm) return false;
+    run('DELETE FROM dm_messages WHERE id = ?', id);
+    deleteAttachments(id);
+    deliverDm(dm, 'dm:delete', { id, channelId: dm.id });
+    return true;
+  },
+  stopStream: async (userId) => {
+    const v = getVoiceState(userId);
+    if (!v || (!v.streaming && !v.camera)) return false;
+    emitToUser(userId, 'voice:stop-stream', { reason: 'A equipe do Concord encerrou sua transmissão.' });
+    await muteTracks(v.channelId, userId, [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO, TrackSource.CAMERA]);
+    return true;
+  },
+});
 registerIntegrationRoutes(api, {
   meUpdated: (userId) => {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);

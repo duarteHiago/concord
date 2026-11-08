@@ -1,4 +1,4 @@
-import { Gamepad2, Headphones, MessageCircle, Pencil, Reply, Search, Trash2, Zap } from 'lucide-react';
+import { Flag, Gamepad2, Headphones, MessageCircle, Pencil, Reply, Search, Trash2, Zap } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
@@ -264,6 +264,15 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
       {mine && (
         <IconButton label="Apagar" danger className="h-8 w-8" onClick={() => void api.del(`/dm-messages/${message.id}`).catch(toast.error)}>
           <Trash2 size={14} />
+        </IconButton>
+      )}
+      {!mine && (
+        <IconButton
+          label="Denunciar"
+          className="h-8 w-8"
+          onClick={() => useApp.getState().openModal({ type: 'report', target: { kind: 'dm_message', id: message.id, authorName: message.author.displayName } })}
+        >
+          <Flag size={14} />
         </IconButton>
       )}
     </div>

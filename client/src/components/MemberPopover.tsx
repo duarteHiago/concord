@@ -1,4 +1,4 @@
-import { Ban, BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserRound, UserX, Volume2, X, Zap } from 'lucide-react';
+import { Ban, BadgeCheck, Bell, BellOff, Crown, Flag, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserRound, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -398,6 +398,19 @@ export function MemberPopover() {
                 {localMuted ? 'Silenciado para mim (toque para ouvir)' : 'Silenciar para mim'}
               </button>
             </>
+          )}
+
+          {!isMe && (
+            <button
+              onClick={() => {
+                close();
+                openModal({ type: 'report', target: { kind: 'user', userId: member.id, name } });
+              }}
+              className="mt-3 flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm font-medium text-fg-muted transition-colors hover:bg-white/10 hover:text-fg"
+            >
+              <Flag size={15} />
+              {voiceState?.streaming || voiceState?.camera ? `Denunciar ${name} ou a transmissão` : `Denunciar ${name}`}
+            </button>
           )}
 
           {me.isAuthority && (
