@@ -19,6 +19,7 @@ export const P = {
   MANAGE_NICKNAMES: 1 << 15,
   USE_SOUNDBOARD: 1 << 16,
   MENTION_EVERYONE: 1 << 17,
+  BAN_MEMBERS: 1 << 18,
 } as const;
 
 export type PermissionKey = keyof typeof P;
@@ -34,6 +35,7 @@ export const DEFAULT_MODERATOR =
   P.MUTE_MEMBERS |
   P.MOVE_MEMBERS |
   P.KICK_MEMBERS |
+  P.BAN_MEMBERS |
   P.MANAGE_NICKNAMES |
   P.MENTION_EVERYONE;
 
@@ -59,6 +61,7 @@ export const PERMISSION_INFO: PermissionInfo[] = [
   { key: 'MUTE_MEMBERS', label: 'Silenciar membros', description: 'Permite silenciar o microfone e a transmissão de outros.', category: 'Moderação', channel: true },
   { key: 'MOVE_MEMBERS', label: 'Desconectar membros', description: 'Permite remover pessoas das salas de voz.', category: 'Moderação', channel: true },
   { key: 'KICK_MEMBERS', label: 'Expulsar membros', description: 'Permite expulsar membros do servidor.', category: 'Moderação', channel: false },
+  { key: 'BAN_MEMBERS', label: 'Banir membros', description: 'Permite banir pessoas, que não voltam nem com convite, e desbanir.', category: 'Moderação', channel: false },
   { key: 'MANAGE_NICKNAMES', label: 'Gerenciar apelidos', description: 'Permite alterar o apelido de membros abaixo do seu cargo.', category: 'Moderação', channel: false },
   { key: 'MANAGE_CHANNELS', label: 'Gerenciar canais', description: 'Criar, editar e apagar canais e salas.', category: 'Administração', channel: true },
   { key: 'MANAGE_ROLES', label: 'Gerenciar cargos', description: 'Criar e editar cargos abaixo do seu e atribuí-los.', category: 'Administração', channel: false },

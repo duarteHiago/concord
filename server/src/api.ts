@@ -1637,6 +1637,60 @@ api.delete('/servers/:id/members/:userId', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Banimentos: a pessoa sai e não volta por convite enquanto o ban existir ----
+
+const isBanned = (serverId: string, userId: string) => !!get('SELECT 1 FROM server_bans WHERE server_id = ? AND user_id = ?', serverId, userId);
+
+api.get('/servers/:id/bans', (req, res) => {
+  const server = requireServerPerm(req.params.id, uid(res), P.BAN_MEMBERS);
+  const rows = all<{ user_id: string; reason: string | null; created_at: number; username: string; display_name: string; avatar_color: string; avatar_url: string | null; by_name: string | null }>(
+    `SELECT b.user_id, b.reason, b.created_at, u.username, u.display_name, u.avatar_color, u.avatar_url, m.display_name AS by_name
+     FROM server_bans b JOIN users u ON u.id = b.user_id LEFT JOIN users m ON m.id = b.banned_by
+     WHERE b.server_id = ? ORDER BY b.created_at DESC`,
+    server.id,
+  );
+  res.json(
+    rows.map((r) => ({
+      userId: r.user_id,
+      username: r.username,
+      displayName: r.display_name,
+      avatarColor: r.avatar_color,
+      avatarUrl: r.avatar_url,
+      reason: r.reason,
+      bannedBy: r.by_name,
+      createdAt: r.created_at,
+    })),
+  );
+});
+
+api.post('/servers/:id/bans', (req, res) => {
+  const me = uid(res);
+  const server = requireServerPerm(req.params.id, me, P.BAN_MEMBERS);
+  const target = String(req.body?.userId ?? '');
+  const reason = optStr(req.body?.reason?.trim?.() || undefined, 'motivo', 1, 300) ?? null;
+  if (target === me) fail(400, 'Você não pode banir a si mesmo');
+  if (target === server.owner_id) fail(403, 'O dono do servidor não pode ser banido');
+  const user = get<{ id: string }>('SELECT id FROM users WHERE id = ?', target) ?? fail(404, 'Pessoa não encontrada');
+  if (isBanned(server.id, user.id)) fail(409, 'Essa pessoa já está banida');
+  // quem está no servidor só pode ser banido por quem tem cargo acima dela (como na expulsão)
+  const member = isMember(server.id, user.id);
+  if (member && !outranks(server.id, me, user.id)) fail(403, 'Você não pode banir este membro');
+  run('INSERT INTO server_bans (server_id, user_id, reason, banned_by, created_at) VALUES (?, ?, ?, ?, ?)', server.id, user.id, reason, me, now());
+  if (member) {
+    emitToUser(user.id, 'server:removed', { serverId: server.id, reason: `Você foi banido de ${server.name}.` });
+    dropVoice(user.id, 'Você foi banido do servidor.');
+    removeMember(server.id, user.id);
+  }
+  res.json({ ok: true });
+});
+
+api.delete('/servers/:id/bans/:userId', (req, res) => {
+  const server = requireServerPerm(req.params.id, uid(res), P.BAN_MEMBERS);
+  if (!isBanned(server.id, req.params.userId)) fail(404, 'Essa pessoa não está banida');
+  run('DELETE FROM server_bans WHERE server_id = ? AND user_id = ?', server.id, req.params.userId);
+  res.json({ ok: true });
+});
+
 /** Valida uma ação de moderação de voz sobre um membro que está numa sala deste servidor. */
 function voiceTarget(serverId: string, me: string, target: string, flag: number) {
   requireMember(serverId, me);
@@ -1847,6 +1901,7 @@ api.post('/invites/:code', humansOnly, (req, res) => {
   if (!invite || !inviteValid(invite)) fail(404, 'Convite inválido ou expirado');
   const server = getServer(invite!.server_id);
   if (!isMember(server.id, me)) {
+    if (isBanned(server.id, me)) fail(403, `Você foi banido de ${server.name}.`);
     tx(() => {
       run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', server.id, me, now());
       run('UPDATE invites SET uses = uses + 1 WHERE code = ?', invite!.code);
@@ -2487,6 +2542,7 @@ api.post('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
   const bot = requireOwnBot(req.params.id, me);
   const server = requireServerPerm(req.params.serverId, me, P.MANAGE_SERVER);
   if (!isMember(server.id, bot.id)) {
+    if (isBanned(server.id, bot.id)) fail(403, 'Este bot está banido do servidor. Desbana antes de adicionar.');
     run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', server.id, bot.id, now());
     joinServerRoom(bot.id, server.id);
     serverChanged(server.id);

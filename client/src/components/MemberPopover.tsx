@@ -1,4 +1,4 @@
-import { BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserRound, UserX, Volume2, X, Zap } from 'lucide-react';
+import { Ban, BadgeCheck, Bell, BellOff, Crown, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserRound, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -442,6 +442,17 @@ export function MemberPopover() {
                         await api.del(`/servers/${detail.server.id}/members/${member.id}`);
                       },
                     });
+                  }}
+                />
+              )}
+              {canModerate && has(perms, P.BAN_MEMBERS) && (
+                <ModButton
+                  icon={<Ban size={15} />}
+                  label={`Banir ${name}`}
+                  danger
+                  onClick={() => {
+                    close();
+                    openModal({ type: 'ban', serverId: detail.server.id, userId: member.id, name });
                   }}
                 />
               )}
