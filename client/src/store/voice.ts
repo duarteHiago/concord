@@ -1016,15 +1016,15 @@ export const useVoice = create<VoiceStore>((set, get) => {
         toast.info(deafened ? 'Seu Mecenas deixou você sem ouvir ninguém.' : 'Você voltou a ouvir a sala.');
         publishState();
       });
-      // efeito de voz surpresa do Mecenas: sem aviso nenhum, por no máximo 5 s
-      socket.on('voice:fx', ({ effect, durationMs }: { effect: EffectId; durationMs: number }) => {
+      // efeito de voz surpresa do Mecenas: sem aviso nenhum, por no máximo 5 s (no modo gravação da equipe, até 15 s)
+      socket.on('voice:fx', ({ effect, durationMs, director }: { effect: EffectId; durationMs: number; director?: boolean }) => {
         if (prankOverride || !get().micOn || effect === 'none' || !EFFECTS.some((e) => e.id === effect)) return;
         prankOverride = effect;
         void applyCurrentEffect();
         prankTimer = setTimeout(() => {
           prankOverride = null;
           if (get().micOn) void applyCurrentEffect();
-        }, Math.min(Math.max(durationMs, 0), 5_000));
+        }, Math.min(Math.max(durationMs, 0), director ? 15_000 : 5_000));
       });
       socket.on('voice:stop-stream', ({ reason }: { reason: string }) => {
         void get().stopShare();

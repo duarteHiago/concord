@@ -103,3 +103,15 @@ Secrets (no environment `staging`):
 | `STAGING_ADMIN_USERS` | Quem entra no portal `/admin` do teste |
 | `STAGING_VPS_SSH_KEY`, `STAGING_VPS_KNOWN_HOSTS` | Chave do deploy e identificação da VPS |
 | `STAGING_BREVO_API_KEY` | Chave da Brevo só do teste (sem ela, usa a da produção) |
+
+## Mecenato de cortesia
+
+Testers entram no Mecenato sem apoiar por Pix. A lista é um **secret**, pelo mesmo motivo da lista de quem entra.
+Ponha só quem **já tem conta**: nome da lista sem conta fica reservado e ninguém consegue se cadastrar com ele.
+
+```bash
+gh secret set STAGING_MECENATO_COURTESY --env staging -b "amigo1,amigo2"   # teste
+gh secret set MECENATO_COURTESY --env production -b "amigo1,amigo2"        # produção
+```
+
+O portal `/admin` também libera e tira conta por conta (Contas → a pessoa → Mecenato de cortesia).

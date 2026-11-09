@@ -51,6 +51,7 @@ import { EMAIL_PROVIDER_NAMES, emailDomainAllowed, emailKey } from '../../shared
 import { SIGNUP_LIMITED, captchaSiteKey, emailRequired, requireCaptcha, signupAllowed } from './signupGuard.ts';
 import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
+import { recordingOf, registerDirectorRoutes } from './director.ts';
 import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
 import {
   avatarLocked,
@@ -426,7 +427,8 @@ api.post('/auth/email/verify', (req, res) => {
 
 /** Nome da equipe (ADMIN_USERS) que ainda não tem conta: quem o criasse primeiro entraria no portal /admin. */
 function requireUnreservedName(username: string) {
-  if (config.adminUsers.has(username.toLowerCase())) fail(409, 'Esse nome de usuário está reservado');
+  // nomes da equipe e do Mecenato de cortesia sem conta ficam reservados: ninguém pega o nome de quem foi liberado
+  if (config.adminUsers.has(username.toLowerCase()) || config.mecenatoCourtesy.has(username.toLowerCase())) fail(409, 'Esse nome de usuário está reservado');
 }
 
 /** Campos do cadastro com senha (os dois jeitos de cadastrar usam). */
@@ -1305,6 +1307,9 @@ api.get('/servers/:id', (req, res) => {
       userLimit: c.user_limit,
       overwrites: channelOverwrites(c.id),
       permissions: perms,
+      // modo gravação (ver director.ts): o selo aparece em cima do nome da sala
+      recording: c.type === 'voice' ? recordingOf(c.id) : null,
+      canRecord: c.type === 'voice' && !!config.authorityServerId && server.id === config.authorityServerId && isAdmin(me),
     }));
 
   const memberRows = all<UserRow & { joined_at: number; nickname: string | null }>(
@@ -2966,6 +2971,7 @@ registerDiagnosticRoutes(api);
 registerAdminRoutes(api);
 // depois do admin: as rotas /admin/contracts* ficam atrás do requireAdmin
 registerContractRoutes(api);
+registerDirectorRoutes(api);
 registerIntegrationRoutes(api, {
   meUpdated: (userId) => {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);

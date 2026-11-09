@@ -540,6 +540,9 @@ db.exec(`
 // (depois do CREATE TABLE de dm_messages: num banco novo a tabela ainda não existe lá em cima)
 addColumn('dm_messages', 'attachments', 'TEXT');
 addColumn('dm_messages', 'reply_to', 'TEXT');
+// Mecenato de cortesia: a equipe libera contratos para testers sem apoio por Pix (ver contracts.ts)
+addColumn('users', 'mecenato_courtesy', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('contracts', 'courtesy', 'INTEGER NOT NULL DEFAULT 0');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // Banidos de um servidor: saem e não voltam por convite enquanto o ban existir.
 db.exec(`
@@ -657,6 +660,8 @@ export interface UserRow {
   ban_reason?: string | null;
   banned_by?: string | null;
   created_at: number;
+  /** liberado pela equipe para o Mecenato sem apoio (testers) */
+  mecenato_courtesy?: number;
 }
 
 export interface AttachmentRow {
@@ -881,6 +886,8 @@ export interface ContractRow {
   ended_by: string | null;
   end_note: string | null;
   review: 'pending' | 'confirmed' | 'fined' | null;
+  /** contrato de cortesia (alguém liberado pela equipe): empate ligado e sem multa */
+  courtesy: number;
 }
 
 export interface ContractFineRow {

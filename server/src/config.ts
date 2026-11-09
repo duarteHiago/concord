@@ -31,6 +31,13 @@ export const config = {
   // em qualquer servidor ou pessoa (não só no próprio servidor). Vazio desliga a função.
   authorityServerId: (env.AUTHORITY_SERVER_ID ?? '').trim(),
   // quem entra no portal da equipe (/admin): nomes de usuário separados por vírgula. Vazio desliga o portal.
+  /** Mecenato de cortesia por nome de usuário (além do que a equipe libera no portal /admin) */
+  mecenatoCourtesy: new Set(
+    (env.MECENATO_COURTESY ?? '')
+      .split(',')
+      .map((u) => u.trim().replace(/^@/, '').toLowerCase())
+      .filter(Boolean),
+  ),
   adminUsers: new Set(
     (env.ADMIN_USERS ?? '')
       .split(',')

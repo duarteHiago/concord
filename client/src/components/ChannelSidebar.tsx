@@ -30,6 +30,7 @@ import { DmSidebar } from './DirectMessages';
 import { armPopoverToggle, toggleOrOpenPopover } from '../store/popover';
 import { toast } from '../store/toast';
 import { useVoice } from '../store/voice';
+import { RecordingPill } from './Director';
 import { ServerStrip } from './ServerRail';
 import { DeviceSplitButton } from './DeviceMenu';
 import { useMobile } from '../lib/mobile';
@@ -276,6 +277,7 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
         connectedHere && 'ring-1 ring-accent/40',
       )}
     >
+      {channel.recording && <RecordingPill className="mb-1.5" />}
       <div className="flex items-center gap-2">
         {!participants.length && <Volume2 size={17} className="shrink-0 text-fg-subtle" />}
         <span className={cx('flex-1 truncate text-[15px] font-bold', expanded || participants.length ? 'text-fg' : 'text-fg-muted')}>{channel.name}</span>

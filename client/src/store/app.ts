@@ -6,7 +6,7 @@ import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { applyTheme, DEFAULT_THEME, normalizeTheme } from '../lib/theme';
 import { receiveDirectMessage, receiveMention, type MentionEvent } from '../lib/mentions';
-import { receiveNudge } from '../lib/nudge';
+import { directorShake, receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
 import { installShortcuts, syncGlobalShortcuts } from '../lib/shortcuts';
 import { announceGame } from '../lib/liveGames';
@@ -276,6 +276,8 @@ export const useApp = create<AppState>((set, get) => {
       set({ online: next });
     });
     socket.on('nudge', (n: NudgeEvent) => receiveNudge(n));
+    // modo gravação da equipe (sala com o selo "Gravando"): treme na hora, sem depender das preferências
+    socket.on('director:shake', () => directorShake());
     socket.on('reaction', (r: unknown) => window.dispatchEvent(new CustomEvent('concord:reaction', { detail: r })));
     socket.on('mention', (m: MentionEvent) => receiveMention(m));
     socket.on('sounds:changed', ({ serverId }: { serverId: string }) => {

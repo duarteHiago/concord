@@ -210,6 +210,10 @@ export interface Channel {
   userLimit: number;
   overwrites: Overwrite[];
   permissions: number;
+  /** modo gravação ligado (salas de voz do servidor da equipe) */
+  recording?: { until: number } | null;
+  /** quem vê pode ligar o modo gravação e usar o painel de direção */
+  canRecord?: boolean;
 }
 
 export interface Member extends User {
@@ -301,6 +305,8 @@ export interface Contract extends ContractBrief {
   /** apoio dos dois desde que o contrato começou (base da multa) */
   contributedCents: number;
   fineEstimateCents: number | null;
+  /** contrato de cortesia (liberado pela equipe): empate ligado e sem multa */
+  courtesy?: boolean;
   /** quem está com a foto escolhida pelo Mecenas */
   avatarOverrides: string[];
   /** efeito surpresa agendado (só para quem agendou) */
@@ -330,6 +336,8 @@ export interface ContractsMe {
   shield: ShieldView;
   fines: ContractFine[];
   supportTotalCents: number;
+  /** liberado pela equipe para o Mecenato sem apoio */
+  courtesy?: boolean;
 }
 
 /** Jam do Spotify fixada numa sala de voz (ver server/src/realtime.ts). */
