@@ -140,16 +140,12 @@ async function noiseNode(ctx: AudioContext, mode: NoiseMode, strength = DEFAULT_
   return null;
 }
 
-export type EffectId = 'none' | 'robot' | 'radio' | 'echo' | 'cave' | 'megaphone' | 'deep' | 'chipmunk' | 'duck' | 'villain' | 'mouse' | 'dog';
+export type EffectId = 'none' | 'robot' | 'radio' | 'echo' | 'cave' | 'megaphone' | 'deep' | 'chipmunk';
 
 export const EFFECTS: { id: EffectId; label: string; hint: string }[] = [
   { id: 'none', label: 'Sem efeito', hint: 'Sua voz normal' },
   { id: 'deep', label: 'Voz grossa', hint: 'Mais grave' },
   { id: 'chipmunk', label: 'Esquilo', hint: 'Mais aguda' },
-  { id: 'duck', label: 'Pato', hint: 'Grasnada e anasalada' },
-  { id: 'villain', label: 'Vilão', hint: 'Grave, encorpada e rouca' },
-  { id: 'mouse', label: 'Ratinho', hint: 'Fininha, quase um falsete' },
-  { id: 'dog', label: 'Cachorro', hint: 'Balançando, com rosnado' },
   { id: 'robot', label: 'Robô', hint: 'Metálica' },
   { id: 'radio', label: 'Rádio', hint: 'Walkie-talkie' },
   { id: 'megaphone', label: 'Megafone', hint: 'Estourada' },
@@ -339,130 +335,6 @@ async function build(ctx: AudioContext, effect: EffectId, src: AudioNode, dest: 
       const pitch = add(new AudioWorkletNode(ctx, 'concord-pitch'));
       pitch.parameters.get('ratio')!.value = effect === 'deep' ? 0.72 : 1.55;
       src.connect(pitch).connect(dest);
-      break;
-    }
-    case 'duck': {
-      // voz de pato: um pouco mais aguda, presa no nariz (picos fortes em 1,4 e 2,6 kHz, sem graves nem agudos)
-      // e com o volume vibrando rápido, que dá o "grasnado" áspero
-      await loadPitchWorklet(ctx);
-      const pitch = add(new AudioWorkletNode(ctx, 'concord-pitch'));
-      pitch.parameters.get('ratio')!.value = 1.32;
-      const hp = add(ctx.createBiquadFilter());
-      hp.type = 'highpass';
-      hp.frequency.value = 420;
-      const nose = add(ctx.createBiquadFilter());
-      nose.type = 'peaking';
-      nose.frequency.value = 1400;
-      nose.Q.value = 2.8;
-      nose.gain.value = 15;
-      const honk = add(ctx.createBiquadFilter());
-      honk.type = 'peaking';
-      honk.frequency.value = 2600;
-      honk.Q.value = 4;
-      honk.gain.value = 9;
-      const lp = add(ctx.createBiquadFilter());
-      lp.type = 'lowpass';
-      lp.frequency.value = 3600;
-      const quack = add(ctx.createGain());
-      quack.gain.value = 0.62;
-      const osc = add(ctx.createOscillator());
-      osc.type = 'triangle';
-      osc.frequency.value = 42;
-      const depth = add(ctx.createGain());
-      depth.gain.value = 0.38;
-      osc.connect(depth).connect(quack.gain);
-      osc.start();
-      const shaper = add(ctx.createWaveShaper());
-      shaper.curve = distortionCurve(22);
-      const comp = add(ctx.createDynamicsCompressor());
-      const level = add(ctx.createGain());
-      level.gain.value = 1.6;
-      src.connect(pitch).connect(hp).connect(nose).connect(honk).connect(lp).connect(quack).connect(shaper).connect(comp).connect(level).connect(dest);
-      break;
-    }
-    case 'villain': {
-      // vilão de desenho: mais grave, com corpo nos graves, uma "fungada" no meio e um pouco de rouquidão
-      await loadPitchWorklet(ctx);
-      const pitch = add(new AudioWorkletNode(ctx, 'concord-pitch'));
-      pitch.parameters.get('ratio')!.value = 0.78;
-      const body = add(ctx.createBiquadFilter());
-      body.type = 'lowshelf';
-      body.frequency.value = 220;
-      body.gain.value = 6;
-      const nasal = add(ctx.createBiquadFilter());
-      nasal.type = 'peaking';
-      nasal.frequency.value = 950;
-      nasal.Q.value = 1.4;
-      nasal.gain.value = 7;
-      const lp = add(ctx.createBiquadFilter());
-      lp.type = 'lowpass';
-      lp.frequency.value = 5000;
-      const shaper = add(ctx.createWaveShaper());
-      shaper.curve = distortionCurve(14);
-      const comp = add(ctx.createDynamicsCompressor());
-      const level = add(ctx.createGain());
-      level.gain.value = 1.15;
-      src.connect(pitch).connect(body).connect(nasal).connect(lp).connect(shaper).connect(comp).connect(level).connect(dest);
-      break;
-    }
-    case 'mouse': {
-      // ratinho de desenho: bem mais aguda, sem graves e com brilho em cima (voz pequena)
-      await loadPitchWorklet(ctx);
-      const pitch = add(new AudioWorkletNode(ctx, 'concord-pitch'));
-      pitch.parameters.get('ratio')!.value = 1.78;
-      const hp = add(ctx.createBiquadFilter());
-      hp.type = 'highpass';
-      hp.frequency.value = 320;
-      const bright = add(ctx.createBiquadFilter());
-      bright.type = 'peaking';
-      bright.frequency.value = 2900;
-      bright.Q.value = 1.8;
-      bright.gain.value = 8;
-      const lp = add(ctx.createBiquadFilter());
-      lp.type = 'lowpass';
-      lp.frequency.value = 7000;
-      const comp = add(ctx.createDynamicsCompressor());
-      const level = add(ctx.createGain());
-      level.gain.value = 1.2;
-      src.connect(pitch).connect(hp).connect(bright).connect(lp).connect(comp).connect(level).connect(dest);
-      break;
-    }
-    case 'dog': {
-      // cachorro de desenho: um pouco grave, com o tom balançando (6 Hz) e um rosnado áspero por cima
-      await loadPitchWorklet(ctx);
-      const pitch = add(new AudioWorkletNode(ctx, 'concord-pitch'));
-      const ratio = pitch.parameters.get('ratio')!;
-      ratio.value = 0.9;
-      const wobble = add(ctx.createOscillator());
-      wobble.type = 'sine';
-      wobble.frequency.value = 6;
-      const wobbleDepth = add(ctx.createGain());
-      wobbleDepth.gain.value = 0.07;
-      wobble.connect(wobbleDepth).connect(ratio);
-      wobble.start();
-      const growl = add(ctx.createGain());
-      growl.gain.value = 0.72;
-      const rumble = add(ctx.createOscillator());
-      rumble.type = 'sawtooth';
-      rumble.frequency.value = 70;
-      const rumbleDepth = add(ctx.createGain());
-      rumbleDepth.gain.value = 0.28;
-      rumble.connect(rumbleDepth).connect(growl.gain);
-      rumble.start();
-      const chest = add(ctx.createBiquadFilter());
-      chest.type = 'peaking';
-      chest.frequency.value = 650;
-      chest.Q.value = 1.2;
-      chest.gain.value = 7;
-      const lp = add(ctx.createBiquadFilter());
-      lp.type = 'lowpass';
-      lp.frequency.value = 3200;
-      const shaper = add(ctx.createWaveShaper());
-      shaper.curve = distortionCurve(30);
-      const comp = add(ctx.createDynamicsCompressor());
-      const level = add(ctx.createGain());
-      level.gain.value = 1.3;
-      src.connect(pitch).connect(chest).connect(growl).connect(lp).connect(shaper).connect(comp).connect(level).connect(dest);
       break;
     }
     case 'robot': {
