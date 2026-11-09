@@ -131,6 +131,7 @@ const ACTION_LABEL: Record<string, string> = {
   mecenato_on: 'Liberou o Mecenato de cortesia',
   mecenato_off: 'Tirou o Mecenato de cortesia',
   director_fx: 'Efeito de voz (modo gravação)',
+  director_fx_off: 'Tirou o efeito de voz (modo gravação)',
   director_shake: 'Tremeu a tela (modo gravação)',
 };
 

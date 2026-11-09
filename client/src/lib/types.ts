@@ -211,7 +211,7 @@ export interface Channel {
   overwrites: Overwrite[];
   permissions: number;
   /** modo gravação ligado (salas de voz do servidor da equipe) */
-  recording?: { until: number } | null;
+  recording?: { until: number; effects?: Record<string, { effect: string; until: number | null }> } | null;
   /** quem vê pode ligar o modo gravação e usar o painel de direção */
   canRecord?: boolean;
 }
