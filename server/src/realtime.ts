@@ -80,8 +80,15 @@ export function isServerDeafened(serverId: string, userId: string) {
   return serverDeafens.has(`${serverId}:${userId}`);
 }
 
+/** Quem precisa saber que a voz de um servidor mudou (entrou, saiu, trocou de sala): ver director.ts. */
+const voiceHooks = new Set<(serverId: string) => void>();
+export function onVoiceChange(fn: (serverId: string) => void) {
+  voiceHooks.add(fn);
+}
+
 function broadcastVoice(serverId: string) {
   io.to(`server:${serverId}`).emit('voice:states', { serverId, states: voiceStatesFor(serverId) });
+  for (const fn of voiceHooks) fn(serverId);
   // quem colou a Jam saiu da sala (ou foi para outra): a Jam sai junto
   let changed = false;
   for (const j of jams.values()) {

@@ -1,4 +1,4 @@
-import { Clapperboard, ExternalLink, QrCode, Smartphone, Square, Volume2 } from 'lucide-react';
+import { Clapperboard, ExternalLink, QrCode, Smartphone, Square, Volume2, Wand2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -24,7 +24,8 @@ export function RecordingPill({ className }: { className?: string }) {
   );
 }
 
-const DURATIONS = [3, 5, 10, 15];
+// 0 = fixo: fica até tirar, a pessoa sair da sala ou a gravação acabar
+const DURATIONS = [3, 5, 10, 15, 0];
 
 /** Painel de direção solto numa janela própria (a sala que ele controla), em qualquer tela do app. */
 const useDirectorWindow = create<{ target: { serverId: string; channelId: string } | null; set: (t: { serverId: string; channelId: string } | null) => void }>(
@@ -162,7 +163,7 @@ function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDet
       return m ? [m] : [];
     });
   const [target, setTarget] = useState<string | null>(null);
-  const [seconds, setSeconds] = useState(5);
+  const [seconds, setSeconds] = useState(0);
   // a confirmação aparece aqui mesmo: na janela separada, os avisos da janela principal ficam escondidos
   const [status, setStatus] = useState<{ text: string; ok: boolean } | null>(null);
   const [showQr, setShowQr] = useState(false);
@@ -191,6 +192,9 @@ function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDet
 
   const effects = EFFECTS.filter((e) => (PRANK_EFFECTS as readonly string[]).includes(e.id));
   const who = picked ? memberName(picked) : '';
+  const active = channel.recording?.effects ?? {};
+  const pickedFx = picked ? active[picked.id] : undefined;
+  const label = (id: string) => EFFECTS.find((e) => e.id === id)?.label ?? id;
 
   return (
     <div className="space-y-4">
@@ -232,13 +236,42 @@ function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDet
                 aria-checked={picked?.id === m.id}
                 title={memberName(m)}
                 onClick={() => setTarget(m.id)}
-                className={cx('rounded-full p-0.5 transition-all', picked?.id === m.id ? 'ring-[3px] ring-accent' : 'opacity-70 hover:opacity-100')}
+                className={cx('relative rounded-full p-0.5 transition-all', picked?.id === m.id ? 'ring-[3px] ring-accent' : 'opacity-70 hover:opacity-100')}
               >
                 <Avatar name={memberName(m)} color={m.avatarColor} src={m.avatarUrl} size={38} />
+                {active[m.id] && (
+                  <span
+                    title={`Com ${label(active[m.id].effect)}`}
+                    className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-surface-2 bg-accent text-on-accent"
+                  >
+                    <Wand2 size={10} />
+                  </span>
+                )}
               </button>
             ))}
           </div>
-          {picked && <div className="-mt-2 text-sm font-bold">{who}</div>}
+          {picked && (
+            <div className="-mt-2 flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-bold">
+                {who}
+                {pickedFx && (
+                  <span className="ml-1.5 text-xs font-semibold text-accent">
+                    com {label(pickedFx.effect)}
+                    {pickedFx.until === null ? ' (fixo)' : ''}
+                  </span>
+                )}
+              </span>
+              {pickedFx && (
+                <button
+                  type="button"
+                  onClick={() => void fire({ action: 'fx_off' }, `Voz normal de novo para ${who}`)}
+                  className="shrink-0 rounded-full bg-surface-3 px-3 py-1 text-xs font-bold hover:bg-surface-4"
+                >
+                  Tirar efeito
+                </button>
+              )}
+            </div>
+          )}
 
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -251,7 +284,7 @@ function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDet
                     onClick={() => setSeconds(d)}
                     className={cx('rounded-full px-2 py-0.5 text-[11px] font-bold', seconds === d ? 'bg-fg text-surface-1' : 'bg-surface-3 text-fg-muted')}
                   >
-                    {d} s
+                    {d ? `${d} s` : 'Fixo'}
                   </button>
                 ))}
               </div>
@@ -262,8 +295,17 @@ function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDet
                   key={e.id}
                   type="button"
                   title={e.hint}
-                  onClick={() => void fire({ action: 'fx', effect: e.id, durationMs: seconds * 1000 }, `${e.label} em ${who}`)}
-                  className={cx('rounded-xl bg-surface-3 px-1 font-semibold hover:bg-accent hover:text-on-accent active:bg-accent active:text-on-accent', remote ? 'py-3.5 text-xs' : 'py-2 text-[11px]')}
+                  aria-pressed={pickedFx?.effect === e.id}
+                  onClick={() =>
+                    void (pickedFx?.effect === e.id
+                      ? fire({ action: 'fx_off' }, `Voz normal de novo para ${who}`)
+                      : fire({ action: 'fx', effect: e.id, durationMs: seconds * 1000 }, `${e.label} em ${who}${seconds ? '' : ' (fixo)'}`))
+                  }
+                  className={cx(
+                    'rounded-xl px-1 font-semibold hover:bg-accent hover:text-on-accent active:bg-accent active:text-on-accent',
+                    pickedFx?.effect === e.id ? 'bg-accent text-on-accent ring-2 ring-accent/40' : 'bg-surface-3',
+                    remote ? 'py-3.5 text-xs' : 'py-2 text-[11px]',
+                  )}
                 >
                   {e.label}
                 </button>
