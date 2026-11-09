@@ -131,6 +131,9 @@ function createWindow() {
     backgroundColor: '#ecf0f9',
     autoHideMenuBar: true,
     icon: APP_ICON,
+    // sem a barra de título do sistema: a página desenha a dela (logo no meio, botões na cor do tema, ver
+    // client/src/components/TitleBar.tsx). No Mac os três botões nativos ficam, no canto esquerdo da barra.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -140,6 +143,9 @@ function createWindow() {
     },
   });
   if (config.maximized || smallScreen) win.maximize();
+  // a barra da página troca o ícone de maximizar/restaurar
+  const sendWindowState = () => win?.webContents.send('concord:window-state', { maximized: win.isMaximized(), fullscreen: win.isFullScreen() });
+  for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, sendWindowState);
 
   const remember = () => {
     if (!win || win.isDestroyed()) return;
@@ -276,6 +282,18 @@ function handle(channel, fn) {
     return fn(event, ...args);
   });
 }
+
+// botões da barra de título desenhada pela página (a janela principal não tem a do sistema)
+handle('concord:window', (event, action) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  if (!w || w.isDestroyed()) return null;
+  if (action === 'minimize') w.minimize();
+  else if (action === 'maximize') {
+    if (w.isMaximized()) w.unmaximize();
+    else w.maximize();
+  } else if (action === 'close') w.close();
+  return { maximized: w.isMaximized(), fullscreen: w.isFullScreen(), platform: process.platform };
+});
 
 handle('concord:info', () => ({
   platform: process.platform,

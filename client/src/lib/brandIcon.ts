@@ -26,6 +26,35 @@ export function brandIconSvg({ body, bubble, ink }: BrandIcon, size = 216): stri
   );
 }
 
+/** Mistura uma cor (#rrggbb) com branco: `amount` de 0 (igual) a 1 (branco). */
+function lighten(hex: string, amount: number) {
+  const n = parseInt(hex.slice(1, 7), 16);
+  if (!/^#[0-9a-f]{6}/i.test(hex) || Number.isNaN(n)) return hex;
+  const mix = (c: number) => Math.round(c + (255 - c) * amount).toString(16).padStart(2, '0');
+  return `#${mix(n >> 16)}${mix((n >> 8) & 255)}${mix(n & 255)}`;
+}
+
+/**
+ * O ícone do app desktop na barra de tarefas: a logo dentro de um azulejo (quadrado de cantos redondos) na cor
+ * do tema, com o "C" um tom mais claro e o buraco do "C" branco. Mesmo desenho de desktop/build/icon.ico.
+ */
+export function brandTileSvg({ body, bubble, ink }: BrandIcon, size = 256): string {
+  const outline = `fill="${ink}" stroke="${ink}" stroke-width="22" stroke-linejoin="round"`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 216" width="${size}" height="${size}">` +
+    `<defs><linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${lighten(body, 0.15)}"/><stop offset="1" stop-color="${body}"/></linearGradient></defs>` +
+    `<rect x="6" y="6" width="204" height="204" rx="46" fill="url(#t)"/>` +
+    // a logo, menor, no meio do azulejo
+    `<g transform="translate(108 108) scale(0.74) translate(-112 -108) translate(8 8)">` +
+    `<g fill="#fff"><circle cx="100" cy="100" r="36"/><path d="M118,74 L176,74 L176,126 L118,126 Z"/></g>` +
+    `<g ${outline}>${C_SHAPE}</g><g fill="${lighten(body, 0.2)}">${C_SHAPE}</g>` +
+    `<path d="M44,88 A60,60 0 0,1 72,48" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="9" stroke-linecap="round"/>` +
+    `<g ${outline}>${BUBBLE}</g><g fill="${bubble}">${BUBBLE}</g>` +
+    `<g fill="${ink}"><circle cx="149" cy="100" r="4.5"/><circle cx="160" cy="100" r="4.5"/><circle cx="171" cy="100" r="4.5"/></g>` +
+    `</g></svg>`
+  );
+}
+
 const svgUrl = (svg: string) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 
 /** A logo do tema como URL de imagem (prévia na escolha de tema). */
@@ -79,7 +108,7 @@ export function applyBrandIcon(icon: BrandIcon | undefined) {
     if (!first) void desktop.setAppIcon(null);
     return;
   }
-  toPng(brandIconSvg(icon!, 256), 256)
+  toPng(brandTileSvg(icon!, 256), 256)
     .then((png) => {
       if (current === key) return desktop?.setAppIcon?.(png);
     })

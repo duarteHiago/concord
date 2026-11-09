@@ -55,6 +55,10 @@ body,
 #root {
   padding-top: env(safe-area-inset-top, 0px);
 }
+/* app desktop com a barra de título própria (components/TitleBar.tsx): o app começa abaixo dela */
+html.has-titlebar #root {
+  padding-top: 36px;
+}
 
 body {
   margin: 0;

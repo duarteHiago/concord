@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StagingBadge } from './components/StagingBadge';
+import { TitleBar } from './components/TitleBar';
 import './index.css';
 import './lib/pwa';
 import { getToken } from './lib/api';
@@ -20,5 +21,6 @@ createRoot(document.getElementById('root')!).render(
       <App />
     </ErrorBoundary>
     <StagingBadge />
+    <TitleBar />
   </StrictMode>,
 );

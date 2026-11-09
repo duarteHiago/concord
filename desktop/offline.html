@@ -62,9 +62,25 @@
       button.primary { background: #1f4fd1; color: #ffffff; box-shadow: none; }
       button.primary:hover { background: #1a43b2; }
       button:focus-visible, input:focus-visible { outline: 3px solid #ff7a6a; outline-offset: 3px; }
+      /* a janela não tem a barra do sistema: esta faz o papel dela (arrastar e os três botões) */
+      .titlebar { position: fixed; inset: 0 0 auto; height: 36px; display: flex; align-items: center; justify-content: center; -webkit-app-region: drag; }
+      .titlebar img { margin: 0; }
+      .titlebar .ctl { position: absolute; top: 0; right: 0; display: flex; height: 36px; -webkit-app-region: no-drag; }
+      .titlebar .ctl button { flex: none; width: 46px; height: 36px; border-radius: 0; box-shadow: none; display: grid; place-items: center; color: #52608a; }
+      .titlebar .ctl button:hover { background: #e4e9f5; box-shadow: none; }
+      .titlebar .ctl button.close:hover { background: #e5484d; color: #ffffff; }
+      body.mac .titlebar .ctl { display: none; }
     </style>
   </head>
   <body>
+    <div class="titlebar">
+      <img src="build/icon.png" alt="" width="18" height="18" />
+      <div class="ctl">
+        <button data-win="minimize" aria-label="Minimizar"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="currentColor" stroke-width="1.2" /></svg></button>
+        <button data-win="maximize" aria-label="Maximizar"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /></svg></button>
+        <button data-win="close" class="close" aria-label="Fechar"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2" /></svg></button>
+      </div>
+    </div>
     <main>
       <img src="build/icon.png" alt="" width="72" height="72" />
       <h1>Não deu pra conectar</h1>
@@ -78,6 +94,8 @@
       </div>
     </main>
     <script>
+      if (navigator.platform.startsWith('Mac')) document.body.classList.add('mac');
+      document.querySelectorAll('[data-win]').forEach((b) => (b.onclick = () => window.concordDesktop.windowControl(b.dataset.win)));
       const params = new URLSearchParams(location.search);
       document.getElementById('server').value = params.get('server') || '';
       document.getElementById('error').textContent = params.get('error') || '';
