@@ -10,8 +10,8 @@ import { fail, uid } from './http.ts';
 import { emitToUser, getVoiceState, onVoiceChange, serverChanged } from './realtime.ts';
 
 export const RECORDING_MS = 3 * 60 * 60_000;
-const FX_MIN_MS = 2_000;
-const FX_MAX_MS = 15_000;
+// durações aceitas (as mesmas do painel): o tempo do temporizador nunca vem direto do pedido
+const FX_DURATIONS_MS = [3_000, 5_000, 10_000, 15_000] as const;
 // efeito "fixo": fica até alguém desligar, a pessoa sair da sala ou a gravação acabar
 
 interface Recording {
@@ -133,7 +133,8 @@ export function registerDirectorRoutes(api: Router) {
       const effect = req.body?.effect;
       if (!isPrankEffect(effect)) fail(400, 'Efeito inválido');
       const fixed = req.body?.durationMs === 0 || req.body?.durationMs === null;
-      const durationMs = fixed ? 0 : Math.min(FX_MAX_MS, Math.max(FX_MIN_MS, Number(req.body?.durationMs) || 5_000));
+      const asked = Number(req.body?.durationMs);
+      const durationMs = fixed ? 0 : (FX_DURATIONS_MS.find((d) => d === asked) ?? 5_000);
       clearFx(target!.id, false);
       const fx: ActiveFx = { channelId: channel.id, serverId: channel.server_id, socketId: voice!.socketId, effect, until: fixed ? null : Date.now() + durationMs };
       if (!fixed) {
