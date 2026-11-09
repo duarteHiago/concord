@@ -26,7 +26,7 @@ export const FINE_PERCENT = 10;
 export const fineCents = (contributedCents: number) => FINE_FIXED_CENTS + Math.ceil((Math.max(0, contributedCents) * FINE_PERCENT) / 100);
 
 /** Efeito de voz surpresa: um dos efeitos que o app já tem, por até 5 s, num momento sorteado em até 3 min. */
-export const PRANK_EFFECTS = ['deep', 'chipmunk', 'duck', 'villain', 'mouse', 'dog', 'robot', 'radio', 'megaphone', 'echo', 'cave'] as const;
+export const PRANK_EFFECTS = ['deep', 'chipmunk', 'robot', 'radio', 'megaphone', 'echo', 'cave'] as const;
 export type PrankEffect = (typeof PRANK_EFFECTS)[number];
 export const VOICE_FX_MAX_MS = 5_000;
 export const VOICE_FX_MIN_MS = 1_000;
