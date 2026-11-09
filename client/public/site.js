@@ -4,6 +4,13 @@
 //   data-dl="main"  botão principal ("Baixar para Windows" / "Baixar para macOS" / "Instalar no celular")
 //   data-dl="alt"   link discreto para o outro sistema de computador (some no celular)
 //   data-mobile-text / data-mobile-href trocam o destino no celular; [data-desktop-only] some no celular.
+// Aberto como app instalado (ícone na tela de início) numa página do site: vai para o app. Acontece com
+// atalhos criados no iPhone antes de estas páginas apontarem para o manifesto (o iOS guardava a página em que
+// a pessoa estava, como /instalar/). /?entrar mostra o login, ou o app direto se já estiver logado.
+if (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches) {
+  location.replace('/?entrar');
+}
+
 (() => {
   const WIN = '/downloads/Concord-Setup.exe';
   const MAC = '/downloads/Concord.dmg';
