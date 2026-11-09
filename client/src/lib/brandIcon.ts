@@ -35,19 +35,20 @@ function lighten(hex: string, amount: number) {
 }
 
 /**
- * O ícone do app desktop na barra de tarefas: a logo do site (como no ícone do servidor oficial: sombra, brilho
- * e balão) num azulejo branco de cantos redondos, com o "C" na cor do tema. Mesmo desenho de desktop/build/icon.ico.
+ * O ícone do app desktop na barra de tarefas: um azulejo (quadrado de cantos redondos) na cor do tema, com o
+ * "C" branco (sombra, contorno e balão como na logo). Mesmo desenho de desktop/build/icon.png e icon.ico.
  */
 export function brandTileSvg({ body, bubble, ink }: BrandIcon, size = 256): string {
   const outline = `fill="${ink}" stroke="${ink}" stroke-width="14" stroke-linejoin="round"`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 216" width="${size}" height="${size}">` +
-    `<rect x="6" y="6" width="204" height="204" rx="46" fill="#fff"/>` +
+    `<defs><linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${lighten(body, 0.14)}"/><stop offset="1" stop-color="${body}"/></linearGradient></defs>` +
+    `<rect x="6" y="6" width="204" height="204" rx="46" fill="url(#t)"/>` +
     // a logo, um pouco menor, no meio do azulejo
     `<g transform="translate(108 108) scale(0.86) translate(-110 -112) translate(4 8)">` +
     `<g transform="translate(8 8)" ${outline}>${C_SHAPE}${BUBBLE}</g>` +
-    `<g ${outline}>${C_SHAPE}</g><g fill="${body}">${C_SHAPE}</g>` +
-    `<path d="M44,88 A60,60 0 0,1 72,48" fill="none" stroke="${lighten(body, 0.55)}" stroke-width="9" stroke-linecap="round"/>` +
+    `<g ${outline}>${C_SHAPE}</g><g fill="#fff">${C_SHAPE}</g>` +
+    `<path d="M44,88 A60,60 0 0,1 72,48" fill="none" stroke="${lighten(body, 0.78)}" stroke-width="9" stroke-linecap="round"/>` +
     `<g ${outline}>${BUBBLE}</g><g fill="${bubble}">${BUBBLE}</g>` +
     `<g fill="${ink}"><circle cx="149" cy="100" r="4"/><circle cx="160" cy="100" r="4"/><circle cx="171" cy="100" r="4"/></g>` +
     `</g></svg>`
