@@ -1,5 +1,5 @@
 import { MicOff, Sparkles, Volume2 } from 'lucide-react';
-import { useDeck } from '../components/Deck';
+import { openDeck } from '../components/Deck';
 import { Frame, Tag } from '../components/modals/OnboardingArt';
 import type { Release } from './index';
 
@@ -10,7 +10,7 @@ function DeckArt() {
     <Frame className="flex h-[170px] items-center justify-center px-4">
       <div className="w-[280px] rounded-[22px] border-4 border-fg/80 bg-surface-1 p-2 shadow-xl">
         <div className="mb-1.5 flex gap-1">
-          {['Sons', 'Brincadeiras', 'Mecenato'].map((t, i) => (
+          {['Sons', 'Zoeira', 'Mecenato'].map((t, i) => (
             <span key={t} className={`rounded-full px-2 py-0.5 text-[8px] font-bold ${i === 2 ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted'}`}>
               {t}
             </span>
@@ -38,7 +38,7 @@ export default {
       title: 'Use o celular como um deck enquanto joga no PC',
       text: 'Abra Controle, na barra de baixo do app no celular, ou leia o QR code do raio no topo da sala, no PC. Com o celular deitado, você toca sons, solta reações, chama a atenção de alguém e, se for o Mecenas, troca a voz, a foto, silencia e mais, sem sair da call do PC. Segure um botão para pôr nos favoritos.',
       art: DeckArt,
-      action: { label: 'Abrir o controle', run: () => useDeck.getState().set(true) },
+      action: { label: 'Abrir o controle', run: () => openDeck() },
     },
   ],
   also: ['As reações também valem quando mandadas de outro aparelho da sua conta.'],

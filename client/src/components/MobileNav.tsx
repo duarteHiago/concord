@@ -1,5 +1,5 @@
 import { Gamepad2, MessageCircle, Server, Settings, ArrowLeft } from 'lucide-react';
-import { useDeck } from './Deck';
+import { deckAvailable, openDeck } from './Deck';
 import { useMobile } from '../lib/mobile';
 import { HOME, useApp } from '../store/app';
 import { cx } from './ui';
@@ -51,7 +51,7 @@ export function MobileBottomNav() {
           } else if (id === 'settings') {
             openSettings();
           } else if (id === 'deck') {
-            useDeck.getState().set(true);
+            openDeck();
           }
         }}
         className={cx(
@@ -74,7 +74,7 @@ export function MobileBottomNav() {
     <nav className="flex shrink-0 border-t border-line bg-surface-2 pb-[env(safe-area-inset-bottom,0px)]">
       {item('dms', 'Mensagens', MessageCircle, unread)}
       {item('servers', 'Servidores', Server)}
-      {item('deck', 'Controle', Gamepad2)}
+      {deckAvailable() && item('deck', 'Controle', Gamepad2)}
       {item('settings', 'Ajustes', Settings)}
     </nav>
   );
