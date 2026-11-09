@@ -224,6 +224,11 @@ export function ServerDrawerPanel({
               </span>
             </button>
           ))}
+          {servers.length === 0 && (
+            <p className="pointer-events-none m-auto px-2 text-center text-xs text-fg-subtle">
+              {dragId ? 'Solte aqui para guardar na gaveta.' : 'Todos os seus servidores já estão no topo.'}
+            </p>
+          )}
         </div>
       </div>
     </div>
