@@ -1,8 +1,9 @@
 import { ArrowLeft, ChevronUp, Lock, MessageSquare, MessagesSquare, Pencil, Pin, Plus, Search, Trash2, Unlock, Users } from 'lucide-react';
-import { useCallback, useEffect, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { FORUM_CONTENT_MAX, FORUM_REPLY_MAX, FORUM_STATUSES, FORUM_TAGS, FORUM_TITLE_MAX } from '../../../shared/forum.ts';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
+import { useAutoGrow } from '../lib/autoGrow';
 import type { Channel, ForumPost, ForumReply, User } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
 import { profileTriggers } from '../store/popover';
@@ -305,6 +306,8 @@ function PostCard({ post, onOpen, onVoted }: { post: ForumPost; onOpen: () => vo
 function PostEditor({ channel, post, onCancel, onSaved }: { channel: Channel; post?: ForumPost; onCancel: () => void; onSaved: (p: ForumPost) => void }) {
   const [title, setTitle] = useState(post?.title ?? '');
   const [content, setContent] = useState(post?.content ?? '');
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(contentRef, content);
   const [tag, setTag] = useState<string>(post?.tag ?? (channel.name.includes('bug') ? 'bug' : channel.name.includes('ajuda') ? 'pergunta' : channel.name.includes('feedback') ? 'feedback' : 'ideia'));
   const [saving, setSaving] = useState(false);
 
@@ -357,6 +360,7 @@ function PostEditor({ channel, post, onCancel, onSaved }: { channel: Channel; po
       <label className="block">
         <span className="mb-1.5 block text-xs font-bold text-fg-muted">Detalhes</span>
         <textarea
+          ref={contentRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           required
@@ -367,7 +371,7 @@ function PostEditor({ channel, post, onCancel, onSaved }: { channel: Channel; po
               ? 'O que aconteceu? O que você esperava? Como repetir? (app desktop ou navegador, Windows/Mac...)'
               : 'Explique a ideia: qual problema ela resolve e como você imagina que funcione.'
           }
-          className="w-full resize-y rounded-2xl border border-transparent bg-surface-3 p-4 text-sm leading-relaxed outline-none placeholder:text-fg-subtle focus:border-accent"
+          className="max-h-[60vh] w-full resize-none rounded-2xl border border-transparent bg-surface-3 p-4 text-sm leading-relaxed outline-none placeholder:text-fg-subtle focus:border-accent"
         />
         <span className="mt-1 block text-right text-xs text-fg-subtle">
           {content.length}/{FORUM_CONTENT_MAX}
@@ -561,6 +565,8 @@ function ReplyItem({ reply, mine, mod, onChanged }: { reply: ForumReply; mine: b
   const openModal = useApp((s) => s.openModal);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(reply.content);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(editRef, editing ? text : '');
 
   async function save() {
     try {
@@ -609,12 +615,13 @@ function ReplyItem({ reply, mine, mod, onChanged }: { reply: ForumReply; mine: b
       {editing ? (
         <div className="mt-2 space-y-2">
           <textarea
+            ref={editRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             maxLength={FORUM_REPLY_MAX}
-            rows={3}
+            rows={4}
             aria-label="Editar resposta"
-            className="w-full resize-y rounded-2xl border border-accent bg-surface-3 p-3 text-sm outline-none"
+            className="max-h-[50vh] w-full resize-none rounded-2xl border border-accent bg-surface-3 p-3 text-sm outline-none"
           />
           <div className="flex gap-2">
             <Button className="h-8 px-4" onClick={() => void save()} disabled={!text.trim()}>
@@ -636,6 +643,8 @@ function ReplyItem({ reply, mine, mod, onChanged }: { reply: ForumReply; mine: b
 
 function ReplyComposer({ postId, onSent }: { postId: string; onSent: () => void }) {
   const [text, setText] = useState('');
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(ref, text);
   const [sending, setSending] = useState(false);
 
   async function send() {
@@ -661,14 +670,15 @@ function ReplyComposer({ postId, onSent }: { postId: string; onSent: () => void 
   return (
     <div className="mt-5 rounded-[20px] bg-surface-3/50 p-3">
       <textarea
+        ref={ref}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
         maxLength={FORUM_REPLY_MAX}
-        rows={3}
+        rows={4}
         placeholder="Escreva uma resposta..."
         aria-label="Sua resposta"
-        className="w-full resize-y rounded-2xl bg-surface-3 p-3 text-sm outline-none placeholder:text-fg-subtle focus:ring-1 focus:ring-accent"
+        className="max-h-[50vh] w-full resize-none rounded-2xl bg-surface-3 p-3 text-sm outline-none placeholder:text-fg-subtle focus:ring-1 focus:ring-accent"
       />
       <div className="mt-2 flex items-center justify-between">
         <span className="text-xs text-fg-subtle">Ctrl + Enter envia</span>
