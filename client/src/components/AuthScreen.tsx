@@ -161,7 +161,15 @@ export function AuthScreen() {
             <h2 className="text-2xl font-bold">{TITLES[mode][0]}</h2>
             <p className="mt-1 text-sm text-fg-muted">{TITLES[mode][1]}</p>
           </div>
-          <Input label="Usuário" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" required />
+          {/* no login dá para usar o e-mail da conta; cadastro e código de recuperação continuam pelo usuário */}
+          <Input
+            label={mode === 'login' ? 'Usuário ou e-mail' : 'Usuário'}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+            autoComplete="username"
+            required
+          />
           {mode === 'register' && (
             <Input label="Nome de exibição" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como os outros vão te ver" />
           )}

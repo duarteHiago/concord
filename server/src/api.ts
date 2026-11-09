@@ -630,23 +630,29 @@ api.post('/auth/reset', async (req, res) => {
 });
 
 /** Confere usuário e senha (com limite de tentativas). Usado no login e ao conectar o Google a uma conta. */
-async function checkPassword(username: string, password: string, ip: string): Promise<UserRow> {
-  const wait = loginWaitMinutes(username, ip);
+async function checkPassword(login: string, password: string, ip: string): Promise<UserRow> {
+  // entra pelo nome de usuário ou pelo e-mail da conta (o mesmo jeito de achar do "Esqueci minha senha")
+  const user = login.includes('@')
+    ? get<UserRow>('SELECT * FROM users WHERE email_key = ? AND email IS NOT NULL', emailKey(login))
+    : get<UserRow>('SELECT * FROM users WHERE username = ?', login);
+  // o limite de senhas erradas conta pela conta, não pelo que foi digitado: alternar entre usuário e
+  // e-mail não dá tentativas a mais
+  const limitKey = user?.username ?? login;
+  const wait = loginWaitMinutes(limitKey, ip);
   if (wait) fail(429, `Muitas senhas erradas. Espere ${wait} min e tente de novo, ou use "Esqueci minha senha".`);
-  const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
   // conta criada pelo Google não tem senha (password_hash vazio): não é chute, então não conta tentativa
   if (user && !user.password_hash) {
     fail(401, 'Essa conta foi criada pelo Google e não tem senha. Use "Entrar com Google" (dá para criar uma senha depois, em Configurações > Conta).');
   }
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-    const left = recordLoginFailure(username, ip);
+    const left = recordLoginFailure(limitKey, ip);
     fail(
       401,
       left === 0
-        ? 'Usuário ou senha incorretos. Por segurança, o login dessa conta ficou bloqueado aqui por 15 min: use "Esqueci minha senha" se precisar.'
+        ? 'Usuário, e-mail ou senha incorretos. Por segurança, o login dessa conta ficou bloqueado aqui por 15 min: use "Esqueci minha senha" se precisar.'
         : left <= 2
-          ? `Usuário ou senha incorretos. Mais ${left} tentativa(s) erradas e o login fica bloqueado por 15 min.`
-          : 'Usuário ou senha incorretos.',
+          ? `Usuário, e-mail ou senha incorretos. Mais ${left} tentativa(s) erradas e o login fica bloqueado por 15 min.`
+          : 'Usuário, e-mail ou senha incorretos.',
     );
   }
   // só depois da senha certa: quem chuta senha não descobre que a conta existe e está suspensa
@@ -658,9 +664,10 @@ async function checkPassword(username: string, password: string, ip: string): Pr
 const BANNED = 'Esta conta foi suspensa pela equipe do Concord.';
 
 api.post('/auth/login', async (req, res) => {
-  const username = str(req.body?.username, 'usuário', 1, 32);
+  // o campo continua se chamando "username" (apps antigos), mas aceita o e-mail também
+  const login = str(req.body?.username, 'usuário ou e-mail', 1, 254);
   const password = str(req.body?.password, 'senha', 1, 128);
-  const user = await checkPassword(username, password, clientIp(req));
+  const user = await checkPassword(login, password, clientIp(req));
   sendLogin(res, user);
 });
 
