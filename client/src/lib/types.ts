@@ -130,6 +130,8 @@ export interface UserSettings {
   emailPromptDismissed?: boolean;
   /** já viu o aviso de que virou Mecenas */
   mecenasSeen?: boolean;
+  /** servidores fixados no topo, na ordem escolhida (os outros ficam na gaveta) */
+  pinnedServers?: string[];
 }
 
 export interface Me extends User {

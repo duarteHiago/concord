@@ -1,4 +1,4 @@
-import { Download, Newspaper, MessageCircle, Plus } from 'lucide-react';
+import { Archive, Download, Newspaper, MessageCircle, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
@@ -6,9 +6,10 @@ import { useUnseenReleases } from '../releases';
 import { HOME, useApp } from '../store/app';
 import { useVoice } from '../store/voice';
 import { useCommunity, usePendingCommunity } from '../store/community';
+import { pinnedServers, RAIL_MAX, ServerDrawer } from './ServerDrawer';
 import { cx, initials } from './ui';
 
-/** Fileira de servidores no topo da barra lateral (design Noturno). */
+/** Fileira de servidores no topo da barra lateral. Mostra até RAIL_MAX servidores; o resto fica na gaveta. */
 export function ServerStrip() {
   const servers = useApp((s) => s.servers);
   const activeId = useApp((s) => s.activeServerId);
@@ -25,6 +26,14 @@ export function ServerStrip() {
   const community = usePendingCommunity();
   const joining = useCommunity((s) => s.joining);
   const joinCommunity = useCommunity((s) => s.join);
+  const savedPins = useApp((s) => s.me?.settings?.pinnedServers);
+  const saveSettings = useApp((s) => s.saveSettings);
+  const [drawer, setDrawer] = useState(false);
+  const pinned = pinnedServers(servers, savedPins);
+  // servidor aberto que está na gaveta: aparece no topo enquanto estiver aberto, para não sumir da vista
+  const extra = servers.find((s) => s.id === activeId && !pinned.includes(s));
+  const shown = extra ? [...pinned, extra] : pinned;
+  const inDrawer = servers.length - pinned.length;
 
   useEffect(() => {
     useCommunity.getState().load();
@@ -36,6 +45,7 @@ export function ServerStrip() {
 
   const home = activeId === HOME && !releasesOpen;
   return (
+    <div className="relative">
     <nav aria-label="Servidores" className="flex gap-2 overflow-x-auto border-b border-line p-4 md:flex-wrap">
       <button
         title="Mensagens privadas"
@@ -51,7 +61,7 @@ export function ServerStrip() {
           </span>
         )}
       </button>
-      {servers.map((s) => {
+      {shown.map((s) => {
         const active = s.id === activeId && !releasesOpen;
         return (
           <button
@@ -96,6 +106,22 @@ export function ServerStrip() {
         <Plus size={20} />
       </button>
       <button
+        title={inDrawer ? `Gaveta de servidores (mais ${inDrawer})` : 'Gaveta de servidores'}
+        aria-label={`Gaveta de servidores${inDrawer ? `, mais ${inDrawer} guardados` : ''}`}
+        aria-expanded={drawer}
+        aria-controls="server-drawer"
+        data-tour="server-drawer"
+        onClick={() => setDrawer(!drawer)}
+        className={cx(tile, drawer ? 'bg-fg text-surface-1' : 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-fg')}
+      >
+        <Archive size={20} />
+        {inDrawer > 0 && !drawer && (
+          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-surface-2 bg-accent px-1 text-[10px] font-bold text-on-accent">
+            {inDrawer > 99 ? '99+' : inDrawer}
+          </span>
+        )}
+      </button>
+      <button
         title="Novidades"
         aria-label={`Novidades${newReleases ? ' (tem coisa nova)' : ''}`}
         aria-current={releasesOpen ? 'true' : undefined}
@@ -117,5 +143,16 @@ export function ServerStrip() {
         </a>
       )}
     </nav>
+    {drawer && (
+      <ServerDrawer
+        servers={servers}
+        pinned={pinned}
+        activeId={releasesOpen ? null : activeId}
+        onOpen={openServer}
+        onPinnedChange={(ids) => void saveSettings({ pinnedServers: ids.slice(0, RAIL_MAX) })}
+        onClose={() => setDrawer(false)}
+      />
+    )}
+    </div>
   );
 }
