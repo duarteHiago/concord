@@ -31,6 +31,7 @@ import { DmView } from './components/DirectMessages';
 import { MobileBottomNav } from './components/MobileNav';
 import { useMobile } from './lib/mobile';
 import { useDevStatsPublisher } from './lib/devStats';
+import { DirectorWindowHost } from './components/Director';
 import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import './lib/visibility';
@@ -134,6 +135,7 @@ function MainApp() {
       <UpdateBanner />
       <PwaUpdateBanner />
       {me && <NudgeCard />}
+      {me && <DirectorWindowHost />}
       {me && <NudgeMessageToast />}
       {me && <GameOverlay />}
       {me && <ClipToast />}

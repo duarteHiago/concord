@@ -178,8 +178,30 @@ function createWindow() {
         },
       };
     }
+    // painel de direção do modo gravação (equipe): janelinha que fica por cima do jogo
+    if (url === 'about:blank' && frameName === 'concord-director') {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 380,
+          height: 640,
+          minWidth: 320,
+          minHeight: 360,
+          alwaysOnTop: true,
+          backgroundColor: '#ecf0f9',
+          autoHideMenuBar: true,
+          title: 'Direção · Concord',
+          icon: APP_ICON,
+          webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
+        },
+      };
+    }
     if (/^https?:\/\//.test(url)) openLink(url);
     return { action: 'deny' };
+  });
+  // o nível "screen-saver" deixa o painel por cima até de jogo em janela sem borda
+  win.webContents.on('did-create-window', (child, { frameName }) => {
+    if (frameName === 'concord-director') child.setAlwaysOnTop(true, 'screen-saver');
   });
   win.webContents.on('will-navigate', (event, url) => {
     try {
