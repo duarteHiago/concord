@@ -1,4 +1,4 @@
-import { Minus, Plus } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ServerSummary } from '../lib/types';
 import { cx, initials } from './ui';
@@ -13,242 +13,218 @@ export function pinnedServers(servers: ServerSummary[], saved: string[] | undefi
   return saved.map((id) => byId.get(id)).filter((s): s is ServerSummary => !!s).slice(0, RAIL_MAX);
 }
 
-function ServerIcon({ server, size = 'h-11 w-11 lg:h-12 lg:w-12' }: { server: ServerSummary; size?: string }) {
+type Zone = 'top' | 'drawer';
+interface Drag {
+  id: string;
+  x: number;
+  y: number;
+  over: { zone: Zone; index: number } | null;
+}
+
+/** Como o topo fica se soltar agora: é a prévia ao vivo enquanto arrasta. Topo cheio troca de lugar. */
+function arrange(pinnedIds: string[], drag: Drag | null): string[] {
+  if (!drag?.over) return pinnedIds;
+  const rest = pinnedIds.filter((id) => id !== drag.id);
+  if (drag.over.zone === 'drawer') return rest;
+  const full = rest.length >= RAIL_MAX;
+  const at = Math.min(drag.over.index, rest.length, full ? RAIL_MAX - 1 : RAIL_MAX);
+  const next = [...rest];
+  next.splice(at, full ? 1 : 0, drag.id);
+  return next;
+}
+
+/** O que estiver embaixo do ponteiro com data-drop (o ícone fantasma não pega clique). */
+function hit(x: number, y: number): Drag['over'] {
+  for (const el of document.elementsFromPoint(x, y)) {
+    const zone = (el as HTMLElement).dataset?.drop as Zone | undefined;
+    if (zone) return { zone, index: Number((el as HTMLElement).dataset.index ?? 0) };
+  }
+  return null;
+}
+
+/**
+ * Arrastar servidores entre o topo e a gaveta, com o dedo ou o mouse: segurar um instante "descola" o
+ * ícone, que segue o ponteiro; ao soltar, `onChange` recebe a nova ordem do topo.
+ */
+export function useServerDrag(enabled: boolean, pinnedIds: string[], onChange: (ids: string[]) => void) {
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [editing, setEditing] = useState(false);
+  const pending = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const swallowClick = useRef(false);
+  const live = useRef({ drag, pinnedIds, onChange });
+  live.current = { drag, pinnedIds, onChange };
+
+  useEffect(() => {
+    if (!enabled) setEditing(false);
+  }, [enabled]);
+
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      const p = pending.current;
+      if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) {
+        clearTimeout(p.timer);
+        pending.current = null;
+      }
+      if (live.current.drag) {
+        e.preventDefault();
+        setDrag({ ...live.current.drag, x: e.clientX, y: e.clientY, over: hit(e.clientX, e.clientY) });
+      }
+    };
+    const up = () => {
+      if (pending.current) clearTimeout(pending.current.timer);
+      pending.current = null;
+      const d = live.current.drag;
+      if (!d) return;
+      swallowClick.current = true;
+      const next = arrange(live.current.pinnedIds, d);
+      if (next.join() !== live.current.pinnedIds.join()) live.current.onChange(next);
+      setDrag(null);
+    };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, []);
+
+  /** Props para cada ícone de servidor (no topo ou na gaveta). */
+  const handle = (id: string) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      if (!enabled || e.button > 0) return;
+      const x = e.clientX;
+      const y = e.clientY;
+      pending.current = {
+        x,
+        y,
+        timer: setTimeout(() => {
+          pending.current = null;
+          setEditing(true);
+          navigator.vibrate?.(8);
+          setDrag({ id, x, y, over: hit(x, y) });
+        }, 280),
+      };
+    },
+    onClickCapture: (e: React.MouseEvent) => {
+      if (!swallowClick.current) return;
+      swallowClick.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onContextMenu: (e: React.MouseEvent) => {
+      if (enabled) e.preventDefault();
+    },
+  });
+
+  return { drag, editing, setEditing, handle, preview: arrange(pinnedIds, drag) };
+}
+
+export function ServerFace({ server, className }: { server: ServerSummary; className?: string }) {
   return server.iconUrl ? (
-    <img src={server.iconUrl} alt="" draggable={false} className={cx(size, 'rounded-[18px] object-cover')} />
+    <img src={server.iconUrl} alt="" draggable={false} className={cx('h-12 w-12 rounded-[18px] object-cover', className)} />
   ) : (
-    <span className={cx(size, 'flex items-center justify-center rounded-[18px] bg-surface-3 font-display text-base font-bold text-fg-muted')}>
+    <span className={cx('flex h-12 w-12 items-center justify-center rounded-[18px] bg-surface-3 font-display text-base font-bold text-fg-muted', className)}>
       {initials(server.name)}
     </span>
   );
 }
 
-/**
- * Gaveta de servidores: abre por baixo da fileira do topo, vista de cima. Toque abre o servidor;
- * segurar (ou "Organizar") faz os ícones tremerem para escolher quais ficam no topo e em que ordem.
- */
-export function ServerDrawer({
-  servers,
-  pinned,
-  activeId,
-  onOpen,
-  onPinnedChange,
-  onClose,
-}: {
-  servers: ServerSummary[];
-  pinned: ServerSummary[];
-  activeId: string | null;
-  onOpen: (id: string) => void;
-  onPinnedChange: (ids: string[]) => void;
-  onClose: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [notice, setNotice] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-  const press = useRef<{ timer: ReturnType<typeof setTimeout>; fired: boolean } | null>(null);
-
-  const pinnedIds = pinned.map((s) => s.id);
-  const rest = servers.filter((s) => !pinnedIds.includes(s.id));
-  const full = pinnedIds.length >= RAIL_MAX;
-
-  const close = () => {
-    if (closing) return;
-    setClosing(true);
-    setTimeout(onClose, 170);
-  };
-
-  useEffect(() => {
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (editing) setEditing(false);
-      else close();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
-
-  useEffect(() => {
-    if (!notice) return;
-    const t = setTimeout(() => setNotice(''), 2600);
-    return () => clearTimeout(t);
-  }, [notice]);
-
-  const unpin = (id: string) => onPinnedChange(pinnedIds.filter((p) => p !== id));
-  const pin = (id: string, at = pinnedIds.length) => {
-    const next = pinnedIds.filter((p) => p !== id);
-    if (next.length >= RAIL_MAX) {
-      setNotice(`O topo tem lugar para ${RAIL_MAX}. Tire um antes.`);
-      return;
-    }
-    next.splice(Math.min(at, next.length), 0, id);
-    onPinnedChange(next);
-  };
-
-  // segurar meio segundo entra no modo organizar (no toque e no mouse)
-  const pressStart = () => {
-    if (editing) return;
-    press.current = { fired: false, timer: setTimeout(() => {
-      if (press.current) press.current.fired = true;
-      setEditing(true);
-    }, 500) };
-  };
-  const pressEnd = () => {
-    if (press.current) clearTimeout(press.current.timer);
-  };
-  const tap = (id: string) => {
-    if (press.current?.fired) {
-      press.current = null;
-      return;
-    }
-    press.current = null;
-    if (editing) return;
-    onOpen(id);
-    close();
-  };
-
-  const drop = (target: 'top' | 'rest', at?: number) => (e: React.DragEvent) => {
-    e.preventDefault();
-    const id = dragId ?? e.dataTransfer.getData('text/plain');
-    setDragId(null);
-    if (!id) return;
-    if (target === 'rest') unpin(id);
-    else pin(id, at);
-  };
-
-  const tile = (s: ServerSummary, i: number, inTop: boolean) => (
-    <li
-      key={s.id}
-      className="server-drawer-item flex min-w-0 flex-col items-center gap-1.5"
-      style={{ animationDelay: `${60 + i * 28}ms` }}
-      onDragOver={inTop && editing ? (e) => e.preventDefault() : undefined}
-      onDrop={inTop && editing ? drop('top', i) : undefined}
-    >
-      <div className={cx('relative', editing && 'server-drawer-jiggle', editing && i % 2 === 1 && 'server-drawer-jiggle-alt')}>
-        <button
-          type="button"
-          title={s.name}
-          aria-label={editing ? `${s.name}: ${inTop ? 'no topo' : 'na gaveta'}` : `Abrir ${s.name}`}
-          aria-current={s.id === activeId ? 'true' : undefined}
-          draggable={editing}
-          onDragStart={(e) => {
-            setDragId(s.id);
-            e.dataTransfer.setData('text/plain', s.id);
-            e.dataTransfer.effectAllowed = 'move';
-          }}
-          onDragEnd={() => setDragId(null)}
-          onPointerDown={pressStart}
-          onPointerUp={pressEnd}
-          onPointerLeave={pressEnd}
-          onContextMenu={(e) => editing && e.preventDefault()}
-          onClick={() => tap(s.id)}
-          className={cx(
-            'block rounded-[18px] transition-transform',
-            !editing && 'hover:-translate-y-0.5 active:scale-95',
-            s.id === activeId && 'ring-[3px] ring-accent',
-            dragId === s.id && 'opacity-40',
-          )}
-        >
-          <ServerIcon server={s} />
-        </button>
-        {editing && (
-          <button
-            type="button"
-            aria-label={inTop ? `Tirar ${s.name} do topo` : `Pôr ${s.name} no topo`}
-            title={inTop ? 'Tirar do topo' : full ? `O topo tem lugar para ${RAIL_MAX}` : 'Pôr no topo'}
-            onClick={() => (inTop ? unpin(s.id) : pin(s.id))}
-            className={cx(
-              'absolute -top-1.5 -left-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface-1 shadow-md transition-transform hover:scale-110',
-              inTop ? 'bg-fg text-surface-1' : full ? 'bg-surface-4 text-fg-subtle' : 'bg-accent text-on-accent',
-            )}
-          >
-            {inTop ? <Minus size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
-          </button>
-        )}
+/** O ícone que segue o ponteiro enquanto arrasta. */
+export function DragGhost({ server, x, y }: { server: ServerSummary; x: number; y: number }) {
+  return (
+    <div className="pointer-events-none fixed z-[100] -translate-x-1/2 -translate-y-1/2" style={{ left: x, top: y }} aria-hidden="true">
+      <div className="server-drag-ghost">
+        <ServerFace server={server} />
       </div>
-      <span className="w-full truncate text-center text-[11px] font-semibold text-fg-muted">{s.name}</span>
-    </li>
+    </div>
   );
+}
 
+/** A linha entre o topo e o servidor aberto: com a seta, abre e fecha a gaveta. */
+export function DrawerLine({ open, count, onToggle }: { open: boolean; count: number; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-controls="server-drawer"
+      aria-label={open ? 'Fechar a gaveta de servidores' : `Abrir a gaveta de servidores${count ? ` (mais ${count})` : ''}`}
+      title={open ? 'Fechar a gaveta' : count ? `Mais ${count} na gaveta` : 'Gaveta de servidores'}
+      data-tour="server-drawer"
+      className="group relative flex h-5 w-full shrink-0 items-center justify-center"
+    >
+      <span className="absolute inset-x-0 top-1/2 h-px bg-line" />
+      <span className="relative flex h-5 w-9 items-center justify-center rounded-full border border-line bg-surface-2 text-fg-subtle transition-colors group-hover:border-line-strong group-hover:text-fg">
+        <ChevronDown size={14} strokeWidth={2.5} className={cx('transition-transform duration-300', open && 'rotate-180')} />
+      </span>
+    </button>
+  );
+}
+
+/** A gaveta: abre na linha, empurrando o servidor aberto para baixo. Só os ícones, sem texto. */
+export function ServerDrawerPanel({
+  open,
+  servers,
+  activeId,
+  dragId,
+  editing,
+  handle,
+  onOpen,
+  onPin,
+  onStopEditing,
+}: {
+  open: boolean;
+  servers: ServerSummary[];
+  activeId: string | null;
+  dragId: string | null;
+  editing: boolean;
+  handle: (id: string) => object;
+  onOpen: (id: string) => void;
+  onPin: (id: string) => void;
+  onStopEditing: () => void;
+}) {
   return (
     <div
-      ref={ref}
       id="server-drawer"
-      role="dialog"
+      role="region"
       aria-label="Gaveta de servidores"
-      tabIndex={-1}
-      className={cx('server-drawer absolute inset-x-0 top-full z-40 outline-none', closing && 'server-drawer-closing')}
+      inert={!open}
+      className={cx('grid transition-[grid-template-rows] duration-300 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}
     >
-      {/* fundo: clicar fora fecha */}
-      <div className="fixed inset-0 -z-10" onClick={close} aria-hidden="true" />
-      <div className="server-drawer-box mx-2 overflow-hidden rounded-b-[26px] border border-t-0 border-line-strong bg-surface-1">
-        <div className="server-drawer-depth max-h-[min(70vh,520px)] overflow-y-auto px-3 pt-4 pb-3">
-          <div className="mb-3 flex items-center gap-2">
-            <h2 className="font-display text-sm font-bold">Seus servidores</h2>
-            <span className="text-xs text-fg-subtle">{servers.length}</span>
+      <div className="overflow-hidden">
+        <div
+          data-drop="drawer"
+          onClick={(e) => e.target === e.currentTarget && onStopEditing()}
+          className={cx(
+            'server-drawer-tray mx-3 mb-1 flex min-h-[72px] flex-wrap content-start gap-2 rounded-[22px] bg-surface-1 p-3',
+            open && 'server-drawer-open',
+            dragId && 'outline-2 outline-offset-[-2px] outline-accent/40 outline-dashed',
+          )}
+        >
+          {servers.map((s, i) => (
             <button
+              key={s.id}
               type="button"
-              onClick={() => setEditing(!editing)}
+              title={s.name}
+              aria-label={editing ? `${s.name}: toque para pôr no topo` : `Abrir ${s.name}`}
+              aria-current={s.id === activeId ? 'true' : undefined}
+              {...handle(s.id)}
+              onClick={() => (editing ? onPin(s.id) : onOpen(s.id))}
+              style={{ animationDelay: `${40 + i * 25}ms` }}
               className={cx(
-                'ml-auto rounded-full px-3 py-1 text-xs font-bold transition-colors',
-                editing ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg hover:bg-surface-4',
+                'server-drawer-item relative shrink-0 touch-none rounded-[18px] transition-opacity select-none',
+                s.id === activeId && 'ring-[3px] ring-accent',
+                s.id === dragId && 'opacity-30',
               )}
             >
-              {editing ? 'Pronto' : 'Organizar'}
+              <span className={cx('block', editing && 'server-drawer-jiggle', editing && i % 2 === 1 && 'server-drawer-jiggle-alt')}>
+                <ServerFace server={s} />
+              </span>
             </button>
-          </div>
-
-          {/* o "dock": quem fica no topo */}
-          <div
-            className="rounded-[22px] bg-surface-0/70 p-2.5 ring-1 ring-line"
-            onDragOver={editing ? (e) => e.preventDefault() : undefined}
-            onDrop={editing ? drop('top') : undefined}
-          >
-            <div className="mb-2 flex items-center justify-between text-[11px] font-bold text-fg-subtle">
-              <span>No topo</span>
-              <span>{pinnedIds.length} de {RAIL_MAX}</span>
-            </div>
-            <ul className="grid grid-cols-4 gap-x-1 gap-y-3">
-              {pinned.map((s, i) => tile(s, i, true))}
-              {Array.from({ length: RAIL_MAX - pinned.length }, (_, i) => (
-                <li key={`vazio-${i}`} className="flex flex-col items-center gap-1.5" aria-hidden="true">
-                  <span className="h-11 w-11 rounded-[18px] border-2 border-dashed border-line-strong lg:h-12 lg:w-12" />
-                  <span className="text-[11px] text-transparent">.</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div
-            className="mt-3 min-h-16"
-            onDragOver={editing ? (e) => e.preventDefault() : undefined}
-            onDrop={editing ? drop('rest') : undefined}
-          >
-            <div className="mb-2 px-1 text-[11px] font-bold text-fg-subtle">Na gaveta</div>
-            {rest.length ? (
-              <ul className="grid grid-cols-4 gap-x-1 gap-y-3">{rest.map((s, i) => tile(s, i + pinned.length, false))}</ul>
-            ) : (
-              <p className="px-1 pb-2 text-xs text-fg-subtle">
-                {editing ? 'Arraste um servidor do topo para cá.' : 'Todos os seus servidores estão no topo.'}
-              </p>
-            )}
-          </div>
-
-          <p className="mt-2 min-h-4 px-1 text-[11px] text-fg-subtle" aria-live="polite">
-            {notice || (editing ? 'Toque no + ou no − para escolher quem fica no topo. No computador, dá para arrastar.' : 'Segure um ícone para organizar.')}
-          </p>
+          ))}
         </div>
-        {/* puxador da gaveta */}
-        <button
-          type="button"
-          onClick={close}
-          aria-label="Fechar a gaveta"
-          className="flex w-full justify-center border-t border-line bg-surface-2 py-2 hover:bg-surface-3"
-        >
-          <span className="h-1.5 w-12 rounded-full bg-line-strong" />
-        </button>
       </div>
     </div>
   );
