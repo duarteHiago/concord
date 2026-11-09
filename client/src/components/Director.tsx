@@ -1,5 +1,7 @@
-import { Clapperboard, Smartphone, Square, Volume2 } from 'lucide-react';
+import { Clapperboard, ExternalLink, Smartphone, Square, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { create } from 'zustand';
 import { PRANK_EFFECTS } from '../../../shared/contracts.ts';
 import { api } from '../lib/api';
 import { memberName, type Channel, type ServerDetail } from '../lib/types';
@@ -23,6 +25,21 @@ export function RecordingPill({ className }: { className?: string }) {
 
 const DURATIONS = [3, 5, 10, 15];
 
+/** Painel de direção solto numa janela própria (a sala que ele controla), em qualquer tela do app. */
+const useDirectorWindow = create<{ target: { serverId: string; channelId: string } | null; set: (t: { serverId: string; channelId: string } | null) => void }>(
+  (set) => ({ target: null, set: (target) => set({ target }) }),
+);
+
+async function setRecording(channelId: string, on: boolean) {
+  try {
+    await api.post(`/channels/${channelId}/recording`, { on });
+    return true;
+  } catch (err) {
+    toast.error(err);
+    return false;
+  }
+}
+
 /**
  * Controles do modo gravação no cabeçalho da sala (só a equipe, nas salas do servidor da equipe):
  * ligar/desligar e o painel de direção para disparar efeitos em quem está na sala.
@@ -32,6 +49,8 @@ export function RecordingControls({ detail, channel }: { detail: ServerDetail; c
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const recording = !!channel.recording;
+  const popped = useDirectorWindow((s) => s.target?.channelId === channel.id);
+  const setWindow = useDirectorWindow((s) => s.set);
 
   useEffect(() => {
     if (!open) return;
@@ -49,12 +68,7 @@ export function RecordingControls({ detail, channel }: { detail: ServerDetail; c
 
   const toggle = async () => {
     setBusy(true);
-    try {
-      await api.post(`/channels/${channel.id}/recording`, { on: !recording });
-      if (recording) setOpen(false);
-    } catch (err) {
-      toast.error(err);
-    }
+    if ((await setRecording(channel.id, !recording)) && recording) setOpen(false);
     setBusy(false);
   };
 
@@ -76,23 +90,39 @@ export function RecordingControls({ detail, channel }: { detail: ServerDetail; c
       {recording && (
         <button
           type="button"
-          onClick={() => setOpen(!open)}
+          onClick={() => (popped ? setWindow({ serverId: detail.server.id, channelId: channel.id }) : setOpen(!open))}
           aria-expanded={open}
-          title="Painel de direção"
+          title={popped ? 'O painel está numa janela separada' : 'Painel de direção'}
           className={cx(
             'flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition-colors',
             open ? 'bg-fg text-surface-1' : 'bg-surface-3 text-fg hover:bg-surface-4',
           )}
         >
-          <Clapperboard size={15} /> Direção
+          <Clapperboard size={15} /> {popped ? 'Na janela' : 'Direção'}
         </button>
       )}
-      {open && recording && <DirectorPanel detail={detail} channel={channel} />}
+      {open && recording && !popped && (
+        <div
+          role="dialog"
+          aria-label="Painel de direção"
+          className="absolute top-full right-0 z-40 mt-2 w-[340px] max-w-[calc(100vw-24px)] animate-pop-in rounded-[22px] border border-line-strong bg-surface-2 p-4 shadow-2xl"
+        >
+          <DirectorBody
+            detail={detail}
+            channel={channel}
+            onPopOut={() => {
+              setWindow({ serverId: detail.server.id, channelId: channel.id });
+              setOpen(false);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-function DirectorPanel({ detail, channel }: { detail: ServerDetail; channel: Channel }) {
+/** O conteúdo do painel: quem, voz, tremer a tela e a mesa de sons. Igual no menu e na janela separada. */
+function DirectorBody({ detail, channel, onPopOut }: { detail: ServerDetail; channel: Channel; onPopOut?: () => void }) {
   const me = useApp((s) => s.me);
   const states = useApp((s) => s.voiceStates[detail.server.id]) ?? [];
   const sounds = useApp((s) => s.sounds[detail.server.id]);
@@ -105,43 +135,51 @@ function DirectorPanel({ detail, channel }: { detail: ServerDetail; channel: Cha
     });
   const [target, setTarget] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(5);
+  // a confirmação aparece aqui mesmo: na janela separada, os avisos da janela principal ficam escondidos
+  const [status, setStatus] = useState<{ text: string; ok: boolean } | null>(null);
   const picked = inRoom.find((m) => m.id === target) ?? inRoom.find((m) => m.id !== me?.id) ?? inRoom[0];
 
   useEffect(() => {
     if (!sounds) void loadSounds(detail.server.id);
   }, [sounds, loadSounds, detail.server.id]);
 
-  const fire = async (body: Record<string, unknown>, done: string) => {
-    if (!picked) return;
-    try {
-      await api.post(`/channels/${channel.id}/director`, { userId: picked.id, ...body });
-      toast.success(done);
-    } catch (err) {
-      toast.error(err);
-    }
-  };
+  useEffect(() => {
+    if (!status) return;
+    const t = setTimeout(() => setStatus(null), 2200);
+    return () => clearTimeout(t);
+  }, [status]);
 
-  const playSound = async (id: string, name: string) => {
+  const run = async (call: () => Promise<unknown>, done: string) => {
     try {
-      await api.post(`/sounds/${id}/play`);
-      toast.success(`Tocando "${name}" para a sala`);
+      await call();
+      setStatus({ text: done, ok: true });
     } catch (err) {
-      toast.error(err);
+      setStatus({ text: err instanceof Error ? err.message : 'Não deu certo', ok: false });
     }
   };
+  const fire = (body: Record<string, unknown>, done: string) =>
+    picked && run(() => api.post(`/channels/${channel.id}/director`, { userId: picked.id, ...body }), done);
 
   const effects = EFFECTS.filter((e) => (PRANK_EFFECTS as readonly string[]).includes(e.id));
+  const who = picked ? memberName(picked) : '';
 
   return (
-    <div
-      role="dialog"
-      aria-label="Painel de direção"
-      className="absolute top-full right-0 z-40 mt-2 w-[340px] max-w-[calc(100vw-24px)] animate-pop-in rounded-[22px] border border-line-strong bg-surface-2 p-4 shadow-2xl"
-    >
+    <div className="space-y-4">
+      {onPopOut && (
+        <div className="-mt-1 -mb-1 flex justify-end">
+          <button
+            type="button"
+            onClick={onPopOut}
+            className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold text-fg-muted hover:bg-surface-3 hover:text-fg"
+          >
+            <ExternalLink size={12} /> Abrir em outra janela
+          </button>
+        </div>
+      )}
       {inRoom.length === 0 ? (
         <p className="text-sm text-fg-muted">Ninguém na sala ainda.</p>
       ) : (
-        <div className="space-y-4">
+        <>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Quem">
             {inRoom.map((m) => (
               <button
@@ -157,7 +195,7 @@ function DirectorPanel({ detail, channel }: { detail: ServerDetail; channel: Cha
               </button>
             ))}
           </div>
-          {picked && <div className="-mt-2 text-sm font-bold">{memberName(picked)}</div>}
+          {picked && <div className="-mt-2 text-sm font-bold">{who}</div>}
 
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -181,7 +219,7 @@ function DirectorPanel({ detail, channel }: { detail: ServerDetail; channel: Cha
                   key={e.id}
                   type="button"
                   title={e.hint}
-                  onClick={() => void fire({ action: 'fx', effect: e.id, durationMs: seconds * 1000 }, `${e.label} em ${picked ? memberName(picked) : ''}`)}
+                  onClick={() => void fire({ action: 'fx', effect: e.id, durationMs: seconds * 1000 }, `${e.label} em ${who}`)}
                   className="rounded-xl bg-surface-3 px-1 py-2 text-[11px] font-semibold hover:bg-accent hover:text-on-accent"
                 >
                   {e.label}
@@ -192,7 +230,7 @@ function DirectorPanel({ detail, channel }: { detail: ServerDetail; channel: Cha
 
           <button
             type="button"
-            onClick={() => void fire({ action: 'shake' }, `Tela de ${picked ? memberName(picked) : ''} tremendo`)}
+            onClick={() => void fire({ action: 'shake' }, `Tela de ${who} tremendo`)}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent-2/15 py-2.5 text-sm font-bold text-accent-2 hover:bg-accent-2/25"
           >
             <Smartphone size={16} /> Tremer a tela
@@ -208,7 +246,7 @@ function DirectorPanel({ detail, channel }: { detail: ServerDetail; channel: Cha
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => void playSound(s.id, s.name)}
+                    onClick={() => void run(() => api.post(`/sounds/${s.id}/play`), `Tocando "${s.name}"`)}
                     className="rounded-full bg-surface-3 px-3 py-1 text-xs font-semibold hover:bg-surface-4"
                   >
                     {s.name}
@@ -217,8 +255,122 @@ function DirectorPanel({ detail, channel }: { detail: ServerDetail; channel: Cha
               </div>
             </div>
           )}
-        </div>
+        </>
       )}
+      <p aria-live="polite" className={cx('min-h-4 text-center text-xs font-semibold', status?.ok === false ? 'text-danger' : 'text-ok')}>
+        {status?.text ?? ''}
+      </p>
     </div>
+  );
+}
+
+/** Copia os estilos e o tema (variáveis no <html>) da janela principal para a separada, e mantém em dia. */
+function mirrorStyles(win: Window) {
+  const doc = win.document;
+  doc.head.querySelectorAll('[data-mirror]').forEach((n) => n.remove());
+  for (const node of document.head.querySelectorAll('style, link[rel="stylesheet"]')) {
+    const copy = node.cloneNode(true) as HTMLElement;
+    copy.dataset.mirror = '';
+    doc.head.appendChild(copy);
+  }
+  const syncRoot = () => {
+    const from = document.documentElement;
+    const to = doc.documentElement;
+    to.setAttribute('style', from.getAttribute('style') ?? '');
+    to.className = from.className;
+    for (const key of Object.keys(from.dataset)) to.dataset[key] = from.dataset[key];
+    doc.body.style.background = 'var(--color-surface-1)';
+  };
+  syncRoot();
+  const observer = new MutationObserver(syncRoot);
+  observer.observe(document.documentElement, { attributes: true });
+  return () => observer.disconnect();
+}
+
+/**
+ * A janela separada do painel de direção. Fica montada no App (não na sala), então continua funcionando
+ * enquanto você navega pelo Concord. No app desktop ela fica sempre por cima (ver desktop/main.cjs).
+ */
+export function DirectorWindowHost() {
+  const target = useDirectorWindow((s) => s.target);
+  const setWindow = useDirectorWindow((s) => s.set);
+  const detail = useApp((s) => (target ? s.details[target.serverId] : undefined));
+  const channel = detail?.channels.find((c) => c.id === target?.channelId);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  const winRef = useRef<Window | null>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    const existing = winRef.current;
+    if (existing && !existing.closed) {
+      existing.focus();
+      return;
+    }
+    const w = window.open('', 'concord-director', 'popup=yes,width=380,height=640');
+    if (!w) {
+      toast.error('O navegador bloqueou a janela. Libere janelas pop-up para o Concord e tente de novo.');
+      setWindow(null);
+      return;
+    }
+    winRef.current = w;
+    w.document.title = 'Direção · Concord';
+    w.document.body.innerHTML = '';
+    w.document.body.style.margin = '0';
+    const stopMirror = mirrorStyles(w);
+    const root = w.document.createElement('div');
+    w.document.body.appendChild(root);
+    setContainer(root);
+    const onClose = () => setWindow(null);
+    w.addEventListener('pagehide', onClose);
+    const closeWithApp = () => w.close();
+    window.addEventListener('beforeunload', closeWithApp);
+    return () => {
+      stopMirror();
+      w.removeEventListener('pagehide', onClose);
+      window.removeEventListener('beforeunload', closeWithApp);
+    };
+  }, [target, setWindow]);
+
+  useEffect(() => {
+    if (target) return;
+    winRef.current?.close();
+    winRef.current = null;
+    setContainer(null);
+  }, [target]);
+
+  if (!target || !container || !detail || !channel) return null;
+  return createPortal(
+    <div className="min-h-screen bg-surface-1 p-4 font-sans text-fg">
+      <div className="mb-3 flex items-center gap-2">
+        <Clapperboard size={16} className="text-fg-muted" />
+        <span className="min-w-0 flex-1 truncate text-sm font-bold">{channel.name}</span>
+        {channel.recording ? (
+          <button
+            type="button"
+            onClick={() => void setRecording(channel.id, false)}
+            className="flex items-center gap-1.5 rounded-full bg-live px-3 py-1 text-xs font-bold text-white hover:bg-live/85"
+          >
+            <Square size={11} fill="currentColor" /> Parar
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void setRecording(channel.id, true)}
+            className="flex items-center gap-1.5 rounded-full bg-surface-3 px-3 py-1 text-xs font-bold hover:bg-surface-4"
+          >
+            <span className="h-2 w-2 rounded-full bg-live" /> Gravar
+          </button>
+        )}
+      </div>
+      {channel.recording ? (
+        <>
+          <RecordingPill className="mb-3" />
+          <DirectorBody detail={detail} channel={channel} />
+        </>
+      ) : (
+        <p className="text-sm text-fg-muted">A gravação desta sala está desligada. Ligue para usar a direção.</p>
+      )}
+    </div>,
+    container,
   );
 }
