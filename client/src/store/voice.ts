@@ -1018,13 +1018,13 @@ export const useVoice = create<VoiceStore>((set, get) => {
       });
       // efeito de voz surpresa do Mecenas: sem aviso nenhum, por no máximo 5 s. No modo gravação da equipe, a
       // direção troca o efeito na hora, por até 15 s ou fixo (durationMs 0) até mandar 'voice:fx-off'.
-      socket.on('voice:fx', ({ effect, durationMs, director }: { effect: EffectId; durationMs: number; director?: boolean }) => {
+      socket.on('voice:fx', ({ effect, durationMs, director, fixed }: { effect: EffectId; durationMs: number; director?: boolean; fixed?: boolean }) => {
         if (effect === 'none' || !EFFECTS.some((e) => e.id === effect)) return;
         if (director) {
           clearTimeout(prankTimer);
           prankOverride = effect;
           if (get().micOn) void applyCurrentEffect();
-          if (durationMs > 0) {
+          if (!fixed && durationMs > 0) {
             prankTimer = setTimeout(() => {
               prankOverride = null;
               if (get().micOn) void applyCurrentEffect();
