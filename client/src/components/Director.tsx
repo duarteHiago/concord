@@ -1,4 +1,5 @@
-import { Clapperboard, ExternalLink, Smartphone, Square, Volume2 } from 'lucide-react';
+import { Clapperboard, ExternalLink, QrCode, Smartphone, Square, Volume2 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
@@ -122,7 +123,34 @@ export function RecordingControls({ detail, channel }: { detail: ServerDetail; c
 }
 
 /** O conteúdo do painel: quem, voz, tremer a tela e a mesa de sons. Igual no menu e na janela separada. */
-function DirectorBody({ detail, channel, onPopOut }: { detail: ServerDetail; channel: Channel; onPopOut?: () => void }) {
+/** Endereço do controle remoto: abre só o painel, sem entrar na call (para usar no celular). */
+export function remoteUrl(serverId: string, channelId: string) {
+  return `${location.origin}/?direcao=${encodeURIComponent(channelId)}&servidor=${encodeURIComponent(serverId)}`;
+}
+
+/** QR code do controle remoto: aponta a câmera do celular e a Direção abre lá, sem tirar você da call do PC. */
+function RemoteQr({ serverId, channelId }: { serverId: string; channelId: string }) {
+  const [qr, setQr] = useState('');
+  const url = remoteUrl(serverId, channelId);
+  useEffect(() => {
+    void QRCode.toDataURL(url, { margin: 1, width: 220 }).then(setQr, () => setQr(''));
+  }, [url]);
+  return (
+    <div className="space-y-2 rounded-2xl bg-surface-1 p-3 text-center ring-1 ring-line">
+      {qr ? <img src={qr} alt="QR code do controle remoto" className="mx-auto h-44 w-44 rounded-lg bg-white p-1" /> : <div className="mx-auto h-44 w-44" />}
+      <p className="text-xs text-fg-muted">Abra com a câmera do celular, na mesma conta. O painel abre lá sem entrar na call.</p>
+      <button
+        type="button"
+        onClick={() => void navigator.clipboard?.writeText(url).then(() => toast.success('Link copiado'), () => {})}
+        className="text-[11px] font-semibold text-accent hover:underline"
+      >
+        Copiar o link
+      </button>
+    </div>
+  );
+}
+
+function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDetail; channel: Channel; onPopOut?: () => void; remote?: boolean }) {
   const me = useApp((s) => s.me);
   const states = useApp((s) => s.voiceStates[detail.server.id]) ?? [];
   const sounds = useApp((s) => s.sounds[detail.server.id]);
@@ -137,6 +165,7 @@ function DirectorBody({ detail, channel, onPopOut }: { detail: ServerDetail; cha
   const [seconds, setSeconds] = useState(5);
   // a confirmação aparece aqui mesmo: na janela separada, os avisos da janela principal ficam escondidos
   const [status, setStatus] = useState<{ text: string; ok: boolean } | null>(null);
+  const [showQr, setShowQr] = useState(false);
   const picked = inRoom.find((m) => m.id === target) ?? inRoom.find((m) => m.id !== me?.id) ?? inRoom[0];
 
   useEffect(() => {
@@ -165,17 +194,31 @@ function DirectorBody({ detail, channel, onPopOut }: { detail: ServerDetail; cha
 
   return (
     <div className="space-y-4">
-      {onPopOut && (
-        <div className="-mt-1 -mb-1 flex justify-end">
+      {!remote && (
+        <div className="-mt-1 -mb-1 flex flex-wrap justify-end gap-1">
           <button
             type="button"
-            onClick={onPopOut}
-            className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold text-fg-muted hover:bg-surface-3 hover:text-fg"
+            onClick={() => setShowQr(!showQr)}
+            aria-expanded={showQr}
+            className={cx(
+              'flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold hover:bg-surface-3 hover:text-fg',
+              showQr ? 'bg-surface-3 text-fg' : 'text-fg-muted',
+            )}
           >
-            <ExternalLink size={12} /> Abrir em outra janela
+            <QrCode size={12} /> Controlar pelo celular
           </button>
+          {onPopOut && (
+            <button
+              type="button"
+              onClick={onPopOut}
+              className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold text-fg-muted hover:bg-surface-3 hover:text-fg"
+            >
+              <ExternalLink size={12} /> Abrir em outra janela
+            </button>
+          )}
         </div>
       )}
+      {showQr && !remote && <RemoteQr serverId={detail.server.id} channelId={channel.id} />}
       {inRoom.length === 0 ? (
         <p className="text-sm text-fg-muted">Ninguém na sala ainda.</p>
       ) : (
@@ -220,7 +263,7 @@ function DirectorBody({ detail, channel, onPopOut }: { detail: ServerDetail; cha
                   type="button"
                   title={e.hint}
                   onClick={() => void fire({ action: 'fx', effect: e.id, durationMs: seconds * 1000 }, `${e.label} em ${who}`)}
-                  className="rounded-xl bg-surface-3 px-1 py-2 text-[11px] font-semibold hover:bg-accent hover:text-on-accent"
+                  className={cx('rounded-xl bg-surface-3 px-1 font-semibold hover:bg-accent hover:text-on-accent active:bg-accent active:text-on-accent', remote ? 'py-3.5 text-xs' : 'py-2 text-[11px]')}
                 >
                   {e.label}
                 </button>
@@ -231,7 +274,7 @@ function DirectorBody({ detail, channel, onPopOut }: { detail: ServerDetail; cha
           <button
             type="button"
             onClick={() => void fire({ action: 'shake' }, `Tela de ${who} tremendo`)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent-2/15 py-2.5 text-sm font-bold text-accent-2 hover:bg-accent-2/25"
+            className={cx('flex w-full items-center justify-center gap-2 rounded-xl bg-accent-2/15 text-sm font-bold text-accent-2 hover:bg-accent-2/25 active:bg-accent-2/30', remote ? 'py-4' : 'py-2.5')}
           >
             <Smartphone size={16} /> Tremer a tela
           </button>
@@ -372,5 +415,69 @@ export function DirectorWindowHost() {
       )}
     </div>,
     container,
+  );
+}
+
+/**
+ * Controle remoto da direção (abre pelo link ou pelo QR code do painel): só o painel, em tela cheia, sem
+ * entrar na call. Assim você continua na sala pelo PC e dispara tudo pelo celular.
+ */
+export function DirectorRemote({ serverId, channelId }: { serverId: string; channelId: string }) {
+  const detail = useApp((s) => s.details[serverId]);
+  const loadDetail = useApp((s) => s.loadDetail);
+  const [tried, setTried] = useState(false);
+  const channel = detail?.channels.find((c) => c.id === channelId);
+
+  useEffect(() => {
+    void loadDetail(serverId).finally(() => setTried(true));
+  }, [serverId, loadDetail]);
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto bg-surface-1 text-fg">
+      <div className="mx-auto w-full max-w-md flex-1 p-4 pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))]">
+        <div className="mb-4 flex items-center gap-2">
+          <Clapperboard size={18} className="text-fg-muted" />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-fg-muted">Direção · controle remoto</div>
+            <div className="truncate text-lg font-bold">{channel?.name ?? 'Sala'}</div>
+          </div>
+          {channel?.canRecord &&
+            (channel.recording ? (
+              <button
+                type="button"
+                onClick={() => void setRecording(channel.id, false)}
+                className="flex items-center gap-1.5 rounded-full bg-live px-3 py-2 text-xs font-bold text-white"
+              >
+                <Square size={11} fill="currentColor" /> Parar
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void setRecording(channel.id, true)}
+                className="flex items-center gap-1.5 rounded-full bg-surface-3 px-3 py-2 text-xs font-bold"
+              >
+                <span className="h-2 w-2 rounded-full bg-live" /> Gravar
+              </button>
+            ))}
+        </div>
+        {!detail && !tried ? (
+          <p className="text-sm text-fg-muted">Carregando a sala…</p>
+        ) : !detail || !channel ? (
+          <p className="text-sm text-fg-muted">Essa sala não está disponível para esta conta. Entre com a mesma conta do PC.</p>
+        ) : !channel.canRecord ? (
+          <p className="text-sm text-fg-muted">Só a equipe do Concord usa a direção, e só nas salas do servidor da equipe.</p>
+        ) : channel.recording ? (
+          <>
+            <RecordingPill className="mb-4" />
+            <DirectorBody detail={detail} channel={channel} remote />
+          </>
+        ) : (
+          <p className="text-sm text-fg-muted">A gravação desta sala está desligada. Toque em Gravar para usar a direção.</p>
+        )}
+        <a href="/" className="mt-8 block text-center text-xs font-semibold text-fg-subtle hover:text-fg">
+          Abrir o Concord normal
+        </a>
+      </div>
+    </div>
   );
 }
