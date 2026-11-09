@@ -154,6 +154,31 @@ describe('cadastro com e-mail obrigatório', () => {
     const res = await new Client(server.url).post('/auth/login', { username: 'x'.repeat(20_000), password: 'y' });
     assert.equal(res.status, 413);
   });
+
+  it('dá para entrar pelo e-mail da conta, sem diferenciar maiúsculas', async () => {
+    const email = `${uniq('poremail')}@hotmail.com`;
+    const c = await signUpWithEmail(server, 'poremail', email);
+    const anon = new Client(server.url);
+    const byEmail = await anon.post('/auth/login', { username: email.toUpperCase(), password: 'senha-forte-123' });
+    assert.equal(byEmail.status, 200, JSON.stringify(byEmail.body));
+    assert.equal(byEmail.body.user.id, c.id);
+    assert.equal((await anon.post('/auth/login', { username: c.username, password: 'senha-forte-123' })).status, 200);
+    // e-mail sem conta: a mesma resposta de senha errada (ninguém descobre quais e-mails estão cadastrados)
+    const unknown = await anon.post('/auth/login', { username: `${uniq('ninguem')}@hotmail.com`, password: 'senha-forte-123' });
+    assert.equal(unknown.status, 401);
+    assert.match(unknown.body.error, /e-mail ou senha incorretos/);
+  });
+
+  it('alternar entre usuário e e-mail não dá tentativas de senha a mais', async () => {
+    const email = `${uniq('limite')}@hotmail.com`;
+    const c = await signUpWithEmail(server, 'limite', email);
+    const anon = new Client(server.url);
+    for (let i = 0; i < 3; i++) assert.equal((await anon.post('/auth/login', { username: c.username, password: 'errada' })).status, 401);
+    for (let i = 0; i < 2; i++) assert.equal((await anon.post('/auth/login', { username: email, password: 'errada' })).status, 401);
+    // 5 erros somando os dois jeitos: bloqueia, mesmo com a senha certa
+    assert.equal((await anon.post('/auth/login', { username: email, password: 'senha-forte-123' })).status, 429);
+    assert.equal((await anon.post('/auth/login', { username: c.username, password: 'senha-forte-123' })).status, 429);
+  });
 });
 
 describe('conta antiga sem e-mail, suspensão e exclusão', () => {
