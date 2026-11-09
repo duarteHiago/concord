@@ -31,6 +31,7 @@ import { DmView } from './components/DirectMessages';
 import { MobileBottomNav } from './components/MobileNav';
 import { useMobile } from './lib/mobile';
 import { useDevStatsPublisher } from './lib/devStats';
+import { DeckScreen } from './components/Deck';
 import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
@@ -158,6 +159,7 @@ function MainApp() {
       <PwaUpdateBanner />
       {me && <NudgeCard />}
       {me && <DirectorWindowHost />}
+      {me && !remote && <DeckScreen />}
       {me && <NudgeMessageToast />}
       {me && <GameOverlay />}
       {me && <ClipToast />}

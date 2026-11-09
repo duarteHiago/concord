@@ -918,6 +918,12 @@ api.use((req, res, next) => {
   res.status(403).json({ error: 'Confirme um e-mail para continuar usando o Concord.', code: 'email_required' });
 });
 
+/** Em qual sala de voz a conta está agora (em qualquer aparelho): o deck do celular usa para achar a call do PC. */
+api.get('/me/voice', (_req, res) => {
+  const v = getVoiceState(uid(res));
+  res.json(v ? { serverId: v.serverId, channelId: v.channelId } : null);
+});
+
 api.get('/me', (_req, res) => {
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', uid(res)) ?? fail(401, 'Sessão inválida');
   res.json(meJson(user));

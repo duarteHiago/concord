@@ -1,4 +1,5 @@
 import { Track, type LocalTrack, type Participant, type RemoteTrack } from 'livekit-client';
+import { DeckQrButton } from './Deck';
 import { RecordingControls, RecordingPill } from './Director';
 import {
   Activity,
@@ -117,6 +118,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
           </span>
           <div className="ml-auto flex items-center gap-2">
             <RecordingControls detail={detail} channel={channel} />
+            <DeckQrButton />
             <JamButton detail={detail} channel={channel} />
             {status === 'connected' && <ConnectionQuality />}
             {canChat && (

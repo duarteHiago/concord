@@ -698,3 +698,8 @@ video::-webkit-media-controls {
 .recording-dot { animation: recording-blink 1.6s ease-in-out infinite; }
 @keyframes recording-blink { 50% { opacity: 0.25; } }
 :root[data-motion='reduce'] .recording-dot { animation: none; }
+
+/* deck do celular: o ícone gira para sugerir pôr o celular na horizontal */
+.deck-rotate { animation: deck-rotate 2.4s ease-in-out infinite; }
+@keyframes deck-rotate { 0%, 30% { transform: rotate(0); } 55%, 85% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+:root[data-motion='reduce'] .deck-rotate { animation: none; transform: rotate(-90deg); }

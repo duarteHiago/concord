@@ -151,7 +151,7 @@ function RemoteQr({ serverId, channelId }: { serverId: string; channelId: string
   );
 }
 
-function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDetail; channel: Channel; onPopOut?: () => void; remote?: boolean }) {
+export function DirectorBody({ detail, channel, onPopOut, remote }: { detail: ServerDetail; channel: Channel; onPopOut?: () => void; remote?: boolean }) {
   const me = useApp((s) => s.me);
   const states = useApp((s) => s.voiceStates[detail.server.id]) ?? [];
   const sounds = useApp((s) => s.sounds[detail.server.id]);

@@ -7,7 +7,10 @@
   "theme_color": "#1f4fd1",
   "background_color": "#ecf0f9",
   "orientation": "any",
-  "categories": ["social", "communication"],
+  "categories": [
+    "social",
+    "communication"
+  ],
   "lang": "pt-BR",
   "icons": [
     {
@@ -31,6 +34,21 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Controle",
+      "short_name": "Controle",
+      "description": "Sons, brincadeiras e Mecenato num deck, sem sair da call do PC",
+      "url": "/?controle=1",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }
