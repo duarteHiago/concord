@@ -132,6 +132,8 @@ export interface UserSettings {
   mecenasSeen?: boolean;
   /** servidores fixados no topo, na ordem escolhida (os outros ficam na gaveta) */
   pinnedServers?: string[];
+  /** botões favoritos do deck do celular (sons, reações, Mecenato) */
+  deckFavorites?: string[];
 }
 
 export interface Me extends User {

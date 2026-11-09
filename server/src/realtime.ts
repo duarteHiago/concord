@@ -436,9 +436,10 @@ export function setupRealtime(httpServer: HttpServer) {
 
     // reações flutuantes (estilo TikTok): só para quem está na mesma sala de voz
     const reactionTimes: number[] = [];
+    // reação vale de qualquer aparelho da conta que está na sala (ex.: o deck do celular com a call no PC)
     socket.on('reaction', (raw: { emoji?: unknown; x?: unknown; y?: unknown }) => {
       const v = voice.get(userId);
-      if (!v || v.socketId !== socket.id) return;
+      if (!v) return;
       const emoji = typeof raw?.emoji === 'string' ? raw.emoji : '';
       if (!REACTIONS.includes(emoji)) return;
       const nowMs = Date.now();
