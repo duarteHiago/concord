@@ -147,7 +147,9 @@ export function registerDirectorRoutes(api: Router) {
         fx.timer.unref?.();
       }
       activeFx.set(target!.id, fx);
-      emitToUser(target!.id, 'voice:fx', { effect, durationMs, director: true });
+      // fixo vai como 15 s + `fixed`: o app de antes do efeito fixo (aberto sem recarregar) entendia 0 como
+      // "dura 0 s" e tirava o efeito na hora; assim ele segura 15 s e o app atual segura até tirar
+      emitToUser(target!.id, 'voice:fx', { effect, durationMs: fixed ? 15_000 : durationMs, fixed, director: true });
       serverChanged(channel.server_id);
       audit(me, target!, 'director_fx', `${effect} ${fixed ? 'fixo' : `por ${Math.round(durationMs / 1000)} s`} em #${channel.name}`);
     } else if (action === 'fx_off') {
