@@ -693,3 +693,8 @@ video::-webkit-media-controls {
 :root[data-motion='reduce'] .server-drawer-open .server-drawer-item { animation: none; }
 :root[data-motion='reduce'] #server-drawer { transition: none; }
 :root[data-motion='reduce'] .server-drawer-jiggle { animation: none; outline: 2px dashed var(--color-line-strong); outline-offset: 3px; border-radius: 20px; }
+
+/* modo gravação: o pontinho do selo "Gravando" pisca devagar */
+.recording-dot { animation: recording-blink 1.6s ease-in-out infinite; }
+@keyframes recording-blink { 50% { opacity: 0.25; } }
+:root[data-motion='reduce'] .recording-dot { animation: none; }

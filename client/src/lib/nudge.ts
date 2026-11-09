@@ -17,6 +17,13 @@ export function notifySettings(me: Me | null): NotifySettings {
 
 let lastReceived = 0;
 
+/** Modo gravação da equipe: o mesmo tremor e som do "chamar atenção", na hora. */
+export function directorShake() {
+  playSound('nudge');
+  shakeScreen();
+  desktop?.shakeWindow?.();
+}
+
 export function receiveNudge(n: NudgeEvent) {
   const me = useApp.getState().me;
   if (!me) return;

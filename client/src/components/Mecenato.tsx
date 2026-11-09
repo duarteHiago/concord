@@ -402,7 +402,8 @@ export function MecenatoTab() {
 
   const c = data.current;
   const openFines = data.fines.filter((f) => f.status === 'open');
-  const supported = data.supportTotalCents > 0;
+  // liberado pela equipe (cortesia) entra no Mecenato como quem apoiou
+  const supported = data.supportTotalCents > 0 || !!data.courtesy;
 
   return (
     <div className="space-y-6">
@@ -836,7 +837,7 @@ export function RenewalModal() {
   const [busy, setBusy] = useState<string | null>(null);
   if (!c) return null;
   const other = c.creator.id === me.id ? c.invitee : c.creator;
-  const supported = (data?.supportTotalCents ?? 0) > 0;
+  const supported = (data?.supportTotalCents ?? 0) > 0 || !!data?.courtesy;
   const later = () => {
     renewalSnoozed = true;
     close();

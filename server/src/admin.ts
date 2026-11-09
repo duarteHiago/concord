@@ -77,6 +77,8 @@ function userSummary(u: UserRow & { servers?: number }, online: Set<string>) {
     online: online.has(u.id),
     admin: config.adminUsers.has(u.username.toLowerCase()),
     banned: !!u.banned_at,
+    mecenatoCourtesy: !!u.mecenato_courtesy,
+    mecenatoCourtesyList: config.mecenatoCourtesy.has(u.username.toLowerCase()),
   };
 }
 
@@ -92,7 +94,7 @@ interface AdminActionRow {
   created_at: number;
 }
 
-function logAction(adminId: string, target: UserRow, action: 'ban' | 'unban' | 'delete', reason: string | null) {
+function logAction(adminId: string, target: UserRow, action: 'ban' | 'unban' | 'delete' | 'mecenato_on' | 'mecenato_off', reason: string | null) {
   run(
     'INSERT INTO admin_actions (admin_id, target_id, target_username, action, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     adminId,
@@ -177,6 +179,18 @@ export function registerAdminRoutes(api: Router) {
     }
     console.log(`[portal] conta @${target.username} suspensa`);
     res.json({ ok: true, bots: bots.length });
+  });
+
+  /** Mecenato de cortesia: libera contratos sem apoio por Pix (testers, gravação dos vídeos). Vale para a equipe também. */
+  api.post('/admin/users/:id/mecenato', (req, res) => {
+    const me = uid(res);
+    const target = get<UserRow>('SELECT * FROM users WHERE id = ?', req.params.id) ?? fail(404, 'Conta não encontrada');
+    if (target!.is_bot) fail(400, 'Bots não entram no Mecenato');
+    const on = req.body?.on === true;
+    run('UPDATE users SET mecenato_courtesy = ? WHERE id = ?', on ? 1 : 0, target!.id);
+    logAction(me, target!, on ? 'mecenato_on' : 'mecenato_off', null);
+    console.log(`[portal] Mecenato de cortesia ${on ? 'liberado para' : 'retirado de'} @${target!.username}`);
+    res.json({ ok: true, mecenatoCourtesy: on });
   });
 
   api.post('/admin/users/:id/unban', (req, res) => {

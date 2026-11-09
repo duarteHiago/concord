@@ -286,10 +286,23 @@ function contributedDuring(c: ContractRow, until: number) {
 function fineFor(c: ContractRow, until: number) {
   const payments = contributedDuring(c, until);
   const baseCents = payments.reduce((n, p) => n + p.amount_cents, 0);
-  return { baseCents, amountCents: fineCents(baseCents), payments };
+  // contrato de cortesia não tem Pix envolvido, então não tem multa
+  return { baseCents, amountCents: c.courtesy ? 0 : fineCents(baseCents), payments };
+}
+
+/** Liberado pela equipe para o Mecenato sem apoio (testers e quem ajuda a gravar os vídeos). */
+export function courtesyOf(userId: string): boolean {
+  const u = get<{ c: number; username: string }>('SELECT mecenato_courtesy AS c, username FROM users WHERE id = ?', userId);
+  return !!u && (!!u.c || config.mecenatoCourtesy.has(u.username.toLowerCase()));
+}
+
+/** Pode entrar em contrato: apoiou com qualquer valor confirmado ou está liberado pela equipe. */
+function mayContract(userId: string): boolean {
+  return totalOf(userId) > 0 || courtesyOf(userId);
 }
 
 function createFine(c: ContractRow, userId: string, until: number, by: string | null) {
+  if (c.courtesy) return '';
   const { baseCents, amountCents, payments } = fineFor(c, until);
   const id = randomUUID();
   run(
@@ -603,7 +616,8 @@ function contractJson(c: ContractRow, viewer: string | null) {
     accepted: { [c.creator_id]: c.creator_accepted_at, [c.invitee_id]: c.invitee_accepted_at },
     shields: activeNow ? Object.fromEntries(participants(c).map((p) => [p, shieldJson(settled(p, c))])) : null,
     contributedCents,
-    fineEstimateCents: activeNow ? fineCents(contributedCents) : null,
+    fineEstimateCents: activeNow ? (c.courtesy ? 0 : fineCents(contributedCents)) : null,
+    courtesy: !!c.courtesy,
     avatarOverrides: all<{ user_id: string }>('SELECT user_id FROM contract_avatars WHERE contract_id = ?', c.id).map((r) => r.user_id),
     // só para quem agendou
     pendingFx: fx && viewer && fx.actorId === viewer ? { effect: fx.effect, durationMs: fx.durationMs } : null,
@@ -668,6 +682,7 @@ export function registerContractRoutes(api: Router) {
       shield: shieldJson(settled(me, cur?.status === 'active' ? cur : null)),
       fines: all<ContractFineRow>('SELECT * FROM contract_fines WHERE user_id = ? ORDER BY created_at DESC LIMIT 20', me).map(fineJson),
       supportTotalCents: totalOf(me),
+      courtesy: courtesyOf(me),
     });
   });
 
@@ -684,12 +699,15 @@ export function registerContractRoutes(api: Router) {
     if (days < 1 || days > CONTRACT_MAX_DAYS) fail(400, `O prazo vai de 1 a ${CONTRACT_MAX_DAYS} dias`);
     const cooldownHours = int(req.body?.cooldownHours, 'intervalo do Escudo');
     if (!(CONTRACT_COOLDOWN_HOURS as readonly number[]).includes(cooldownHours)) fail(400, 'O intervalo do Escudo é de 1, 2 ou 3 horas');
-    const tieClause = req.body?.tieClause === true;
+    let tieClause = req.body?.tieClause === true;
     const target =
       get<UserRow>('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND is_bot = 0', username(req.body?.username)) ??
       fail(404, 'Ninguém com esse @');
     if (target!.id === me) fail(400, 'O contrato é entre duas pessoas');
-    if (!(totalOf(me) > 0)) fail(403, 'Só quem já apoiou o Concord pode propor um contrato');
+    if (!mayContract(me)) fail(403, 'Só quem já apoiou o Concord pode propor um contrato');
+    // com alguém liberado pela equipe, os dois começam (e podem ficar) no 0 a 0: o empate dá poder aos dois
+    const courtesy = courtesyOf(me) || courtesyOf(target!.id);
+    if (courtesy) tieClause = true;
     if (openFine(me)) fail(409, 'Você tem uma multa de rescisão em aberto. Pague antes de entrar em outro contrato.');
     if (openFine(target!.id)) fail(409, `@${target!.username} não pode entrar em contratos agora`);
     const recent = get<{ n: number }>('SELECT COUNT(*) AS n FROM contracts WHERE creator_id = ? AND created_at > ?', me, now() - DAY)!.n;
@@ -701,8 +719,8 @@ export function registerContractRoutes(api: Router) {
       if (currentOf(me)) fail(409, 'Você já está em um contrato (ou tem um convite em aberto)');
       if (currentOf(target!.id)) fail(409, `@${target!.username} já está em um contrato (ou tem um convite em aberto)`);
       run(
-        `INSERT INTO contracts (id, creator_id, invitee_id, status, duration_ms, cooldown_ms, tie_clause, creator_accepted_at, created_at, invite_expires_at)
-         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO contracts (id, creator_id, invitee_id, status, duration_ms, cooldown_ms, tie_clause, creator_accepted_at, created_at, invite_expires_at, courtesy)
+         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
         id,
         me,
         target!.id,
@@ -712,11 +730,12 @@ export function registerContractRoutes(api: Router) {
         t,
         t,
         t + CONTRACT_INVITE_TTL_MS,
+        courtesy ? 1 : 0,
       );
       // a chave primária é a garantia final de um contrato por pessoa
       run('INSERT INTO contract_locks (user_id, contract_id) VALUES (?, ?)', me, id);
       run('INSERT INTO contract_locks (user_id, contract_id) VALUES (?, ?)', target!.id, id);
-      log(id, 'invited', { actorId: me, userId: target!.id, data: { days, cooldownHours, tieClause } });
+      log(id, 'invited', { actorId: me, userId: target!.id, data: { days, cooldownHours, tieClause, courtesy } });
     });
     const c = byId(id)!;
     afterChange(c);
@@ -730,7 +749,7 @@ export function registerContractRoutes(api: Router) {
     const c = requireParticipant(req.params.id, me);
     if (c.status !== 'pending') fail(409, c.status === 'active' ? 'O contrato já está em vigor' : 'Esse convite não vale mais');
     const mine = c.creator_id === me ? 'creator_accepted_at' : 'invitee_accepted_at';
-    if (!(totalOf(me) > 0)) fail(402, 'Para aceitar, apoie o Concord primeiro: qualquer valor confirmado vale.');
+    if (!mayContract(me)) fail(402, 'Para aceitar, apoie o Concord primeiro: qualquer valor confirmado vale.');
     if (openFine(me)) fail(409, 'Você tem uma multa de rescisão em aberto. Pague antes de entrar em outro contrato.');
     const t = now();
     tx(() => {
@@ -743,7 +762,7 @@ export function registerContractRoutes(api: Router) {
       const both = byId(c.id)!;
       if (both.creator_accepted_at && both.invitee_accepted_at) {
         const other = otherOf(both, me);
-        if (!(totalOf(other) > 0)) fail(409, `@${lite(other).username} está sem apoio confirmado no momento`);
+        if (!mayContract(other)) fail(409, `@${lite(other).username} está sem apoio confirmado no momento`);
         run("UPDATE contracts SET status = 'active', started_at = ?, ends_at = ? WHERE id = ?", t, t + both.duration_ms, c.id);
         log(c.id, 'started', { data: { endsAt: t + both.duration_ms } });
       }
@@ -777,7 +796,8 @@ export function registerContractRoutes(api: Router) {
       fineId = createFine(c, me, t, me);
       endContract(c, 'rescinded', me);
     });
-    res.json({ ok: true, fine: fineJson(get<ContractFineRow>('SELECT * FROM contract_fines WHERE id = ?', fineId)!) });
+    const fine = fineId ? get<ContractFineRow>('SELECT * FROM contract_fines WHERE id = ?', fineId) : undefined;
+    res.json({ ok: true, fine: fine ? fineJson(fine) : null });
   });
 
   /** Sair por segurança: sem multa, acaba na hora e vai para a equipe revisar. */
