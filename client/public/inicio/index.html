@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@500&display=swap">
 <style>
 /* Azulejo: a cara nova do Concord. Branco, azul-cobalto e coral.
-   A ousadia mora num lugar só: a parede de azulejo atrás do print, no topo. O resto fica limpo.
+   A ousadia mora num lugar só: o print com os stickers, no topo. O resto fica limpo.
    Cobalto só na ação principal; coral só no "chamar atenção" e em detalhes da marca.
    Uma família tipográfica (Bricolage); mono só no que se digita no chat.
    Escala 4:3 -> 17 / 23 / 30 / 40 / 53 / 71 / 94. */
@@ -36,9 +36,6 @@
   --r-stage: 24px;
   --r-shot: 12px;
   --r-chip: 8px;
-  /* um azulejo: flor de quatro pétalas no centro, quartos de círculo nos cantos (que viram círculos
-     quando os azulejos se encontram) e o rejunte claro em volta */
-  --azulejo: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80'%3E%3Crect width='80' height='80' fill='%23fff'/%3E%3Cpath d='M0 .75H80M.75 0V80' stroke='%23d9e2f5' stroke-width='1.5'/%3E%3Cg fill='none' stroke='%231f4fd1' stroke-width='3'%3E%3Ccircle r='24'/%3E%3Ccircle cx='80' r='24'/%3E%3Ccircle cy='80' r='24'/%3E%3Ccircle cx='80' cy='80' r='24'/%3E%3C/g%3E%3Cg fill='%231f4fd1'%3E%3Ccircle r='10'/%3E%3Ccircle cx='80' r='10'/%3E%3Ccircle cy='80' r='10'/%3E%3Ccircle cx='80' cy='80' r='10'/%3E%3Cpath d='M40 17c5 12 11 18 23 23-12 5-18 11-23 23-5-12-11-18-23-23 12-5 18-11 23-23z'/%3E%3C/g%3E%3Ccircle cx='40' cy='40' r='6' fill='%23fff'/%3E%3Ccircle cx='40' cy='40' r='2.5' fill='%231f4fd1'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -86,9 +83,7 @@ code { font-family: var(--mono); font-size: 15px; color: var(--navy); }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
 @media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); } }
 
-/* a parede de azulejo, com o print "pendurado" nela */
-.tilewall { background: var(--azulejo) center / 96px 96px; border-block: 3px solid var(--navy); }
-.tilewall .wrap { padding-block: clamp(28px, 5vw, 56px); }
+/* o print, com contorno de adesivo */
 .stage { position: relative; max-width: 1080px; margin-inline: auto; padding: 10px; background: var(--white); border-radius: calc(var(--r-shot) + 10px); box-shadow: 0 0 0 3px var(--navy), 10px 12px 0 3px var(--navy); }
 .stage img.shot { display: block; width: 100%; height: auto; border-radius: var(--r-shot); }
 .stage-wrap { padding-bottom: clamp(72px, 10vw, 112px); }
@@ -134,7 +129,20 @@ code { font-family: var(--mono); font-size: 15px; color: var(--navy); }
 .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 40px 56px; margin-top: 56px; }
 .features > div { display: grid; gap: 10px; align-content: start; }
 /* a florzinha do azulejo marca cada recurso */
-.features h3::before { content: ""; display: block; width: 26px; height: 26px; margin-bottom: 14px; background: var(--coral); clip-path: polygon(50% 0, 63% 37%, 100% 50%, 63% 63%, 50% 100%, 37% 63%, 0 50%, 37% 37%); }
+.feat-icon { display: block; height: 40px; width: auto; margin-bottom: 14px; color: var(--coral); overflow: visible; }
+.feat-icon text { font: 800 12px var(--type); fill: currentColor; }
+@media (prefers-reduced-motion: no-preference) {
+  .tv-live { animation: blink 1.6s ease-in-out infinite; }
+  .tv-play { transform-box: fill-box; transform-origin: center; animation: beat 1.6s ease-in-out infinite; }
+  .mic-wave { animation: wave 1.8s ease-in-out infinite; }
+  .mic-wave.far { animation-delay: .3s; }
+  .key { animation: press 2.4s ease-in-out infinite; }
+  .key.v { animation-delay: .35s; }
+}
+@keyframes blink { 50% { opacity: .15; } }
+@keyframes beat { 50% { transform: scale(1.18); } }
+@keyframes wave { 0%, 100% { opacity: .15; } 40% { opacity: 1; } }
+@keyframes press { 0%, 30%, 100% { transform: none; } 12% { transform: translateY(3px); } }
 .features p { color: var(--muted); max-width: 38ch; }
 .features code { background: var(--tile); padding: 2px 6px; border-radius: var(--r-chip); }
 
@@ -165,6 +173,7 @@ code { font-family: var(--mono); font-size: 15px; color: var(--navy); }
 .pickers { display: grid; gap: 16px; }
 .pickers h3 { font-size: 15px; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
 .swatches, .frames { display: grid; grid-template-columns: repeat(3, 44px); gap: 8px; }
+.frames { gap: 18px; padding: 6px; }
 .swatches button { width: 44px; height: 44px; border: 0; cursor: pointer; border-radius: 12px; padding: 0; box-shadow: inset 0 0 0 1px rgb(15 27 61 / .12); }
 .swatches button[aria-pressed="true"] { outline: 3px solid var(--navy); outline-offset: 3px; }
 .frames button { position: relative; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; background: #ff7a6a; color: #fff; font: 800 13px var(--type); }
@@ -277,12 +286,12 @@ footer small { flex-basis: 100%; font-size: 13px; }
 
   <!-- A DEMO: o print real com stickers colados por cima -->
   <section class="stage-wrap" aria-label="Stickers na tela da call">
-    <div class="tilewall"><div class="wrap">
+    <div class="wrap">
     <div class="stage" id="stage">
-      <img class="shot" src="/inicio/call.webp" width="2400" height="1350" alt="Print do Concord: a Ana transmitindo um jogo na Sala de Transmissão, com stickers GG e MVP colados no palco, emojis subindo, os participantes com molduras e o papo da sala com roleta e dados" fetchpriority="high">
+      <img class="shot" src="/inicio/call.webp" width="2400" height="1350" alt="Print do Concord: a Ana transmitindo um jogo na Sala de Transmissão, com stickers GG e MVP colados no palco, os participantes com molduras e o papo da sala com roleta e dados" fetchpriority="high">
       <div class="sticker-layer" id="layer"></div>
     </div>
-    </div></div>
+    </div>
     <div class="wrap">
     <div class="sticker-bar">
       <span class="label">Cola um sticker:</span>
@@ -300,19 +309,22 @@ footer small { flex-basis: 100%; font-size: 13px; }
   <!-- RECURSOS -->
   <section class="sec" id="recursos">
     <div class="wrap">
-      <h2>Feito pra noite de jogo.</h2>
+      <h2>Feito para noite de jogos.</h2>
       <div class="features">
         <div>
+          <svg class="feat-icon" viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><rect x="3" y="6" width="34" height="23" rx="4" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M14 35h12M20 29v6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path class="tv-play" d="M16.5 12.5v9.5l8-4.75z" fill="currentColor"/><circle class="tv-live" cx="31" cy="11.5" r="2.2" fill="currentColor"/></svg>
           <h3>Transmissão de tela</h3>
           <p>1080p a 60 fps codificado pela placa de vídeo. O som do jogo vai junto, sem as vozes da call voltando em eco.</p>
         </div>
         <div>
+          <svg class="feat-icon" viewBox="0 0 44 40" width="44" height="40" aria-hidden="true"><rect x="17" y="4" width="10" height="18" rx="5" fill="currentColor"/><path d="M12 17a10 10 0 0 0 20 0M22 27v7M16 34h12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path class="mic-wave" d="M7 8c-2.5 4-2.5 9 0 13M37 8c2.5 4 2.5 9 0 13"/><path class="mic-wave far" d="M2.5 4.5c-4 6-4 14 0 20M41.5 4.5c4 6 4 14 0 20"/></g></svg>
           <h3>Voz limpa</h3>
           <p>A supressão de ruído tira teclado e ventilador. Se quiser bagunçar, tem efeito de voz e mesa de sons.</p>
         </div>
         <div>
+          <svg class="feat-icon" viewBox="0 0 80 40" width="80" height="40" aria-hidden="true"><g class="key"><rect x="2" y="9" width="38" height="26" rx="6" fill="currentColor" opacity=".25"/><rect x="2" y="5" width="38" height="26" rx="6" fill="#fff" stroke="currentColor" stroke-width="2.6"/><text x="21" y="22.5" text-anchor="middle">Ctrl</text></g><path d="M46 18h7M49.5 14.5v7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><g class="key v"><rect x="57" y="9" width="21" height="26" rx="6" fill="currentColor" opacity=".25"/><rect x="57" y="5" width="21" height="26" rx="6" fill="#fff" stroke="currentColor" stroke-width="2.6"/><text x="67.5" y="22.5" text-anchor="middle">V</text></g></svg>
           <h3>Código da partida</h3>
-          <p>Manda <code>/codigo X7K2</code> e ele aparece por cima do jogo de todo mundo da sala.</p>
+          <p>Manda <code>/codigo X7K2</code> no chat ou usa o botão Compartilhar código na barra da sala. Ele aparece por cima do jogo de todo mundo, pronto pra colar.</p>
         </div>
       </div>
     </div>
@@ -493,7 +505,7 @@ footer small { flex-basis: 100%; font-size: 13px; }
     tray.appendChild(b);
   });
   // o único movimento que roda sozinho: ao abrir a página, quatro stickers caem no print, um de cada vez
-  [['ez', -3, 6, -12, 'holo'], ['dragon', 86, -8, 10, 'gold'], ['headshot', 68, 66, 8, 'holo'], ['clutch', 5, 64, -6, 'gloss']].forEach(([k, x, y, r, f], i) => {
+  [['ez', -3, 6, -12, 'holo'], ['dragon', 86, -8, 10, 'gold'], ['headshot', 22, 44, -8, 'holo'], ['clutch', 5, 64, -6, 'gloss']].forEach(([k, x, y, r, f], i) => {
     finish = f;
     place(k, x, y, r, reduce ? 0 : 350 + i * 220);
   });
