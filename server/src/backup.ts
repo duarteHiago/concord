@@ -25,6 +25,9 @@ const WORKER = `
   try {
     // o arquivo restaurado fica sozinho, sem -wal/-shm do lado
     copy.exec('PRAGMA journal_mode = DELETE');
+    // os limites de tentativas (rede e conta com hash, ver recovery.ts) valem só por algumas horas e não vão para o backup
+    // (secure_delete: apaga o conteúdo do arquivo de verdade, não só marca a página como livre)
+    try { copy.exec('PRAGMA secure_delete = ON; DELETE FROM rate_events'); } catch { /* banco de antes da tabela */ }
     const { integrity_check } = copy.prepare('PRAGMA integrity_check').get();
     if (integrity_check !== 'ok') throw new Error('cópia falhou no integrity_check: ' + integrity_check);
   } finally { copy.close(); }
