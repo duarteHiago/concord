@@ -16,11 +16,11 @@ export const emailRequired = () => config.requireEmail && mailEnabled();
 // Por rede. IPv4 um pouco mais folgado: no celular e em várias operadoras muita gente divide o mesmo IPv4 (CGNAT).
 // IPv6 por bloco /64 (uma casa, ou uma máquina na nuvem) e, por cima, por /48 (quem aluga várias máquinas no
 // mesmo provedor). Fica tudo na memória, com a rede embaralhada (ver networkKey), e some em até 24 h.
-const v4Hour = limiter(5, HOUR);
-const v4Day = limiter(10, DAY);
-const v6Hour = limiter(3, HOUR);
-const v6Day = limiter(5, DAY);
-const v6Wide = limiter(10, DAY);
+const v4Hour = limiter(5, HOUR, 'signup-v4-hour');
+const v4Day = limiter(10, DAY, 'signup-v4-day');
+const v6Hour = limiter(3, HOUR, 'signup-v6-hour');
+const v6Day = limiter(5, DAY, 'signup-v6-day');
+const v6Wide = limiter(10, DAY, 'signup-v6-wide');
 
 const local = (ip: string) => !ip || /^(127\.|::1$|::ffff:127\.)/.test(ip);
 

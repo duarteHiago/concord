@@ -381,9 +381,9 @@ async function setPassword(user: UserRow, password: string, keepSocketId?: strin
 }
 
 // por conta: 3 links por hora; no total, um teto para ninguém usar o Concord para mandar e-mail em massa
-const forgotPerAccount = limiter(3, 60 * 60_000);
-const forgotTotal = limiter(200, 60 * 60_000);
-const verifyPerUser = limiter(5, 60 * 60_000);
+const forgotPerAccount = limiter(3, 60 * 60_000, 'forgot-account');
+const forgotTotal = limiter(200, 60 * 60_000, 'forgot-total');
+const verifyPerUser = limiter(5, 60 * 60_000, 'verify-email');
 
 /** Esqueci a senha (por e-mail): manda o link se a conta tiver e-mail confirmado. */
 api.post('/auth/forgot', async (req, res) => {
@@ -497,8 +497,8 @@ const SIGNUP_MAX_ATTEMPTS = 5;
 const SIGNUP_MAX_SENDS = 3;
 const SIGNUP_RESEND_GAP = 60_000;
 // por caixa de e-mail e no total: ninguém usa o Concord para encher a caixa de alguém nem para mandar e-mail em massa
-const signupMailPerKey = limiter(5, 60 * 60_000);
-const signupMailTotal = limiter(300, 60 * 60_000);
+const signupMailPerKey = limiter(5, 60 * 60_000, 'signup-mail-key');
+const signupMailTotal = limiter(300, 60 * 60_000, 'signup-mail-total');
 
 interface PendingSignupRow {
   id: string;

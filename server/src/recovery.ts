@@ -2,7 +2,7 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { config } from './config.ts';
-import { run } from './db.ts';
+import { all, run } from './db.ts';
 import { networkOf } from './net.ts';
 
 // sem 0/O, 1/I/L para não confundir ao copiar à mão
@@ -29,8 +29,35 @@ export function temporaryPassword(): string {
   return Array.from({ length: 12 }, () => ALPHABET[randomInt(ALPHABET.length)]).join('').toLowerCase();
 }
 
-/** Limite simples em memória: no máximo `max` usos de cada chave por janela. */
-export function limiter(max: number, windowMs: number) {
+/**
+ * Eventos guardados no banco, para limites que não podem zerar quando o servidor reinicia (a cada deploy):
+ * senão, quem tenta adivinhar uma senha ganharia tentativas novas a cada atualização. Cada limite tem o
+ * seu `bucket`; a chave vai com hash (com o segredo do servidor, como a rede em networkKey).
+ */
+function storedHits(bucket: string, windowMs: number) {
+  const keyOf = (key: string) => createHash('sha256').update(`${config.jwtSecret}|${bucket}|${key}`).digest('base64url').slice(0, 22);
+  setInterval(() => run('DELETE FROM rate_events WHERE bucket = ? AND at < ?', bucket, Date.now() - windowMs), Math.min(windowMs, 10 * 60_000)).unref();
+  return {
+    /** horários dos eventos ainda dentro da janela, do mais antigo ao mais novo */
+    recent: (key: string) =>
+      all<{ at: number }>('SELECT at FROM rate_events WHERE bucket = ? AND key = ? AND at > ? ORDER BY at', bucket, keyOf(key), Date.now() - windowMs).map((r) => r.at),
+    add: (key: string) => run('INSERT INTO rate_events (bucket, key, at) VALUES (?, ?, ?)', bucket, keyOf(key), Date.now()),
+  };
+}
+
+/**
+ * No máximo `max` usos de cada chave por janela. Sem `stored`, fica em memória (limites de ritmo, como o
+ * anti-flood de mensagens); com `stored` (um nome único), vai para o banco e sobrevive a um reinício.
+ */
+export function limiter(max: number, windowMs: number, stored?: string) {
+  if (stored) {
+    const hits = storedHits(stored, windowMs);
+    return (key: string): boolean => {
+      if (hits.recent(key).length >= max) return false;
+      hits.add(key);
+      return true;
+    };
+  }
   const hits = new Map<string, number[]>();
   setInterval(() => {
     const old = Date.now() - windowMs;
@@ -60,8 +87,21 @@ export function clientIp(req: { ip?: string }): string {
   return /^(127\.|::1$|::ffff:127\.)/.test(ip) || !ip ? '' : networkKey(ip);
 }
 
-/** Janela deslizante de eventos por chave (tentativas erradas etc.). */
-function windowCounter(max: number, windowMs: number) {
+/** Janela deslizante de eventos por chave (tentativas erradas etc.). Com `stored`, guardada no banco (ver limiter). */
+export function windowCounter(max: number, windowMs: number, stored?: string) {
+  if (stored) {
+    const hits = storedHits(stored, windowMs);
+    return {
+      wait(key: string) {
+        const list = hits.recent(key);
+        return list.length < max ? 0 : Math.max(1, Math.ceil((list[0] + windowMs - Date.now()) / 60_000));
+      },
+      add(key: string) {
+        hits.add(key);
+        return Math.max(0, max - hits.recent(key).length);
+      },
+    };
+  }
   const hits = new Map<string, number[]>();
   setInterval(() => {
     const old = Date.now() - windowMs;
@@ -92,12 +132,12 @@ function windowCounter(max: number, windowMs: number) {
 // a senha de alguém não tranca essa pessoa do lado de fora. Por cima, um teto por rede (quem testa uma senha
 // em muitas contas) e um teto alto por usuário (quem tenta de muitas redes ao mesmo tempo).
 const MINUTES = 60_000;
-const loginUserIp = windowCounter(5, 15 * MINUTES);
-const loginIp = windowCounter(30, 15 * MINUTES);
-const loginUser = windowCounter(100, 60 * MINUTES);
-const recoveryUserIp = windowCounter(5, 15 * MINUTES);
-const recoveryIp = windowCounter(20, 15 * MINUTES);
-const recoveryUser = windowCounter(30, 60 * MINUTES);
+const loginUserIp = windowCounter(5, 15 * MINUTES, 'login-user-ip');
+const loginIp = windowCounter(30, 15 * MINUTES, 'login-ip');
+const loginUser = windowCounter(100, 60 * MINUTES, 'login-user');
+const recoveryUserIp = windowCounter(5, 15 * MINUTES, 'recovery-user-ip');
+const recoveryIp = windowCounter(20, 15 * MINUTES, 'recovery-ip');
+const recoveryUser = windowCounter(30, 60 * MINUTES, 'recovery-user');
 
 const userKey = (username: string) => username.toLowerCase();
 

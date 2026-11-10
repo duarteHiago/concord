@@ -49,7 +49,7 @@ const clearPair = (a: string, b: string) =>
   );
 
 // 20 pedidos por hora: dá para adicionar a galera toda de uma vez, não dá para sair pedindo para todo mundo
-const requestLimit = limiter(20, 60 * 60_000);
+const requestLimit = limiter(20, 60 * 60_000, 'friend-requests');
 
 type RelationRow = UserRow & { rel_type: RelationType; rel_since: number };
 

@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { config } from './config.ts';
 import { get, run, type UserRow } from './db.ts';
 import { fail, signToken } from './http.ts';
-import { ALPHABET, normalize } from './recovery.ts';
+import { ALPHABET, normalize, windowCounter } from './recovery.ts';
 
 const STEP_SECONDS = 30;
 const DIGITS = 6;
@@ -110,19 +110,9 @@ const backupHashes = (u: UserRow): string[] => {
 
 export const backupCodesLeft = (u: UserRow) => (u.totp_enabled ? backupHashes(u).length : 0);
 
-// ---- Limite de tentativas: 5 códigos errados a cada 15 min, por conta ----
+// ---- Limite de tentativas: 5 códigos errados a cada 15 min, por conta (no banco: um deploy não zera) ----
 
-const MAX_FAILURES = 5;
-const FAILURE_WINDOW = 15 * 60_000;
-const failures = new Map<string, number[]>();
-
-function recentFailures(userId: string) {
-  const now = Date.now();
-  const recent = (failures.get(userId) ?? []).filter((t) => now - t < FAILURE_WINDOW);
-  if (recent.length) failures.set(userId, recent);
-  else failures.delete(userId);
-  return recent;
-}
+const failures = windowCounter(5, 15 * 60_000, '2fa-failures');
 
 // ---- Conferir um código ----
 
@@ -130,11 +120,8 @@ export type CodeKind = 'totp' | 'backup';
 
 /** Confere o código do app ou um código de backup (que deixa de valer). Errou demais: 429. */
 export function checkCode(user: UserRow, raw: unknown): CodeKind | null {
-  const recent = recentFailures(user.id);
-  if (recent.length >= MAX_FAILURES) {
-    const wait = Math.max(1, Math.ceil((recent[0] + FAILURE_WINDOW - Date.now()) / 60_000));
-    fail(429, `Muitos códigos errados. Espere ${wait} min e tente de novo.`);
-  }
+  const wait = failures.wait(user.id);
+  if (wait) fail(429, `Muitos códigos errados. Espere ${wait} min e tente de novo.`);
   const code = typeof raw === 'string' ? raw.replace(/\s+/g, '') : '';
   let kind: CodeKind | null = null;
   if (/^\d{6}$/.test(code) && user.totp_secret) {
@@ -154,10 +141,7 @@ export function checkCode(user: UserRow, raw: unknown): CodeKind | null {
       kind = 'backup';
     }
   }
-  if (!kind) {
-    recent.push(Date.now());
-    failures.set(user.id, recent);
-  }
+  if (!kind) failures.add(user.id);
   return kind;
 }
 

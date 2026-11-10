@@ -554,6 +554,16 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_relationships_other ON relationships(other_id);
 `);
+// limites de segurança (senha errada, 2FA, cadastro...) que não podem zerar a cada deploy: ver recovery.ts#limiter.
+// A chave vai com hash (nenhum usuário, e-mail ou rede em texto) e cada linha some quando sai da janela
+db.exec(`
+  CREATE TABLE IF NOT EXISTS rate_events (
+    bucket TEXT NOT NULL,
+    key TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_rate_events ON rate_events(bucket, key, at);
+`);
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // Banidos de um servidor: saem e não voltam por convite enquanto o ban existir.
 db.exec(`
