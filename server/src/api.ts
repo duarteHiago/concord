@@ -69,6 +69,7 @@ import {
 import { registerClientErrorRoutes } from './clientErrors.ts';
 import { registerCspReportRoutes } from './security.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
+import { signFileUrl } from './fileLinks.ts';
 import { registerForumRoutes } from './forum.ts';
 import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
@@ -297,7 +298,7 @@ const messageJson = (m: MessageWithAuthor) => ({
   content: m.content,
   kind: m.kind ?? 'text',
   data: parseData(m.data),
-  attachments: (parseData(m.attachments ?? null) as AttachmentJson[] | null) ?? [],
+  attachments: ((parseData(m.attachments ?? null) as AttachmentJson[] | null) ?? []).map(attachmentOut),
   createdAt: m.created_at,
   editedAt: m.edited_at,
   author: authorJson({ ...m, id: m.author_id }),
@@ -1956,6 +1957,10 @@ interface AttachmentJson {
   image: boolean;
 }
 const attachmentJson = (a: AttachmentRow): AttachmentJson => ({ id: a.id, name: a.name, size: a.size, url: a.url, image: !!a.image });
+/** O anexo como vai para o app: o banco guarda o link puro, quem vê a mensagem recebe o link assinado. */
+function attachmentOut(a: AttachmentJson): AttachmentJson {
+  return { ...a, url: signFileUrl(a.url) };
+}
 
 const MAX_ATTACHMENTS = 10;
 const attachmentBody = express.raw({ type: () => true, limit: '21mb' });
@@ -1978,7 +1983,7 @@ api.post('/attachments', humansOnly, attachmentBody, (req, res) => {
     row.image,
     row.created_at,
   );
-  res.json(attachmentJson(row));
+  res.json(attachmentOut(attachmentJson(row)));
 });
 
 /** Confere os anexos de uma mensagem nova: enviados por quem manda e ainda sem mensagem. */

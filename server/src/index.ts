@@ -10,6 +10,7 @@ import { HttpError } from './http.ts';
 import { httpMetrics, registerLiveGauges, startMetricsServer } from './metrics.ts';
 import { liveStats, setupRealtime } from './realtime.ts';
 import { securityHeaders } from './security.ts';
+import { requireFileSignature } from './fileLinks.ts';
 
 const app = express();
 app.disable('x-powered-by');
@@ -37,6 +38,8 @@ const startedAt = Date.now();
 app.get('/health', (_req, res) => {
   res.json({ ok: true, version: pkg.version, nodeVersion: process.version, uptimeSec: Math.round((Date.now() - startedAt) / 1000) });
 });
+// anexos das conversas: só com o link assinado que o app entrega (ver fileLinks.ts)
+app.use('/uploads/files', requireFileSignature);
 // arquivos enviados têm nome aleatório, então podem ficar em cache por bastante tempo
 app.use(
   '/uploads',
