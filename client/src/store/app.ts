@@ -576,6 +576,10 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     logout: () => {
+      // encerra a sessão no servidor também (um token copiado deste aparelho deixa de valer). Fetch direto:
+      // pelo api, um 401 aqui chamaria o logout de novo
+      const token = getToken();
+      if (token) void fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, keepalive: true }).catch(() => {});
       void useVoice.getState().leave();
       void desktop?.setGlobalShortcuts?.({});
       disconnectSocket();

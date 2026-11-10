@@ -42,7 +42,7 @@ import {
   type SoundRow,
   type UserRow,
 } from './db.ts';
-import { HttpError, color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
+import { HttpError, SESSION_DAYS, color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, sessionToken, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, clientIp, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
@@ -102,6 +102,7 @@ import {
   leaveServerRoom,
   onlineUserIds,
   revokeSockets,
+  endSessionSockets,
   serverChanged,
   setServerMute,
   voiceStatesFor,
@@ -1038,6 +1039,75 @@ api.post('/me/2fa/backup-codes', humansOnly, (req, res) => {
   const updated = meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!);
   emitToUser(me, 'me:updated', updated);
   res.json({ backupCodes, me: updated });
+});
+
+// ---- Aparelhos conectados (sessões, ver http.ts#signToken) ----
+
+const SESSION_MS = SESSION_DAYS * 24 * 60 * 60_000;
+
+// sessões vencidas (o token dura 30 dias) ou de antes da última troca de senha já não valem: saem do banco
+setInterval(() => {
+  run('DELETE FROM sessions WHERE created_at < ? OR version != (SELECT token_version FROM users WHERE users.id = sessions.user_id)', now() - SESSION_MS);
+}, 60 * 60_000).unref();
+
+interface SessionRow {
+  id: string;
+  created_at: number;
+  last_seen_at: number;
+  user_agent: string | null;
+}
+
+api.get('/me/sessions', humansOnly, (_req, res) => {
+  const me = uid(res);
+  const version = get<{ token_version: number }>('SELECT token_version FROM users WHERE id = ?', me)!.token_version ?? 0;
+  const current = (res.locals.sessionId as string | null) ?? null;
+  const rows = all<SessionRow>(
+    'SELECT id, created_at, last_seen_at, user_agent FROM sessions WHERE user_id = ? AND version = ? AND created_at > ? ORDER BY last_seen_at DESC',
+    me,
+    version,
+    now() - SESSION_MS,
+  );
+  res.json({
+    sessions: rows.map((r) => ({ id: r.id, current: r.id === current, createdAt: r.created_at, lastSeenAt: r.last_seen_at, userAgent: r.user_agent })),
+    // false: este aparelho entrou antes da lista existir (ele some depois de "sair de todos os outros")
+    currentListed: !!current,
+  });
+});
+
+/** Tira um aparelho da conta: o token dele para de valer e a conexão cai na hora. */
+api.delete('/me/sessions/:id', humansOnly, (req, res) => {
+  const me = uid(res);
+  if (!run('DELETE FROM sessions WHERE id = ? AND user_id = ?', req.params.id, me).changes) fail(404, 'Esse aparelho já saiu da conta.');
+  endSessionSockets(req.params.id);
+  res.json({ ok: true });
+});
+
+/**
+ * Sai de todos os outros aparelhos, inclusive os que entraram antes da lista existir (sem sessão): a versão
+ * do token sobe, como numa troca de senha, e só este aparelho recebe um token novo.
+ */
+api.post('/me/sessions/logout-others', humansOnly, (req, res) => {
+  const me = uid(res);
+  const sid = (res.locals.sessionId as string | null) ?? null;
+  const version = (get<{ token_version: number }>('SELECT token_version FROM users WHERE id = ?', me)!.token_version ?? 0) + 1;
+  tx(() => {
+    run('UPDATE users SET token_version = ? WHERE id = ?', version, me);
+    run('DELETE FROM sessions WHERE user_id = ? AND id IS NOT ?', me, sid);
+    if (sid) run('UPDATE sessions SET version = ? WHERE id = ?', version, sid);
+  });
+  const token = sid ? sessionToken(me, sid, version) : signToken(me);
+  void revokeSockets(me, typeof req.body?.socketId === 'string' ? req.body.socketId : undefined);
+  res.json({ token });
+});
+
+/** Sair da conta: a sessão acaba no servidor também (um token copiado deste aparelho não serve mais). */
+api.post('/auth/logout', (_req, res) => {
+  const sid = res.locals.sessionId as string | null;
+  if (sid) {
+    run('DELETE FROM sessions WHERE id = ?', sid);
+    endSessionSockets(sid);
+  }
+  res.json({ ok: true });
 });
 
 const imageBody = express.raw({ type: () => true, limit: '9mb' });

@@ -3,7 +3,7 @@ import { Server, type Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
 import { channelPermissions, getChannel } from './access.ts';
 import { all, get, type ChannelRow } from './db.ts';
-import { botUserId, verifyToken } from './http.ts';
+import { botUserId, touchSession, verifySession } from './http.ts';
 import { removeFromRoom, updateVoicePermission, voiceParticipants } from './livekit.ts';
 import { socketEvents, timedSocket } from './metrics.ts';
 
@@ -105,6 +105,11 @@ export function emitToUser(userId: string, event: string, payload: unknown) {
 }
 
 /** Senha trocada: derruba as conexões em tempo real da pessoa (menos a do aparelho que trocou). */
+/** Sessão encerrada: as conexões abertas por ela caem na hora. */
+export function endSessionSockets(sid: string) {
+  io?.in(`session:${sid}`).disconnectSockets(true);
+}
+
 export async function revokeSockets(userId: string, keepSocketId?: string) {
   if (!io) return;
   for (const s of await io.in(`user:${userId}`).fetchSockets()) if (s.id !== keepSocketId) s.disconnect(true);
@@ -336,9 +341,12 @@ export function setupRealtime(httpServer: HttpServer) {
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
 
   io.use((socket, next) => {
-    const userId = verifyToken(socket.handshake.auth?.token) ?? botUserId(socket.handshake.auth?.token);
+    const session = verifySession(socket.handshake.auth?.token);
+    if (session) touchSession(session, socket.handshake.headers['user-agent']);
+    const userId = session?.userId ?? botUserId(socket.handshake.auth?.token);
     if (!userId || !get('SELECT 1 FROM users WHERE id = ?', userId)) return next(new Error('unauthorized'));
     socket.data.userId = userId;
+    socket.data.sessionId = session?.sid ?? null;
     next();
   });
 
@@ -346,6 +354,8 @@ export function setupRealtime(httpServer: HttpServer) {
   io.on('connection', timedSocket('connection', (socket: Socket) => {
     const userId = socket.data.userId as string;
     socket.join(`user:${userId}`);
+    // "Sair deste aparelho" derruba só as conexões desta sessão (ver endSessionSockets)
+    if (socket.data.sessionId) socket.join(`session:${socket.data.sessionId}`);
     socket.onAny((event: string) => socketEvents.inc({ event: KNOWN_SOCKET_EVENTS.has(event) ? event : 'outro' }));
     // todo handler registrado abaixo passa a medir quanto segura o servidor (painel de gargalos)
     const on = socket.on.bind(socket);

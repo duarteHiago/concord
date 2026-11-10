@@ -43,8 +43,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
         icon: ShieldCheck,
         tint: 'bg-ok/15 text-ok',
         label: 'Conta e segurança',
-        subtitle: 'Senha, verificação em duas etapas, e-mail e formas de entrar.',
-        words: 'senha password 2fa verificação duas etapas autenticador email e-mail google código recuperação backup sair desktop servidor atualização versão',
+        subtitle: 'Senha, verificação em duas etapas, aparelhos conectados, e-mail e formas de entrar.',
+        words: 'senha password 2fa verificação duas etapas autenticador email e-mail google código recuperação backup sair desktop servidor atualização versão aparelhos dispositivos sessões celular conectado',
         render: () => <Account />,
       },
       {

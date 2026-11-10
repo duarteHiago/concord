@@ -564,6 +564,19 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_rate_events ON rate_events(bucket, key, at);
 `);
+// sessões (aparelhos conectados, ver http.ts#signToken): apagar a linha derruba o token daquele aparelho na hora.
+// version = token_version do usuário quando a sessão nasceu (trocar a senha derruba todas)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    user_agent TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+`);
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // Banidos de um servidor: saem e não voltam por convite enquanto o ban existir.
 db.exec(`

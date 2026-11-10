@@ -7,6 +7,7 @@ import { CardPreview, StyleTab } from '../modals/StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
 import { TwoFactorCodeInput, TwoFactorSection } from '../TwoFactor';
+import { SessionsSection } from '../Sessions';
 import { LocalRecordControls } from '../RecordControls';
 import { useEffect, useRef, useState } from 'react';
 import { api, setToken } from '../../lib/api';
@@ -1149,6 +1150,7 @@ export function Account() {
     <div className="space-y-5">
       {desktop && <DesktopServer />}
       <TwoFactorSection />
+      <SessionsSection />
       <GoogleAccountSection />
       <EmailSection />
       <RecoverySection />
