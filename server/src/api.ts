@@ -1826,8 +1826,8 @@ api.post('/servers/:id/members/:userId/nudge', (req, res) => {
   // mensagem opcional junto da tremida (sem opção de copiar do lado de quem recebe, ver NudgeCard.tsx)
   const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 140) : '';
 
-  // quem foi silenciado não fica sabendo: a resposta é a mesma, só não entregamos
-  if (!prefs.mutedNudges?.includes(me)) {
+  // quem foi silenciado (ou bloqueado, em qualquer direção) não fica sabendo: a resposta é a mesma, só não entregamos
+  if (!prefs.mutedNudges?.includes(me) && !blockedBetween(me, target)) {
     const sender = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
     const senderNick = get<{ nickname: string | null }>('SELECT nickname FROM members WHERE server_id = ? AND user_id = ?', server.id, me)?.nickname;
     const voice = getVoiceState(me);
