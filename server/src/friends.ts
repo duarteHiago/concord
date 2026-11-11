@@ -4,7 +4,7 @@
 import type { Router } from 'express';
 import { all, get, run, tx, type UserRow } from './db.ts';
 import { fail, humansOnly, str, uid } from './http.ts';
-import { emitToUser } from './realtime.ts';
+import { emitToUser, refreshPresence } from './realtime.ts';
 import { limiter } from './recovery.ts';
 
 export type RelationType = 'friend' | 'outgoing' | 'incoming' | 'blocked';
@@ -57,7 +57,11 @@ export function registerFriendRoutes(api: Router, userJson: (u: UserRow) => unkn
   const itemJson = (r: RelationRow) => ({ user: userJson(r), type: r.rel_type, since: r.rel_since });
   const userRow = (id: string) => get<UserRow>('SELECT * FROM users WHERE id = ?', id);
   /** As listas dos dois lados mudaram: cada cliente recarrega a sua. */
-  const changed = (...ids: string[]) => ids.forEach((id) => emitToUser(id, 'relationships:changed', {}));
+  const changed = (...ids: string[]) => {
+    ids.forEach((id) => emitToUser(id, 'relationships:changed', {}));
+    // amigos veem a presença um do outro (ver presenceContacts em realtime.ts): a lista de cada um acompanha
+    refreshPresence(...ids);
+  };
 
   function accept(me: string, other: string) {
     tx(() => {

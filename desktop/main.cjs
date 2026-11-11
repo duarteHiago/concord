@@ -207,7 +207,9 @@ function createWindow() {
     try {
       if (new URL(url).origin !== serverOrigin()) {
         event.preventDefault();
-        openLink(url);
+        // só link da web vai para o navegador (como nas janelas novas, acima): outros esquemas abririam
+        // programas do computador a pedido da página
+        if (/^https?:\/\//.test(url)) openLink(url);
       }
     } catch {
       event.preventDefault();

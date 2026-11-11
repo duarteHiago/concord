@@ -25,11 +25,13 @@ export const SESSION_DAYS = 30;
  * Abre uma sessão (um aparelho conectado) e devolve o token dela. O token leva a "versão" da senha (trocar a
  * senha sobe a versão e derruba todos) e o id da sessão (encerrar a sessão derruba só aquele aparelho).
  */
-export function signToken(userId: string): string {
+export function signToken(userId: string, loggedIn = true): string {
   const version = tokenVersion(userId) ?? 0;
   const sid = randomBytes(16).toString('base64url');
   const at = Date.now();
-  run('INSERT INTO sessions (id, user_id, version, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)', sid, userId, version, at, at);
+  // auth_at: quando a pessoa provou quem é (senha, Google, código) para abrir esta sessão. Fica vazio quando a
+  // sessão nasce de um token que já existia (`loggedIn` false): aí ela não vale como "acabou de entrar".
+  run('INSERT INTO sessions (id, user_id, version, created_at, last_seen_at, auth_at) VALUES (?, ?, ?, ?, ?, ?)', sid, userId, version, at, at, loggedIn ? at : null);
   return sessionToken(userId, sid, version);
 }
 

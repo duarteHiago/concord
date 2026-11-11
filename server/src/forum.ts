@@ -7,6 +7,7 @@ import { channelPermissions, getChannel, requireChannelPerm } from './access.ts'
 import { all, get, run, tx, type ChannelRow, type ForumPostRow, type ForumReplyRow, type UserRow } from './db.ts';
 import { fail, str, uid } from './http.ts';
 import { emitToChannel, emitToUser } from './realtime.ts';
+import { limiter } from './recovery.ts';
 
 type AuthorFields = Pick<
   UserRow,
@@ -23,6 +24,10 @@ const REPLY_SELECT = `SELECT r.*, ${AUTHOR_COLS} FROM forum_replies r JOIN users
 const TAG_IDS: readonly string[] = FORUM_TAGS.map((t) => t.id);
 const STATUS_IDS: readonly string[] = FORUM_STATUSES.map((s) => s.id);
 const now = () => Date.now();
+// Ritmo por pessoa, como o do chat: cada post, resposta e voto avisa o canal inteiro.
+const postRate = limiter(10, 10 * 60_000);
+const replyRate = limiter(20, 5 * 60_000);
+const voteRate = limiter(60, 60_000);
 
 function requireForum(channelId: string, userId: string, flag: number): ChannelRow {
   const channel = requireChannelPerm(channelId, userId, flag);
@@ -104,6 +109,7 @@ export function registerForumRoutes(api: Router, authorJson: AuthorJson) {
     const title = str(req.body?.title, 'título', 3, FORUM_TITLE_MAX);
     const content = str(req.body?.content, 'texto', 1, FORUM_CONTENT_MAX);
     const tag = TAG_IDS.includes(req.body?.tag) ? (req.body.tag as string) : 'outro';
+    if (!postRate(me)) fail(429, 'Muitos posts em pouco tempo. Espere um pouco.');
     const id = randomUUID();
     const t = now();
     run(
@@ -176,6 +182,7 @@ export function registerForumRoutes(api: Router, authorJson: AuthorJson) {
     const post = getPost(req.params.id);
     const channel = requireForum(post.channel_id, me, P.VIEW_CHANNEL);
     const on = req.body?.on !== false;
+    if (!voteRate(me)) fail(429, 'Muitos votos em pouco tempo. Espere um pouco.');
     tx(() => {
       if (on) run('INSERT OR IGNORE INTO forum_votes (post_id, user_id) VALUES (?, ?)', post.id, me);
       else run('DELETE FROM forum_votes WHERE post_id = ? AND user_id = ?', post.id, me);
@@ -192,6 +199,7 @@ export function registerForumRoutes(api: Router, authorJson: AuthorJson) {
     const channel = requireForum(post.channel_id, me, P.SEND_MESSAGES);
     if (post.locked && !has(channelPermissions(channel, me), P.MANAGE_MESSAGES)) fail(403, 'Este post foi trancado pela moderação');
     const content = str(req.body?.content, 'resposta', 1, FORUM_REPLY_MAX);
+    if (!replyRate(me)) fail(429, 'Muitas respostas em pouco tempo. Espere um pouco.');
     const id = randomUUID();
     const t = now();
     tx(() => {
