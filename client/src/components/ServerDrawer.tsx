@@ -123,7 +123,8 @@ export function useServerDrag(enabled: boolean, pinnedIds: string[], onChange: (
 
 export function ServerFace({ server, className }: { server: ServerSummary; className?: string }) {
   return server.iconUrl ? (
-    <img src={server.iconUrl} alt="" draggable={false} className={cx('h-12 w-12 rounded-[18px] object-cover', className)} />
+    // sem pointer-events e sem "callout": segurar o ícone para arrastar não abre a prévia da imagem do Safari (iOS)
+    <img src={server.iconUrl} alt="" draggable={false} className={cx('pointer-events-none h-12 w-12 rounded-[18px] object-cover select-none [-webkit-touch-callout:none]', className)} />
   ) : (
     <span className={cx('flex h-12 w-12 items-center justify-center rounded-[18px] bg-surface-3 font-display text-base font-bold text-fg-muted', className)}>
       {initials(server.name)}
@@ -214,7 +215,7 @@ export function ServerDrawerPanel({
               onClick={() => (editing ? onPin(s.id) : onOpen(s.id))}
               style={{ animationDelay: `${40 + i * 25}ms` }}
               className={cx(
-                'server-drawer-item relative shrink-0 touch-none rounded-[18px] transition-opacity select-none',
+                'server-drawer-item relative shrink-0 touch-none rounded-[18px] transition-opacity select-none [-webkit-touch-callout:none]',
                 s.id === activeId && 'ring-[3px] ring-accent',
                 s.id === dragId && 'opacity-30',
               )}

@@ -105,12 +105,18 @@ export function ServerStrip() {
               onClick={() => openServer(s.id)}
               className={cx(
                 tile,
-                drawer && 'touch-none select-none',
+                // segurar para reordenar: sem a prévia da imagem nem o menu "salvar imagem" do celular
+                drawer && 'touch-none select-none [-webkit-touch-callout:none]',
                 active ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-fg',
               )}
             >
               {s.iconUrl ? (
-                <img src={s.iconUrl} alt="" draggable={false} className={cx('h-full w-full rounded-[18px] object-cover', active && 'ring-[3px] ring-accent')} />
+                <img
+                  src={s.iconUrl}
+                  alt=""
+                  draggable={false}
+                  className={cx('pointer-events-none h-full w-full rounded-[18px] object-cover select-none [-webkit-touch-callout:none]', active && 'ring-[3px] ring-accent')}
+                />
               ) : (
                 initials(s.name)
               )}
