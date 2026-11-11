@@ -36,6 +36,10 @@ import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import './lib/visibility';
+import { WorkshopHosts } from './workshop/Hosts';
+import { MuralView } from './workshop/Mural';
+import { useWorkshopRuntime } from './workshop/runtime';
+import { useWorkshop } from './workshop/store';
 
 const PATH = location.pathname.replace(/\/+$/, '');
 /** /diagnostico abre como janela/aba independente — ver lib/desktop.ts e lib/devStats.ts. */
@@ -166,6 +170,7 @@ function MainApp() {
       {me && <RecordingPill />}
       {me && <PatchInspectorHost />}
       {me && <SpotlightHost />}
+      {me && <WorkshopHosts />}
     </>
   );
 }
@@ -175,6 +180,7 @@ function Shell() {
   useWhatsNewPrompt();
   useMecenasReveal();
   useContractRenewal();
+  useWorkshopRuntime();
   const mobile = useMobile();
   const mobileView = useApp((s) => s.mobileView);
   const releasesOpen = useApp((s) => s.releasesOpen);
@@ -185,7 +191,9 @@ function Shell() {
   const channelId = useApp((s) => (s.activeServerId ? s.activeChannels[s.activeServerId] : undefined));
   const memberListOpen = useApp((s) => s.memberListOpen);
   const channel = detail?.channels.find((c) => c.id === channelId);
-  const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}`;
+  // Mural da Oficina aberto no lugar do canal
+  const mural = useWorkshop((s) => (s.muralFor && s.muralFor === activeServerId ? s.muralFor : null));
+  const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}|${mural ?? ''}`;
 
   const showSidebar = !mobile || mobileView === 'sidebar';
   const showContent = !mobile || mobileView === 'chat';
@@ -200,6 +208,8 @@ function Shell() {
         <ReleasesView />
       ) : activeServerId === HOME ? (
         <DmView />
+      ) : activeServerId && mural ? (
+        <MuralView serverId={mural} />
       ) : activeServerId ? (
         channel?.type === 'voice' ? (
           <VoiceView channel={channel} />

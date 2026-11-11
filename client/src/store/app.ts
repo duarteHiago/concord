@@ -318,6 +318,8 @@ export const useApp = create<AppState>((set, get) => {
       set({ me: { ...cur, ...next } });
       applyTheme(normalizeTheme(next.settings?.theme));
     });
+    // Oficina do servidor (Concord de testes): o editor publicou ou tirou do ar
+    socket.on('workshop:changed', (d: unknown) => window.dispatchEvent(new CustomEvent('concord:workshop', { detail: d })));
     socket.on('server-patches:changed', (d: { serverId: string }) =>
       window.dispatchEvent(new CustomEvent('concord:server-patches', { detail: d })),
     );
@@ -732,6 +734,8 @@ export const useApp = create<AppState>((set, get) => {
     openChannel: (serverId, channelId) => {
       const activeChannels = { ...get().activeChannels, [serverId]: channelId };
       set({ activeChannels, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' });
+      // fecha o Mural da Oficina, se estiver aberto
+      window.dispatchEvent(new Event('concord:open-channel'));
       saveLast(serverId, activeChannels);
       const ch = get().details[serverId]?.channels.find((c) => c.id === channelId);
       if (ch?.type === 'text' && !get().messages[channelId]) void get().loadMessages(channelId);

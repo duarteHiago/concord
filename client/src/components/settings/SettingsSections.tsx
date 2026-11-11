@@ -3,6 +3,8 @@ import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { clipSettings } from '../../lib/clip';
 import { NOISE_MODES, micLevels, preloadDfn, startMicTest, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
+import { WorkshopAppearance } from '../../workshop/Slots';
+import { WORKSHOP_ENABLED } from '../../workshop/store';
 import { CardPreview, StyleTab } from '../modals/StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
@@ -455,6 +457,13 @@ export function Appearance() {
           </Button>
         </div>
       </div>
+
+      {WORKSHOP_ENABLED && (
+        <div>
+          <SectionTitle>Oficina dos servidores</SectionTitle>
+          <WorkshopAppearance />
+        </div>
+      )}
 
       <Button
         variant="ghost"
