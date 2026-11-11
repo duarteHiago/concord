@@ -70,6 +70,32 @@ export function ChannelSidebar() {
   );
 }
 
+// Blocos soltos para a tela montada na Oficina (grade livre): os mesmos pedaços da barra lateral, sem a barra
+// de servidores (que fica fixa em cima).
+
+export function ChannelsBlock({ detail }: { detail: ServerDetail }) {
+  return (
+    <>
+      <ServerHeader detail={detail} />
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-3">
+        <MuralEntry detail={detail} />
+        <ChannelGroup detail={detail} kind="voice" />
+        <ChannelGroup detail={detail} kind="forum" />
+        <ChannelGroup detail={detail} kind="text" />
+      </div>
+    </>
+  );
+}
+
+export function VoiceUserBlock() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto pt-3">
+      <VoicePanel />
+      <UserCard />
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ cabeçalho do servidor
 
 function ServerHeader({ detail }: { detail: ServerDetail }) {

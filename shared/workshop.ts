@@ -122,12 +122,64 @@ export function defaultProps<T extends WidgetType>(type: T): WidgetProps[T] {
   return structuredClone(d[type]) as WidgetProps[T];
 }
 
+// ---------------------------------------------------------------- tela do servidor (grade livre)
+
+/**
+ * A tela do servidor como uma grade: blocos do sistema (canais, conversa, membros, voz) e widgets vão em
+ * qualquer lugar e tamanho. A barra de servidores fica sempre fixa em cima (é como a pessoa sai do servidor),
+ * e o campo de digitar e os controles de voz vêm dentro dos blocos obrigatórios: o admin move e redimensiona,
+ * mas não esconde. No celular e em telas pequenas, vale o layout padrão.
+ */
+export const SYSTEM_BLOCKS = ['channels', 'main', 'members', 'voicebar'] as const;
+export type SystemBlock = (typeof SYSTEM_BLOCKS)[number];
+
+export const SCREEN_COLS = 12;
+export const SCREEN_ROWS = 12;
+export const MAX_SCREEN_WIDGETS = 10;
+
+export const BLOCK_INFO: Record<SystemBlock, { label: string; hint: string; required: boolean; min: [number, number] }> = {
+  channels: { label: 'Canais', hint: 'Nome do servidor, salas e conversas.', required: true, min: [2, 4] },
+  main: { label: 'Conversa e salas', hint: 'O chat, a sala de voz ou o fórum aberto, com o campo de digitar.', required: true, min: [4, 5] },
+  members: { label: 'Membros', hint: 'Quem está no servidor. Opcional.', required: false, min: [2, 3] },
+  voicebar: { label: 'Voz e perfil', hint: 'Controles da sala de voz, microfone, fone e o seu perfil.', required: true, min: [2, 2] },
+};
+
+export interface BlockPlacement {
+  id: SystemBlock;
+  type: 'block';
+  block: SystemBlock;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+export type ScreenItem = WidgetPlacement | BlockPlacement;
+
+export const isBlock = (i: ScreenItem): i is BlockPlacement => i.type === 'block';
+
+/** Limites de tamanho na tela (os widgets ocupam o dobro de colunas, porque a tela tem 12 e o Mural 6). */
+export function screenLimits(i: { type: string; block?: SystemBlock }): { min: [number, number]; max: [number, number] } {
+  if (i.type === 'block') return { min: BLOCK_INFO[i.block as SystemBlock].min, max: [SCREEN_COLS, SCREEN_ROWS] };
+  const info = WIDGET_INFO[i.type as WidgetType];
+  return { min: [Math.min(SCREEN_COLS, info.min[0] * 2), info.min[1]], max: [SCREEN_COLS, SCREEN_ROWS] };
+}
+
+/** O layout de sempre do Concord, como ponto de partida. */
+export const defaultScreen = (): ScreenItem[] => [
+  { id: 'channels', type: 'block', block: 'channels', x: 0, y: 0, w: 3, h: 10 },
+  { id: 'voicebar', type: 'block', block: 'voicebar', x: 0, y: 10, w: 3, h: 2 },
+  { id: 'main', type: 'block', block: 'main', x: 3, y: 0, w: 7, h: 12 },
+  { id: 'members', type: 'block', block: 'members', x: 10, y: 0, w: 2, h: 12 },
+];
+
 // ---------------------------------------------------------------- configuração
 
 export interface WorkshopConfig {
   version: typeof WORKSHOP_VERSION;
   pieces: Partial<Record<WorkshopPiece, WorkshopPackId>>;
   mural: { title: string; widgets: WidgetPlacement[] };
+  /** tela do servidor em grade livre; sem ela, o layout padrão */
+  screen?: { items: ScreenItem[] };
 }
 
 export const emptyWorkshop = (): WorkshopConfig => ({ version: WORKSHOP_VERSION, pieces: {}, mural: { title: 'Mural', widgets: [] } });
@@ -270,36 +322,68 @@ function widgetProps(type: WidgetType, v: unknown, where: string, now: number): 
   }
 }
 
-function widget(v: unknown, i: number, now: number): WidgetPlacement {
-  const where = `mural.widgets[${i}]`;
+function widget(v: unknown, where: string, now: number, screen = false): WidgetPlacement {
   const o = obj(v, where, ['id', 'type', 'x', 'y', 'w', 'h', 'props']);
   const type = oneOf(o.type, `${where}.type`, WIDGET_TYPES);
-  const info = WIDGET_INFO[type];
-  const id = typeof o.id === 'string' && ID.test(o.id) ? o.id : bad(`${where}.id: inválido`);
-  const w = intIn(o.w, `${where}.w`, info.min[0], info.max[0]);
-  const h = intIn(o.h, `${where}.h`, info.min[1], info.max[1]);
-  const x = intIn(o.x, `${where}.x`, 0, GRID_COLS - w);
-  const y = intIn(o.y, `${where}.y`, 0, GRID_MAX_ROWS - h);
+  const { min, max } = screen ? screenLimits({ type }) : { min: WIDGET_INFO[type].min, max: WIDGET_INFO[type].max };
+  const [cols, rows] = screen ? [SCREEN_COLS, SCREEN_ROWS] : [GRID_COLS, GRID_MAX_ROWS];
+  const id =
+    typeof o.id === 'string' && ID.test(o.id) && !(SYSTEM_BLOCKS as readonly string[]).includes(o.id) ? o.id : bad(`${where}.id: inválido`);
+  const w = intIn(o.w, `${where}.w`, min[0], max[0]);
+  const h = intIn(o.h, `${where}.h`, min[1], max[1]);
+  const x = intIn(o.x, `${where}.x`, 0, cols - w);
+  const y = intIn(o.y, `${where}.y`, 0, rows - h);
   return { id, type, x, y, w, h, props: widgetProps(type, o.props, `${where}.props`, now) } as WidgetPlacement;
+}
+
+function block(v: unknown, where: string): BlockPlacement {
+  const o = obj(v, where, ['id', 'type', 'block', 'x', 'y', 'w', 'h']);
+  const b = oneOf(o.block, `${where}.block`, SYSTEM_BLOCKS);
+  if (o.id !== b) bad(`${where}.id: precisa ser igual ao bloco`);
+  const { min } = screenLimits({ type: 'block', block: b });
+  const w = intIn(o.w, `${where}.w`, min[0], SCREEN_COLS);
+  const h = intIn(o.h, `${where}.h`, min[1], SCREEN_ROWS);
+  return { id: b, type: 'block', block: b, x: intIn(o.x, `${where}.x`, 0, SCREEN_COLS - w), y: intIn(o.y, `${where}.y`, 0, SCREEN_ROWS - h), w, h };
+}
+
+function noOverlap(items: { id: string; x: number; y: number; w: number; h: number }[], where: string) {
+  const ids = new Set<string>();
+  items.forEach((it, i) => {
+    if (ids.has(it.id)) bad(`${where}[${i}].id: repetido`);
+    ids.add(it.id);
+    for (let j = 0; j < i; j++) if (overlaps(it, items[j])) bad(`${where}[${i}]: está em cima de outro`);
+  });
+}
+
+function screen(v: unknown, now: number): { items: ScreenItem[] } {
+  const o = obj(v, 'screen', ['items']);
+  if (!Array.isArray(o.items)) bad('screen.items: esperava uma lista');
+  const raw = o.items as unknown[];
+  if (raw.length > SYSTEM_BLOCKS.length + MAX_SCREEN_WIDGETS) bad('screen.items: itens demais');
+  const items: ScreenItem[] = raw.map((x, i) =>
+    isObj(x) && x.type === 'block' ? block(x, `screen.items[${i}]`) : widget(x, `screen.items[${i}]`, now, true),
+  );
+  if (items.filter((i) => !isBlock(i)).length > MAX_SCREEN_WIDGETS) bad(`screen.items: no máximo ${MAX_SCREEN_WIDGETS} widgets na tela`);
+  for (const b of SYSTEM_BLOCKS)
+    if (BLOCK_INFO[b].required && !items.some((i) => isBlock(i) && i.block === b)) bad(`screen: o bloco "${BLOCK_INFO[b].label}" é obrigatório`);
+  noOverlap(items, 'screen.items');
+  return { items };
 }
 
 /** Valida uma configuração vinda de fora. Nunca confia no cliente. */
 export function parseWorkshop(input: unknown, now = Date.now()): ParseResult {
   try {
-    const o = obj(input, 'oficina', ['version', 'pieces', 'mural']);
+    const o = obj(input, 'oficina', ['version', 'pieces', 'mural', 'screen']);
     if (o.version !== WORKSHOP_VERSION) bad('oficina.version: versão desconhecida');
     const p = obj(o.pieces, 'pieces', WORKSHOP_PIECES);
     const pieces: WorkshopConfig['pieces'] = {};
     for (const [k, v] of Object.entries(p)) pieces[k as WorkshopPiece] = oneOf(v, `pieces.${k}`, WORKSHOP_PACKS);
     const m = obj(o.mural, 'mural', ['title', 'widgets']);
-    const widgets = list(m.widgets, 'mural.widgets', MAX_WIDGETS, (x, i) => widget(x, i, now));
-    const ids = new Set<string>();
-    widgets.forEach((wd, i) => {
-      if (ids.has(wd.id)) bad(`mural.widgets[${i}].id: repetido`);
-      ids.add(wd.id);
-      for (let j = 0; j < i; j++) if (overlaps(wd, widgets[j])) bad(`mural.widgets[${i}]: está em cima de outro widget`);
-    });
-    return { ok: true, value: { version: WORKSHOP_VERSION, pieces, mural: { title: text(m.title, 'mural.title', 40, { min: 1 }), widgets } } };
+    const widgets = list(m.widgets, 'mural.widgets', MAX_WIDGETS, (x, i) => widget(x, `mural.widgets[${i}]`, now));
+    noOverlap(widgets, 'mural.widgets');
+    const value: WorkshopConfig = { version: WORKSHOP_VERSION, pieces, mural: { title: text(m.title, 'mural.title', 40, { min: 1 }), widgets } };
+    if (o.screen !== undefined) value.screen = screen(o.screen, now);
+    return { ok: true, value };
   } catch (err) {
     if (err instanceof Invalid) return { ok: false, error: err.message };
     throw err;

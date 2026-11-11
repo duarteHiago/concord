@@ -104,7 +104,7 @@ export function WorkshopAppearance() {
   const [volume, setVolume] = useState(prefs.volume);
   if (!WORKSHOP_ENABLED) return null;
   const save = (patch: Partial<WorkshopPrefs>) => void saveSettings({ workshop: { ...prefs, ...patch } } as never);
-  const row = (label: string, hint: string, key: 'show' | 'sounds' | 'intros', disabled = false) => (
+  const row = (label: string, hint: string, key: 'show' | 'sounds' | 'intros' | 'layouts', disabled = false) => (
     <div className="flex items-center gap-4 py-3">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold">{label}</div>
@@ -116,6 +116,7 @@ export function WorkshopAppearance() {
   return (
     <div className="divide-y divide-line">
       {row('Mostrar a Oficina dos servidores', 'Ícones animados, faixas, Mural e avisos com o tema de cada servidor. Desligado, tudo fica no visual padrão.', 'show')}
+      {row('Usar a tela montada pelos servidores', 'Servidores podem rearrumar a tela (canais, conversa, membros e widgets). Desligado, todo servidor fica com o layout padrão.', 'layouts', !prefs.show)}
       {row('Sons dos servidores', 'Sons ao passar o mouse, ao entrar, nas salas e nas menções.', 'sounds', !prefs.show)}
       {row('Animações de entrada', 'A intro que aparece na primeira vez que você abre um servidor na sessão. Com "reduzir animações" ligado, ela não aparece.', 'intros', !prefs.show)}
       <div className="flex items-center gap-4 py-3">

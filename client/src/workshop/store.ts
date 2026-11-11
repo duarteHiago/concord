@@ -16,13 +16,15 @@ export interface WorkshopPrefs {
   show: boolean;
   sounds: boolean;
   intros: boolean;
+  /** usar a tela montada pelo servidor na Oficina (desligado: layout padrão) */
+  layouts: boolean;
   /** 0 a 100 */
   volume: number;
 }
 
 export function workshopPrefs(): WorkshopPrefs {
   const raw = (useApp.getState().me?.settings as { workshop?: Partial<WorkshopPrefs> } | undefined)?.workshop ?? {};
-  return { show: raw.show ?? true, sounds: raw.sounds ?? true, intros: raw.intros ?? true, volume: raw.volume ?? 70 };
+  return { show: raw.show ?? true, sounds: raw.sounds ?? true, intros: raw.intros ?? true, layouts: raw.layouts ?? true, volume: raw.volume ?? 70 };
 }
 
 interface WorkshopStore {

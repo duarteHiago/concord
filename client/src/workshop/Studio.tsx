@@ -12,7 +12,11 @@ import {
   GripVertical,
   ImagePlus,
   LayoutGrid,
+  Hash,
+  Headphones,
   Megaphone,
+  Mic,
+  Monitor,
   Package,
   Play,
   Plus,
@@ -22,14 +26,26 @@ import {
   Sparkles,
   Trash2,
   Undo2,
+  Users,
   Volume2,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  BLOCK_INFO,
   GRID_COLS,
   GRID_MAX_ROWS,
+  MAX_SCREEN_WIDGETS,
   MAX_WIDGETS,
+  SCREEN_COLS,
+  SCREEN_ROWS,
+  SYSTEM_BLOCKS,
+  defaultScreen,
+  isBlock,
+  screenLimits,
+  type BlockPlacement,
+  type ScreenItem,
+  type SystemBlock,
   PIECE_INFO,
   TIMEZONES,
   WIDGET_INFO,
@@ -52,7 +68,7 @@ import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import type { ServerDetail } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
-import { Button, cx, initials } from '../components/ui';
+import { Avatar, Button, cx, initials } from '../components/ui';
 import { Backdrop, BannerArt, Emblem, RailEffect, packVars } from './Art';
 import { GAP_PX, MuralGrid, ROW_PX, WidgetCard } from './Mural';
 import { PACKS, PACK_LIST, type Pack, type SoundSlot } from './packs';
@@ -71,10 +87,28 @@ type Box = { x: number; y: number; w: number; h: number };
 
 // ------------------------------------------------------------------ grade: encaixe e empurrão
 
+/** As duas grades da Oficina: o Mural (cresce para baixo) e a tela do servidor (12×12, fixa). */
+interface GridSpec {
+  cols: number;
+  rows: number;
+  /** tela fixa: a grade inteira aparece, com a proporção de uma tela */
+  fixed: boolean;
+  gap: number;
+  limits: (i: ScreenItem) => { min: [number, number]; max: [number, number] };
+}
+const MURAL_GRID: GridSpec = { cols: GRID_COLS, rows: GRID_MAX_ROWS, fixed: false, gap: GAP_PX, limits: (i) => WIDGET_INFO[i.type as WidgetType] };
+const SCREEN_GRID: GridSpec = { cols: SCREEN_COLS, rows: SCREEN_ROWS, fixed: true, gap: 8, limits: screenLimits };
+
+/** Tamanho inicial de um widget numa grade. */
+const startSize = (type: WidgetType, grid: GridSpec): [number, number] => {
+  const [w, h] = WIDGET_INFO[type].size;
+  return grid.fixed ? [Math.min(grid.cols, w * 2), h] : [w, h];
+};
+
 /** Põe `moved` no lugar e empurra para baixo quem ficou embaixo dele. null se estourar a grade. */
-function resolve(widgets: WidgetPlacement[], moved: WidgetPlacement): WidgetPlacement[] | null {
-  const others = widgets.filter((w) => w.id !== moved.id).sort((a, b) => a.y - b.y || a.x - b.x);
-  const placed: WidgetPlacement[] = [moved];
+function resolve<T extends Box & { id: string }>(items: T[], moved: T, rows = GRID_MAX_ROWS): T[] | null {
+  const others = items.filter((w) => w.id !== moved.id).sort((a, b) => a.y - b.y || a.x - b.x);
+  const placed: T[] = [moved];
   for (const o of others) {
     const cur = { ...o };
     for (let guard = 0; guard < 100; guard++) {
@@ -82,16 +116,37 @@ function resolve(widgets: WidgetPlacement[], moved: WidgetPlacement): WidgetPlac
       if (!hit.length) break;
       cur.y = Math.max(...hit.map((p) => p.y + p.h));
     }
-    if (cur.y + cur.h > GRID_MAX_ROWS) return null;
+    if (cur.y + cur.h > rows) return null;
     placed.push(cur);
   }
-  return widgets.map((w) => placed.find((p) => p.id === w.id)!);
+  const byId = new Map(placed.map((p) => [p.id, p]));
+  return items.map((w) => byId.get(w.id)!);
+}
+
+/**
+ * Na tela (grade fixa), soltar um item em cima de outro troca os dois de lugar e de tamanho, já que empurrar
+ * para baixo quase sempre estoura as 12 linhas. O alvo é o item debaixo do cursor. Só quando os dois cabem
+ * no tamanho novo e nada fica por cima de nada.
+ */
+function swap(items: ScreenItem[], moved: ScreenItem, orig: ScreenItem, grid: GridSpec, cell: { x: number; y: number }): ScreenItem[] | null {
+  const t = items.find((i) => i.id !== moved.id && overlaps(i, { ...cell, w: 1, h: 1 }));
+  if (!t) return null;
+  const newT = { ...t, x: orig.x, y: orig.y, w: orig.w, h: orig.h };
+  const newM = { ...moved, x: t.x, y: t.y, w: t.w, h: t.h };
+  const fits = (i: ScreenItem) => {
+    const { min } = grid.limits(i);
+    return i.w >= min[0] && i.h >= min[1];
+  };
+  if (!fits(newT) || !fits(newM)) return null;
+  const next = items.map((i) => (i.id === t.id ? newT : i.id === moved.id ? newM : i));
+  const ok = next.every((a, i) => next.every((b, j) => i === j || !overlaps(a, b)));
+  return ok ? next : null;
 }
 
 /** Primeiro lugar livre (de cima para baixo, da esquerda para a direita). */
-function freeSpot(widgets: Box[], w: number, h: number): { x: number; y: number } | null {
-  for (let y = 0; y + h <= GRID_MAX_ROWS; y++)
-    for (let x = 0; x + w <= GRID_COLS; x++) if (!widgets.some((o) => overlaps(o, { x, y, w, h }))) return { x, y };
+function freeSpot(items: Box[], w: number, h: number, cols = GRID_COLS, rows = GRID_MAX_ROWS): { x: number; y: number } | null {
+  for (let y = 0; y + h <= rows; y++)
+    for (let x = 0; x + w <= cols; x++) if (!items.some((o) => overlaps(o, { x, y, w, h }))) return { x, y };
   return null;
 }
 
@@ -108,6 +163,8 @@ export function Studio({ serverId }: { serverId: string }) {
   const [future, setFuture] = useState<WorkshopConfig[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<'packs' | 'pieces' | 'widgets'>('packs');
+  /** o que a grade do meio edita: a tela do servidor ou o Mural */
+  const [area, setArea] = useState<'screen' | 'mural'>('screen');
   const [asMember, setAsMember] = useState(false);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [publishing, setPublishing] = useState(false);
@@ -194,21 +251,57 @@ export function Studio({ serverId }: { serverId: string }) {
     });
   }, []);
 
-  const setWidgets = useCallback((fn: (ws: WidgetPlacement[]) => WidgetPlacement[]) => update((c) => ({ ...c, mural: { ...c.mural, widgets: fn(c.mural.widgets) } })), [update]);
+  const grid = area === 'screen' ? SCREEN_GRID : MURAL_GRID;
+  const items: ScreenItem[] = area === 'screen' ? (config.screen?.items ?? []) : config.mural.widgets;
+  const widgetCount = items.filter((i) => !isBlock(i)).length;
+  const maxWidgets = area === 'screen' ? MAX_SCREEN_WIDGETS : MAX_WIDGETS;
+
+  /** Mexe nos itens da área aberta (a tela começa do layout padrão na primeira mudança). */
+  const setItems = useCallback(
+    (fn: (xs: ScreenItem[]) => ScreenItem[]) =>
+      update((c) =>
+        area === 'screen'
+          ? { ...c, screen: { items: fn(c.screen?.items ?? defaultScreen()) } }
+          : { ...c, mural: { ...c.mural, widgets: fn(c.mural.widgets) as WidgetPlacement[] } },
+      ),
+    [update, area],
+  );
 
   const addWidget = useCallback(
     (type: WidgetType, at?: { x: number; y: number }) => {
-      if (config.mural.widgets.length >= MAX_WIDGETS) return toast.error(`O Mural aceita até ${MAX_WIDGETS} widgets.`);
-      const [w, h] = WIDGET_INFO[type].size;
-      const spot = at ?? freeSpot(config.mural.widgets, w, h);
-      if (!spot) return toast.error('Não tem mais espaço na grade.');
-      const item = { id: newId(), type, x: Math.min(spot.x, GRID_COLS - w), y: spot.y, w, h, props: defaultProps(type) } as WidgetPlacement;
-      const next = resolve([...config.mural.widgets, item], item);
-      if (!next) return toast.error('Não coube aí.');
-      setWidgets(() => next);
+      const base = area === 'screen' ? (config.screen?.items ?? defaultScreen()) : config.mural.widgets;
+      if (base.filter((i) => !isBlock(i)).length >= maxWidgets) return toast.error(`Aqui cabem até ${maxWidgets} widgets.`);
+      const [w, h] = startSize(type, grid);
+      const spot = at ?? freeSpot(base, w, h, grid.cols, grid.rows);
+      if (!spot && area === 'screen') {
+        // tela cheia (o layout padrão ocupa tudo): abre espaço em cima da conversa, encolhendo ela
+        const main = base.find((i): i is BlockPlacement => isBlock(i) && i.block === 'main');
+        if (main && main.h - h >= BLOCK_INFO.main.min[1]) {
+          const item = { id: newId(), type, x: main.x, y: main.y, w: main.w, h, props: defaultProps(type) } as WidgetPlacement;
+          setItems((xs) => [...xs.map((i) => (i.id === 'main' ? { ...i, y: i.y + h, h: i.h - h } : i)), item]);
+          setSelected(item.id);
+          toast.info('Abri espaço em cima da conversa. Arraste e redimensione como quiser.');
+          return;
+        }
+      }
+      if (!spot) return toast.error(area === 'screen' ? 'Não tem espaço livre na tela. Diminua ou tire algum bloco ou widget.' : 'Não tem mais espaço na grade.');
+      const item = { id: newId(), type, x: Math.min(spot.x, grid.cols - w), y: Math.min(spot.y, grid.rows - h), w, h, props: defaultProps(type) } as WidgetPlacement;
+      const next = resolve<ScreenItem>([...base, item], item, grid.rows);
+      if (!next) return toast.error('Não coube aí. Abra espaço primeiro.');
+      setItems(() => next);
       setSelected(item.id);
     },
-    [config.mural.widgets, setWidgets],
+    [area, config.screen, config.mural.widgets, grid, maxWidgets, setItems],
+  );
+
+  const removeItem = useCallback(
+    (id: string) => {
+      const it = items.find((i) => i.id === id);
+      if (it && isBlock(it) && BLOCK_INFO[it.block].required) return toast.error(`"${BLOCK_INFO[it.block].label}" é obrigatório: dá para mover e redimensionar, mas não tirar.`);
+      setItems((xs) => xs.filter((x) => x.id !== id));
+      setSelected(null);
+    },
+    [items, setItems],
   );
 
   // atalhos: desfazer, refazer, apagar, mover com as setas
@@ -235,23 +328,22 @@ export function Studio({ serverId }: { serverId: string }) {
       }
       if (!selected) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        setWidgets((ws) => ws.filter((w) => w.id !== selected));
-        setSelected(null);
+        removeItem(selected);
         return;
       }
       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
       if (!d) return;
       e.preventDefault();
-      setWidgets((ws) => {
+      setItems((ws) => {
         const w = ws.find((x) => x.id === selected);
         if (!w) return ws;
-        const moved = { ...w, x: Math.max(0, Math.min(GRID_COLS - w.w, w.x + d[0])), y: Math.max(0, w.y + d[1]) };
-        return resolve(ws, moved) ?? ws;
+        const moved = { ...w, x: Math.max(0, Math.min(grid.cols - w.w, w.x + d[0])), y: Math.max(0, Math.min(grid.rows - w.h, w.y + d[1])) };
+        return resolve(ws, moved, grid.rows) ?? ws;
       });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected, asMember, close, undo, redo, setWidgets]);
+  }, [selected, asMember, close, undo, redo, setItems, removeItem, grid]);
 
   const publish = async () => {
     if (!check.ok) return toast.error(check.error);
@@ -290,7 +382,7 @@ export function Studio({ serverId }: { serverId: string }) {
         <Button onClick={close}>Voltar</Button>
       </div>
     );
-  const sel = config.mural.widgets.find((w) => w.id === selected) ?? null;
+  const sel = items.find((w) => w.id === selected) ?? null;
   const backdrop = config.pieces.backdrop ? PACKS[config.pieces.backdrop] : null;
   const changedSincePublish = !loaded?.published || JSON.stringify(loaded.published) !== JSON.stringify(config);
 
@@ -361,7 +453,25 @@ export function Studio({ serverId }: { serverId: string }) {
               {tab === 'pieces' && (
                 <PiecesDrawer config={config} onChange={(piece, pack) => update((c) => ({ ...c, pieces: { ...c.pieces, [piece]: pack ?? undefined } }))} serverId={serverId} serverName={detail.server.name} />
               )}
-              {tab === 'widgets' && <WidgetsDrawer count={config.mural.widgets.length} onAdd={(t) => addWidget(t)} />}
+              {tab === 'widgets' && (
+                <>
+                  {area === 'screen' && (
+                    <BlocksDrawer
+                      items={config.screen?.items ?? null}
+                      onAdd={(b) => {
+                        const base = config.screen?.items ?? defaultScreen();
+                        const { min } = screenLimits({ type: 'block', block: b });
+                        const spot = freeSpot(base, min[0], min[1], SCREEN_COLS, SCREEN_ROWS);
+                        if (!spot) return toast.error('Não tem espaço livre na tela para esse bloco.');
+                        const item: BlockPlacement = { id: b, type: 'block', block: b, ...spot, w: min[0], h: min[1] };
+                        setItems((xs) => [...xs.filter((x) => x.id !== b), item]);
+                        setSelected(b);
+                      }}
+                    />
+                  )}
+                  <WidgetsDrawer count={widgetCount} max={maxWidgets} grid={grid} onAdd={(t) => addWidget(t)} />
+                </>
+              )}
             </div>
           </aside>
         )}
@@ -369,6 +479,51 @@ export function Studio({ serverId }: { serverId: string }) {
         <section className="relative min-w-0 flex-1 overflow-y-auto" onPointerDown={(e) => e.target === e.currentTarget && setSelected(null)}>
           <div className="mx-auto max-w-5xl p-6">
             <Showcase config={config} detail={detail} />
+            <div className="mt-6 flex items-center gap-1 rounded-full bg-surface-2 p-1 ring-1 ring-line" role="tablist" aria-label="O que editar">
+              {(
+                [
+                  ['screen', 'Tela do servidor', <Monitor size={15} key="m" />],
+                  ['mural', 'Mural', <LayoutGrid size={15} key="g" />],
+                ] as const
+              ).map(([id, label, icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={area === id}
+                  onClick={() => {
+                    setArea(id);
+                    setSelected(null);
+                  }}
+                  className={cx('flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-sm font-bold', area === id ? 'bg-accent text-on-accent' : 'text-fg-muted hover:text-fg')}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ))}
+            </div>
+            {area === 'screen' ? (
+              <ScreenArea
+                config={config}
+                detail={detail}
+                serverId={serverId}
+                asMember={asMember}
+                backdrop={backdrop}
+                selected={selected}
+                onSelect={setSelected}
+                onStart={() => setItems((xs) => xs)}
+                onReset={() => {
+                  update((c) => {
+                    const { screen: _drop, ...rest } = c;
+                    return rest;
+                  });
+                  setSelected(null);
+                }}
+                onChange={(xs) => setItems(() => xs)}
+                onDropNew={(type, at) => addWidget(type, at)}
+              />
+            ) : (
+            <>
             <div className="mt-6 mb-2 flex items-end justify-between gap-3">
               <div>
                 <div className="text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Mural</div>
@@ -401,37 +556,40 @@ export function Studio({ serverId }: { serverId: string }) {
                   )
                 ) : (
                   <GridEditor
-                    widgets={config.mural.widgets}
+                    items={config.mural.widgets}
+                    grid={MURAL_GRID}
                     ctx={{ serverId, pack: backdrop, editing: true }}
+                    detail={detail}
                     selected={selected}
                     onSelect={setSelected}
-                    onChange={(ws) => setWidgets(() => ws)}
+                    onChange={(ws) => setItems(() => ws)}
                     onDropNew={(type, at) => addWidget(type, at)}
                   />
                 )}
               </div>
             </div>
+            </>
+            )}
           </div>
         </section>
 
         {!asMember && (
           <aside className="w-80 shrink-0 overflow-y-auto border-l border-line bg-surface-2 p-4">
-            {sel ? (
+            {sel && isBlock(sel) ? (
+              <BlockInspector b={sel} onRemove={() => removeItem(sel.id)} />
+            ) : sel ? (
               <Inspector
                 key={sel.id}
                 w={sel}
                 detail={detail}
                 serverId={serverId}
-                onChange={(props) => setWidgets((ws) => ws.map((w) => (w.id === sel.id ? ({ ...w, props } as WidgetPlacement) : w)))}
-                onDelete={() => {
-                  setWidgets((ws) => ws.filter((w) => w.id !== sel.id));
-                  setSelected(null);
-                }}
+                onChange={(props) => setItems((ws) => ws.map((w) => (w.id === sel.id ? ({ ...w, props } as WidgetPlacement) : w)))}
+                onDelete={() => removeItem(sel.id)}
                 onDuplicate={() => {
-                  const spot = freeSpot(config.mural.widgets, sel.w, sel.h);
-                  if (!spot || config.mural.widgets.length >= MAX_WIDGETS) return toast.error('Não tem espaço para duplicar.');
+                  const spot = freeSpot(items, sel.w, sel.h, grid.cols, grid.rows);
+                  if (!spot || widgetCount >= maxWidgets) return toast.error('Não tem espaço para duplicar.');
                   const copy = { ...structuredClone(sel), id: newId(), ...spot } as WidgetPlacement;
-                  setWidgets((ws) => [...ws, copy]);
+                  setItems((ws) => [...ws, copy]);
                   setSelected(copy.id);
                 }}
               />
@@ -696,11 +854,11 @@ function PiecesDrawer({ config, onChange, serverId, serverName }: { config: Work
 
 export const WIDGET_DRAG = 'application/x-concord-widget';
 
-function WidgetsDrawer({ count, onAdd }: { count: number; onAdd: (t: WidgetType) => void }) {
+function WidgetsDrawer({ count, max, grid, onAdd }: { count: number; max: number; grid: GridSpec; onAdd: (t: WidgetType) => void }) {
   return (
     <div className="space-y-2">
       <p className="px-1 text-xs text-fg-muted">
-        Arraste para a grade ou clique para adicionar. {count}/{MAX_WIDGETS}.
+        Arraste para a grade ou clique para adicionar. {count}/{max}.
       </p>
       <div className="grid grid-cols-2 gap-2">
         {WIDGET_TYPES.map((t) => (
@@ -713,10 +871,10 @@ function WidgetsDrawer({ count, onAdd }: { count: number; onAdd: (t: WidgetType)
               e.dataTransfer.effectAllowed = 'copy';
             }}
             onClick={() => onAdd(t)}
-            disabled={count >= MAX_WIDGETS}
+            disabled={count >= max}
             className="flex cursor-grab flex-col items-start rounded-2xl bg-surface-1 p-3 text-left ring-1 ring-line hover:ring-accent active:cursor-grabbing disabled:opacity-40"
           >
-            <WidgetMini type={t} />
+            <WidgetMini type={t} grid={grid} />
             <span className="mt-2 text-xs leading-tight font-bold">{WIDGET_INFO[t].label}</span>
             <span className="mt-0.5 text-[10px] leading-snug text-fg-muted">{WIDGET_INFO[t].hint}</span>
           </button>
@@ -727,14 +885,16 @@ function WidgetsDrawer({ count, onAdd }: { count: number; onAdd: (t: WidgetType)
 }
 
 /** Miniatura do tamanho padrão do widget na grade. */
-function WidgetMini({ type }: { type: WidgetType }) {
-  const [w, h] = WIDGET_INFO[type].size;
+function WidgetMini({ type, grid }: { type: WidgetType; grid: GridSpec }) {
+  const [w, h] = startSize(type, grid);
+  const cols = grid.cols;
+  const cell = grid.fixed ? 'h-[4px] w-[4px]' : 'h-[6px] w-[6px]';
   return (
-    <span className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${GRID_COLS}, 6px)` }} aria-hidden="true">
-      {Array.from({ length: GRID_COLS * Math.max(h, 2) }, (_, i) => {
-        const x = i % GRID_COLS;
-        const y = Math.floor(i / GRID_COLS);
-        return <span key={i} className={cx('h-[6px] w-[6px] rounded-[1.5px]', x < w && y < h ? 'bg-accent' : 'bg-surface-4')} />;
+    <span className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${cols}, ${grid.fixed ? 4 : 6}px)` }} aria-hidden="true">
+      {Array.from({ length: cols * Math.max(h, 2) }, (_, i) => {
+        const x = i % cols;
+        const y = Math.floor(i / cols);
+        return <span key={i} className={cx(cell, 'rounded-[1.5px]', x < w && y < h ? 'bg-accent' : 'bg-surface-4')} />;
       })}
     </span>
   );
@@ -742,22 +902,31 @@ function WidgetMini({ type }: { type: WidgetType }) {
 
 // ------------------------------------------------------------------ grade com arrastar e redimensionar
 
-type Drag = { id: string; mode: 'move' | 'resize'; startX: number; startY: number; orig: WidgetPlacement; preview: WidgetPlacement[] | null; dx: number; dy: number };
+type Drag = { id: string; mode: 'move' | 'resize'; startX: number; startY: number; orig: ScreenItem; preview: ScreenItem[] | null; dx: number; dy: number };
+
+const itemLabel = (i: ScreenItem) => (isBlock(i) ? BLOCK_INFO[i.block].label : WIDGET_INFO[i.type].label);
 
 function GridEditor({
-  widgets,
+  items,
+  grid,
   ctx,
+  detail,
   selected,
   onSelect,
   onChange,
   onDropNew,
+  readOnly,
 }: {
-  widgets: WidgetPlacement[];
+  items: ScreenItem[];
+  grid: GridSpec;
   ctx: WidgetContext;
+  detail: ServerDetail;
   selected: string | null;
   onSelect: (id: string | null) => void;
-  onChange: (ws: WidgetPlacement[]) => void;
+  onChange: (xs: ScreenItem[]) => void;
   onDropNew: (type: WidgetType, at: { x: number; y: number }) => void;
+  /** "ver como membro": sem alças */
+  readOnly?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -773,15 +942,19 @@ function GridEditor({
     return () => ro.disconnect();
   }, []);
 
-  const colW = (width - GAP_PX * (GRID_COLS - 1)) / GRID_COLS;
-  const stepX = colW + GAP_PX;
-  const stepY = ROW_PX + GAP_PX;
-  const shown = drag?.preview ?? widgets;
-  const rows = Math.min(GRID_MAX_ROWS, Math.max(6, ...shown.map((w) => w.y + w.h + 2)));
-  const px = (b: Box) => ({ left: b.x * stepX, top: b.y * stepY, width: b.w * colW + (b.w - 1) * GAP_PX, height: b.h * ROW_PX + (b.h - 1) * GAP_PX });
+  const gap = grid.gap;
+  const colW = (width - gap * (grid.cols - 1)) / grid.cols;
+  // a tela tem proporção de monitor (16:9); o Mural usa a altura de linha dele
+  const rowPx = grid.fixed ? Math.max(24, (width * 0.5625 - gap * (grid.rows - 1)) / grid.rows) : ROW_PX;
+  const stepX = colW + gap;
+  const stepY = rowPx + gap;
+  const shown = drag?.preview ?? items;
+  const rows = grid.fixed ? grid.rows : Math.min(grid.rows, Math.max(6, ...shown.map((w) => w.y + w.h + 2)));
+  const px = (b: Box) => ({ left: b.x * stepX, top: b.y * stepY, width: b.w * colW + (b.w - 1) * gap, height: b.h * rowPx + (b.h - 1) * gap });
+  const radius = grid.fixed ? 'rounded-2xl' : 'rounded-3xl';
 
-  const start = (e: React.PointerEvent, w: WidgetPlacement, mode: Drag['mode']) => {
-    if (e.button !== 0) return;
+  const start = (e: React.PointerEvent, w: ScreenItem, mode: Drag['mode']) => {
+    if (e.button !== 0 || readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     onSelect(w.id);
@@ -794,18 +967,23 @@ function GridEditor({
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
     const o = drag.orig;
-    const info = WIDGET_INFO[o.type];
-    let next: WidgetPlacement;
+    const { min, max } = grid.limits(o);
+    let next: ScreenItem;
     if (drag.mode === 'move') {
-      const x = Math.max(0, Math.min(GRID_COLS - o.w, Math.round((o.x * stepX + dx) / stepX)));
-      const y = Math.max(0, Math.min(GRID_MAX_ROWS - o.h, Math.round((o.y * stepY + dy) / stepY)));
+      const x = Math.max(0, Math.min(grid.cols - o.w, Math.round((o.x * stepX + dx) / stepX)));
+      const y = Math.max(0, Math.min(grid.rows - o.h, Math.round((o.y * stepY + dy) / stepY)));
       next = { ...o, x, y };
     } else {
-      const w = Math.max(info.min[0], Math.min(info.max[0], GRID_COLS - o.x, Math.round((px(o).width + dx + GAP_PX) / stepX)));
-      const h = Math.max(info.min[1], Math.min(info.max[1], GRID_MAX_ROWS - o.y, Math.round((px(o).height + dy + GAP_PX) / stepY)));
+      const w = Math.max(min[0], Math.min(max[0], grid.cols - o.x, Math.round((px(o).width + dx + gap) / stepX)));
+      const h = Math.max(min[1], Math.min(max[1], grid.rows - o.y, Math.round((px(o).height + dy + gap) / stepY)));
       next = { ...o, w, h };
     }
-    const preview = resolve(widgets, next);
+    let preview = resolve(items, next, grid.rows);
+    if (!preview && grid.fixed && drag.mode === 'move' && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const cell = { x: Math.floor((e.clientX - r.left) / stepX), y: Math.floor((e.clientY - r.top) / stepY) };
+      preview = swap(items, next, o, grid, cell);
+    }
     setDrag({ ...drag, dx, dy, preview: preview ?? drag.preview });
   };
 
@@ -816,50 +994,56 @@ function GridEditor({
 
   const cellAt = (e: React.DragEvent, type: WidgetType): Box => {
     const r = ref.current!.getBoundingClientRect();
-    const [w, h] = WIDGET_INFO[type].size;
-    const x = Math.max(0, Math.min(GRID_COLS - w, Math.floor((e.clientX - r.left) / stepX)));
-    const y = Math.max(0, Math.floor((e.clientY - r.top) / stepY));
+    const [w, h] = startSize(type, grid);
+    const x = Math.max(0, Math.min(grid.cols - w, Math.floor((e.clientX - r.left) / stepX)));
+    const y = Math.max(0, Math.min(grid.rows - h, Math.floor((e.clientY - r.top) / stepY)));
     return { x, y, w, h };
   };
 
   return (
     <div
       ref={ref}
-      className="ws-grid-canvas relative select-none"
-      style={{ height: rows * stepY - GAP_PX, backgroundSize: `${stepX}px ${stepY}px`, backgroundPosition: `${colW + GAP_PX / 2}px ${ROW_PX + GAP_PX / 2}px` }}
+      className={cx('relative select-none', !readOnly && 'ws-grid-canvas')}
+      style={{ height: rows * stepY - gap, backgroundSize: `${stepX}px ${stepY}px`, backgroundPosition: `${colW + gap / 2}px ${rowPx + gap / 2}px` }}
       onPointerMove={move}
       onPointerUp={end}
       onPointerCancel={end}
       onPointerDown={(e) => e.target === e.currentTarget && onSelect(null)}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(WIDGET_DRAG)) return;
+        if (readOnly || !e.dataTransfer.types.includes(WIDGET_DRAG)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
-        // o tipo só aparece no drop; a prévia usa o tamanho médio
+        // o tipo só aparece no drop; a prévia usa um tamanho médio
         const r = ref.current!.getBoundingClientRect();
-        setDropAt({ x: Math.max(0, Math.min(GRID_COLS - 2, Math.floor((e.clientX - r.left) / stepX))), y: Math.max(0, Math.floor((e.clientY - r.top) / stepY)), w: 2, h: 2 });
+        const w = grid.fixed ? 4 : 2;
+        setDropAt({
+          x: Math.max(0, Math.min(grid.cols - w, Math.floor((e.clientX - r.left) / stepX))),
+          y: Math.max(0, Math.min(grid.rows - 2, Math.floor((e.clientY - r.top) / stepY))),
+          w,
+          h: 2,
+        });
       }}
       onDragLeave={() => setDropAt(null)}
       onDrop={(e) => {
         const type = e.dataTransfer.getData(WIDGET_DRAG) as WidgetType;
         setDropAt(null);
-        if (!WIDGET_TYPES.includes(type)) return;
+        if (readOnly || !WIDGET_TYPES.includes(type)) return;
         e.preventDefault();
         const at = cellAt(e, type);
         onDropNew(type, { x: at.x, y: at.y });
       }}
     >
-      {!widgets.length && !dropAt && (
+      {!items.length && !dropAt && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-center text-sm text-fg-muted">
           <LayoutGrid size={28} className="text-fg-subtle" />
           Arraste widgets da gaveta para cá.
         </div>
       )}
-      {dropAt && <div className="pointer-events-none absolute rounded-3xl border-2 border-dashed border-accent bg-accent/10" style={px(dropAt)} />}
+      {dropAt && <div className={cx('pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10', radius)} style={px(dropAt)} />}
       {drag?.preview &&
         (() => {
           const target = drag.preview.find((w) => w.id === drag.id)!;
-          return <div className="pointer-events-none absolute rounded-3xl border-2 border-dashed border-accent bg-accent/10 transition-all duration-100" style={px(target)} />;
+          return <div className={cx('pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10 transition-all duration-100', radius)} style={px(target)} />;
         })()}
       {shown.map((w) => {
         const isDrag = drag?.id === w.id;
@@ -870,53 +1054,268 @@ function GridEditor({
           isDrag && drag.mode === 'move'
             ? { ...box, transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 20 }
             : isDrag
-              ? { ...box, width: Math.max(colW, box.width + drag.dx), height: Math.max(ROW_PX, box.height + drag.dy), zIndex: 20 }
+              ? { ...box, width: Math.max(colW, box.width + drag.dx), height: Math.max(rowPx, box.height + drag.dy), zIndex: 20 }
               : box;
+        const required = isBlock(w) && BLOCK_INFO[w.block].required;
         return (
           <div
             key={w.id}
             className={cx(
-              'group absolute rounded-3xl',
+              'group absolute',
+              radius,
               !isDrag && 'transition-[left,top,width,height] duration-150',
               // o contorno fica fora do card: no formato recortado o clip-path esconderia
-              selected === w.id && 'outline-2 outline-offset-4 outline-accent',
+              selected === w.id && !readOnly && 'outline-2 outline-offset-4 outline-accent',
             )}
             style={style}
             onPointerDown={(e) => {
+              if (readOnly) return;
               e.stopPropagation();
               onSelect(w.id);
             }}
           >
-            <WidgetCard ctx={ctx} className={cx('h-full', isDrag && 'opacity-90 shadow-2xl')}>
-              <div className="pointer-events-none h-full">
-                <WidgetBody w={w} ctx={ctx} />
-              </div>
-            </WidgetCard>
-            <button
-              type="button"
-              aria-label={`Mover ${WIDGET_INFO[w.type].label}`}
-              title="Arraste para mover"
-              onPointerDown={(e) => start(e, w, 'move')}
-              className={cx(
-                'absolute top-2 right-2 flex cursor-grab items-center gap-1 rounded-full bg-surface-1/90 px-2 py-1 text-[10px] font-bold text-fg shadow ring-1 ring-line active:cursor-grabbing',
-                selected === w.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-              )}
-            >
-              <GripVertical size={12} />
-              {WIDGET_INFO[w.type].label}
-            </button>
-            <span
-              role="presentation"
-              title="Puxe para redimensionar"
-              onPointerDown={(e) => start(e, w, 'resize')}
-              className={cx(
-                'absolute right-1 bottom-1 h-4 w-4 cursor-se-resize rounded-br-2xl border-r-[3px] border-b-[3px] border-accent',
-                selected === w.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-              )}
-            />
+            {isBlock(w) ? (
+              <BlockMock b={w} detail={detail} dragging={isDrag} compact={grid.fixed} />
+            ) : (
+              <WidgetCard ctx={ctx} className={cx('h-full', grid.fixed && 'p-2.5 text-[12px]', isDrag && 'opacity-90 shadow-2xl')}>
+                <div className="pointer-events-none h-full">
+                  <WidgetBody w={w} ctx={ctx} />
+                </div>
+              </WidgetCard>
+            )}
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  aria-label={`Mover ${itemLabel(w)}`}
+                  title="Arraste para mover"
+                  onPointerDown={(e) => start(e, w, 'move')}
+                  className={cx(
+                    'absolute top-1.5 right-1.5 z-10 flex cursor-grab items-center gap-1 rounded-full bg-surface-1/95 px-2 py-1 text-[10px] font-bold text-fg shadow ring-1 ring-line active:cursor-grabbing',
+                    selected === w.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                  )}
+                >
+                  <GripVertical size={12} />
+                  {itemLabel(w)}
+                  {required && <span className="text-fg-subtle">· fixo</span>}
+                </button>
+                <span
+                  role="presentation"
+                  title="Puxe para redimensionar"
+                  onPointerDown={(e) => start(e, w, 'resize')}
+                  className={cx(
+                    'absolute right-1 bottom-1 z-10 h-4 w-4 cursor-se-resize rounded-br-xl border-r-[3px] border-b-[3px] border-accent',
+                    selected === w.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                  )}
+                />
+              </>
+            )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ tela do servidor: área, blocos e miniaturas
+
+function ScreenArea({
+  config,
+  detail,
+  serverId,
+  asMember,
+  backdrop,
+  selected,
+  onSelect,
+  onStart,
+  onReset,
+  onChange,
+  onDropNew,
+}: {
+  config: WorkshopConfig;
+  detail: ServerDetail;
+  serverId: string;
+  asMember: boolean;
+  backdrop: Pack | null;
+  selected: string | null;
+  onSelect: (id: string | null) => void;
+  onStart: () => void;
+  onReset: () => void;
+  onChange: (xs: ScreenItem[]) => void;
+  onDropNew: (type: WidgetType, at: { x: number; y: number }) => void;
+}) {
+  const items = config.screen?.items;
+  const ctx: WidgetContext = { serverId, pack: backdrop, editing: true };
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex items-end justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Tela do servidor</div>
+          <div className="text-xs text-fg-muted">
+            {items
+              ? 'Arraste blocos e widgets para qualquer lugar e puxe o canto para mudar o tamanho. A barra de servidores fica sempre em cima.'
+              : 'Este servidor usa o layout padrão do Concord.'}
+          </div>
+        </div>
+        {items && !asMember && (
+          <Button variant="ghost" className="h-8 shrink-0 px-3 text-xs" onClick={onReset}>
+            Voltar ao layout padrão
+          </Button>
+        )}
+      </div>
+      {/* moldura de "monitor": a barra de servidores fixa em cima, a grade embaixo */}
+      <div className={cx('overflow-hidden rounded-3xl bg-surface-1 p-2.5 ring-1 ring-line', backdrop && 'ws-vars')} style={backdrop ? packVars(backdrop) : undefined}>
+        <div className="mb-2 flex h-8 items-center gap-1.5 rounded-2xl bg-surface-2 px-2.5" aria-hidden="true">
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} className={cx('h-5 w-5 rounded-lg', i === 1 ? 'bg-accent' : 'bg-surface-3')} />
+          ))}
+          <span className="ml-2 text-[10px] font-bold text-fg-subtle">barra de servidores · fixa</span>
+        </div>
+        {items ? (
+          <GridEditor
+            items={items}
+            grid={SCREEN_GRID}
+            ctx={ctx}
+            detail={detail}
+            selected={selected}
+            onSelect={onSelect}
+            onChange={onChange}
+            onDropNew={onDropNew}
+            readOnly={asMember}
+          />
+        ) : (
+          <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-line-strong text-center">
+            <Monitor size={30} className="text-fg-subtle" />
+            <div className="max-w-sm text-sm text-fg-muted">Comece do layout de sempre e mude o que quiser: troque as colunas de lugar, aumente o chat, ponha widgets na tela.</div>
+            <Button onClick={onStart}>Montar a tela</Button>
+          </div>
+        )}
+      </div>
+      <p className="mt-2 text-[11px] text-fg-subtle">
+        Vale em telas a partir de 1100 px de largura. No celular e em telas menores, todo mundo vê o layout padrão, e cada membro pode voltar ao padrão em Configurações › Aparência.
+      </p>
+    </div>
+  );
+}
+
+/** Miniatura de um bloco do sistema, com os dados reais do servidor (nomes dos canais, membros). */
+function BlockMock({ b, detail, dragging, compact }: { b: BlockPlacement; detail: ServerDetail; dragging: boolean; compact: boolean }) {
+  const me = useApp((s) => s.me);
+  const firstText = detail.channels.find((c) => c.type === 'text');
+  const shell = cx('pointer-events-none flex h-full flex-col overflow-hidden rounded-2xl bg-surface-2 ring-1 ring-line', compact ? 'p-2 text-[11px]' : 'p-3 text-sm', dragging && 'opacity-90 shadow-2xl');
+  switch (b.block) {
+    case 'channels':
+      return (
+        <div className={shell}>
+          <div className="truncate font-display text-[13px] font-extrabold">{detail.server.name}</div>
+          <div className="mb-1.5 text-[10px] text-fg-muted">{detail.online.length} online</div>
+          <div className="min-h-0 space-y-0.5 overflow-hidden">
+            {detail.channels.map((c) => (
+              <div key={c.id} className="flex items-center gap-1 truncate rounded-md px-1 py-0.5 text-fg-muted">
+                {c.type === 'voice' ? <Volume2 size={11} /> : <Hash size={11} />}
+                <span className="truncate">{c.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    case 'main':
+      return (
+        <div className={shell}>
+          <div className="mb-2 flex items-center gap-1 font-bold">
+            <Hash size={12} className="text-fg-muted" />
+            {firstText?.name ?? 'conversa'}
+          </div>
+          <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
+            {[70, 45, 85, 55, 30].map((w, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <span className="h-4 w-4 shrink-0 rounded-full bg-surface-4" />
+                <span className="mt-1 h-2 rounded-full bg-surface-4" style={{ width: `${w}%` }} />
+              </div>
+            ))}
+          </div>
+          <div className="mt-1.5 truncate rounded-full bg-surface-3 px-2.5 py-1 text-[10px] text-fg-subtle">Mensagem em #{firstText?.name ?? 'geral'}</div>
+        </div>
+      );
+    case 'members':
+      return (
+        <div className={shell}>
+          <div className="mb-1.5 flex items-center gap-1 text-[10px] font-extrabold tracking-wider text-fg-subtle uppercase">
+            <Users size={11} />
+            Membros · {detail.members.length}
+          </div>
+          <div className="min-h-0 space-y-1 overflow-hidden">
+            {detail.members.slice(0, 12).map((m) => (
+              <div key={m.id} className="flex items-center gap-1.5 truncate">
+                <Avatar name={m.nickname || m.displayName} color={m.avatarColor} src={m.avatarUrl} size={16} />
+                <span className="truncate">{m.nickname || m.displayName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    case 'voicebar':
+      return (
+        <div className={cx(shell, 'justify-end')}>
+          <div className="flex items-center gap-1.5 rounded-xl bg-surface-3 p-1.5">
+            {me && <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={18} />}
+            <span className="min-w-0 flex-1 truncate font-semibold">{me?.displayName}</span>
+            <Mic size={12} className="text-fg-muted" />
+            <Headphones size={12} className="text-fg-muted" />
+          </div>
+        </div>
+      );
+  }
+}
+
+function BlocksDrawer({ items, onAdd }: { items: ScreenItem[] | null; onAdd: (b: SystemBlock) => void }) {
+  const present = new Set((items ?? defaultScreen()).filter(isBlock).map((b) => b.block));
+  return (
+    <div className="mb-4 space-y-2">
+      <div className="px-1 text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Blocos do sistema</div>
+      {SYSTEM_BLOCKS.map((b) => (
+        <div key={b} className="flex items-center gap-2 rounded-2xl bg-surface-1 p-2.5 ring-1 ring-line">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-bold">{BLOCK_INFO[b].label}</div>
+            <div className="text-[10px] leading-snug text-fg-muted">{BLOCK_INFO[b].hint}</div>
+          </div>
+          {present.has(b) ? (
+            <span className="shrink-0 text-[10px] font-bold text-fg-subtle">{BLOCK_INFO[b].required ? 'obrigatório' : 'na tela'}</span>
+          ) : (
+            <button type="button" onClick={() => onAdd(b)} className="flex shrink-0 items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold text-on-accent">
+              <Plus size={12} />
+              Pôr na tela
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="px-1 pt-2 text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Widgets</div>
+    </div>
+  );
+}
+
+function BlockInspector({ b, onRemove }: { b: BlockPlacement; onRemove: () => void }) {
+  const info = BLOCK_INFO[b.block];
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Bloco do sistema</div>
+        <div className="font-display text-base font-extrabold">{info.label}</div>
+      </div>
+      <p className="text-sm text-fg-muted">{info.hint}</p>
+      <div className="text-xs text-fg-muted">
+        {b.w}×{b.h} na tela · mínimo {info.min.join('×')}
+      </div>
+      {info.required ? (
+        <div className="rounded-2xl bg-surface-3 p-3 text-xs text-fg-muted">
+          <b className="text-fg">Obrigatório.</b> Dá para mover e mudar o tamanho, mas não tirar da tela: sem ele, as pessoas perderiam o chat, os canais ou os controles de voz.
+        </div>
+      ) : (
+        <Button variant="secondary" className="w-full" onClick={onRemove}>
+          <Trash2 size={16} />
+          Tirar da tela
+        </Button>
+      )}
     </div>
   );
 }
