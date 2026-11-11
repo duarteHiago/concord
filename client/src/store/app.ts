@@ -461,10 +461,15 @@ export const useApp = create<AppState>((set, get) => {
             );
         }
       }
-      const token = getToken();
+      let token = getToken();
       if (token) {
         try {
-          const me = await api.get<Me>('/me');
+          const { sessionToken, ...me } = await api.get<Me & { sessionToken?: string }>('/me');
+          // acesso de antes dos "aparelhos conectados": o servidor manda um token com sessão (aparece na lista)
+          if (sessionToken) {
+            setToken(sessionToken);
+            token = sessionToken;
+          }
           startSession(token, me);
         } catch {
           setToken(null);

@@ -1,5 +1,6 @@
 // Aparelhos conectados: cada login é uma sessão; dá para ver, tirar um aparelho e sair de todos os outros.
 import assert from 'node:assert/strict';
+import jwt from 'jsonwebtoken';
 import { after, before, describe, it } from 'node:test';
 import { Client, signUp, startServer, type TestServer } from './helpers.ts';
 
@@ -68,6 +69,25 @@ describe('aparelhos conectados', () => {
     const list = (await ana.get<SessionsBody>('/me/sessions')).body;
     assert.equal(list.sessions.length, 1);
     assert.ok(list.sessions[0].current);
+  });
+
+  it('aparelho com acesso de antes da lista ganha uma sessão ao abrir o app e passa a aparecer', async () => {
+    const ana = await signUp(server, 'ana');
+    // token como os de antes desta função: sem id de sessão (mesmo segredo dos testes, ver helpers.ts)
+    const legacy = new Client(server.url);
+    legacy.token = jwt.sign({ sub: ana.id, v: 0 }, 'segredo-dos-testes', { expiresIn: '30d' });
+    const me = await legacy.get('/me');
+    assert.equal(me.status, 200);
+    assert.ok(me.body.sessionToken, 'o servidor manda um token com sessão');
+    legacy.token = me.body.sessionToken;
+    assert.equal((await legacy.get('/me')).body.sessionToken, undefined, 'com sessão, não manda de novo');
+    assert.equal((await ana.get<SessionsBody>('/me/sessions')).body.sessions.length, 2);
+    // "sair de todos os outros" derruba também quem ainda usa um token antigo
+    const old = new Client(server.url);
+    old.token = jwt.sign({ sub: ana.id, v: 0 }, 'segredo-dos-testes', { expiresIn: '30d' });
+    assert.equal((await ana.post('/me/sessions/logout-others')).status, 200);
+    assert.equal((await old.get('/me')).status, 401);
+    assert.equal((await legacy.get('/me')).status, 401);
   });
 
   it('sair da conta encerra a sessão no servidor (o token copiado não serve mais)', async () => {

@@ -95,7 +95,6 @@ export function SessionsSection() {
     });
   }
 
-  const others = data?.sessions.filter((s) => !s.current).length ?? 0;
 
   return (
     <div className="space-y-3 rounded-2xl bg-surface-0 p-4">
@@ -133,12 +132,13 @@ export function SessionsSection() {
           })}
         </ul>
       )}
-      {data && !data.currentListed && (
+      {data && (
+        // aparelhos conectados antes da lista existir só aparecem quando abrem o Concord de novo; o botão tira todos
         <p className="text-xs text-fg-subtle">
-          Aparelhos que entraram antes desta lista existir não aparecem aqui. Para tirar todos, use o botão abaixo.
+          Não achou algum aparelho? Os que estão conectados desde antes de 10 de novembro aparecem aqui quando abrirem o Concord de novo. Para tirar todos de uma vez, use o botão abaixo.
         </p>
       )}
-      {data && (others > 0 || !data.currentListed) && (
+      {data && (
         <Button variant="danger" onClick={logoutOthers}>
           Sair de todos os outros aparelhos
         </Button>

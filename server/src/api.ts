@@ -936,7 +936,10 @@ api.get('/me/voice', (_req, res) => {
 
 api.get('/me', (_req, res) => {
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', uid(res)) ?? fail(401, 'Sessão inválida');
-  res.json(meJson(user));
+  // aparelho que entrou antes dos "aparelhos conectados" (token sem sessão): ganha uma sessão ao abrir o app,
+  // e passa a aparecer na lista. O app troca o token guardado pelo novo (ver store/app.ts#bootstrap)
+  const sessionToken = !res.locals.sessionId && !res.locals.isBot ? signToken(user.id) : undefined;
+  res.json(sessionToken ? { ...meJson(user), sessionToken } : meJson(user));
 });
 
 /** Avisa os servidores do usuário que o perfil dele mudou (nome, foto...). */
