@@ -54,7 +54,7 @@ import { isAdmin, registerAdminRoutes } from './admin.ts';
 import { recordingOf, registerDirectorRoutes } from './director.ts';
 import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
 import {
-  avatarLocked,
+  contractAvatarsIn,
   mecenasBadge,
   mecenasDeafen,
   mecenasDisconnect,
@@ -1121,12 +1121,9 @@ function requireProfileUploadQuota(me: string) {
   if (!profileImageUploads(me)) fail(429, 'Muitas trocas de imagem em pouco tempo. Espere um pouco.');
 }
 
-const AVATAR_LOCKED = 'Seu Mecenas escolheu sua foto. Ela volta ao normal quando o contrato acabar.';
-
 api.post('/me/avatar', imageBody, (req, res) => {
   const me = uid(res);
   requireProfileUploadQuota(me);
-  if (avatarLocked(me)) fail(403, AVATAR_LOCKED);
   const old = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url;
   const url = saveImage('avatars', me, req.body);
   run('UPDATE users SET avatar_url = ? WHERE id = ?', url, me);
@@ -1137,7 +1134,6 @@ api.post('/me/avatar', imageBody, (req, res) => {
 
 api.delete('/me/avatar', (_req, res) => {
   const me = uid(res);
-  if (avatarLocked(me)) fail(403, AVATAR_LOCKED);
   removeUpload(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url);
   run('UPDATE users SET avatar_url = NULL WHERE id = ?', me);
   profileChanged(me);
@@ -1405,8 +1401,10 @@ api.get('/servers/:id', (req, res) => {
     server.id,
   );
   const links = all<{ user_id: string; role_id: string }>('SELECT user_id, role_id FROM member_roles WHERE server_id = ?', server.id);
+  // foto escolhida pelo Mecenas: só aparece nos servidores do contrato (ver contracts.ts#contractAvatarsIn)
+  const contractAvatars = contractAvatarsIn(server.id);
   const members = memberRows.map((u) => ({
-    ...userJson(u),
+    ...userJson(contractAvatars.has(u.id) ? { ...u, avatar_url: contractAvatars.get(u.id)! } : u),
     nickname: u.nickname,
     joinedAt: u.joined_at,
     roleIds: links.filter((l) => l.user_id === u.id).map((l) => l.role_id),
@@ -1481,7 +1479,7 @@ api.put('/servers/:id/members/:userId/nickname', (req, res) => {
   const perms = serverPermissions(server.id, me);
   const raw = req.body?.nickname;
   const nickname = raw === null || raw === '' ? null : str(raw, 'apelido', 1, 32);
-  const mecenas = target === me ? 'no' : mecenasPower(me, target);
+  const mecenas = target === me ? 'no' : mecenasPower(me, target, server.id);
   if (mecenas === 'yes') {
     mecenasNickname(me, target, server.id, nickname);
     return res.json({ ok: true, nickname });
@@ -1815,7 +1813,7 @@ api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
   const serverId = req.params.id;
   const target = req.params.userId;
   const muted = req.body?.muted !== false;
-  const mecenas = mecenasPower(me, target);
+  const mecenas = mecenasPower(me, target, serverId);
   if (mecenas === 'yes') {
     // o Mecenas silencia o alvo dele sem precisar de cargo no servidor
     requireMember(serverId, me);
@@ -1846,7 +1844,7 @@ api.post('/servers/:id/members/:userId/voice-deafen', async (req, res) => {
 api.post('/servers/:id/members/:userId/voice-disconnect', async (req, res) => {
   const me = uid(res);
   const target = req.params.userId;
-  const mecenas = mecenasPower(me, target);
+  const mecenas = mecenasPower(me, target, req.params.id);
   if (mecenas === 'yes') {
     requireMember(req.params.id, me);
     if (getVoiceState(target)?.serverId !== req.params.id) fail(400, 'Este membro não está em uma sala de voz');

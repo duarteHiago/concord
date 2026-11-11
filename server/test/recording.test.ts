@@ -45,6 +45,20 @@ after(async () => {
 
 const terms = { durationDays: 7, cooldownHours: 1, tieClause: false, acceptTerms: true };
 
+/** Propõe um contrato valendo num servidor de quem propõe (cria um, se a pessoa ainda não tem). */
+const homes = new Map<string, string>();
+async function propose(c: Client, body: Record<string, unknown>) {
+  if (!body.serverIds) {
+    let sid = homes.get(c.id);
+    if (!sid) {
+      sid = (await c.post('/servers', { name: 'Casa' })).body.id as string;
+      homes.set(c.id, sid);
+    }
+    body = { ...body, serverIds: [sid] };
+  }
+  return c.post('/contracts', body);
+}
+
 describe('Mecenato de cortesia', () => {
   it('nome da lista sem conta fica reservado (ninguém pega o lugar de quem foi liberado)', async () => {
     const res = await fetch(`${server.url}/api/auth/register`, {
@@ -58,7 +72,7 @@ describe('Mecenato de cortesia', () => {
   it('quem está na lista propõe sem apoiar; o contrato vem com empate', async () => {
     const friend = await signUp(server, 'amigo');
     assert.equal((await listed.get('/contracts/me')).body.courtesy, true);
-    const created = await listed.post('/contracts', { ...terms, username: friend.username });
+    const created = await propose(listed, { ...terms, username: friend.username });
     assert.equal(created.status, 200, JSON.stringify(created.body));
     assert.equal(created.body.courtesy, true);
     assert.equal(created.body.tieClause, true, 'cortesia liga o empate');
@@ -70,14 +84,14 @@ describe('Mecenato de cortesia', () => {
   it('a equipe libera pelo portal; os dois no 0 a 0 têm poder e a rescisão sai sem multa', async () => {
     const a = await signUp(server, 'cort_a');
     const b = await signUp(server, 'cort_b');
-    assert.equal((await a.post('/contracts', { ...terms, username: b.username })).status, 403, 'sem apoio e sem cortesia');
+    assert.equal((await propose(a, { ...terms, username: b.username })).status, 403, 'sem apoio e sem cortesia');
     for (const c of [a, b]) {
       const on = await admin.post(`/admin/users/${c.id}/mecenato`, { on: true });
       assert.equal(on.status, 200, JSON.stringify(on.body));
     }
     assert.equal((await a.post(`/admin/users/${b.id}/mecenato`, { on: false })).status, 404, 'só a equipe libera (o portal nem aparece para os outros)');
 
-    const created = await a.post('/contracts', { ...terms, username: b.username });
+    const created = await propose(a, { ...terms, username: b.username });
     assert.equal(created.status, 200, JSON.stringify(created.body));
     const accepted = await b.post(`/contracts/${created.body.id}/accept`, { acceptTerms: true });
     assert.equal(accepted.status, 200, JSON.stringify(accepted.body));

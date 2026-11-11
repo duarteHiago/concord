@@ -315,9 +315,19 @@ export interface Contract extends ContractBrief {
   pendingFx: { effect: string; durationMs: number } | null;
   /** onde a outra pessoa está em chamada (se for num servidor seu) */
   otherVoice: { serverId: string; channelId: string; muted: boolean; deafened: boolean; serverMuted: boolean; serverDeafened: boolean } | null;
+  /** onde os poderes podem acontecer: servidores do contrato em que os dois estão */
   mutualServers: { id: string; name: string }[];
+  /** servidores escolhidos por quem propôs (null = contrato antigo: todos em comum, menos o oficial) */
+  servers: ContractServer[] | null;
   endNote: string | null;
   events: ContractEvent[];
+}
+
+export interface ContractServer {
+  id: string;
+  name: string;
+  iconUrl: string | null;
+  iconColor: string | null;
 }
 
 export interface ContractFine {
@@ -338,6 +348,8 @@ export interface ContractsMe {
   shield: ShieldView;
   fines: ContractFine[];
   supportTotalCents: number;
+  /** servidores da pessoa onde um contrato pode valer (o oficial nunca entra) */
+  eligibleServers: ContractServer[];
   /** liberado pela equipe para o Mecenato sem apoio */
   courtesy?: boolean;
 }

@@ -56,6 +56,7 @@ const SKIP_TEXT: Record<string, string> = {
   shield: 'o Escudo estava ligado',
   no_power: 'o Mecenas mudou',
   not_in_voice: 'não estava em chamada',
+  out_of_scope: 'estava em chamada num servidor fora do contrato',
   muted: 'estava com o microfone desligado',
 };
 

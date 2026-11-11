@@ -145,15 +145,29 @@ async function support(c: Client, amountCents: number) {
 
 const terms = { durationDays: 7, cooldownHours: 1, tieClause: false, acceptTerms: true };
 
+/** Propõe um contrato valendo num servidor de quem propõe (cria um, se a pessoa ainda não tem). */
+const homes = new Map<string, string>();
+async function propose(c: Client, body: Record<string, unknown>) {
+  if (!body.serverIds) {
+    let sid = homes.get(c.id);
+    if (!sid) {
+      sid = (await c.post('/servers', { name: 'Casa' })).body.id as string;
+      homes.set(c.id, sid);
+    }
+    body = { ...body, serverIds: [sid] };
+  }
+  return c.post('/contracts', body);
+}
+
 describe('contratos (API)', () => {
   it('só quem apoiou propõe; o convidado só aceita depois de apoiar', async () => {
     const a = await signUp(server, 'mec_a');
     const b = await signUp(server, 'mec_b');
-    assert.equal((await a.post('/contracts', { ...terms, username: b.username })).status, 403);
+    assert.equal((await propose(a, { ...terms, username: b.username })).status, 403);
     await support(a, 500);
-    assert.equal((await a.post('/contracts', { ...terms, username: b.username, acceptTerms: false })).status, 400);
-    assert.equal((await a.post('/contracts', { ...terms, username: b.username, durationDays: 31 })).status, 400);
-    const created = await a.post('/contracts', { ...terms, username: b.username });
+    assert.equal((await propose(a, { ...terms, username: b.username, acceptTerms: false })).status, 400);
+    assert.equal((await propose(a, { ...terms, username: b.username, durationDays: 31 })).status, 400);
+    const created = await propose(a, { ...terms, username: b.username });
     assert.equal(created.status, 200, JSON.stringify(created.body));
     assert.equal(created.body.status, 'pending');
     // convite não dá poder nenhum
@@ -175,14 +189,14 @@ describe('contratos (API)', () => {
     const c = await signUp(server, 'um_c');
     await support(a, 300);
     await support(c, 300);
-    assert.equal((await a.post('/contracts', { ...terms, username: b.username })).status, 200);
-    assert.equal((await c.post('/contracts', { ...terms, username: b.username })).status, 409, 'b já tem convite');
-    assert.equal((await c.post('/contracts', { ...terms, username: a.username })).status, 409, 'a já tem convite');
-    assert.equal((await a.post('/contracts', { ...terms, username: c.username })).status, 409, 'a não manda dois');
+    assert.equal((await propose(a, { ...terms, username: b.username })).status, 200);
+    assert.equal((await propose(c, { ...terms, username: b.username })).status, 409, 'b já tem convite');
+    assert.equal((await propose(c, { ...terms, username: a.username })).status, 409, 'a já tem convite');
+    assert.equal((await propose(a, { ...terms, username: c.username })).status, 409, 'a não manda dois');
     // recusar libera as duas pessoas
     const id = (await b.get('/contracts/me')).body.current.id;
     assert.equal((await b.post(`/contracts/${id}/decline`)).status, 200);
-    assert.equal((await c.post('/contracts', { ...terms, username: b.username })).status, 200);
+    assert.equal((await propose(c, { ...terms, username: b.username })).status, 200);
   });
 
   it('liderança vira com o apoio, poderes e Escudo valem, e a rescisão gera a multa certa', async () => {
@@ -195,7 +209,7 @@ describe('contratos (API)', () => {
     const invite = await a.post(`/servers/${srv.body.id}/invites`, {});
     assert.equal((await b.post(`/invites/${invite.body.code}`)).status, 200);
 
-    const id = (await a.post('/contracts', { ...terms, username: b.username })).body.id;
+    const id = (await propose(a, { ...terms, username: b.username, serverIds: [srv.body.id] })).body.id;
     assert.equal((await b.post(`/contracts/${id}/accept`, { acceptTerms: true })).status, 200);
     const nick = (c: Client, nickname: string) => c.post(`/contracts/${id}/powers`, { power: 'nickname', serverId: srv.body.id, nickname });
 
@@ -248,7 +262,7 @@ describe('contratos (API)', () => {
 
     // multa em aberto: a não entra em outro contrato; b (que não rescindiu) entra
     const c = await signUp(server, 'lid_c');
-    assert.equal((await a.post('/contracts', { ...terms, username: c.username })).status, 409);
+    assert.equal((await propose(a, { ...terms, username: c.username })).status, 409);
 
     // paga a multa pelo Pix de teste: não soma no total de apoio
     const before = (await a.get('/me')).body.supportTotal;
@@ -258,7 +272,7 @@ describe('contratos (API)', () => {
     await a.post(`/support/pix/${pix.body.id}/simulate`);
     assert.equal((await a.get('/me')).body.supportTotal, before);
     assert.equal((await a.get('/contracts/me')).body.fines[0].status, 'paid');
-    assert.equal((await a.post('/contracts', { ...terms, username: c.username })).status, 200);
+    assert.equal((await propose(a, { ...terms, username: c.username })).status, 200);
   });
 
   it('sair por segurança não gera multa e vai para revisão', async () => {
@@ -266,7 +280,7 @@ describe('contratos (API)', () => {
     const b = await signUp(server, 'seg_b');
     await support(a, 300);
     await support(b, 300);
-    const id = (await a.post('/contracts', { ...terms, username: b.username })).body.id;
+    const id = (await propose(a, { ...terms, username: b.username })).body.id;
     await b.post(`/contracts/${id}/accept`, { acceptTerms: true });
     assert.equal((await b.post(`/contracts/${id}/safety-end`, { note: 'passou do ponto' })).status, 200);
     const me = (await b.get('/contracts/me')).body;
@@ -280,7 +294,7 @@ describe('contratos (API)', () => {
     const b = await signUp(server, 'priv_b');
     const x = await signUp(server, 'priv_x');
     await support(a, 300);
-    const id = (await a.post('/contracts', { ...terms, username: b.username })).body.id;
+    const id = (await propose(a, { ...terms, username: b.username })).body.id;
     assert.equal((await x.get(`/contracts/${id}`)).status, 404);
     assert.equal((await x.post(`/contracts/${id}/accept`, { acceptTerms: true })).status, 404);
     assert.equal((await x.get('/admin/contracts')).status, 404);
