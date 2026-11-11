@@ -35,6 +35,7 @@ import {
 import { isMember } from './access.ts';
 import { config } from './config.ts';
 import { all, get, run, tx, type ContractFineRow, type ContractRow, type PaymentRow, type UserRow } from './db.ts';
+import { blockedBetween } from './friends.ts';
 import { fail, humansOnly, int, str, uid } from './http.ts';
 import { TrackSource, muteTracks, removeFromRoom } from './livekit.ts';
 import { dropVoice, emitToUser, getVoiceState, serverChanged, setServerDeafen, setServerMute } from './realtime.ts';
@@ -776,6 +777,9 @@ export function registerContractRoutes(api: Router) {
       get<UserRow>('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND is_bot = 0', username(req.body?.username)) ??
       fail(404, 'Ninguém com esse @');
     if (target!.id === me) fail(400, 'O contrato é entre duas pessoas');
+    // bloqueio vale aqui também: o convite avisa a pessoa e ocupa a vaga de contrato dela até expirar. A resposta
+    // é a de um @ que não existe, para não contar a ninguém que foi bloqueado.
+    if (blockedBetween(me, target!.id)) fail(404, 'Ninguém com esse @');
     if (!mayContract(me)) fail(403, 'Só quem já apoiou o Concord pode propor um contrato');
     // com alguém liberado pela equipe, os dois começam (e podem ficar) no 0 a 0: o empate dá poder aos dois
     const courtesy = courtesyOf(me) || courtesyOf(target!.id);

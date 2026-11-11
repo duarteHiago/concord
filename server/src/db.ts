@@ -580,6 +580,8 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 `);
+// quando a pessoa provou quem é para abrir a sessão (ver signToken em http.ts)
+addColumn('sessions', 'auth_at', 'INTEGER');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // Banidos de um servidor: saem e não voltam por convite enquanto o ban existir.
 db.exec(`

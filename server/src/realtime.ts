@@ -141,6 +141,9 @@ export function joinServerRoom(userId: string, serverId: string) {
     s.emit('voice:states', { serverId, states: voiceStatesFor(serverId) });
     s.emit('voice:jams', { serverId, jams: jamsFor(serverId) });
   });
+  // entrou num servidor: passa a ver quem está online nele, e eles passam a ver a pessoa
+  refreshPresence(userId);
+  if (online.has(userId)) io.to(`server:${serverId}`).emit('presence', presenceOf(userId));
 }
 
 export function leaveServerRoom(userId: string, serverId: string) {
@@ -150,6 +153,8 @@ export function leaveServerRoom(userId: string, serverId: string) {
     voice.delete(userId);
     broadcastVoice(serverId);
   }
+  // saiu: deixa de ver a presença de quem só conhecia por esse servidor
+  refreshPresence(userId);
 }
 
 function socketsOf(userId: string): Socket[] {
@@ -275,9 +280,84 @@ export function isOnline(userId: string) {
   return online.has(userId);
 }
 
+/**
+ * Quem um usuário enxerga online (e quem enxerga ele): quem divide um servidor com ele, os amigos e as pessoas
+ * com quem ele tem conversa privada. A presença (status, frase, "Jogando…") não vai para a instância inteira:
+ * uma conta qualquer não fica sabendo quem está online nem o que os outros estão fazendo.
+ */
+function presenceContacts(userId: string): { servers: string[]; people: Set<string> } {
+  const people = new Set<string>();
+  for (const r of all<{ id: string }>("SELECT other_id AS id FROM relationships WHERE user_id = ? AND type = 'friend'", userId)) people.add(r.id);
+  for (const r of all<{ user_a: string; user_b: string }>('SELECT user_a, user_b FROM dm_channels WHERE user_a = ? OR user_b = ?', userId, userId)) {
+    people.add(r.user_a === userId ? r.user_b : r.user_a);
+  }
+  // bloqueio (de qualquer lado): a amizade já caiu, e a conversa privada antiga não mostra mais a presença
+  for (const r of all<{ user_id: string; other_id: string }>(
+    "SELECT user_id, other_id FROM relationships WHERE type = 'blocked' AND (user_id = ? OR other_id = ?)",
+    userId,
+    userId,
+  )) {
+    people.delete(r.user_id === userId ? r.other_id : r.user_id);
+  }
+  const servers = all<{ server_id: string }>('SELECT server_id FROM members WHERE user_id = ?', userId).map((r) => r.server_id);
+  return { servers, people };
+}
+
+/** Manda um evento de presença de `userId` só para quem pode vê-lo (e para os outros aparelhos dele). */
+function emitPresence(userId: string, payload: unknown) {
+  const { servers, people } = presenceContacts(userId);
+  let target = io.to(`user:${userId}`);
+  for (const id of servers) target = target.to(`server:${id}`);
+  for (const id of people) if (online.has(id)) target = target.to(`user:${id}`);
+  target.emit('presence', payload);
+}
+
+/** A lista de quem está online, do ponto de vista de `userId`. */
+function presenceListFor(userId: string) {
+  const { people } = presenceContacts(userId);
+  people.add(userId);
+  for (const r of all<{ id: string }>(
+    'SELECT DISTINCT o.user_id AS id FROM members m JOIN members o ON o.server_id = m.server_id WHERE m.user_id = ?',
+    userId,
+  )) {
+    people.add(r.id);
+  }
+  return onlineUserIds()
+    .filter((id) => people.has(id))
+    .map((id) => presenceOf(id));
+}
+
+/**
+ * Reenvia a lista de presença para cada pessoa (se estiver conectada). Chamado quando muda quem ela enxerga:
+ * entrou ou saiu de um servidor, fez ou desfez uma amizade.
+ */
+export function refreshPresence(...userIds: string[]) {
+  if (!io) return;
+  for (const id of userIds) if (online.has(id)) io.to(`user:${id}`).emit('presence:list', presenceListFor(id));
+}
+
 /** Reenvia a presença quando o usuário troca de status (online / não perturbe). */
 export function broadcastStatus(userId: string) {
-  if (online.has(userId)) io.emit('presence', presenceOf(userId));
+  if (online.has(userId)) emitPresence(userId, presenceOf(userId));
+}
+
+// "Jogando…" muda sozinho (o app desktop detecta), mas um app modificado poderia mandar centenas de trocas por
+// segundo, e cada uma vira um aviso para todo mundo que vê a pessoa. O estado guardado é sempre o último; o aviso
+// sai no máximo uma vez a cada ACTIVITY_NOTICE_MS (o que chegar no intervalo sai junto, no fim dele).
+const ACTIVITY_NOTICE_MS = 3000;
+const activityNotice = new Map<string, { last: number; timer: NodeJS.Timeout | null }>();
+function announceActivity(userId: string) {
+  const state = activityNotice.get(userId) ?? { last: 0, timer: null };
+  activityNotice.set(userId, state);
+  if (state.timer) return;
+  const send = () => {
+    state.timer = null;
+    state.last = Date.now();
+    if (online.has(userId)) emitPresence(userId, presenceOf(userId));
+  };
+  const wait = state.last + ACTIVITY_NOTICE_MS - Date.now();
+  if (wait <= 0) send();
+  else state.timer = setTimeout(send, wait);
 }
 
 export function onlineUserIds() {
@@ -369,11 +449,8 @@ export function setupRealtime(httpServer: HttpServer) {
 
     const count = (online.get(userId) ?? 0) + 1;
     online.set(userId, count);
-    socket.emit(
-      'presence:list',
-      onlineUserIds().map((id) => presenceOf(id)),
-    );
-    if (count === 1) io.emit('presence', presenceOf(userId));
+    socket.emit('presence:list', presenceListFor(userId));
+    if (count === 1) emitPresence(userId, presenceOf(userId));
 
     socket.on('voice:join', (data: { channelId: string }, ack?: (r: unknown) => void) => {
       try {
@@ -479,7 +556,7 @@ export function setupRealtime(httpServer: HttpServer) {
       } else {
         activities.delete(userId);
       }
-      io.emit('presence', presenceOf(userId));
+      announceActivity(userId);
     });
 
     // janela de diagnóstico: mede a latência da conexão em tempo real (ida e volta pelo próprio socket)
@@ -487,7 +564,13 @@ export function setupRealtime(httpServer: HttpServer) {
       if (typeof ack === 'function') ack();
     });
 
+    // "digitando…": o app manda um aviso a cada poucos segundos; mais que isso é descartado
+    const typingTimes: number[] = [];
     socket.on('typing', (data: { channelId: string }) => {
+      const nowMs = Date.now();
+      while (typingTimes.length && nowMs - typingTimes[0] > 10_000) typingTimes.shift();
+      if (typingTimes.length >= 10) return; // no máximo 10 a cada 10 s
+      typingTimes.push(nowMs);
       try {
         const channel = getChannel(data.channelId);
         if (!has(channelPermissions(channel, userId), P.SEND_MESSAGES)) return;
@@ -507,7 +590,10 @@ export function setupRealtime(httpServer: HttpServer) {
       if (left <= 0) {
         online.delete(userId);
         activities.delete(userId);
-        io.emit('presence', { userId, online: false });
+        const notice = activityNotice.get(userId);
+        if (notice?.timer) clearTimeout(notice.timer);
+        activityNotice.delete(userId);
+        emitPresence(userId, { userId, online: false });
       } else {
         online.set(userId, left);
       }

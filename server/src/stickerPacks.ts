@@ -7,11 +7,16 @@ import { MAX_PACK_STICKERS, MAX_STICKER_PACKS } from '../../shared/cosmetics.ts'
 import { all, get, run, tx, type PackStickerRow, type StickerPackRow } from './db.ts';
 import { fail, humansOnly, str, uid } from './http.ts';
 import { emitToUser } from './realtime.ts';
+import { limiter } from './recovery.ts';
 import { removeUpload, saveImage } from './uploads.ts';
 
 const now = () => Date.now();
 // o limite de verdade (1 MB) é conferido em saveImage; aqui só não deixa o corpo crescer sem fim
 const imageBody = express.raw({ type: () => true, limit: '2mb' });
+// Ritmo de quem importa: dá para trazer vários packs cheios de uma vez, mas não para encher o disco em minutos
+// apagando e subindo de novo (o limite de packs e de figurinhas por pack conta só o que existe agora).
+const packCreateRate = limiter(20, 60 * 60_000);
+const packStickerRate = limiter(600, 60 * 60_000);
 
 function packJson(p: StickerPackRow, me: string) {
   const stickers = all<PackStickerRow>('SELECT * FROM pack_stickers WHERE pack_id = ? ORDER BY position', p.id);
@@ -80,6 +85,7 @@ export function registerStickerPackRoutes(api: Router) {
     const author = typeof req.body?.author === 'string' ? req.body.author.trim().slice(0, 60) : '';
     const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM user_sticker_packs WHERE user_id = ?', me)!.n;
     if (count >= MAX_STICKER_PACKS) fail(400, `Você já tem ${MAX_STICKER_PACKS} packs. Remova algum antes.`);
+    if (!packCreateRate(me)) fail(429, 'Muitos packs criados em pouco tempo. Espere um pouco.');
     const pack: StickerPackRow = { id: randomUUID(), owner_id: me, name, author, created_at: now() };
     tx(() => {
       run('INSERT INTO sticker_packs (id, owner_id, name, author, created_at) VALUES (?, ?, ?, ?, ?)', pack.id, me, name, author, pack.created_at);
@@ -109,6 +115,7 @@ export function registerStickerPackRoutes(api: Router) {
     const pack = requireOwnPack(req.params.id, me);
     const last = get<{ n: number; pos: number | null }>('SELECT COUNT(*) AS n, MAX(position) AS pos FROM pack_stickers WHERE pack_id = ?', pack.id)!;
     if (last.n >= MAX_PACK_STICKERS) fail(400, `Um pack pode ter até ${MAX_PACK_STICKERS} figurinhas`);
+    if (!packStickerRate(me)) fail(429, 'Muitas figurinhas enviadas em pouco tempo. Espere um pouco.');
     const sticker: PackStickerRow = { id: randomUUID(), pack_id: pack.id, url: saveImage('packs', me, req.body), position: (last.pos ?? -1) + 1, used: 0, created_at: now() };
     run(
       'INSERT INTO pack_stickers (id, pack_id, url, position, created_at) VALUES (?, ?, ?, ?, ?)',
