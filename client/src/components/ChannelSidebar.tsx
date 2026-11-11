@@ -34,7 +34,7 @@ import { RecordingPill } from './Director';
 import { ServerStrip } from './ServerRail';
 import { DeviceSplitButton } from './DeviceMenu';
 import { useMobile } from '../lib/mobile';
-import { Avatar, AvatarStack, IconButton, LivePill, VerifiedBadge, cx } from './ui';
+import { Avatar, IconButton, LivePill, VerifiedBadge, cx } from './ui';
 
 export function ChannelSidebar() {
   const detail = useActiveDetail();
@@ -249,7 +249,6 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
   const speaking = useVoice((s) => (s.channelId === channel.id ? s.speaking : null));
   const participants = states.filter((v) => v.channelId === channel.id);
   const streamer = participants.find((v) => v.streaming);
-  const streamerName = streamer && detail.members.find((m) => m.id === streamer.userId);
   const expanded = active || connectedHere;
 
   function onClick() {
@@ -259,11 +258,6 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
       void join(serverId, channel.id);
     }
   }
-
-  const people = participants.flatMap((v) => {
-    const m = detail.members.find((x) => x.id === v.userId);
-    return m ? [{ id: m.id, name: memberName(m), color: m.avatarColor, src: m.avatarUrl, frame: m.frame, speaking: !!speaking?.[m.id] && !v.muted }] : [];
-  });
 
   return (
     <div
@@ -292,16 +286,8 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
         {settingsButton}
       </div>
 
-      {participants.length > 0 && !expanded && (
-        <div className="mt-3 flex items-center gap-2.5">
-          <AvatarStack people={people} size={30} />
-          <span className="truncate text-[13px] text-fg-muted">
-            {streamerName ? `${memberName(streamerName)} está transmitindo` : `${participants.length} ${participants.length === 1 ? 'pessoa' : 'pessoas'}`}
-          </span>
-        </div>
-      )}
-
-      {participants.length > 0 && expanded && (
+      {/* quem está na sala aparece sempre, uma pessoa por linha (como no Discord), mesmo sem você estar nela */}
+      {participants.length > 0 && (
         <div className="mt-2.5 space-y-0.5">
           {participants.map((v) => (
             <VoiceParticipant key={v.userId} detail={detail} state={v} speaking={!!speaking?.[v.userId]} />
