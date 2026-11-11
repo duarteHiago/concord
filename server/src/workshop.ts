@@ -5,7 +5,7 @@
 // números com limite). Nada de CSS, HTML ou script: o cliente desenha tudo com componentes próprios.
 import express, { type NextFunction, type Request, type Response, type Router } from 'express';
 import { P, has } from '../../shared/permissions.ts';
-import { canPublishWorkshop, parseWorkshop, type WorkshopConfig } from '../../shared/workshop.ts';
+import { canPublishWorkshop, isBlock, parseWorkshop, type WidgetPlacement, type WorkshopConfig } from '../../shared/workshop.ts';
 import { requireMember, requireServerPerm, serverPermissions } from './access.ts';
 import { config } from './config.ts';
 import { all, get, run } from './db.ts';
@@ -48,7 +48,8 @@ function validFor(serverId: string, body: unknown): WorkshopConfig {
   if (!r.ok) fail(400, r.error);
   const value = (r as { ok: true; value: WorkshopConfig }).value;
   const channels = new Set(all<{ id: string }>('SELECT id FROM channels WHERE server_id = ?', serverId).map((c) => c.id));
-  for (const w of value.mural.widgets) {
+  const screenWidgets = (value.screen?.items ?? []).filter((i): i is WidgetPlacement => !isBlock(i));
+  for (const w of [...value.mural.widgets, ...screenWidgets]) {
     if (w.type === 'channels' && w.props.channelIds.some((id) => !channels.has(id))) fail(400, 'Um atalho aponta para um canal que não é deste servidor');
     if (w.type === 'image' && w.props.url && !w.props.url.startsWith(`/uploads/workshop/${serverId}-`)) fail(400, 'A imagem precisa ser enviada pela Oficina deste servidor');
   }

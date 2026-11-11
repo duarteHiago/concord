@@ -38,6 +38,7 @@ import { useVoice } from './store/voice';
 import './lib/visibility';
 import { WorkshopHosts } from './workshop/Hosts';
 import { MuralView } from './workshop/Mural';
+import { ServerScreen, useServerScreen } from './workshop/Screen';
 import { useWorkshopRuntime } from './workshop/runtime';
 import { useWorkshop } from './workshop/store';
 
@@ -193,6 +194,8 @@ function Shell() {
   const channel = detail?.channels.find((c) => c.id === channelId);
   // Mural da Oficina aberto no lugar do canal
   const mural = useWorkshop((s) => (s.muralFor && s.muralFor === activeServerId ? s.muralFor : null));
+  // tela do servidor montada na Oficina (grade livre); null = layout padrão
+  const screen = useServerScreen();
   const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}|${mural ?? ''}`;
 
   const showSidebar = !mobile || mobileView === 'sidebar';
@@ -226,7 +229,7 @@ function Shell() {
                 </div>
               )}
             </main>
-            {memberListOpen && channel && !mobile && <MemberList />}
+            {memberListOpen && channel && !mobile && !screen && <MemberList />}
           </>
         )
       ) : (
@@ -234,6 +237,8 @@ function Shell() {
       )}
     </ErrorBoundary>
   );
+
+  if (screen) return <ServerScreen items={screen} main={content} />;
 
   return (
     <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')}>

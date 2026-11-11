@@ -2,7 +2,7 @@
 // publica, membros só veem o publicado, e fora do Concord de testes as rotas nem existem.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { defaultProps, emptyWorkshop, installPack, parseWorkshop, type WorkshopConfig } from '../../shared/workshop.ts';
+import { defaultProps, defaultScreen, emptyWorkshop, installPack, parseWorkshop, type WorkshopConfig } from '../../shared/workshop.ts';
 import { signUp, startServer, type TestServer } from './helpers.ts';
 
 const NOW = Date.UTC(2026, 10, 10);
@@ -75,6 +75,28 @@ describe('validador da Oficina', () => {
     assert.equal(parseWorkshop(withWidgets(t('x'.repeat(601))), NOW).ok, false);
     assert.equal(parseWorkshop(withWidgets(t('abc‮gpj.exe')), NOW).ok, false);
     assert.equal(parseWorkshop(withWidgets(placed('rules', { props: { title: 'a\nb', items: [] } })), NOW).ok, false, 'título não tem quebra de linha');
+  });
+
+  it('tela em grade livre: blocos obrigatórios, sem sobreposição, dentro da grade', () => {
+    const withScreen = (items: unknown[]) => ({ ...emptyWorkshop(), screen: { items } });
+    assert.equal(parseWorkshop(withScreen(defaultScreen()), NOW).ok, true, 'o layout padrão vale');
+    const noMain = defaultScreen().filter((b) => b.id !== 'main');
+    assert.match((parseWorkshop(withScreen(noMain), NOW) as { error: string }).error, /obrigatório/);
+    const noMembers = defaultScreen().filter((b) => b.id !== 'members');
+    assert.equal(parseWorkshop(withScreen(noMembers), NOW).ok, true, 'membros é opcional');
+    const widget = { ...placed('online'), x: 10, y: 0, w: 2, h: 2 };
+    assert.equal(parseWorkshop(withScreen([...noMembers, widget]), NOW).ok, true, 'widget no lugar dos membros');
+    assert.equal(parseWorkshop(withScreen([...defaultScreen(), widget]), NOW).ok, false, 'em cima dos membros');
+    const tinyMain = defaultScreen().map((b) => (b.id === 'main' ? { ...b, w: 2 } : b));
+    assert.equal(parseWorkshop(withScreen(tinyMain), NOW).ok, false, 'conversa menor que o mínimo');
+    const offGrid = defaultScreen().map((b) => (b.id === 'members' ? { ...b, x: 11 } : b));
+    assert.equal(parseWorkshop(withScreen(offGrid), NOW).ok, false, 'passa da borda');
+    const fakeBlock = defaultScreen().map((b) => (b.id === 'members' ? { ...b, block: 'login' } : b));
+    assert.equal(parseWorkshop(withScreen(fakeBlock), NOW).ok, false, 'bloco que não existe');
+    const dup = [...defaultScreen(), { ...defaultScreen()[3], y: 0, x: 10 }];
+    assert.equal(parseWorkshop(withScreen(dup), NOW).ok, false, 'bloco repetido');
+    const widgetAsBlock = [...noMembers, { ...placed('text'), id: 'main', x: 10 }];
+    assert.equal(parseWorkshop(withScreen(widgetAsBlock), NOW).ok, false, 'widget não usa id de bloco');
   });
 
   it('limita números (placar, pomodoro, data do evento)', () => {
@@ -150,6 +172,9 @@ describe('rotas da Oficina', () => {
     const res = await owner.req('PUT', `/servers/${serverId}/workshop/draft`, withWidgets(placed('channels', { props: { title: 'A', channelIds: [otherChannel] } })));
     assert.equal(res.status, 400);
     assert.match(res.body.error, /não é deste servidor/);
+    // o mesmo vale para os widgets da tela
+    const onScreen = { ...emptyWorkshop(), screen: { items: [...defaultScreen().filter((b) => b.id !== 'members'), placed('channels', { x: 10, w: 2, h: 2, props: { title: 'A', channelIds: [otherChannel] } })] } };
+    assert.equal((await owner.req('PUT', `/servers/${serverId}/workshop/draft`, onScreen)).status, 400);
   });
 
   it('pomodoro: qualquer membro começa e para, no publicado', async () => {
