@@ -1,3 +1,4 @@
+import { applyBrandIcon, type BrandIcon } from './brandIcon';
 import type { ThemeSettings } from './types';
 
 /** Tokens de cor que um tema define. São as mesmas variáveis do @theme em index.css. */
@@ -22,6 +23,10 @@ export interface ThemePreset {
   id: string;
   name: string;
   palette: ThemePalette;
+  /** tema claro: controles nativos e barras de rolagem também ficam claros */
+  light?: boolean;
+  /** cores da logo deste tema: trocam o ícone da aba e, no app desktop, o da barra de tarefas */
+  icon?: BrandIcon;
 }
 
 const dark = (p: Partial<ThemePalette>): ThemePalette => ({
@@ -41,25 +46,62 @@ const dark = (p: Partial<ThemePalette>): ThemePalette => ({
   ...p,
 });
 
-export const PRESETS: ThemePreset[] = [
-  {
-    id: 'noturno',
-    name: 'Noturno',
-    palette: dark({
-      'surface-0': '#120e16',
-      'surface-1': '#17121c',
-      'surface-2': '#211a28',
-      'surface-3': '#2b2234',
-      'surface-4': '#362c41',
-      'line-strong': 'rgb(255 255 255 / 0.13)',
-      fg: '#f3ecf7',
-      'fg-muted': '#b3a6c2',
-      'fg-subtle': '#9486a6',
-      accent: '#ff8a6b',
-      'accent-2': '#c4a5ff',
-      'on-accent': '#2a1410',
-    }),
+/** Azulejo, a cara do Concord: branco, azul-cobalto e coral. O `accent-2` aparece como texto
+ * (selo BOT, títulos das Novidades), então no claro ele é um coral mais escuro, com contraste no branco. */
+const AZULEJO: ThemePreset = {
+  id: 'azulejo',
+  name: 'Azulejo',
+  light: true,
+  palette: {
+    'surface-0': '#dde4f2',
+    'surface-1': '#ecf0f9',
+    'surface-2': '#ffffff',
+    'surface-3': '#f0f3fa',
+    'surface-4': '#dfe6f3',
+    line: 'rgb(15 27 61 / 0.09)',
+    'line-strong': 'rgb(15 27 61 / 0.16)',
+    fg: '#0f1b3d',
+    'fg-muted': '#45537a',
+    'fg-subtle': '#66739a',
+    accent: '#1f4fd1',
+    'accent-2': '#d4483b',
+    'on-accent': '#ffffff',
   },
+};
+
+/** O Azulejo no escuro: azul-marinho, cobalto mais claro (para ler no fundo escuro) e coral. */
+const AZULEJO_ESCURO: ThemePreset = {
+  id: 'azulejo-escuro',
+  name: 'Azulejo escuro',
+  palette: dark({
+    'surface-0': '#0a1122',
+    'surface-1': '#0e172c',
+    'surface-2': '#131e38',
+    'surface-3': '#1a2745',
+    'surface-4': '#233154',
+    'line-strong': 'rgb(255 255 255 / 0.13)',
+    fg: '#e8edf8',
+    'fg-muted': '#a6b1cd',
+    'fg-subtle': '#7a87a8',
+    accent: '#4a76ff',
+    'accent-2': '#ff7a6a',
+    'on-accent': '#ffffff',
+  }),
+};
+
+/** Temas que saíram: quem tinha um deles cai no Azulejo. O Noturno era a cara antiga do Concord;
+ * os azulejo-* foram os testes de cor secundária (o coral ganhou). */
+const RETIRED: Record<string, string> = {
+  noturno: 'azulejo',
+  'azulejo-coral': 'azulejo',
+  'azulejo-celeste': 'azulejo',
+  'azulejo-menta': 'azulejo',
+  'azulejo-chiclete': 'azulejo',
+};
+
+export const PRESETS: ThemePreset[] = [
+  AZULEJO,
+  AZULEJO_ESCURO,
   { id: 'concord', name: 'Violeta', palette: dark({}) },
   {
     id: 'midnight',
@@ -89,6 +131,7 @@ export const PRESETS: ThemePreset[] = [
   {
     id: 'light',
     name: 'Claro',
+    light: true,
     palette: {
       'surface-0': '#e3e5ea',
       'surface-1': '#eef0f3',
@@ -108,7 +151,7 @@ export const PRESETS: ThemePreset[] = [
 ];
 
 export const DEFAULT_THEME: ThemeSettings = {
-  preset: 'noturno',
+  preset: 'azulejo',
   accent: null,
   background: { url: null, blur: 0, dim: 0.35 },
   scale: 1,
@@ -116,11 +159,12 @@ export const DEFAULT_THEME: ThemeSettings = {
 };
 
 export function normalizeTheme(t: Partial<ThemeSettings> | undefined): ThemeSettings {
-  return {
+  const theme = {
     ...DEFAULT_THEME,
     ...t,
     background: { ...DEFAULT_THEME.background, ...t?.background },
   };
+  return RETIRED[theme.preset] ? { ...theme, preset: RETIRED[theme.preset] } : theme;
 }
 
 const CACHE_KEY = 'concord.theme';
@@ -154,7 +198,7 @@ export function applyTheme(theme: ThemeSettings) {
     // ignorado
   }
   const root = document.documentElement;
-  const preset = PRESETS.find((p) => p.id === theme.preset) ?? PRESETS[0];
+  const preset = PRESETS.find((p) => p.id === (RETIRED[theme.preset] ?? theme.preset)) ?? PRESETS[0];
   const palette: ThemePalette = {
     ...preset.palette,
     ...(theme.accent ? { accent: theme.accent, 'on-accent': readableOn(theme.accent) } : {}),
@@ -169,7 +213,8 @@ export function applyTheme(theme: ThemeSettings) {
   }
   root.style.setProperty('--color-accent-hover', `color-mix(in srgb, ${palette.accent} 82%, black)`);
   root.style.setProperty('--color-popover', palette['surface-3']);
-  root.style.colorScheme = preset.id === 'light' ? 'light' : 'dark';
+  root.style.colorScheme = preset.light ? 'light' : 'dark';
+  applyBrandIcon(preset.icon);
   root.style.fontSize = `${Math.round(16 * Math.min(1.3, Math.max(0.75, theme.scale)))}px`;
 
   let layer = document.getElementById('concord-bg');

@@ -540,6 +540,48 @@ db.exec(`
 // (depois do CREATE TABLE de dm_messages: num banco novo a tabela ainda não existe lá em cima)
 addColumn('dm_messages', 'attachments', 'TEXT');
 addColumn('dm_messages', 'reply_to', 'TEXT');
+// Mecenato de cortesia: a equipe libera contratos para testers sem apoio por Pix (ver contracts.ts)
+addColumn('users', 'mecenato_courtesy', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('contracts', 'courtesy', 'INTEGER NOT NULL DEFAULT 0');
+// servidores onde os poderes do Mecenas valem (lista de ids em JSON, escolhida por quem propõe). Vazio nos
+// contratos de antes desta regra: valem em todos os servidores em comum (menos o oficial, ver contracts.ts#inScope)
+addColumn('contracts', 'servers', 'TEXT');
+// amigos e bloqueios (ver friends.ts): uma linha por lado da relação
+db.exec(`
+  CREATE TABLE IF NOT EXISTS relationships (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    other_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, other_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_relationships_other ON relationships(other_id);
+`);
+// limites de segurança (senha errada, 2FA, cadastro...) que não podem zerar a cada deploy: ver recovery.ts#limiter.
+// A chave vai com hash (nenhum usuário, e-mail ou rede em texto) e cada linha some quando sai da janela
+db.exec(`
+  CREATE TABLE IF NOT EXISTS rate_events (
+    bucket TEXT NOT NULL,
+    key TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_rate_events ON rate_events(bucket, key, at);
+`);
+// sessões (aparelhos conectados, ver http.ts#signToken): apagar a linha derruba o token daquele aparelho na hora.
+// version = token_version do usuário quando a sessão nasceu (trocar a senha derruba todas)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    user_agent TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+`);
+// quando a pessoa provou quem é para abrir a sessão (ver signToken em http.ts)
+addColumn('sessions', 'auth_at', 'INTEGER');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // Denúncias (ver reports.ts). Só a equipe vê. O alvo fica sem chave estrangeira de propósito: apagar a conta não
 // pode apagar a prova. As provas em si (texto da mensagem, imagens) ficam em `evidence` e na pasta reports/.
@@ -682,6 +724,8 @@ export interface UserRow {
   ban_reason?: string | null;
   banned_by?: string | null;
   created_at: number;
+  /** liberado pela equipe para o Mecenato sem apoio (testers) */
+  mecenato_courtesy?: number;
 }
 
 export interface AttachmentRow {
@@ -906,6 +950,10 @@ export interface ContractRow {
   ended_by: string | null;
   end_note: string | null;
   review: 'pending' | 'confirmed' | 'fined' | null;
+  /** contrato de cortesia (alguém liberado pela equipe): empate ligado e sem multa */
+  courtesy: number;
+  /** ids (JSON) dos servidores onde os poderes valem; null = contrato antigo, todos em comum menos o oficial */
+  servers: string | null;
 }
 
 export interface ContractFineRow {

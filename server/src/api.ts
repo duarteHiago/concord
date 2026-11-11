@@ -42,7 +42,7 @@ import {
   type SoundRow,
   type UserRow,
 } from './db.ts';
-import { HttpError, color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, signToken, str, uid, verifyToken } from './http.ts';
+import { HttpError, SESSION_DAYS, color, fail, hashBotToken, humansOnly, int, optStr, requireAuth, sessionToken, signToken, str, uid, verifyToken } from './http.ts';
 import { TrackSource, createVoiceToken, muteTracks, removeFromRoom } from './livekit.ts';
 import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } from './uploads.ts';
 import { allowAttempt, clientIp, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
@@ -51,9 +51,10 @@ import { EMAIL_PROVIDER_NAMES, emailDomainAllowed, emailKey } from '../../shared
 import { SIGNUP_LIMITED, captchaSiteKey, emailRequired, requireCaptcha, signupAllowed } from './signupGuard.ts';
 import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
+import { recordingOf, registerDirectorRoutes } from './director.ts';
 import { integrationsStatus, registerIntegrationRoutes, registerPublicIntegrationRoutes } from './integrations.ts';
 import {
-  avatarLocked,
+  contractAvatarsIn,
   mecenasBadge,
   mecenasDeafen,
   mecenasDisconnect,
@@ -68,7 +69,9 @@ import {
 import { registerClientErrorRoutes } from './clientErrors.ts';
 import { registerCspReportRoutes } from './security.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
+import { signFileUrl } from './fileLinks.ts';
 import { registerForumRoutes } from './forum.ts';
+import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
 import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
 import * as google from './google.ts';
@@ -100,6 +103,7 @@ import {
   leaveServerRoom,
   onlineUserIds,
   revokeSockets,
+  endSessionSockets,
   serverChanged,
   setServerMute,
   voiceStatesFor,
@@ -296,7 +300,7 @@ const messageJson = (m: MessageWithAuthor) => ({
   content: m.content,
   kind: m.kind ?? 'text',
   data: parseData(m.data),
-  attachments: (parseData(m.attachments ?? null) as AttachmentJson[] | null) ?? [],
+  attachments: ((parseData(m.attachments ?? null) as AttachmentJson[] | null) ?? []).map(attachmentOut),
   createdAt: m.created_at,
   editedAt: m.edited_at,
   author: authorJson({ ...m, id: m.author_id }),
@@ -379,10 +383,31 @@ async function setPassword(user: UserRow, password: string, keepSocketId?: strin
   if (user.email && mailEnabled()) sendPasswordChanged(user.email, user.username).catch(mailError);
 }
 
+/**
+ * Conta sem senha (criada pelo Google) não tem o que digitar para provar que quem pede é a dona. Sem isto, quem
+ * pegasse uma sessão aberta dela criava uma senha, desconectava o Google e ficava com a conta. O que vale então
+ * é a sessão ter acabado de nascer de um login: nessas contas só se entra pelo Google, então sessão nova quer
+ * dizer que o Google conferiu a pessoa agora há pouco.
+ */
+const FRESH_LOGIN_MS = 10 * 60_000;
+function requireFreshLogin(res: express.Response) {
+  const sid = (res.locals.sessionId as string | null) ?? null;
+  const authAt = sid ? get<{ auth_at: number | null }>('SELECT auth_at FROM sessions WHERE id = ?', sid)?.auth_at : null;
+  if (!authAt || now() - authAt > FRESH_LOGIN_MS) {
+    fail(403, 'Para a sua segurança, saia da conta e entre de novo com o Google antes de fazer isso. Depois de entrar, você tem 10 minutos.');
+  }
+}
+
+/** Confere que é a dona da conta: a senha atual, ou, em conta sem senha, um login feito agora há pouco. */
+async function requireOwner(res: express.Response, user: UserRow, password: unknown, wrong: string) {
+  if (!user.password_hash) return requireFreshLogin(res);
+  if (!(await bcrypt.compare(String(password ?? ''), user.password_hash))) fail(400, wrong);
+}
+
 // por conta: 3 links por hora; no total, um teto para ninguém usar o Concord para mandar e-mail em massa
-const forgotPerAccount = limiter(3, 60 * 60_000);
-const forgotTotal = limiter(200, 60 * 60_000);
-const verifyPerUser = limiter(5, 60 * 60_000);
+const forgotPerAccount = limiter(3, 60 * 60_000, 'forgot-account');
+const forgotTotal = limiter(200, 60 * 60_000, 'forgot-total');
+const verifyPerUser = limiter(5, 60 * 60_000, 'verify-email');
 
 /** Esqueci a senha (por e-mail): manda o link se a conta tiver e-mail confirmado. */
 api.post('/auth/forgot', async (req, res) => {
@@ -430,7 +455,8 @@ api.post('/auth/email/verify', (req, res) => {
 
 /** Nome da equipe (ADMIN_USERS) que ainda não tem conta: quem o criasse primeiro entraria no portal /admin. */
 function requireUnreservedName(username: string) {
-  if (config.adminUsers.has(username.toLowerCase())) fail(409, 'Esse nome de usuário está reservado');
+  // nomes da equipe e do Mecenato de cortesia sem conta ficam reservados: ninguém pega o nome de quem foi liberado
+  if (config.adminUsers.has(username.toLowerCase()) || config.mecenatoCourtesy.has(username.toLowerCase())) fail(409, 'Esse nome de usuário está reservado');
 }
 
 /** Campos do cadastro com senha (os dois jeitos de cadastrar usam). */
@@ -498,8 +524,8 @@ const SIGNUP_MAX_ATTEMPTS = 5;
 const SIGNUP_MAX_SENDS = 3;
 const SIGNUP_RESEND_GAP = 60_000;
 // por caixa de e-mail e no total: ninguém usa o Concord para encher a caixa de alguém nem para mandar e-mail em massa
-const signupMailPerKey = limiter(5, 60 * 60_000);
-const signupMailTotal = limiter(300, 60 * 60_000);
+const signupMailPerKey = limiter(5, 60 * 60_000, 'signup-mail-key');
+const signupMailTotal = limiter(300, 60 * 60_000, 'signup-mail-total');
 
 interface PendingSignupRow {
   id: string;
@@ -632,23 +658,29 @@ api.post('/auth/reset', async (req, res) => {
 });
 
 /** Confere usuário e senha (com limite de tentativas). Usado no login e ao conectar o Google a uma conta. */
-async function checkPassword(username: string, password: string, ip: string): Promise<UserRow> {
-  const wait = loginWaitMinutes(username, ip);
+async function checkPassword(login: string, password: string, ip: string): Promise<UserRow> {
+  // entra pelo nome de usuário ou pelo e-mail da conta (o mesmo jeito de achar do "Esqueci minha senha")
+  const user = login.includes('@')
+    ? get<UserRow>('SELECT * FROM users WHERE email_key = ? AND email IS NOT NULL', emailKey(login))
+    : get<UserRow>('SELECT * FROM users WHERE username = ?', login);
+  // o limite de senhas erradas conta pela conta, não pelo que foi digitado: alternar entre usuário e
+  // e-mail não dá tentativas a mais
+  const limitKey = user?.username ?? login;
+  const wait = loginWaitMinutes(limitKey, ip);
   if (wait) fail(429, `Muitas senhas erradas. Espere ${wait} min e tente de novo, ou use "Esqueci minha senha".`);
-  const user = get<UserRow>('SELECT * FROM users WHERE username = ?', username);
   // conta criada pelo Google não tem senha (password_hash vazio): não é chute, então não conta tentativa
   if (user && !user.password_hash) {
     fail(401, 'Essa conta foi criada pelo Google e não tem senha. Use "Entrar com Google" (dá para criar uma senha depois, em Configurações > Conta).');
   }
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-    const left = recordLoginFailure(username, ip);
+    const left = recordLoginFailure(limitKey, ip);
     fail(
       401,
       left === 0
-        ? 'Usuário ou senha incorretos. Por segurança, o login dessa conta ficou bloqueado aqui por 15 min: use "Esqueci minha senha" se precisar.'
+        ? 'Usuário, e-mail ou senha incorretos. Por segurança, o login dessa conta ficou bloqueado aqui por 15 min: use "Esqueci minha senha" se precisar.'
         : left <= 2
-          ? `Usuário ou senha incorretos. Mais ${left} tentativa(s) erradas e o login fica bloqueado por 15 min.`
-          : 'Usuário ou senha incorretos.',
+          ? `Usuário, e-mail ou senha incorretos. Mais ${left} tentativa(s) erradas e o login fica bloqueado por 15 min.`
+          : 'Usuário, e-mail ou senha incorretos.',
     );
   }
   // só depois da senha certa: quem chuta senha não descobre que a conta existe e está suspensa
@@ -660,9 +692,10 @@ async function checkPassword(username: string, password: string, ip: string): Pr
 const BANNED = 'Esta conta foi suspensa pela equipe do Concord.';
 
 api.post('/auth/login', async (req, res) => {
-  const username = str(req.body?.username, 'usuário', 1, 32);
+  // o campo continua se chamando "username" (apps antigos), mas aceita o e-mail também
+  const login = str(req.body?.username, 'usuário ou e-mail', 1, 254);
   const password = str(req.body?.password, 'senha', 1, 128);
-  const user = await checkPassword(username, password, clientIp(req));
+  const user = await checkPassword(login, password, clientIp(req));
   sendLogin(res, user);
 });
 
@@ -702,10 +735,10 @@ const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 /** Página simples do login com Google (no visual do app), para quando o navegador precisa mostrar algo. */
 function authPage(title: string, body: string) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Concord</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140f19;color:#f3ecf7;font-family:system-ui,sans-serif;text-align:center}
-.c{max-width:420px;padding:32px}img{width:84px;height:84px}h1{font-size:24px;margin:16px 0 8px}p{color:#b3a6c2;line-height:1.5}b{color:#f3ecf7}
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fd;color:#0f1b3d;font-family:system-ui,sans-serif;text-align:center}
+.c{max-width:420px;padding:32px}img{width:84px;height:84px}h1{font-size:24px;margin:16px 0 8px}p{color:#52608a;line-height:1.5}b{color:#0f1b3d}
 button,a.b{display:inline-block;margin:8px 4px 0;padding:12px 22px;border:0;border-radius:999px;font:700 15px system-ui,sans-serif;cursor:pointer;text-decoration:none}
-button{background:#ff8a6b;color:#140f19}a.b{background:#2b2234;color:#f3ecf7}</style></head>
+button{background:#1f4fd1;color:#fff}a.b{background:#e4ebf7;color:#0f1b3d}</style></head>
 <body><div class="c"><img src="/brand/concord-simbolo.svg" alt=""><h1>${escapeHtml(title)}</h1>${body}</div></body></html>`;
 }
 
@@ -925,9 +958,19 @@ api.use((req, res, next) => {
   res.status(403).json({ error: 'Confirme um e-mail para continuar usando o Concord.', code: 'email_required' });
 });
 
+/** Em qual sala de voz a conta está agora (em qualquer aparelho): o deck do celular usa para achar a call do PC. */
+api.get('/me/voice', (_req, res) => {
+  const v = getVoiceState(uid(res));
+  res.json(v ? { serverId: v.serverId, channelId: v.channelId } : null);
+});
+
 api.get('/me', (_req, res) => {
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', uid(res)) ?? fail(401, 'Sessão inválida');
-  res.json(meJson(user));
+  // aparelho que entrou antes dos "aparelhos conectados" (token sem sessão): ganha uma sessão ao abrir o app,
+  // e passa a aparecer na lista. O app troca o token guardado pelo novo (ver store/app.ts#bootstrap)
+  // (essa sessão nasce de um token antigo, não de um login: não vale como "acabou de entrar")
+  const sessionToken = !res.locals.sessionId && !res.locals.isBot ? signToken(user.id, false) : undefined;
+  res.json(sessionToken ? { ...meJson(user), sessionToken } : meJson(user));
 });
 
 /** Avisa os servidores do usuário que o perfil dele mudou (nome, foto...). */
@@ -969,8 +1012,8 @@ api.patch('/me', async (req, res) => {
   if (req.body?.newPassword !== undefined) {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
     const newPassword = str(req.body.newPassword, 'nova senha', 6, 128);
-    // quem entrou pelo Google e ainda não tem senha pode criar uma sem informar a atual
-    if (user.password_hash && !(await bcrypt.compare(String(req.body.currentPassword ?? ''), user.password_hash))) fail(400, 'Senha atual incorreta');
+    // quem entrou pelo Google e ainda não tem senha cria uma sem informar a atual, mas só logo depois de entrar
+    await requireOwner(res, user, req.body.currentPassword, 'Senha atual incorreta');
     twoFactor.requireCode(user, req.body.twoFactorCode);
     await setPassword(user, newPassword, typeof req.body.socketId === 'string' ? req.body.socketId : undefined);
     token = signToken(me);
@@ -986,7 +1029,7 @@ api.patch('/me', async (req, res) => {
 api.post('/me/recovery-code', humansOnly, async (req, res) => {
   const me = uid(res);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
-  if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  await requireOwner(res, user, req.body?.password, 'Senha incorreta');
   twoFactor.requireCode(user, req.body?.twoFactorCode);
   res.json({ code: await rotateRecoveryCode(me) });
 });
@@ -996,7 +1039,7 @@ api.post('/me/recovery-code', humansOnly, async (req, res) => {
 /** Começa: pede a senha (quem pegou a sessão de alguém não liga o 2FA e tranca o dono do lado de fora). */
 api.post('/me/2fa/setup', humansOnly, async (req, res) => {
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', uid(res))!;
-  if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  await requireOwner(res, user, req.body?.password, 'Senha incorreta');
   res.json(twoFactor.startSetup(user));
 });
 
@@ -1032,6 +1075,75 @@ api.post('/me/2fa/backup-codes', humansOnly, (req, res) => {
   res.json({ backupCodes, me: updated });
 });
 
+// ---- Aparelhos conectados (sessões, ver http.ts#signToken) ----
+
+const SESSION_MS = SESSION_DAYS * 24 * 60 * 60_000;
+
+// sessões vencidas (o token dura 30 dias) ou de antes da última troca de senha já não valem: saem do banco
+setInterval(() => {
+  run('DELETE FROM sessions WHERE created_at < ? OR version != (SELECT token_version FROM users WHERE users.id = sessions.user_id)', now() - SESSION_MS);
+}, 60 * 60_000).unref();
+
+interface SessionRow {
+  id: string;
+  created_at: number;
+  last_seen_at: number;
+  user_agent: string | null;
+}
+
+api.get('/me/sessions', humansOnly, (_req, res) => {
+  const me = uid(res);
+  const version = get<{ token_version: number }>('SELECT token_version FROM users WHERE id = ?', me)!.token_version ?? 0;
+  const current = (res.locals.sessionId as string | null) ?? null;
+  const rows = all<SessionRow>(
+    'SELECT id, created_at, last_seen_at, user_agent FROM sessions WHERE user_id = ? AND version = ? AND created_at > ? ORDER BY last_seen_at DESC',
+    me,
+    version,
+    now() - SESSION_MS,
+  );
+  res.json({
+    sessions: rows.map((r) => ({ id: r.id, current: r.id === current, createdAt: r.created_at, lastSeenAt: r.last_seen_at, userAgent: r.user_agent })),
+    // false: este aparelho entrou antes da lista existir (ele some depois de "sair de todos os outros")
+    currentListed: !!current,
+  });
+});
+
+/** Tira um aparelho da conta: o token dele para de valer e a conexão cai na hora. */
+api.delete('/me/sessions/:id', humansOnly, (req, res) => {
+  const me = uid(res);
+  if (!run('DELETE FROM sessions WHERE id = ? AND user_id = ?', req.params.id, me).changes) fail(404, 'Esse aparelho já saiu da conta.');
+  endSessionSockets(req.params.id);
+  res.json({ ok: true });
+});
+
+/**
+ * Sai de todos os outros aparelhos, inclusive os que entraram antes da lista existir (sem sessão): a versão
+ * do token sobe, como numa troca de senha, e só este aparelho recebe um token novo.
+ */
+api.post('/me/sessions/logout-others', humansOnly, (req, res) => {
+  const me = uid(res);
+  const sid = (res.locals.sessionId as string | null) ?? null;
+  const version = (get<{ token_version: number }>('SELECT token_version FROM users WHERE id = ?', me)!.token_version ?? 0) + 1;
+  tx(() => {
+    run('UPDATE users SET token_version = ? WHERE id = ?', version, me);
+    run('DELETE FROM sessions WHERE user_id = ? AND id IS NOT ?', me, sid);
+    if (sid) run('UPDATE sessions SET version = ? WHERE id = ?', version, sid);
+  });
+  const token = sid ? sessionToken(me, sid, version) : signToken(me, false);
+  void revokeSockets(me, typeof req.body?.socketId === 'string' ? req.body.socketId : undefined);
+  res.json({ token });
+});
+
+/** Sair da conta: a sessão acaba no servidor também (um token copiado deste aparelho não serve mais). */
+api.post('/auth/logout', (_req, res) => {
+  const sid = res.locals.sessionId as string | null;
+  if (sid) {
+    run('DELETE FROM sessions WHERE id = ?', sid);
+    endSessionSockets(sid);
+  }
+  res.json({ ok: true });
+});
+
 const imageBody = express.raw({ type: () => true, limit: '9mb' });
 
 // anti-abuso: todas as trocas de imagem do perfil (avatar, banner, card, background, patch) somadas
@@ -1040,12 +1152,9 @@ function requireProfileUploadQuota(me: string) {
   if (!profileImageUploads(me)) fail(429, 'Muitas trocas de imagem em pouco tempo. Espere um pouco.');
 }
 
-const AVATAR_LOCKED = 'Seu Mecenas escolheu sua foto. Ela volta ao normal quando o contrato acabar.';
-
 api.post('/me/avatar', imageBody, (req, res) => {
   const me = uid(res);
   requireProfileUploadQuota(me);
-  if (avatarLocked(me)) fail(403, AVATAR_LOCKED);
   const old = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url;
   const url = saveImage('avatars', me, req.body);
   run('UPDATE users SET avatar_url = ? WHERE id = ?', url, me);
@@ -1056,7 +1165,6 @@ api.post('/me/avatar', imageBody, (req, res) => {
 
 api.delete('/me/avatar', (_req, res) => {
   const me = uid(res);
-  if (avatarLocked(me)) fail(403, AVATAR_LOCKED);
   removeUpload(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.avatar_url);
   run('UPDATE users SET avatar_url = NULL WHERE id = ?', me);
   profileChanged(me);
@@ -1314,6 +1422,9 @@ api.get('/servers/:id', (req, res) => {
       userLimit: c.user_limit,
       overwrites: channelOverwrites(c.id),
       permissions: perms,
+      // modo gravação (ver director.ts): o selo aparece em cima do nome da sala
+      recording: c.type === 'voice' ? recordingOf(c.id) : null,
+      canRecord: c.type === 'voice' && !!config.authorityServerId && server.id === config.authorityServerId && isAdmin(me),
     }));
 
   const memberRows = all<UserRow & { joined_at: number; nickname: string | null }>(
@@ -1321,8 +1432,10 @@ api.get('/servers/:id', (req, res) => {
     server.id,
   );
   const links = all<{ user_id: string; role_id: string }>('SELECT user_id, role_id FROM member_roles WHERE server_id = ?', server.id);
+  // foto escolhida pelo Mecenas: só aparece nos servidores do contrato (ver contracts.ts#contractAvatarsIn)
+  const contractAvatars = contractAvatarsIn(server.id);
   const members = memberRows.map((u) => ({
-    ...userJson(u),
+    ...userJson(contractAvatars.has(u.id) ? { ...u, avatar_url: contractAvatars.get(u.id)! } : u),
     nickname: u.nickname,
     joinedAt: u.joined_at,
     roleIds: links.filter((l) => l.user_id === u.id).map((l) => l.role_id),
@@ -1353,8 +1466,9 @@ api.patch('/servers/:id', (req, res) => {
 const serverIconRate = limiter(5, 60 * 60_000);
 
 api.post('/servers/:id/icon', imageBody, (req, res) => {
-  if (!serverIconRate(req.params.id)) fail(429, 'Muitas trocas de ícone em pouco tempo. Espere um pouco.');
+  // a permissão vem antes da cota: senão quem nem é do servidor gastava as trocas de ícone dele
   const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
+  if (!serverIconRate(server.id)) fail(429, 'Muitas trocas de ícone em pouco tempo. Espere um pouco.');
   const url = saveImage('icons', server.id, req.body);
   run('UPDATE servers SET icon_url = ? WHERE id = ?', url, server.id);
   removeUpload(server.icon_url);
@@ -1397,7 +1511,7 @@ api.put('/servers/:id/members/:userId/nickname', (req, res) => {
   const perms = serverPermissions(server.id, me);
   const raw = req.body?.nickname;
   const nickname = raw === null || raw === '' ? null : str(raw, 'apelido', 1, 32);
-  const mecenas = target === me ? 'no' : mecenasPower(me, target);
+  const mecenas = target === me ? 'no' : mecenasPower(me, target, server.id);
   if (mecenas === 'yes') {
     mecenasNickname(me, target, server.id, nickname);
     return res.json({ ok: true, nickname });
@@ -1443,6 +1557,9 @@ function removeMember(serverId: string, userId: string) {
     void removeFromRoom(id, userId);
   }
   run('DELETE FROM members WHERE server_id = ? AND user_id = ?', serverId, userId);
+  // os convites que a pessoa criou saem junto: quem foi expulso ou banido não deixa uma porta aberta para voltar
+  // com outra conta (nem para mandar gente para dentro)
+  run('DELETE FROM invites WHERE server_id = ? AND creator_id = ?', serverId, userId);
   leaveServerRoom(userId, serverId);
   serverChanged(serverId);
 }
@@ -1731,7 +1848,7 @@ api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
   const serverId = req.params.id;
   const target = req.params.userId;
   const muted = req.body?.muted !== false;
-  const mecenas = mecenasPower(me, target);
+  const mecenas = mecenasPower(me, target, serverId);
   if (mecenas === 'yes') {
     // o Mecenas silencia o alvo dele sem precisar de cargo no servidor
     requireMember(serverId, me);
@@ -1762,7 +1879,7 @@ api.post('/servers/:id/members/:userId/voice-deafen', async (req, res) => {
 api.post('/servers/:id/members/:userId/voice-disconnect', async (req, res) => {
   const me = uid(res);
   const target = req.params.userId;
-  const mecenas = mecenasPower(me, target);
+  const mecenas = mecenasPower(me, target, req.params.id);
   if (mecenas === 'yes') {
     requireMember(req.params.id, me);
     if (getVoiceState(target)?.serverId !== req.params.id) fail(400, 'Este membro não está em uma sala de voz');
@@ -1816,8 +1933,8 @@ api.post('/servers/:id/members/:userId/nudge', (req, res) => {
   // mensagem opcional junto da tremida (sem opção de copiar do lado de quem recebe, ver NudgeCard.tsx)
   const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 140) : '';
 
-  // quem foi silenciado não fica sabendo: a resposta é a mesma, só não entregamos
-  if (!prefs.mutedNudges?.includes(me)) {
+  // quem foi silenciado (ou bloqueado, em qualquer direção) não fica sabendo: a resposta é a mesma, só não entregamos
+  if (!prefs.mutedNudges?.includes(me) && !blockedBetween(me, target)) {
     const sender = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
     const senderNick = get<{ nickname: string | null }>('SELECT nickname FROM members WHERE server_id = ? AND user_id = ?', server.id, me)?.nickname;
     const voice = getVoiceState(me);
@@ -1946,6 +2063,10 @@ interface AttachmentJson {
   image: boolean;
 }
 const attachmentJson = (a: AttachmentRow): AttachmentJson => ({ id: a.id, name: a.name, size: a.size, url: a.url, image: !!a.image });
+/** O anexo como vai para o app: o banco guarda o link puro, quem vê a mensagem recebe o link assinado. */
+function attachmentOut(a: AttachmentJson): AttachmentJson {
+  return { ...a, url: signFileUrl(a.url) };
+}
 
 const MAX_ATTACHMENTS = 10;
 const attachmentBody = express.raw({ type: () => true, limit: '21mb' });
@@ -1968,7 +2089,7 @@ api.post('/attachments', humansOnly, attachmentBody, (req, res) => {
     row.image,
     row.created_at,
   );
-  res.json(attachmentJson(row));
+  res.json(attachmentOut(attachmentJson(row)));
 });
 
 /** Confere os anexos de uma mensagem nova: enviados por quem manda e ainda sem mensagem. */
@@ -2291,6 +2412,11 @@ api.post('/sounds/:id/play', (req, res) => {
 // ============================================================ Patches do servidor
 
 const MAX_SERVER_PATCHES = 120;
+// Patches e stickers do servidor são de todo mundo, então um membro sozinho não pode ocupar todas as vagas (e
+// deixar o servidor sem nenhuma). Quem gerencia o servidor não tem essa parte: usa o limite inteiro.
+const MEMBER_SERVER_PATCHES = 20;
+const MEMBER_CUSTOM_STICKERS = 10;
+const serverArtRate = limiter(30, 60 * 60_000);
 
 const serverPatchJson = (r: ServerPatchRow) => {
   let patch: Patch;
@@ -2313,6 +2439,11 @@ api.post('/servers/:id/patches', humansOnly, (req, res) => {
   const server = requireMember(req.params.id, me);
   const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM server_patches WHERE server_id = ?', server.id)!.n;
   if (count >= MAX_SERVER_PATCHES) fail(400, `O servidor já tem ${MAX_SERVER_PATCHES} patches. Apague algum antes.`);
+  if (!has(serverPermissions(server.id, me), P.MANAGE_SERVER)) {
+    const mine = get<{ n: number }>('SELECT COUNT(*) AS n FROM server_patches WHERE server_id = ? AND creator_id = ?', server.id, me)!.n;
+    if (mine >= MEMBER_SERVER_PATCHES) fail(400, `Você já criou ${MEMBER_SERVER_PATCHES} patches neste servidor. Apague algum dos seus antes.`);
+  }
+  if (!serverArtRate(me)) fail(429, 'Muitos patches e stickers criados em pouco tempo. Espere um pouco.');
   const id = randomUUID();
   const patch = { ...cleanPatch((req.body?.patch ?? {}) as Record<string, unknown>, me), id };
   if (!patch.text && !patch.icon && !patch.image) fail(400, 'O patch precisa de texto, emoji ou imagem');
@@ -2369,6 +2500,11 @@ api.post('/servers/:id/stickers', humansOnly, imageBody, (req, res) => {
   const name = str(req.query.name, 'nome do sticker', 1, 32);
   const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM custom_stickers WHERE server_id = ?', server.id)!.n;
   if (count >= MAX_CUSTOM_STICKERS) fail(400, `O servidor já tem ${MAX_CUSTOM_STICKERS} stickers. Apague algum antes.`);
+  if (!has(serverPermissions(server.id, me), P.MANAGE_SERVER)) {
+    const mine = get<{ n: number }>('SELECT COUNT(*) AS n FROM custom_stickers WHERE server_id = ? AND uploader_id = ?', server.id, me)!.n;
+    if (mine >= MEMBER_CUSTOM_STICKERS) fail(400, `Você já enviou ${MEMBER_CUSTOM_STICKERS} stickers neste servidor. Apague algum dos seus antes.`);
+  }
+  if (!serverArtRate(me)) fail(429, 'Muitos patches e stickers criados em pouco tempo. Espere um pouco.');
   const row: CustomStickerRow = { id: randomUUID(), server_id: server.id, name, url: saveImage('stickers', server.id, req.body), uploader_id: me, created_at: now() };
   run(
     'INSERT INTO custom_stickers (id, server_id, name, url, uploader_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
@@ -2547,6 +2683,8 @@ api.patch('/bots/:id', humansOnly, (req, res) => {
 
 api.post('/bots/:id/avatar', humansOnly, imageBody, (req, res) => {
   const bot = requireOwnBot(req.params.id, uid(res));
+  // conta na cota de quem é dono do bot (a mesma das imagens do perfil)
+  requireProfileUploadQuota(uid(res));
   const url = saveImage('avatars', bot.id, req.body);
   run('UPDATE users SET avatar_url = ? WHERE id = ?', url, bot.id);
   removeUpload(bot.avatar_url);
@@ -2728,8 +2866,9 @@ api.post('/dms', (req, res) => {
   if (!get('SELECT 1 FROM users WHERE id = ?', other)) fail(404, 'Usuário não encontrado');
   const [a, b] = me < other ? [me, other] : [other, me];
   let dm = get<DmChannelRow>('SELECT * FROM dm_channels WHERE user_a = ? AND user_b = ?', a, b);
+  if (blockedBetween(me, other)) fail(403, 'Não é possível conversar com essa pessoa.');
   if (!dm) {
-    if (!sharesServer(me, other)) fail(403, 'Vocês precisam estar em algum servidor em comum');
+    if (!sharesServer(me, other) && !areFriends(me, other)) fail(403, 'Vocês precisam ser amigos ou estar em algum servidor em comum');
     dm = { id: randomUUID(), user_a: a, user_b: b, created_at: now(), last_message_at: now() };
     run('INSERT INTO dm_channels (id, user_a, user_b, created_at, last_message_at) VALUES (?, ?, ?, ?, ?)', dm.id, a, b, dm.created_at, dm.last_message_at);
   }
@@ -2753,6 +2892,7 @@ function insertDmMessage(
   files: AttachmentRow[] = [],
   replyTo: string | null = null,
 ) {
+  if (blockedBetween(me, otherOf(dm, me))) fail(403, 'Não é possível mandar mensagens para essa pessoa.');
   const id = randomUUID();
   const at = now();
   run(
@@ -2854,7 +2994,7 @@ api.put('/me/email', humansOnly, async (req, res) => {
   const { email } = accountEmail(req.body?.email, me);
   if (!verifyPerUser(me)) fail(429, 'Muitas tentativas. Espere um pouco e tente de novo.');
   // pede a senha: quem pegou a sessão de alguém não consegue trocar o e-mail e depois a senha
-  if (user.password_hash && !(await bcrypt.compare(String(req.body?.password ?? ''), user.password_hash))) fail(400, 'Senha incorreta');
+  await requireOwner(res, user, req.body?.password, 'Senha incorreta');
   twoFactor.requireCode(user, req.body?.twoFactorCode);
   const token = newEmailToken(me, 'verify', email, 24 * 60 * 60_000);
   try {
@@ -2871,6 +3011,8 @@ api.delete('/me/email', humansOnly, (_req, res) => {
   const me = uid(res);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
   if (emailRequired() && !user.google_sub) fail(400, 'O e-mail é obrigatório nas contas com senha. Dá para trocar por outro, mas não para remover.');
+  // conta sem senha: o e-mail é o único outro caminho de volta, não sai com uma sessão antiga
+  if (!user.password_hash && user.email) requireFreshLogin(res);
   run('DELETE FROM email_tokens WHERE user_id = ?', me);
   run('UPDATE users SET email = NULL, email_key = NULL WHERE id = ?', me);
   if (user.email && mailEnabled()) sendEmailChanged(user.email, user.username, null).catch(mailError);
@@ -2994,6 +3136,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 // ============================================================ Fórum
 
 registerForumRoutes(api, authorJson);
+registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);
 registerSupportRoutes(api);
 registerDiagnosticRoutes(api);
@@ -3028,6 +3171,7 @@ registerReportRoutes(api, {
     return true;
   },
 });
+registerDirectorRoutes(api);
 registerIntegrationRoutes(api, {
   meUpdated: (userId) => {
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
@@ -3038,9 +3182,10 @@ registerIntegrationRoutes(api, {
 
 // ============================================================ Página do perfil
 
-/** Dá para ver o perfil completo de alguém: o próprio, quem divide servidor ou tem conversa privada com a pessoa. */
+/** Dá para ver o perfil completo de alguém: o próprio, quem divide servidor, tem conversa privada ou relação (amigo, pedido) com a pessoa. */
 function canSeeProfile(me: string, userId: string): boolean {
   if (me === userId) return true;
+  if (relationOf(me, userId)) return true;
   if (get('SELECT 1 FROM members a JOIN members b ON a.server_id = b.server_id WHERE a.user_id = ? AND b.user_id = ? LIMIT 1', me, userId)) return true;
   return !!get('SELECT 1 FROM dm_channels WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?)', me, userId, userId, me);
 }
@@ -3059,6 +3204,9 @@ api.get('/users/:id/profile', (req, res) => {
     page: pageJson(parseStyle(u!.profile_style).page),
     steamLinked: !!u!.steam_id && integrationsStatus().steam,
     mutualServers: me === u!.id ? [] : mutual.map(serverJson),
+    // como eu vejo a pessoa: amigo, pedido mandado/recebido, bloqueado (null = nada)
+    relationship: me === u!.id ? null : relationOf(me, u!.id),
+    mutualFriends: me === u!.id ? [] : mutualFriends(me, u!.id).map(userJson),
   });
 });
 
@@ -3092,6 +3240,7 @@ api.put('/me/profile-page', (req, res) => {
 /** Fundo da página do perfil (imagem ou GIF). */
 api.post('/me/profile-bg', imageBody, (req, res) => {
   const me = uid(res);
+  requireProfileUploadQuota(me);
   const style = parseStyle(get<UserRow>('SELECT * FROM users WHERE id = ?', me)!.profile_style);
   const old = style.page?.bg;
   style.page = { ...style.page, bg: saveImage('cards', me, req.body) };

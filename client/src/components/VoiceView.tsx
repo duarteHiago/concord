@@ -1,4 +1,6 @@
 import { Track, type LocalTrack, type Participant, type RemoteTrack } from 'livekit-client';
+import { DeckQrButton } from './Deck';
+import { RecordingControls, RecordingPill } from './Director';
 import {
   Activity,
   ChevronDown,
@@ -110,11 +112,14 @@ export function VoiceView({ channel }: { channel: Channel }) {
       <main className="flex min-w-0 flex-1 flex-col gap-3.5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1.5 pt-2">
           <MobileBackButton />
+          {channel.recording && <RecordingPill className="basis-full md:basis-auto md:order-none" />}
           <h1 className="text-2xl leading-tight font-bold md:text-[30px]">{channel.name}</h1>
           <span className="text-sm text-fg-muted">
             {streamerMember ? `${memberName(streamerMember)} está transmitindo` : inRoom.length ? `${inRoom.length} na sala` : 'Sala vazia'}
           </span>
           <div className="ml-auto flex items-center gap-2">
+            <RecordingControls detail={detail} channel={channel} />
+            <DeckQrButton />
             <JamButton detail={detail} channel={channel} />
             {status === 'connected' && <ConnectionQuality />}
             {canChat && (

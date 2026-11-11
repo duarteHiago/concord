@@ -20,7 +20,9 @@ próximo pedido.
   - põe a faixa "Ambiente de testes" no app e pula a landing page;
   - tira o site dos buscadores (`robots.txt` e `X-Robots-Tag`);
   - libera a entrada só para `STAGING_USERS` e `ADMIN_USERS`.
-- **Login:** usuário e senha, com o código por e-mail (o mesmo Brevo da produção). O login com Google fica
+- **Login:** usuário e senha, **sem confirmar e-mail** (`REQUIRE_EMAIL=false`): a lista de acesso já barra quem
+  não foi liberado, e assim dá para criar contas de teste sem uma caixa de e-mail para cada uma. O e-mail (o
+  mesmo Brevo da produção) continua servindo para "Esqueci minha senha". O login com Google fica
   desligado: o cliente OAuth da produção tem a marca verificada presa ao domínio dela, e mexer nisso pode
   pedir uma nova verificação. Para ter Google no teste, crie um projeto separado no Google Cloud em modo
   "Teste" (sem verificação; só as contas Google listadas lá entram), com a URI
@@ -101,3 +103,15 @@ Secrets (no environment `staging`):
 | `STAGING_ADMIN_USERS` | Quem entra no portal `/admin` do teste |
 | `STAGING_VPS_SSH_KEY`, `STAGING_VPS_KNOWN_HOSTS` | Chave do deploy e identificação da VPS |
 | `STAGING_BREVO_API_KEY` | Chave da Brevo só do teste (sem ela, usa a da produção) |
+
+## Mecenato de cortesia
+
+Testers entram no Mecenato sem apoiar por Pix. A lista é um **secret**, pelo mesmo motivo da lista de quem entra.
+Ponha só quem **já tem conta**: nome da lista sem conta fica reservado e ninguém consegue se cadastrar com ele.
+
+```bash
+gh secret set STAGING_MECENATO_COURTESY --env staging -b "amigo1,amigo2"   # teste
+gh secret set MECENATO_COURTESY --env production -b "amigo1,amigo2"        # produção
+```
+
+O portal `/admin` também libera e tira conta por conta (Contas → a pessoa → Mecenato de cortesia).

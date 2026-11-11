@@ -1,4 +1,6 @@
-import { MessageCircle, Server, Settings, ArrowLeft } from 'lucide-react';
+import { Gamepad2, MessageCircle, Server, Settings, ArrowLeft } from 'lucide-react';
+import { deckAvailable, openDeck } from './Deck';
+import { usePendingCount } from '../lib/friends';
 import { useMobile } from '../lib/mobile';
 import { HOME, useApp } from '../store/app';
 import { cx } from './ui';
@@ -24,7 +26,9 @@ export function MobileBottomNav() {
   const openServer = useApp((s) => s.openServer);
   const openSettings = useApp((s) => s.openSettings);
   const setMobileView = useApp((s) => s.setMobileView);
-  const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0));
+  // mensagens não lidas + pedidos de amizade esperando resposta (igual ao ícone da fileira de servidores)
+  const pending = usePendingCount();
+  const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0)) + pending;
 
   if (!mobile) return null;
 
@@ -49,6 +53,8 @@ export function MobileBottomNav() {
             setMobileView('sidebar');
           } else if (id === 'settings') {
             openSettings();
+          } else if (id === 'deck') {
+            openDeck();
           }
         }}
         className={cx(
@@ -71,6 +77,7 @@ export function MobileBottomNav() {
     <nav className="flex shrink-0 border-t border-line bg-surface-2 pb-[env(safe-area-inset-bottom,0px)]">
       {item('dms', 'Mensagens', MessageCircle, unread)}
       {item('servers', 'Servidores', Server)}
+      {deckAvailable() && item('deck', 'Controle', Gamepad2)}
       {item('settings', 'Ajustes', Settings)}
     </nav>
   );

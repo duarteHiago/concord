@@ -12,6 +12,7 @@ import { Avatar, RoleDot, VerifiedBadge, cx } from './ui';
 import { PATCH_TILTS, PatchBadge } from './PatchBadge';
 import { SupporterPatch } from './SupporterPatch';
 import { usePatchInspect } from '../store/patchInspect';
+import { FriendButton } from './Friends';
 
 export function MemberPopover() {
   const { userId, serverId, x, y, close } = usePopover();
@@ -329,6 +330,7 @@ export function MemberPopover() {
                 >
                   <MessageCircle size={16} />
                 </button>
+                <FriendButton user={member} variant="icon" />
                 <button
                   disabled={!online || presence === 'dnd'}
                   onClick={() => void sendNudge(detail.server.id, member.id, name)}

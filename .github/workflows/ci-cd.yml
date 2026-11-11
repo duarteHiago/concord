@@ -122,13 +122,16 @@ jobs:
 
       # O código é trocado inteiro, não extraído por cima: senão um arquivo apagado no repositório continua na VPS
       # e entra no build (aconteceu com o UserSettingsModal.tsx, apagado no #74). Dados, .env e deploy/ ficam.
+      # A lista do Mecenato de cortesia vem de um secret (mascarado no log público), pelo ambiente.
       - name: Instalar e reiniciar
+        env:
+          MECENATO_COURTESY: ${{ secrets.MECENATO_COURTESY }}
         run: |
           ssh "$TARGET" "mkdir -p /opt/concord \
             && cd /opt/concord && rm -rf client server shared desktop tests examples docs \
             && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
             && cd /opt/concord && chmod +x deploy/setup.sh \
-            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} TURNSTILE_SITE_KEY=${{ vars.TURNSTILE_SITE_KEY }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
+            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENATO_COURTESY='$MECENATO_COURTESY' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} TURNSTILE_SITE_KEY=${{ vars.TURNSTILE_SITE_KEY }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
 
       # Verifica de dentro da VPS: a Cloudflare costuma bloquear (403) os runners do GitHub.
       - name: Verificar saúde
@@ -193,6 +196,7 @@ jobs:
         env:
           STAGING_USERS: ${{ secrets.STAGING_USERS }}
           STAGING_ADMIN_USERS: ${{ secrets.STAGING_ADMIN_USERS }}
+          STAGING_MECENATO_COURTESY: ${{ secrets.STAGING_MECENATO_COURTESY }}
         run: |
           ssh "$TARGET" "mkdir -p $DIR \
             && cd $DIR && rm -rf client server shared desktop tests examples docs \
@@ -200,7 +204,7 @@ jobs:
             && cd $DIR && chmod +x deploy/setup.sh \
             && MODE=${{ vars.STAGING_DEPLOY_MODE || 'tunnel' }} DOMAIN=${{ vars.STAGING_DOMAIN }} TUNNEL_NAME=concord-teste \
                FIREWALL=${{ vars.STAGING_FIREWALL || 'on' }} STAGING=true STAGING_USERS='$STAGING_USERS' \
-               ADMIN_USERS='$STAGING_ADMIN_USERS' GOOGLE_CLIENT_ID=${{ vars.STAGING_GOOGLE_CLIENT_ID || 'off' }} MAIL_FROM=${{ vars.MAIL_FROM }} \
+               ADMIN_USERS='$STAGING_ADMIN_USERS' MECENATO_COURTESY='$STAGING_MECENATO_COURTESY' GOOGLE_CLIENT_ID=${{ vars.STAGING_GOOGLE_CLIENT_ID || 'off' }} MAIL_FROM=${{ vars.MAIL_FROM }} \
                ./deploy/setup.sh"
 
       - name: Verificar saúde

@@ -2,10 +2,11 @@
 // escolhido vira uma capa de cinema que se dissolve na página, o nome vem grande, e embaixo ficam só números soltos
 // e as seções que importam: os jogos que a pessoa escolheu em destaque (capas em pé, o favorito maior), os mais
 // jogados e o que vocês têm em comum. A personalização fica na própria página (botão "Personalizar").
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Gamepad2, Headphones, ImagePlus, LayoutGrid, List, Paintbrush, Search, Star, Trash2, X, Zap } from 'lucide-react';
+import { ArrowLeft, Ban, Check, ChevronLeft, ChevronRight, Gamepad2, Headphones, ImagePlus, LayoutGrid, List, Paintbrush, Search, Star, Trash2, X, Zap } from 'lucide-react';
 import { useMobile } from '../lib/mobile';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
+import { confirmBlock, unblock, useRelation } from '../lib/friends';
 import { sendNudge } from '../lib/nudge';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import { readableOn } from '../lib/theme';
@@ -14,6 +15,7 @@ import { useApp } from '../store/app';
 import { toast } from '../store/toast';
 import { PATCH_TILTS, PatchBadge } from './PatchBadge';
 import { SupporterPatch } from './SupporterPatch';
+import { FriendButton } from './Friends';
 import { Avatar, Button, IconButton, Spinner, VerifiedBadge, cx, initials } from './ui';
 
 type Showcase = 'playing' | 'steam' | 'patches' | 'servers';
@@ -41,6 +43,7 @@ interface ProfileData {
   page: PageStyle;
   steamLinked: boolean;
   mutualServers: ServerSummary[];
+  mutualFriends: User[];
 }
 
 interface SteamGame {
@@ -175,12 +178,14 @@ export function ProfilePage() {
                 )}
                 <div className="flex flex-wrap gap-14">
                   <MostPlayed games={games} profileUrl={steam.data.profile?.url} own={own} />
-                  {show('servers') && !own && <Common servers={data.mutualServers} common={common} />}
+                  {show('servers') && !own && <Common servers={data.mutualServers} friends={data.mutualFriends} common={common} />}
                 </div>
               </>
             ))}
 
-          {show('servers') && !own && (!data.steamLinked || !games) && data.mutualServers.length > 0 && <Common servers={data.mutualServers} common={[]} />}
+          {show('servers') && !own && (!data.steamLinked || !games) && (data.mutualServers.length > 0 || data.mutualFriends.length > 0) && (
+            <Common servers={data.mutualServers} friends={data.mutualFriends} common={[]} />
+          )}
         </div>
       </div>
 
@@ -237,6 +242,7 @@ function Hero({
   onClose: () => void;
 }) {
   const openDm = useApp((s) => s.openDm);
+  const relationship = useRelation(user.id);
   const presence = useApp((s) => s.online[user.id]);
   const [heroBroken, setHeroBroken] = useState(false);
   const activity: Activity | undefined = presence?.activities?.[0];
@@ -299,9 +305,12 @@ function Hero({
         </div>
         {!own && (
           <div className="flex gap-2 pb-2">
-            <Button className="h-11 px-6" onClick={() => void openDm(user.id)}>
-              Mensagem
-            </Button>
+            {relationship !== 'blocked' && (
+              <Button className="h-11 px-6" onClick={() => void openDm(user.id)}>
+                Mensagem
+              </Button>
+            )}
+            <FriendButton user={user} variant="full" />
             {serverId && presence && (
               <IconButton
                 label="Chamar atenção"
@@ -311,6 +320,16 @@ function Hero({
                 <Zap size={18} />
               </IconButton>
             )}
+            {!user.bot &&
+              (relationship === 'blocked' ? (
+                <Button variant="secondary" className="h-11 px-5" onClick={() => void unblock(user).catch(toast.error)}>
+                  Desbloquear
+                </Button>
+              ) : (
+                <IconButton label="Bloquear" danger className="h-11 w-11 bg-surface-3 hover:bg-surface-4" onClick={() => confirmBlock(user)}>
+                  <Ban size={18} />
+                </IconButton>
+              ))}
           </div>
         )}
       </div>
@@ -496,9 +515,10 @@ function MostPlayed({ games, profileUrl, own }: { games: SteamGame[]; profileUrl
   );
 }
 
-function Common({ servers, common }: { servers: ServerSummary[]; common: SteamGame[] }) {
+function Common({ servers, friends, common }: { servers: ServerSummary[]; friends: User[]; common: SteamGame[] }) {
   const openServer = useApp((s) => s.openServer);
-  if (!servers.length && !common.length) return null;
+  const openProfile = useApp((s) => s.openProfile);
+  if (!servers.length && !friends.length && !common.length) return null;
   return (
     <section className="flex min-w-0 flex-[2_1_280px] flex-col gap-4">
       <h2 className="font-display text-[22px] font-bold">Em comum</h2>
@@ -514,6 +534,26 @@ function Common({ servers, common }: { servers: ServerSummary[]; common: SteamGa
           </button>
         ))}
       </div>
+      {friends.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-bold tracking-wide text-fg-subtle uppercase">
+            {friends.length} {friends.length === 1 ? 'amigo em comum' : 'amigos em comum'}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {friends.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => openProfile(f.id, null)}
+                title={`${f.displayName} (@${f.username})`}
+                className="flex items-center gap-2 rounded-full bg-surface-3 py-1 pr-3 pl-1 text-sm font-semibold hover:text-accent"
+              >
+                <Avatar name={f.displayName} color={f.avatarColor} src={f.avatarUrl} size={26} />
+                {f.displayName}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {common.length > 0 && (
         <p className="text-sm leading-relaxed text-fg-subtle">
           {common.length} {common.length === 1 ? 'jogo que vocês dois têm' : 'jogos que vocês dois têm'} na Steam, como {common.slice(0, 2).map((g) => g.name).join(' e ')}.
@@ -922,7 +962,7 @@ function Editor({
         <div className="flex items-center gap-2">
           <input
             type="color"
-            value={page.accent ?? '#ff8a6b'}
+            value={page.accent ?? '#1f4fd1'}
             onChange={(e) => onChange({ ...page, accent: e.target.value })}
             onBlur={(e) => void save({ accent: e.target.value })}
             aria-label="Cor de destaque da página"

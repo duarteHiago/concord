@@ -17,6 +17,13 @@ export function notifySettings(me: Me | null): NotifySettings {
 
 let lastReceived = 0;
 
+/** Modo gravação da equipe: o mesmo tremor e som do "chamar atenção", na hora. */
+export function directorShake() {
+  playSound('nudge');
+  shakeScreen();
+  desktop?.shakeWindow?.();
+}
+
 export function receiveNudge(n: NudgeEvent) {
   const me = useApp.getState().me;
   if (!me) return;
@@ -109,8 +116,9 @@ export async function sendNudge(serverId: string, userId: string, name: string, 
 
 if (typeof window !== 'undefined' && desktop?.onNotificationClick) {
   desktop.onNotificationClick((data) => {
-    const d = data as { dmId?: string } & NudgeEvent;
+    const d = data as { dmId?: string; friends?: boolean } & NudgeEvent;
     if (d?.dmId) useApp.getState().openDmById(d.dmId);
+    else if (d?.friends) useApp.getState().openFriends();
     else goToNudge(d);
   });
 }

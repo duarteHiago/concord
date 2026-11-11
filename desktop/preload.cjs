@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   onUpdateState: listen('concord:update-state'),
   notify: (opts) => ipcRenderer.invoke('concord:notify', opts),
   shakeWindow: () => ipcRenderer.invoke('concord:shake-window'),
+  setAppIcon: (pngDataUrl) => ipcRenderer.invoke('concord:set-app-icon', pngDataUrl).catch(() => {}),
+  // barra de título própria (a janela vem sem a do sistema): 'state' só pergunta como a janela está
+  windowControl: (action) => ipcRenderer.invoke('concord:window', action),
+  onWindowState: listen('concord:window-state'),
   showClip: (data) => ipcRenderer.invoke('concord:show-clip', data),
   showNudgeMessage: (data) => ipcRenderer.invoke('concord:show-nudge-message', data),
   setStreaming: (on) => ipcRenderer.invoke('concord:streaming', on).catch(() => []),

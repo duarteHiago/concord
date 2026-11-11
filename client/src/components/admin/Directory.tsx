@@ -25,6 +25,10 @@ interface UserSummary {
   online: boolean;
   admin: boolean;
   banned: boolean;
+  /** liberado para o Mecenato sem apoio (cortesia) */
+  mecenatoCourtesy?: boolean;
+  /** liberado pela lista MECENATO_COURTESY da configuração */
+  mecenatoCourtesyList?: boolean;
 }
 
 interface Paged<T> {
@@ -41,6 +45,7 @@ function UserFlags({ u }: { u: UserSummary }) {
       {u.bot && <Badge>bot</Badge>}
       {u.verified && <Badge tone="ok">verificado</Badge>}
       {u.supportCents > 0 && <Badge tone="warn">apoiador</Badge>}
+      {(u.mecenatoCourtesy || u.mecenatoCourtesyList) && <Badge tone="accent">Mecenato cortesia</Badge>}
       {u.twoFactor && <Badge>2 etapas</Badge>}
       {u.google && <Badge>Google</Badge>}
       {u.hasEmail && <Badge>e-mail</Badge>}
@@ -119,7 +124,50 @@ interface UserDetailData extends Omit<UserSummary, 'servers'> {
   actions: { id: number; action: string; reason: string | null; at: number; by: string | null }[];
 }
 
-const ACTION_LABEL: Record<string, string> = { ban: 'Suspendeu', unban: 'Reativou', delete: 'Apagou' };
+const ACTION_LABEL: Record<string, string> = {
+  ban: 'Suspendeu',
+  unban: 'Reativou',
+  delete: 'Apagou',
+  mecenato_on: 'Liberou o Mecenato de cortesia',
+  mecenato_off: 'Tirou o Mecenato de cortesia',
+  director_fx: 'Efeito de voz (modo gravação)',
+  director_fx_off: 'Tirou o efeito de voz (modo gravação)',
+  director_shake: 'Tremeu a tela (modo gravação)',
+};
+
+/** Mecenato de cortesia: contratos sem apoio por Pix, para testers e para gravar os vídeos. */
+function CourtesyToggle({ u, reload }: { u: UserDetailData; reload: () => void }) {
+  const [busy, setBusy] = useState(false);
+  if (u.bot) return null;
+  const on = !!u.mecenatoCourtesy;
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/admin/users/${u.id}/mecenato`, { on: !on });
+      toast.success(on ? 'Mecenato de cortesia retirado.' : 'Mecenato de cortesia liberado.');
+      reload();
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-surface-3/60 p-4 ring-1 ring-line">
+      <div className="min-w-0 flex-1 text-sm">
+        <b>Mecenato de cortesia</b>
+        <p className="text-xs text-fg-muted">Entra em contratos sem apoiar. O contrato vem com empate (os dois têm poder) e sem multa.</p>
+      </div>
+      {u.mecenatoCourtesyList ? (
+        <span className="text-xs font-semibold text-fg-muted">Liberado pela lista da configuração</span>
+      ) : (
+        <Button variant={on ? 'secondary' : 'primary'} loading={busy} onClick={() => void toggle()}>
+          {on ? 'Tirar' : 'Liberar'}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 /** Suspender, reativar ou apagar a conta (sempre com motivo, que fica registrado). */
 function AccountActions({ u, reload }: { u: UserDetailData; reload: () => void }) {
@@ -237,7 +285,10 @@ export function UserDetail({ id }: { id: string }) {
           <div className="space-y-6">
             <section>
               <h2 className="mb-2 text-sm font-bold">Ações da equipe</h2>
-              <AccountActions u={u} reload={reload} />
+              <div className="space-y-3">
+                <AccountActions u={u} reload={reload} />
+                <CourtesyToggle u={u} reload={reload} />
+              </div>
             </section>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-fg-muted">
               <span>Conta criada em {fmtDate(u.createdAt)}</span>

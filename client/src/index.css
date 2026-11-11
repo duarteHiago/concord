@@ -4,23 +4,23 @@
   --font-sans: 'Nunito Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Outfit', 'Nunito Sans', ui-sans-serif, system-ui, sans-serif;
 
-  /* Tema padrão "Noturno": fundo ameixa, painéis flutuantes, destaque coral */
-  --color-surface-0: #120e16;
-  --color-surface-1: #17121c;
-  --color-surface-2: #211a28;
-  --color-surface-3: #2b2234;
-  --color-surface-4: #362c41;
-  --color-line: rgb(255 255 255 / 0.07);
-  --color-line-strong: rgb(255 255 255 / 0.13);
-  --color-fg: #f3ecf7;
-  --color-fg-muted: #b3a6c2;
-  --color-fg-subtle: #9486a6;
-  --color-accent: #ff8a6b;
-  --color-accent-hover: #ff7350;
-  --color-accent-2: #c4a5ff;
-  --color-on-accent: #2a1410;
+  /* Tema padrão "Azulejo": branco, azul-cobalto e coral (o mesmo de lib/theme.ts) */
+  --color-surface-0: #dde4f2;
+  --color-surface-1: #ecf0f9;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #f0f3fa;
+  --color-surface-4: #dfe6f3;
+  --color-line: rgb(15 27 61 / 0.09);
+  --color-line-strong: rgb(15 27 61 / 0.16);
+  --color-fg: #0f1b3d;
+  --color-fg-muted: #45537a;
+  --color-fg-subtle: #66739a;
+  --color-accent: #1f4fd1;
+  --color-accent-hover: #1a43b2;
+  --color-accent-2: #d4483b;
+  --color-on-accent: #ffffff;
   /* menus e janelinhas flutuantes: sempre opacos, mesmo com imagem de fundo */
-  --color-popover: #2b2234;
+  --color-popover: #f0f3fa;
   --color-ok: #22c55e;
   --color-danger: #e5484d;
   --color-warn: #f5c451;
@@ -54,6 +54,10 @@ body,
 }
 #root {
   padding-top: env(safe-area-inset-top, 0px);
+}
+/* app desktop com a barra de título própria (components/TitleBar.tsx): o app começa abaixo dela */
+html.has-titlebar #root {
+  padding-top: 36px;
 }
 
 body {
@@ -662,3 +666,69 @@ video::-webkit-media-controls {
 .gift-text-in { animation: gift-text 0.5s ease-out both; }
 @keyframes gift-text { from { opacity: 0; transform: translateY(10px); } }
 :root[data-motion='reduce'] :is(.gift-rays, .gift-text-in) { animation: none; }
+
+/* gaveta de servidores: abre na linha embaixo do topo, vista de cima, empurrando o resto para baixo */
+.server-drawer-tray {
+  transform-origin: top center;
+  /* sombra no alto, como o fundo de uma gaveta que fica embaixo do tampo */
+  box-shadow: inset 0 14px 16px -14px rgb(0 0 0 / 0.35), inset 0 0 0 1px var(--color-line);
+}
+.server-drawer-open { animation: drawer-open 0.34s cubic-bezier(0.2, 0.9, 0.25, 1.08) both; }
+.server-drawer-open .server-drawer-item { animation: drawer-item 0.34s cubic-bezier(0.2, 1.3, 0.4, 1) both; }
+.server-drawer-jiggle { animation: drawer-jiggle 0.26s ease-in-out infinite alternate; }
+.server-drawer-jiggle-alt { animation-delay: -0.13s; animation-direction: alternate-reverse; }
+.server-drag-ghost { transform: scale(1.14) rotate(-4deg); filter: drop-shadow(0 12px 18px rgb(0 0 0 / 0.35)); }
+@keyframes drawer-open {
+  from { transform: perspective(700px) rotateX(-22deg) translateY(-18px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes drawer-item {
+  from { transform: translateY(-10px) scale(0.7); opacity: 0; }
+}
+@keyframes drawer-jiggle {
+  from { transform: rotate(-2.4deg); }
+  to { transform: rotate(2.4deg); }
+}
+:root[data-motion='reduce'] .server-drawer-open,
+:root[data-motion='reduce'] .server-drawer-open .server-drawer-item { animation: none; }
+:root[data-motion='reduce'] #server-drawer { transition: none; }
+:root[data-motion='reduce'] .server-drawer-jiggle { animation: none; outline: 2px dashed var(--color-line-strong); outline-offset: 3px; border-radius: 20px; }
+
+/* modo gravação: o pontinho do selo "Gravando" pisca devagar */
+.recording-dot { animation: recording-blink 1.6s ease-in-out infinite; }
+@keyframes recording-blink { 50% { opacity: 0.25; } }
+:root[data-motion='reduce'] .recording-dot { animation: none; }
+
+/* deck do celular: o ícone gira para sugerir pôr o celular na horizontal */
+.deck-rotate { animation: deck-rotate 2.4s ease-in-out infinite; }
+@keyframes deck-rotate { 0%, 30% { transform: rotate(0); } 55%, 85% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+:root[data-motion='reduce'] .deck-rotate { animation: none; transform: rotate(-90deg); }
+
+/* deck do celular: uma chapa mais funda e teclas em relevo, com um LED na cor do grupo (--led) */
+.deck-plate {
+  background: var(--color-surface-0);
+  box-shadow: inset 0 2px 10px rgb(0 0 0 / 0.14), inset 0 0 0 1px var(--color-line);
+}
+.deck-key {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  box-shadow:
+    0 4px 0 color-mix(in srgb, var(--color-fg) 16%, var(--color-surface-2)),
+    0 8px 14px -10px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 color-mix(in srgb, white 35%, transparent);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.deck-key:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-fg) 16%, var(--color-surface-2)), 0 3px 6px -4px rgb(0 0 0 / 0.4);
+}
+.deck-led { background: var(--led); opacity: 0.28; transition: opacity 0.2s ease, box-shadow 0.2s ease; }
+.deck-key-on { background: color-mix(in srgb, var(--led) 16%, var(--color-surface-2)); }
+.deck-key-on .deck-led { opacity: 1; box-shadow: 0 0 10px var(--led); }
+.deck-key-fired .deck-led { animation: deck-led-flash 0.6s ease-out; }
+@keyframes deck-led-flash {
+  0% { opacity: 1; box-shadow: 0 0 14px 2px var(--led); }
+  100% { opacity: 0.28; box-shadow: none; }
+}
+:root[data-motion='reduce'] .deck-key-fired .deck-led { animation: none; opacity: 1; }

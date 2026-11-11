@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { EmailGateScreen, EmailResetScreen, useEmailPrompt } from './components/EmailRecovery';
 import { ChannelSidebar } from './components/ChannelSidebar';
@@ -31,6 +31,8 @@ import { DmView } from './components/DirectMessages';
 import { MobileBottomNav } from './components/MobileNav';
 import { useMobile } from './lib/mobile';
 import { useDevStatsPublisher } from './lib/devStats';
+import { DeckScreen } from './components/Deck';
+import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import './lib/visibility';
@@ -72,6 +74,13 @@ function MainApp() {
   const bootstrap = useApp((s) => s.bootstrap);
   const dropStage = useDrop((s) => s.stage);
   const emailReset = useApp((s) => s.emailReset);
+  // link do controle remoto da direção (/?direcao=SALA&servidor=SERVIDOR), lido uma vez na abertura
+  const [remote] = useState(() => {
+    const q = new URLSearchParams(location.search);
+    const channelId = q.get('direcao');
+    const serverId = q.get('servidor');
+    return channelId && serverId ? { channelId, serverId } : null;
+  });
   const room = useVoice((s) => s.room);
   useClaimAfterLogin();
   useDevStatsPublisher(me ? room : null);
@@ -127,13 +136,30 @@ function MainApp() {
 
   return (
     <>
-      {emailReset ? <EmailResetScreen /> : dropStage === 'page' ? <DropPage /> : me ? (needsEmail(me) ? <EmailGateScreen /> : <Shell />) : <AuthScreen />}
+      {emailReset ? (
+        <EmailResetScreen />
+      ) : dropStage === 'page' ? (
+        <DropPage />
+      ) : me ? (
+        needsEmail(me) ? (
+          <EmailGateScreen />
+        ) : remote ? (
+          // controle remoto da direção (celular): só o painel, sem entrar na call
+          <DirectorRemote serverId={remote.serverId} channelId={remote.channelId} />
+        ) : (
+          <Shell />
+        )
+      ) : (
+        <AuthScreen />
+      )}
       {me && dropStage === 'claim' && <DropClaimModal />}
       <ModalHost />
       <Toasts />
       <UpdateBanner />
       <PwaUpdateBanner />
       {me && <NudgeCard />}
+      {me && <DirectorWindowHost />}
+      {me && !remote && <DeckScreen />}
       {me && <NudgeMessageToast />}
       {me && <GameOverlay />}
       {me && <ClipToast />}

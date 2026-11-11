@@ -6,7 +6,7 @@ import { playCoin, playRattle, playTick } from '../lib/sounds';
 import type { GameData } from '../lib/types';
 import { cx } from './ui';
 
-export const WHEEL_COLORS = ['#ff8a6b', '#c4a5ff', '#5eead4', '#f5c451', '#7c9cff', '#ff6b9a', '#8fd4b8', '#ffb547'];
+export const WHEEL_COLORS = ['#ff7a6a', '#9db8ff', '#5eead4', '#f5c451', '#7c9cff', '#ff6b9a', '#8fd4b8', '#ffb547'];
 
 type Roulette = Extract<GameData, { type: 'roulette' }>;
 type Dice = Extract<GameData, { type: 'dice' }>;
@@ -64,7 +64,7 @@ export function Wheel({ data, size, animate, sound, onDone }: { data: Roulette; 
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg viewBox="0 0 200 200" className="h-full w-full drop-shadow-xl" role="img" aria-label={`Roleta com ${n} opções; resultado: ${data.items[data.result]}`}>
-        <circle cx="100" cy="100" r="98" fill="#17121c" />
+        <circle cx="100" cy="100" r="98" fill="#0f1b3d" />
         <g style={{ transform: `rotate(${angle}deg)`, transformOrigin: '100px 100px' }}>
           {data.items.map((item, i) => {
             const mid = (((i + 0.5) * seg - 90) * Math.PI) / 180;
@@ -72,7 +72,7 @@ export function Wheel({ data, size, animate, sound, onDone }: { data: Roulette; 
             const ty = 100 + 60 * Math.sin(mid);
             return (
               <g key={i}>
-                <path d={slice(i)} fill={WHEEL_COLORS[i % WHEEL_COLORS.length]} stroke="#17121c" strokeWidth="1.5" />
+                <path d={slice(i)} fill={WHEEL_COLORS[i % WHEEL_COLORS.length]} stroke="#0f1b3d" strokeWidth="1.5" />
                 <text
                   x={tx}
                   y={ty}
@@ -91,10 +91,10 @@ export function Wheel({ data, size, animate, sound, onDone }: { data: Roulette; 
           {/* pinos na borda */}
           {data.items.map((_, i) => {
             const a = ((i * seg - 90) * Math.PI) / 180;
-            return <circle key={`p${i}`} cx={100 + 92 * Math.cos(a)} cy={100 + 92 * Math.sin(a)} r="2.6" fill="#f3ecf7" />;
+            return <circle key={`p${i}`} cx={100 + 92 * Math.cos(a)} cy={100 + 92 * Math.sin(a)} r="2.6" fill="#ffffff" />;
           })}
         </g>
-        <circle cx="100" cy="100" r="15" fill="#17121c" stroke="#f3ecf7" strokeWidth="3" />
+        <circle cx="100" cy="100" r="15" fill="#0f1b3d" stroke="#ffffff" strokeWidth="3" />
       </svg>
       {/* ponteiro: dá um tranco a cada pino */}
       <div
@@ -104,7 +104,7 @@ export function Wheel({ data, size, animate, sound, onDone }: { data: Roulette; 
         aria-hidden="true"
       >
         <svg viewBox="0 0 20 24" className="h-full w-full drop-shadow-md">
-          <path d="M10 24 L1 3 Q10 -2 19 3 Z" fill="#f3ecf7" stroke="#17121c" strokeWidth="1.5" />
+          <path d="M10 24 L1 3 Q10 -2 19 3 Z" fill="#ffffff" stroke="#0f1b3d" strokeWidth="1.5" />
         </svg>
       </div>
     </div>

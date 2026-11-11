@@ -2,7 +2,7 @@
 // "Mecenato" das configurações (contrato, convite, Escudo, multas, histórico), a janela "Sacanagens e
 // Peripécias" (os poderes do Mecenas), a janela de renovação do contrato antigo e o Pix da multa.
 // Tudo que aparece vem do servidor: o app só mostra e pede.
-import { FileText, Gem, Headphones, History, ImagePlus, Mic, MicOff, Pencil, PhoneOff, RotateCcw, Shield, ShieldCheck, Sparkles, VolumeX, Wand2 } from 'lucide-react';
+import { ChevronDown, FileText, Gem, Headphones, History, ImagePlus, Layers, Mic, MicOff, Pencil, PhoneOff, RotateCcw, Server, Shield, ShieldCheck, Sparkles, VolumeX, Wand2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   CONTRACT_COOLDOWN_HOURS,
@@ -19,13 +19,13 @@ import {
 import { formatBRL } from '../../../shared/supporter.ts';
 import { api } from '../lib/api';
 import { effectLabel, endReasonText, eventText, fmtSpan } from '../lib/contractText';
-import type { Contract, ContractBrief, ContractEvent, ContractFine, ContractUser, ShieldView } from '../lib/types';
+import type { Contract, ContractBrief, ContractEvent, ContractFine, ContractServer, ContractUser, ShieldView } from '../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import { useApp } from '../store/app';
 import { useContracts } from '../store/contracts';
 import { toast } from '../store/toast';
 import { PixPending, usePixPolling, type Payment } from './Support';
-import { Avatar, Button, Modal, Spinner, Toggle, cx } from './ui';
+import { Avatar, Button, Modal, Spinner, Toggle, cx, initials } from './ui';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -54,12 +54,16 @@ function Terms({ days, cooldownHours, tieClause }: { days: number; cooldownHours
         • Vale por <b className="text-fg">{days} {days === 1 ? 'dia' : 'dias'}</b> depois que os dois aceitarem.
       </li>
       <li>
+        • Os poderes do Mecenas só valem <b className="text-fg">nos servidores escolhidos</b> por quem propôs (a foto também só aparece neles). Nos outros servidores, nas
+        conversas privadas e no perfil, nada muda.
+      </li>
+      <li>
         • O <b className="text-fg">Mecenas</b> é quem apoiar mais o Concord durante o contrato: os dois começam no zero, o apoio de antes não conta. Se o outro
         passar, vira o Mecenas na hora (o prazo não muda).
       </li>
       <li>
-        • O Mecenas pode: silenciar, ensurdecer, tirar da sala, trocar o apelido, trocar a foto/GIF do perfil (aparece e some sem aviso; a original volta no fim) e soltar um efeito
-        de voz surpresa de até 5 s.
+        • O Mecenas pode: silenciar, ensurdecer, tirar da sala, trocar o apelido, trocar a foto/GIF (aparece e some sem aviso, só nos servidores do contrato; some no fim) e
+        soltar um efeito de voz surpresa de até 5 s.
       </li>
       <li>
         • {tieClause ? 'Com a cláusula de empate: empatados, os dois têm os poderes um sobre o outro.' : 'Sem a cláusula de empate: no empate, quem já era o Mecenas continua.'}
@@ -190,6 +194,9 @@ function ContractTable({ c, meId }: { c: Contract; meId: string }) {
       <Row label="Diferença">{formatBRL(diff)}</Row>
       <Row label="Tempo restante">{c.endsAt ? fmtSpan(c.endsAt - now) : '—'}</Row>
       <Row label="Estado">{c.status === 'active' ? 'Em vigor' : c.status === 'pending' ? 'Esperando aceite' : endReasonText(c.endReason)}</Row>
+      <Row label="Vale nos servidores">
+        <ContractServers servers={c.servers} />
+      </Row>
       <Row label="Cláusula de empate">{c.tieClause ? (c.tie ? 'Ligada (empatados agora)' : 'Ligada') : 'Desligada'}</Row>
       <Row label="Intervalo do Escudo">{fmtSpan(c.cooldownMs)}</Row>
       {c.shields &&
@@ -207,6 +214,66 @@ function ContractTable({ c, meId }: { c: Contract; meId: string }) {
         })}
       <Row label="Apoiado durante o contrato">{formatBRL(c.contributedCents)}</Row>
       {c.fineEstimateCents !== null && <Row label="Multa se rescindir agora">{formatBRL(c.fineEstimateCents)}</Row>}
+    </div>
+  );
+}
+
+/** Os servidores onde o contrato vale, em lista (null = contrato antigo). */
+function ContractServers({ servers, align = 'end' }: { servers: ContractServer[] | null; align?: 'start' | 'end' }) {
+  if (servers === null) return <span>Todos os servidores em comum</span>;
+  return (
+    <ul className={cx('flex flex-col gap-1.5', align === 'end' ? 'items-end' : 'items-start')}>
+      {servers.map((s) => (
+        <li key={s.id} className="inline-flex min-w-0 items-center gap-2">
+          <ServerIcon server={s} size={22} />
+          <span className="truncate">{s.name}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ServerIcon({ server, size }: { server: ContractServer; size: number }) {
+  return server.iconUrl ? (
+    <img src={server.iconUrl} alt="" draggable={false} className="shrink-0 rounded-lg object-cover" style={{ width: size, height: size }} />
+  ) : (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-lg font-display text-[10px] font-bold text-white"
+      style={{ width: size, height: size, background: server.iconColor ?? 'var(--color-surface-4)' }}
+    >
+      {initials(server.name)}
+    </span>
+  );
+}
+
+/** Escolha dos servidores onde o contrato vale: "Todos" primeiro, depois um por linha com a caixinha. */
+function ServerPicker({ servers, selected, onChange }: { servers: ContractServer[]; selected: Set<string>; onChange: (next: Set<string>) => void }) {
+  const all = servers.length > 0 && servers.every((s) => selected.has(s.id));
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(next);
+  };
+  const row = 'flex min-h-12 w-full cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-3 active:bg-surface-4';
+  const box = 'h-5 w-5 shrink-0 accent-[var(--color-accent)]';
+  if (!servers.length) return <p className="rounded-2xl bg-surface-1 p-3 text-sm text-fg-muted">Você precisa estar em pelo menos um servidor (fora o oficial do Concord) para fazer um contrato.</p>;
+  return (
+    <div role="group" aria-label="Servidores onde o contrato vale" className="max-h-72 divide-y divide-line overflow-y-auto rounded-2xl bg-surface-1">
+      <label className={cx(row, 'font-bold')}>
+        <input type="checkbox" className={box} checked={all} onChange={() => onChange(all ? new Set() : new Set(servers.map((s) => s.id)))} />
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+          <Layers size={15} />
+        </span>
+        <span className="flex-1">Todos os servidores</span>
+      </label>
+      {servers.map((s) => (
+        <label key={s.id} className={row}>
+          <input type="checkbox" className={box} checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
+          <ServerIcon server={s} size={28} />
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{s.name}</span>
+        </label>
+      ))}
     </div>
   );
 }
@@ -231,6 +298,9 @@ function EventList({ events, people, meId }: { events: ContractEvent[]; people: 
 // ------------------------------------------------------------------ proposta e convite
 
 function ProposeForm() {
+  const eligible = useContracts((s) => s.data?.eligibleServers) ?? [];
+  const [serverIds, setServerIds] = useState<Set<string>>(new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [days, setDays] = useState<number>(7);
   const [cooldownHours, setCooldownHours] = useState<number>(1);
@@ -241,7 +311,7 @@ function ProposeForm() {
   const submit = async () => {
     setBusy(true);
     try {
-      await api.post('/contracts', { username: username.trim(), durationDays: days, cooldownHours, tieClause, acceptTerms: true });
+      await api.post('/contracts', { username: username.trim(), durationDays: days, cooldownHours, tieClause, serverIds: [...serverIds], acceptTerms: true });
       toast.success('Convite enviado. O contrato começa quando a outra pessoa aceitar.');
       await useContracts.getState().load();
     } catch (err) {
@@ -307,6 +377,31 @@ function ProposeForm() {
           ))}
         </div>
       </div>
+      <div>
+        <p className="mb-1.5 text-xs font-bold tracking-wide text-fg-muted uppercase">Onde o contrato vale</p>
+        <button
+          type="button"
+          onClick={() => setPickerOpen(!pickerOpen)}
+          aria-expanded={pickerOpen}
+          className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-line bg-surface-1 px-3 text-left text-sm transition-colors hover:border-accent"
+        >
+          <Server size={16} className="shrink-0 text-fg-subtle" />
+          <span className="min-w-0 flex-1 truncate font-semibold">
+            {serverIds.size === 0
+              ? 'Escolher os servidores'
+              : serverIds.size === eligible.length
+                ? `Todos os servidores (${serverIds.size})`
+                : `${serverIds.size} ${serverIds.size === 1 ? 'servidor escolhido' : 'servidores escolhidos'}`}
+          </span>
+          <ChevronDown size={16} className={cx('shrink-0 text-fg-subtle transition-transform', pickerOpen && 'rotate-180')} />
+        </button>
+        {pickerOpen && (
+          <div className="mt-2">
+            <ServerPicker servers={eligible} selected={serverIds} onChange={setServerIds} />
+          </div>
+        )}
+        <p className="mt-1.5 text-xs text-fg-muted">Os poderes do Mecenas (e a foto dele) só valem nesses servidores. Escolha pelo menos um.</p>
+      </div>
       <label className="flex items-center justify-between gap-3 text-sm">
         <span>
           <b>Cláusula de empate</b>
@@ -319,7 +414,7 @@ function ProposeForm() {
         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
         Li e aceito os termos
       </label>
-      <Button disabled={!username.trim() || !agreed} loading={busy} onClick={() => void submit()}>
+      <Button disabled={!username.trim() || !agreed || serverIds.size === 0} loading={busy} onClick={() => void submit()}>
         Enviar convite
       </Button>
     </section>
@@ -354,6 +449,12 @@ function InviteCard({ c, meId, supported }: { c: Contract; meId: string; support
             Com {other.displayName} (@{other.username}) · {acceptedByMe ? `esperando ${other.displayName} aceitar` : 'esperando você'} · vale por mais{' '}
             {fmtSpan(c.inviteExpiresAt - now)}
           </p>
+        </div>
+      </div>
+      <div className="rounded-2xl bg-surface-1 p-4">
+        <p className="mb-2 text-xs font-bold tracking-wide text-fg-muted uppercase">Vale nestes servidores</p>
+        <div className="text-sm font-semibold">
+          <ContractServers servers={c.servers} align="start" />
         </div>
       </div>
       <Terms days={Math.round(c.durationMs / DAY)} cooldownHours={Math.round(c.cooldownMs / HOUR)} tieClause={c.tieClause} />
@@ -402,7 +503,8 @@ export function MecenatoTab() {
 
   const c = data.current;
   const openFines = data.fines.filter((f) => f.status === 'open');
-  const supported = data.supportTotalCents > 0;
+  // liberado pela equipe (cortesia) entra no Mecenato como quem apoiou
+  const supported = data.supportTotalCents > 0 || !!data.courtesy;
 
   return (
     <div className="space-y-6">
@@ -647,7 +749,7 @@ export function PranksModal() {
           <div className="min-w-0 flex-1 text-sm">
             <b>{other.displayName}</b>
             <span className="block text-xs text-fg-muted">
-              {shielded ? 'Com o Escudo ligado: nada funciona agora.' : v ? `Em chamada${v.serverMuted ? ' · silenciado' : ''}${v.serverDeafened ? ' · ensurdecido' : ''}` : 'Fora de chamada'}
+              {shielded ? 'Com o Escudo ligado: nada funciona agora.' : v ? `Em chamada${v.serverMuted ? ' · silenciado' : ''}${v.serverDeafened ? ' · ensurdecido' : ''}` : 'Fora de chamada nos servidores do contrato'}
             </span>
           </div>
           {shielded && <Shield size={18} className="text-accent" />}
@@ -698,7 +800,7 @@ export function PranksModal() {
                   </Button>
                 </div>
               ) : (
-                <p className="text-xs text-fg-subtle">Vocês não estão em nenhum servidor em comum.</p>
+                <p className="text-xs text-fg-subtle">Vocês não estão juntos em nenhum dos servidores do contrato.</p>
               )}
             </section>
 
@@ -708,8 +810,8 @@ export function PranksModal() {
                   <ImagePlus size={15} /> Foto do perfil
                 </h4>
                 <p className="text-xs text-fg-muted">
-                  Foto ou GIF. Ela aparece no perfil de {other.displayName} de vez em quando, por uns minutos, e some de novo, sem aviso. {other.displayName} não
-                  consegue trocar a foto até o fim do contrato, quando a original volta de vez.
+                  Foto ou GIF. Ela aparece no lugar da foto de {other.displayName} só nos servidores do contrato, de vez em quando, por uns minutos, e some de
+                  novo, sem aviso. No perfil, nas conversas privadas e nos outros servidores, nada muda. No fim do contrato, ela some de vez.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -774,7 +876,7 @@ export function PranksModal() {
                       className="flex-1"
                     />
                   </label>
-                  <p className="text-xs text-fg-subtle">O momento é sorteado pelo servidor dentro desse tempo. Só acontece se a pessoa estiver em chamada com o microfone ligado.</p>
+                  <p className="text-xs text-fg-subtle">O momento é sorteado pelo servidor dentro desse tempo. Só acontece se a pessoa estiver em chamada, num servidor do contrato, com o microfone ligado.</p>
                   <Button disabled={!can} loading={busy === 'fx'} onClick={() => void act('fx', { power: 'voice_fx', effect, durationMs: fxSeconds * 1000, windowMs: fxWindow * 1000 })}>
                     Agendar a surpresa
                   </Button>
@@ -836,7 +938,7 @@ export function RenewalModal() {
   const [busy, setBusy] = useState<string | null>(null);
   if (!c) return null;
   const other = c.creator.id === me.id ? c.invitee : c.creator;
-  const supported = (data?.supportTotalCents ?? 0) > 0;
+  const supported = (data?.supportTotalCents ?? 0) > 0 || !!data?.courtesy;
   const later = () => {
     renewalSnoozed = true;
     close();

@@ -1,8 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { config } from './config.ts';
-import { get } from './db.ts';
+import { get, run } from './db.ts';
 import { stagingAllows } from './staging.ts';
 
 export class HttpError extends Error {
@@ -19,28 +19,67 @@ export const fail = (status: number, message: string): never => {
 
 const tokenVersion = (userId: string) => get<{ token_version: number }>('SELECT token_version FROM users WHERE id = ?', userId)?.token_version;
 
-/** O token leva a "versão" da senha: trocar a senha sobe a versão e derruba os tokens antigos. */
-export function signToken(userId: string): string {
-  return jwt.sign({ sub: userId, v: tokenVersion(userId) ?? 0 }, config.jwtSecret, { expiresIn: '30d' });
+export const SESSION_DAYS = 30;
+
+/**
+ * Abre uma sessão (um aparelho conectado) e devolve o token dela. O token leva a "versão" da senha (trocar a
+ * senha sobe a versão e derruba todos) e o id da sessão (encerrar a sessão derruba só aquele aparelho).
+ */
+export function signToken(userId: string, loggedIn = true): string {
+  const version = tokenVersion(userId) ?? 0;
+  const sid = randomBytes(16).toString('base64url');
+  const at = Date.now();
+  // auth_at: quando a pessoa provou quem é (senha, Google, código) para abrir esta sessão. Fica vazio quando a
+  // sessão nasce de um token que já existia (`loggedIn` false): aí ela não vale como "acabou de entrar".
+  run('INSERT INTO sessions (id, user_id, version, created_at, last_seen_at, auth_at) VALUES (?, ?, ?, ?, ?, ?)', sid, userId, version, at, at, loggedIn ? at : null);
+  return sessionToken(userId, sid, version);
 }
 
-export function verifyToken(token: string | undefined): string | null {
+/** Token de uma sessão que já existe (ex.: a versão subiu e este aparelho continua). */
+export const sessionToken = (userId: string, sid: string, version: number) =>
+  jwt.sign({ sub: userId, v: version, sid }, config.jwtSecret, { expiresIn: `${SESSION_DAYS}d` });
+
+export interface Session {
+  userId: string;
+  /** null = token de antes dos "aparelhos conectados" (vale até a senha mudar ou "sair de todos os outros") */
+  sid: string | null;
+  lastSeenAt: number | null;
+  userAgent: string | null;
+}
+
+export function verifySession(token: string | undefined): Session | null {
   if (!token) return null;
   try {
     const payload = jwt.verify(token, config.jwtSecret);
     if (typeof payload !== 'object' || typeof payload.sub !== 'string') return null;
     // tokens de antes dessa checagem não têm "v": valem como versão 0
     const v = typeof payload.v === 'number' ? payload.v : 0;
+    const sid = typeof payload.sid === 'string' ? payload.sid : null;
     // conta suspensa pela equipe: nenhum token dela vale (nem na API, nem no socket)
     // e no Concord de testes, quem saiu da lista também perde as sessões abertas
-    const row = get<{ token_version: number; banned_at: number | null; username: string }>(
-      'SELECT token_version, banned_at, username FROM users WHERE id = ?',
+    const row = get<{ token_version: number; banned_at: number | null; username: string; s_id: string | null; last_seen_at: number | null; user_agent: string | null }>(
+      `SELECT u.token_version, u.banned_at, u.username, s.id AS s_id, s.last_seen_at, s.user_agent
+       FROM users u LEFT JOIN sessions s ON s.id = ? AND s.user_id = u.id WHERE u.id = ?`,
+      sid,
       payload.sub,
     );
-    return row && !row.banned_at && row.token_version === v && stagingAllows(row.username) ? payload.sub : null;
+    if (!row || row.banned_at || row.token_version !== v || !stagingAllows(row.username)) return null;
+    // sessão encerrada (pelo próprio aparelho ou em "Aparelhos conectados"): o token deixa de valer na hora
+    if (sid && !row.s_id) return null;
+    return { userId: payload.sub, sid, lastSeenAt: row.last_seen_at, userAgent: row.user_agent };
   } catch {
     return null;
   }
+}
+
+export const verifyToken = (token: string | undefined): string | null => verifySession(token)?.userId ?? null;
+
+/** Anota o aparelho (navegador/sistema) e quando a sessão foi usada, no máximo a cada 5 min. */
+export function touchSession(s: Session, userAgent: string | undefined) {
+  if (!s.sid) return;
+  const ua = (userAgent ?? '').slice(0, 300) || null;
+  if (s.lastSeenAt && Date.now() - s.lastSeenAt < 5 * 60_000 && (!ua || ua === s.userAgent)) return;
+  run('UPDATE sessions SET last_seen_at = ?, user_agent = COALESCE(?, user_agent) WHERE id = ?', Date.now(), ua, s.sid);
 }
 
 export const hashBotToken = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -56,8 +95,14 @@ export function botUserId(token: unknown): string | null {
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   let userId: string | null = null;
-  if (header?.startsWith('Bearer ')) userId = verifyToken(header.slice(7));
-  else if (header?.startsWith('Bot ')) {
+  if (header?.startsWith('Bearer ')) {
+    const session = verifySession(header.slice(7));
+    if (session) {
+      userId = session.userId;
+      res.locals.sessionId = session.sid;
+      touchSession(session, req.headers['user-agent']);
+    }
+  } else if (header?.startsWith('Bot ')) {
     userId = botUserId(header);
     res.locals.isBot = !!userId;
   }

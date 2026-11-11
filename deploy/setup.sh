@@ -124,12 +124,24 @@ if [ -n "${ADMIN_USERS:-}" ]; then
   fi
 fi
 
+# Mecenato de cortesia (testers, gravação dos vídeos): nomes de usuário separados por vírgula, sem apoio por Pix.
+# Vazio apaga a lista. O portal /admin também libera conta por conta.
+if [ -n "${MECENATO_COURTESY+x}" ]; then
+  if printf '%s' "$MECENATO_COURTESY" | grep -qE '^[A-Za-z0-9_.,@ ]{0,1000}$'; then
+    upsert_env MECENATO_COURTESY "$MECENATO_COURTESY"
+  else
+    echo "!! MECENATO_COURTESY com formato inesperado (use: usuario1,usuario2); ignorado." >&2
+  fi
+fi
+
 # Concord de testes (homologação, ver deploy/STAGING.md): STAGING=true troca a logo, põe a faixa no app, tira dos
 # buscadores e só deixa entrar quem está em STAGING_USERS (nomes de usuário separados por vírgula) ou em ADMIN_USERS.
 if [ -n "${STAGING:-}" ]; then
   if [ "$STAGING" = "true" ] || [ "$STAGING" = "false" ]; then
     upsert_env STAGING "$STAGING"
-    [ "$STAGING" = "true" ] && upsert_env MAIL_FROM_NAME "Concord Teste"
+    # no teste, o cadastro dispensa o e-mail: a lista de acesso já barra quem não foi liberado, e assim dá para
+    # criar contas de teste sem uma caixa de e-mail para cada uma
+    [ "$STAGING" = "true" ] && upsert_env MAIL_FROM_NAME "Concord Teste" && upsert_env REQUIRE_EMAIL false
   else
     echo "!! STAGING deve ser true ou false; ignorado." >&2
   fi

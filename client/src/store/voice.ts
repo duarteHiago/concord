@@ -1016,15 +1016,35 @@ export const useVoice = create<VoiceStore>((set, get) => {
         toast.info(deafened ? 'Seu Mecenas deixou você sem ouvir ninguém.' : 'Você voltou a ouvir a sala.');
         publishState();
       });
-      // efeito de voz surpresa do Mecenas: sem aviso nenhum, por no máximo 5 s
-      socket.on('voice:fx', ({ effect, durationMs }: { effect: EffectId; durationMs: number }) => {
-        if (prankOverride || !get().micOn || effect === 'none' || !EFFECTS.some((e) => e.id === effect)) return;
+      // efeito de voz surpresa do Mecenas: sem aviso nenhum, por no máximo 5 s. No modo gravação da equipe, a
+      // direção troca o efeito na hora, por até 15 s ou fixo (durationMs 0) até mandar 'voice:fx-off'.
+      socket.on('voice:fx', ({ effect, durationMs, director, fixed }: { effect: EffectId; durationMs: number; director?: boolean; fixed?: boolean }) => {
+        if (effect === 'none' || !EFFECTS.some((e) => e.id === effect)) return;
+        if (director) {
+          clearTimeout(prankTimer);
+          prankOverride = effect;
+          if (get().micOn) void applyCurrentEffect();
+          if (!fixed && durationMs > 0) {
+            prankTimer = setTimeout(() => {
+              prankOverride = null;
+              if (get().micOn) void applyCurrentEffect();
+            }, Math.min(durationMs, 15_000));
+          }
+          return;
+        }
+        if (prankOverride || !get().micOn) return;
         prankOverride = effect;
         void applyCurrentEffect();
         prankTimer = setTimeout(() => {
           prankOverride = null;
           if (get().micOn) void applyCurrentEffect();
-        }, Math.min(Math.max(durationMs, 0), 5_000));
+        }, Math.min(Math.max(durationMs, 0), director ? 15_000 : 5_000));
+      });
+      socket.on('voice:fx-off', () => {
+        clearTimeout(prankTimer);
+        if (!prankOverride) return;
+        prankOverride = null;
+        if (get().micOn) void applyCurrentEffect();
       });
       socket.on('voice:stop-stream', ({ reason }: { reason: string }) => {
         void get().stopShare();

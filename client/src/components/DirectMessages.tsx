@@ -1,4 +1,4 @@
-import { Flag, Gamepad2, Headphones, MessageCircle, Pencil, Reply, Search, Trash2, Zap } from 'lucide-react';
+import { Flag, Gamepad2, Headphones, Pencil, Reply, Search, Trash2, Users, Zap } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
@@ -13,6 +13,8 @@ import { StickerButton, StickerMessage } from './StickerPicker';
 import { activityLabel } from './MemberList';
 import { ReplyBar, ReplyQuote, startReply } from './Replies';
 import { MobileBackButton } from './MobileNav';
+import { FriendsView } from './Friends';
+import { usePendingCount } from '../lib/friends';
 import { Avatar, IconButton, Spinner, cx } from './ui';
 
 const EMPTY: Message[] = [];
@@ -34,6 +36,8 @@ export function DmSidebar() {
   const openDmById = useApp((s) => s.openDmById);
   const online = useApp((s) => s.online);
   const me = useApp((s) => s.me)!;
+  const openFriends = useApp((s) => s.openFriends);
+  const pending = usePendingCount();
   const [query, setQuery] = useState('');
   const list = (dms ?? []).filter((d) => `${d.user.displayName} ${d.user.username}`.toLowerCase().includes(query.trim().toLowerCase()));
 
@@ -57,6 +61,21 @@ export function DmSidebar() {
         />
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
+        <button
+          onClick={openFriends}
+          aria-current={!activeDmId ? 'page' : undefined}
+          className={cx('mb-1 flex w-full items-center gap-3 rounded-2xl px-2.5 py-2 text-left transition-colors', !activeDmId ? 'bg-surface-3' : 'hover:bg-surface-3/60')}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-4">
+            <Users size={19} />
+          </span>
+          <span className="flex-1 text-sm font-semibold">Amigos</span>
+          {pending > 0 && (
+            <span title={`${pending} pedido(s) de amizade`} className="flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-bold text-white">
+              {pending}
+            </span>
+          )}
+        </button>
         {!dms && (
           <div className="flex justify-center py-6">
             <Spinner />
@@ -64,7 +83,7 @@ export function DmSidebar() {
         )}
         {dms?.length === 0 && (
           <p className="px-2 py-4 text-sm text-fg-muted">
-            Para começar uma conversa, abra o perfil de alguém de um servidor e toque em <b>Mensagem</b>.
+            Para começar uma conversa, abra o perfil de um amigo ou de alguém de um servidor e toque em <b>Mensagem</b>.
           </p>
         )}
         {list.map((d) => {
@@ -112,17 +131,8 @@ export function DmView() {
     return () => window.removeEventListener('focus', onFocus);
   }, [dmId, markDmRead]);
 
-  if (!dm) {
-    return (
-      <main className="panel flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-[26px] bg-surface-3">
-          <MessageCircle size={36} className="text-accent" />
-        </div>
-        <h1 className="text-2xl font-bold">Suas conversas</h1>
-        <p className="max-w-sm text-fg-muted">Escolha uma conversa ao lado, ou abra o perfil de alguém de um servidor e toque em “Mensagem”.</p>
-      </main>
-    );
-  }
+  // sem conversa aberta, a casa das Mensagens é a lista de amigos (como no Discord)
+  if (!dm) return <FriendsView />;
 
   return (
     <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">

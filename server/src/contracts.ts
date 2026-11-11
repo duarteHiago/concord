@@ -35,6 +35,7 @@ import {
 import { isMember } from './access.ts';
 import { config } from './config.ts';
 import { all, get, run, tx, type ContractFineRow, type ContractRow, type PaymentRow, type UserRow } from './db.ts';
+import { blockedBetween } from './friends.ts';
 import { fail, humansOnly, int, str, uid } from './http.ts';
 import { TrackSource, muteTracks, removeFromRoom } from './livekit.ts';
 import { dropVoice, emitToUser, getVoiceState, serverChanged, setServerDeafen, setServerMute } from './realtime.ts';
@@ -63,6 +64,53 @@ export const setContractHooks = (h: typeof hooks) => {
 // ------------------------------------------------------------------ consultas
 
 const byId = (id: string) => get<ContractRow>('SELECT * FROM contracts WHERE id = ?', id);
+
+// ---- servidores do contrato: os poderes do Mecenas só valem neles, e nunca no servidor oficial do Concord
+
+/** O servidor oficial (o da comunidade e o que dá o selo de verificado): fica fora de todo contrato. */
+export function officialServerIds(): Set<string> {
+  const ids = new Set<string>();
+  if (config.authorityServerId) ids.add(config.authorityServerId);
+  const community = config.communityInvite ? get<{ server_id: string }>('SELECT server_id FROM invites WHERE code = ?', config.communityInvite) : undefined;
+  if (community) ids.add(community.server_id);
+  return ids;
+}
+
+/** Ids escolhidos no contrato (null = contrato de antes da escolha: todos em comum). */
+function scopeOf(c: ContractRow): string[] | null {
+  try {
+    const ids = c.servers ? (JSON.parse(c.servers) as unknown) : null;
+    return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Os poderes deste contrato valem neste servidor? */
+export function inScope(c: ContractRow, serverId: string): boolean {
+  if (officialServerIds().has(serverId)) return false;
+  const ids = scopeOf(c);
+  return ids === null || ids.includes(serverId);
+}
+
+/** Servidores do contrato onde as duas pessoas estão (onde os poderes podem acontecer de fato). */
+function scopeServers(c: ContractRow) {
+  return all<{ id: string; name: string; icon_url: string | null; icon_color: string | null }>(
+    'SELECT s.id, s.name, s.icon_url, s.icon_color FROM servers s JOIN members a ON a.server_id = s.id JOIN members b ON b.server_id = s.id WHERE a.user_id = ? AND b.user_id = ? ORDER BY s.name',
+    c.creator_id,
+    c.invitee_id,
+  ).filter((s) => inScope(c, s.id));
+}
+
+/** Os servidores escolhidos, como quem vai aceitar vê no convite (mesmo os em que a pessoa ainda não está). */
+function chosenServers(c: ContractRow) {
+  const ids = scopeOf(c);
+  if (ids === null) return null;
+  return ids.flatMap((id) => {
+    const s = get<{ id: string; name: string; icon_url: string | null; icon_color: string | null }>('SELECT id, name, icon_url, icon_color FROM servers WHERE id = ?', id);
+    return s ? [{ id: s.id, name: s.name, iconUrl: s.icon_url, iconColor: s.icon_color }] : [];
+  });
+}
 
 /** O contrato (ou convite) em que a pessoa está agora. */
 const currentOf = (userId: string) =>
@@ -286,10 +334,23 @@ function contributedDuring(c: ContractRow, until: number) {
 function fineFor(c: ContractRow, until: number) {
   const payments = contributedDuring(c, until);
   const baseCents = payments.reduce((n, p) => n + p.amount_cents, 0);
-  return { baseCents, amountCents: fineCents(baseCents), payments };
+  // contrato de cortesia não tem Pix envolvido, então não tem multa
+  return { baseCents, amountCents: c.courtesy ? 0 : fineCents(baseCents), payments };
+}
+
+/** Liberado pela equipe para o Mecenato sem apoio (testers e quem ajuda a gravar os vídeos). */
+export function courtesyOf(userId: string): boolean {
+  const u = get<{ c: number; username: string }>('SELECT mecenato_courtesy AS c, username FROM users WHERE id = ?', userId);
+  return !!u && (!!u.c || config.mecenatoCourtesy.has(u.username.toLowerCase()));
+}
+
+/** Pode entrar em contrato: apoiou com qualquer valor confirmado ou está liberado pela equipe. */
+function mayContract(userId: string): boolean {
+  return totalOf(userId) > 0 || courtesyOf(userId);
 }
 
 function createFine(c: ContractRow, userId: string, until: number, by: string | null) {
+  if (c.courtesy) return '';
   const { baseCents, amountCents, payments } = fineFor(c, until);
   const id = randomUUID();
   run(
@@ -309,10 +370,14 @@ function createFine(c: ContractRow, userId: string, until: number, by: string | 
 
 export type MecenasPower = 'yes' | 'no' | 'shielded';
 
-/** `me` pode usar os poderes de Mecenas sobre `target` agora? ('shielded': poderia, mas o Escudo está ligado) */
-export function mecenasPower(me: string, target: string): MecenasPower {
+/**
+ * `me` pode usar os poderes de Mecenas sobre `target` agora? ('shielded': poderia, mas o Escudo está ligado).
+ * Com `serverId`, também confere se esse servidor está no contrato.
+ */
+export function mecenasPower(me: string, target: string, serverId?: string): MecenasPower {
   const c = live(currentOf(me));
   if (!c || c.status !== 'active' || otherOf(c, me) !== target) return 'no';
+  if (serverId && !inScope(c, serverId)) return 'no';
   if (!leadership(c).holders.includes(me)) return 'no';
   return settled(target, c).activeSince !== null ? 'shielded' : 'yes';
 }
@@ -363,11 +428,14 @@ async function liftApplied(contractId: string, onlyUser?: string) {
   if (!set.size) applied.delete(contractId);
 }
 
-/** O servidor da sala onde o alvo está, se o Mecenas também está nele (ou o indicado). */
-function voiceServer(me: string, target: string, serverId?: string) {
+const OUT_OF_SCOPE = 'Esse servidor não está no contrato: os poderes do Mecenas só valem nos servidores escolhidos.';
+
+/** O servidor da sala onde o alvo está, se o Mecenas também está nele (ou o indicado) e ele está no contrato. */
+function voiceServer(c: ContractRow, me: string, target: string, serverId?: string) {
   const v = getVoiceState(target);
   const id = serverId ?? v?.serverId ?? fail(400, `${lite(target).displayName} não está em uma sala de voz`);
   if (!isMember(id, me)) fail(403, 'Vocês precisam estar no mesmo servidor');
+  if (!inScope(c, id)) fail(403, OUT_OF_SCOPE);
   return { serverId: id, voice: v?.serverId === id ? v : undefined };
 }
 
@@ -384,7 +452,7 @@ export async function mecenasMute(me: string, target: string, muted: boolean, se
     }
     return logPower(c, me, target, 'unmute');
   }
-  const { serverId: sid, voice } = voiceServer(me, target, serverId);
+  const { serverId: sid, voice } = voiceServer(c, me, target, serverId);
   if (muted && voice) await muteTracks(voice.channelId, target, [TrackSource.MICROPHONE]);
   setServerMute(sid, target, muted);
   noteApplied(c.id, 'mute', sid, target, muted);
@@ -393,7 +461,7 @@ export async function mecenasMute(me: string, target: string, muted: boolean, se
 
 export async function mecenasDeafen(me: string, target: string, deafened: boolean, serverId?: string) {
   const c = requirePower(me, target);
-  const { serverId: sid } = voiceServer(me, target, serverId);
+  const { serverId: sid } = voiceServer(c, me, target, serverId);
   setServerDeafen(sid, target, deafened);
   noteApplied(c.id, 'deafen', sid, target, deafened);
   logPower(c, me, target, deafened ? 'deafen' : 'undeafen', { serverId: sid });
@@ -401,7 +469,7 @@ export async function mecenasDeafen(me: string, target: string, deafened: boolea
 
 export async function mecenasDisconnect(me: string, target: string, serverId?: string) {
   const c = requirePower(me, target);
-  const { serverId: sid, voice } = voiceServer(me, target, serverId);
+  const { serverId: sid, voice } = voiceServer(c, me, target, serverId);
   if (!voice) fail(400, `${lite(target).displayName} não está em uma sala de voz`);
   dropVoice(target, 'Seu Mecenas tirou você da sala.');
   await removeFromRoom(voice!.channelId, target);
@@ -411,19 +479,27 @@ export async function mecenasDisconnect(me: string, target: string, serverId?: s
 export function mecenasNickname(me: string, target: string, serverId: string, nickname: string | null) {
   const c = requirePower(me, target);
   if (!isMember(serverId, me) || !isMember(serverId, target)) fail(403, 'Vocês precisam estar no mesmo servidor');
+  if (!inScope(c, serverId)) fail(403, OUT_OF_SCOPE);
   run('UPDATE members SET nickname = ? WHERE server_id = ? AND user_id = ?', nickname, serverId, target);
   serverChanged(serverId);
   logPower(c, me, target, 'nickname', { serverId, nickname });
 }
 
-// ---- foto/GIF: o Mecenas troca, a original fica guardada e volta no fim do contrato. Enquanto isso, a foto
-// do Mecenas aparece e some sozinha (flipAvatars, na varredura), como um easter egg no perfil.
+// ---- foto/GIF: o Mecenas escolhe uma foto que aparece por cima da da pessoa, só nos servidores do contrato
+// (a foto da conta não muda: perfil, DMs e os outros servidores seguem com a dela). A do Mecenas aparece e
+// some sozinha (flipAvatars, na varredura), como um easter egg.
 
-/** A foto da pessoa foi escolhida pelo Mecenas (e ela não pode trocar até o contrato acabar)? */
-export function avatarLocked(userId: string): boolean {
-  const c = currentOf(userId);
-  return !!c && c.status === 'active' && !!get('SELECT 1 FROM contract_avatars WHERE contract_id = ? AND user_id = ?', c.id, userId);
+/** Fotos do Mecenas que estão aparecendo agora neste servidor: userId -> url (ver GET /servers/:id). */
+export function contractAvatarsIn(serverId: string): Map<string, string> {
+  const rows = all<ContractRow & { user_id: string; current_url: string | null }>(
+    `SELECT c.*, a.user_id, a.current_url FROM contract_avatars a JOIN contracts c ON c.id = a.contract_id
+     WHERE c.status = 'active' AND a.showing = 1 AND a.current_url IS NOT NULL`,
+  );
+  return new Map(rows.filter((r) => inScope(r, serverId)).map((r) => [r.user_id, r.current_url!]));
 }
+
+/** A foto mudou (trocou, apareceu, sumiu, voltou ao normal): os servidores da pessoa recarregam a lista de membros. */
+const avatarChanged = (userId: string) => hooks.profileChanged(userId);
 
 /** Até quando a foto fica como está agora (aparecendo ou escondida). */
 const flipAt = (showing: boolean) => now() + avatarFlipDelay(showing, randomInt(0, 1_000_000) / 1_000_000);
@@ -436,22 +512,18 @@ function setAvatar(me: string, target: string, body: unknown) {
     // a foto nova aparece na hora (o Mecenas vê que funcionou) e depois entra no aparece-e-some
     if (row) run('UPDATE contract_avatars SET current_url = ?, showing = 1, next_flip_at = ? WHERE contract_id = ? AND user_id = ?', url, flipAt(true), c.id, target);
     else {
-      const original = get<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id = ?', target)?.avatar_url ?? null;
       run(
-        'INSERT INTO contract_avatars (contract_id, user_id, original_url, current_url, showing, next_flip_at) VALUES (?, ?, ?, ?, 1, ?)',
+        'INSERT INTO contract_avatars (contract_id, user_id, original_url, current_url, showing, next_flip_at) VALUES (?, ?, NULL, ?, 1, ?)',
         c.id,
         target,
-        original,
         url,
         flipAt(true),
       );
     }
-    run('UPDATE users SET avatar_url = ? WHERE id = ?', url, target);
     return row?.current_url ?? null;
   });
-  removeUpload(previous); // a que o Mecenas tinha posto antes (a original fica)
-  hooks.profileChanged(target);
-  hooks.meUpdated(target);
+  removeUpload(previous); // a que o Mecenas tinha posto antes
+  avatarChanged(target);
   logPower(c, me, target, 'avatar');
 }
 
@@ -462,12 +534,11 @@ function restoreAvatars(contractId: string, onlyUser?: string) {
   );
   for (const r of rows) {
     if (onlyUser && r.user_id !== onlyUser) continue;
-    run('UPDATE users SET avatar_url = ? WHERE id = ?', r.original_url, r.user_id);
+    // a foto da conta nunca foi trocada (a do Mecenas é só uma camada nos servidores do contrato)
     run('DELETE FROM contract_avatars WHERE contract_id = ? AND user_id = ?', contractId, r.user_id);
     removeUpload(r.current_url);
     log(contractId, 'avatar_restored', { userId: r.user_id });
-    hooks.profileChanged(r.user_id);
-    hooks.meUpdated(r.user_id);
+    avatarChanged(r.user_id);
   }
 }
 
@@ -480,12 +551,8 @@ function flipAvatars() {
   );
   for (const r of rows) {
     const showing = !r.showing;
-    tx(() => {
-      run('UPDATE contract_avatars SET showing = ?, next_flip_at = ? WHERE contract_id = ? AND user_id = ?', showing ? 1 : 0, flipAt(showing), r.contract_id, r.user_id);
-      run('UPDATE users SET avatar_url = ? WHERE id = ?', showing ? r.current_url : r.original_url, r.user_id);
-    });
-    hooks.profileChanged(r.user_id);
-    hooks.meUpdated(r.user_id);
+    run('UPDATE contract_avatars SET showing = ?, next_flip_at = ? WHERE contract_id = ? AND user_id = ?', showing ? 1 : 0, flipAt(showing), r.contract_id, r.user_id);
+    avatarChanged(r.user_id);
   }
 }
 
@@ -526,7 +593,19 @@ function fireFx(contractId: string) {
   pendingFx.delete(contractId);
   const power = mecenasPower(p.actorId, p.targetId);
   const v = getVoiceState(p.targetId);
-  const skipped = power === 'shielded' ? 'shield' : power === 'no' ? 'no_power' : !v ? 'not_in_voice' : v.muted || v.serverMuted ? 'muted' : null;
+  const c0 = byId(contractId);
+  const skipped =
+    power === 'shielded'
+      ? 'shield'
+      : power === 'no'
+        ? 'no_power'
+        : !v
+          ? 'not_in_voice'
+          : c0 && !inScope(c0, v.serverId)
+            ? 'out_of_scope'
+            : v.muted || v.serverMuted
+              ? 'muted'
+              : null;
   if (!skipped) emitToUser(p.targetId, 'voice:fx', { effect: p.effect, durationMs: p.durationMs });
   log(contractId, skipped ? 'voice_fx_skipped' : 'voice_fx', {
     actorId: p.actorId,
@@ -603,22 +682,20 @@ function contractJson(c: ContractRow, viewer: string | null) {
     accepted: { [c.creator_id]: c.creator_accepted_at, [c.invitee_id]: c.invitee_accepted_at },
     shields: activeNow ? Object.fromEntries(participants(c).map((p) => [p, shieldJson(settled(p, c))])) : null,
     contributedCents,
-    fineEstimateCents: activeNow ? fineCents(contributedCents) : null,
+    fineEstimateCents: activeNow ? (c.courtesy ? 0 : fineCents(contributedCents)) : null,
+    courtesy: !!c.courtesy,
+    // servidores escolhidos por quem propôs (null = contrato antigo: todos os servidores em comum, menos o oficial)
+    servers: chosenServers(c),
     avatarOverrides: all<{ user_id: string }>('SELECT user_id FROM contract_avatars WHERE contract_id = ?', c.id).map((r) => r.user_id),
     // só para quem agendou
     pendingFx: fx && viewer && fx.actorId === viewer ? { effect: fx.effect, durationMs: fx.durationMs } : null,
-    // onde o outro está em chamada, se for num servidor de quem está vendo
+    // onde o outro está em chamada, se for num servidor de quem está vendo e do contrato
     otherVoice:
-      tv && viewer && isMember(tv.serverId, viewer)
+      tv && viewer && isMember(tv.serverId, viewer) && inScope(c, tv.serverId)
         ? { serverId: tv.serverId, channelId: tv.channelId, muted: tv.muted, deafened: tv.deafened, serverMuted: tv.serverMuted, serverDeafened: tv.serverDeafened }
         : null,
-    mutualServers: viewer
-      ? all<{ id: string; name: string }>(
-          'SELECT s.id, s.name FROM servers s JOIN members a ON a.server_id = s.id JOIN members b ON b.server_id = s.id WHERE a.user_id = ? AND b.user_id = ? ORDER BY s.name',
-          c.creator_id,
-          c.invitee_id,
-        )
-      : [],
+    // onde os poderes podem acontecer: servidores do contrato em que as duas pessoas estão
+    mutualServers: viewer ? scopeServers(c).map((s) => ({ id: s.id, name: s.name })) : [],
     endNote: viewer === null || viewer === c.ended_by ? c.end_note : null,
     review: viewer === null ? c.review : undefined,
     events: eventsJson(c.id, viewer),
@@ -668,6 +745,17 @@ export function registerContractRoutes(api: Router) {
       shield: shieldJson(settled(me, cur?.status === 'active' ? cur : null)),
       fines: all<ContractFineRow>('SELECT * FROM contract_fines WHERE user_id = ? ORDER BY created_at DESC LIMIT 20', me).map(fineJson),
       supportTotalCents: totalOf(me),
+      courtesy: courtesyOf(me),
+      // onde a pessoa pode fazer um contrato valer (os servidores dela, nunca o oficial)
+      eligibleServers: (() => {
+        const official = officialServerIds();
+        return all<{ id: string; name: string; icon_url: string | null; icon_color: string | null }>(
+          'SELECT s.id, s.name, s.icon_url, s.icon_color FROM servers s JOIN members m ON m.server_id = s.id WHERE m.user_id = ? ORDER BY s.name COLLATE NOCASE',
+          me,
+        )
+          .filter((s) => !official.has(s.id))
+          .map((s) => ({ id: s.id, name: s.name, iconUrl: s.icon_url, iconColor: s.icon_color }));
+      })(),
     });
   });
 
@@ -684,16 +772,32 @@ export function registerContractRoutes(api: Router) {
     if (days < 1 || days > CONTRACT_MAX_DAYS) fail(400, `O prazo vai de 1 a ${CONTRACT_MAX_DAYS} dias`);
     const cooldownHours = int(req.body?.cooldownHours, 'intervalo do Escudo');
     if (!(CONTRACT_COOLDOWN_HOURS as readonly number[]).includes(cooldownHours)) fail(400, 'O intervalo do Escudo é de 1, 2 ou 3 horas');
-    const tieClause = req.body?.tieClause === true;
+    let tieClause = req.body?.tieClause === true;
     const target =
       get<UserRow>('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND is_bot = 0', username(req.body?.username)) ??
       fail(404, 'Ninguém com esse @');
     if (target!.id === me) fail(400, 'O contrato é entre duas pessoas');
-    if (!(totalOf(me) > 0)) fail(403, 'Só quem já apoiou o Concord pode propor um contrato');
+    // bloqueio vale aqui também: o convite avisa a pessoa e ocupa a vaga de contrato dela até expirar. A resposta
+    // é a de um @ que não existe, para não contar a ninguém que foi bloqueado.
+    if (blockedBetween(me, target!.id)) fail(404, 'Ninguém com esse @');
+    if (!mayContract(me)) fail(403, 'Só quem já apoiou o Concord pode propor um contrato');
+    // com alguém liberado pela equipe, os dois começam (e podem ficar) no 0 a 0: o empate dá poder aos dois
+    const courtesy = courtesyOf(me) || courtesyOf(target!.id);
+    if (courtesy) tieClause = true;
     if (openFine(me)) fail(409, 'Você tem uma multa de rescisão em aberto. Pague antes de entrar em outro contrato.');
     if (openFine(target!.id)) fail(409, `@${target!.username} não pode entrar em contratos agora`);
     const recent = get<{ n: number }>('SELECT COUNT(*) AS n FROM contracts WHERE creator_id = ? AND created_at > ?', me, now() - DAY)!.n;
     if (recent >= MAX_INVITES_PER_DAY) fail(429, 'Muitos convites hoje. Tente de novo amanhã.');
+
+    // onde os poderes valem: pelo menos 1 servidor de quem propõe, nunca o oficial
+    const raw = req.body?.serverIds;
+    if (!Array.isArray(raw) || raw.length === 0 || raw.some((x) => typeof x !== 'string')) fail(400, 'Escolha pelo menos 1 servidor onde o contrato vale');
+    const serverIds = [...new Set(raw as string[])];
+    const official = officialServerIds();
+    for (const sid of serverIds) {
+      if (official.has(sid)) fail(400, 'O servidor oficial do Concord não pode entrar em contratos');
+      if (!isMember(sid, me)) fail(400, 'Você só pode escolher servidores em que está');
+    }
 
     const id = randomUUID();
     const t = now();
@@ -701,8 +805,8 @@ export function registerContractRoutes(api: Router) {
       if (currentOf(me)) fail(409, 'Você já está em um contrato (ou tem um convite em aberto)');
       if (currentOf(target!.id)) fail(409, `@${target!.username} já está em um contrato (ou tem um convite em aberto)`);
       run(
-        `INSERT INTO contracts (id, creator_id, invitee_id, status, duration_ms, cooldown_ms, tie_clause, creator_accepted_at, created_at, invite_expires_at)
-         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO contracts (id, creator_id, invitee_id, status, duration_ms, cooldown_ms, tie_clause, creator_accepted_at, created_at, invite_expires_at, courtesy, servers)
+         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
         me,
         target!.id,
@@ -712,11 +816,13 @@ export function registerContractRoutes(api: Router) {
         t,
         t,
         t + CONTRACT_INVITE_TTL_MS,
+        courtesy ? 1 : 0,
+        JSON.stringify(serverIds),
       );
       // a chave primária é a garantia final de um contrato por pessoa
       run('INSERT INTO contract_locks (user_id, contract_id) VALUES (?, ?)', me, id);
       run('INSERT INTO contract_locks (user_id, contract_id) VALUES (?, ?)', target!.id, id);
-      log(id, 'invited', { actorId: me, userId: target!.id, data: { days, cooldownHours, tieClause } });
+      log(id, 'invited', { actorId: me, userId: target!.id, data: { days, cooldownHours, tieClause, courtesy, servers: serverIds.length } });
     });
     const c = byId(id)!;
     afterChange(c);
@@ -730,7 +836,7 @@ export function registerContractRoutes(api: Router) {
     const c = requireParticipant(req.params.id, me);
     if (c.status !== 'pending') fail(409, c.status === 'active' ? 'O contrato já está em vigor' : 'Esse convite não vale mais');
     const mine = c.creator_id === me ? 'creator_accepted_at' : 'invitee_accepted_at';
-    if (!(totalOf(me) > 0)) fail(402, 'Para aceitar, apoie o Concord primeiro: qualquer valor confirmado vale.');
+    if (!mayContract(me)) fail(402, 'Para aceitar, apoie o Concord primeiro: qualquer valor confirmado vale.');
     if (openFine(me)) fail(409, 'Você tem uma multa de rescisão em aberto. Pague antes de entrar em outro contrato.');
     const t = now();
     tx(() => {
@@ -743,7 +849,7 @@ export function registerContractRoutes(api: Router) {
       const both = byId(c.id)!;
       if (both.creator_accepted_at && both.invitee_accepted_at) {
         const other = otherOf(both, me);
-        if (!(totalOf(other) > 0)) fail(409, `@${lite(other).username} está sem apoio confirmado no momento`);
+        if (!mayContract(other)) fail(409, `@${lite(other).username} está sem apoio confirmado no momento`);
         run("UPDATE contracts SET status = 'active', started_at = ?, ends_at = ? WHERE id = ?", t, t + both.duration_ms, c.id);
         log(c.id, 'started', { data: { endsAt: t + both.duration_ms } });
       }
@@ -777,7 +883,8 @@ export function registerContractRoutes(api: Router) {
       fineId = createFine(c, me, t, me);
       endContract(c, 'rescinded', me);
     });
-    res.json({ ok: true, fine: fineJson(get<ContractFineRow>('SELECT * FROM contract_fines WHERE id = ?', fineId)!) });
+    const fine = fineId ? get<ContractFineRow>('SELECT * FROM contract_fines WHERE id = ?', fineId) : undefined;
+    res.json({ ok: true, fine: fine ? fineJson(fine) : null });
   });
 
   /** Sair por segurança: sem multa, acaba na hora e vai para a equipe revisar. */
@@ -1063,5 +1170,24 @@ function migrateLegacyPair() {
 }
 
 migrateLegacyPair();
+
+/**
+ * Antes, a foto do Mecenas trocava a foto da conta (users.avatar_url) e a original ficava em contract_avatars.
+ * Agora ela é uma camada só nos servidores do contrato: quem está com a foto trocada volta para a original
+ * na conta. Roda uma vez (marca em meta).
+ */
+function migrateAvatarsToLayer() {
+  if (get("SELECT 1 FROM meta WHERE key = 'contract_avatar_layer'")) return;
+  tx(() => {
+    for (const r of all<{ user_id: string; original_url: string | null; current_url: string | null }>(
+      'SELECT user_id, original_url, current_url FROM contract_avatars WHERE original_url IS NOT NULL OR current_url IS NOT NULL',
+    )) {
+      // só desfaz se a conta ainda está com a foto do Mecenas (aparecendo); escondida, já é a original
+      run('UPDATE users SET avatar_url = ? WHERE id = ? AND avatar_url IS ?', r.original_url, r.user_id, r.current_url);
+    }
+    run("INSERT INTO meta (key, value) VALUES ('contract_avatar_layer', '1')");
+  });
+}
+migrateAvatarsToLayer();
 refreshBadges();
 setInterval(sweep, 30_000).unref();

@@ -7,12 +7,14 @@ import { CardPreview, StyleTab } from '../modals/StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
 import { TwoFactorCodeInput, TwoFactorSection } from '../TwoFactor';
+import { SessionsSection } from '../Sessions';
 import { LocalRecordControls } from '../RecordControls';
 import { useEffect, useRef, useState } from 'react';
 import { api, setToken } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { desktop, desktopInfo, openDiagnosticsWindow, type UpdateState } from '../../lib/desktop';
 import { DEFAULT_THEME, PRESETS, normalizeTheme } from '../../lib/theme';
+import { brandIconUrl } from '../../lib/brandIcon';
 import { memberName, type Activity, type Me, type ThemeSettings } from '../../lib/types';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
@@ -384,7 +386,8 @@ export function Appearance() {
                 theme.preset === p.id ? 'border-accent' : 'border-line hover:border-line-strong',
               )}
             >
-              <div className="flex h-14" style={{ background: p.palette['surface-0'] }}>
+              <div className="relative flex h-14" style={{ background: p.palette['surface-0'] }}>
+                {p.icon && <img src={brandIconUrl(p.icon)} alt="" className="absolute top-1.5 right-1.5 h-6 w-6" />}
                 <div className="w-4" style={{ background: p.palette['surface-0'] }} />
                 <div className="w-8" style={{ background: p.palette['surface-1'] }} />
                 <div className="flex flex-1 flex-col justify-end gap-1 p-1.5" style={{ background: p.palette['surface-2'] }}>
@@ -1147,6 +1150,7 @@ export function Account() {
     <div className="space-y-5">
       {desktop && <DesktopServer />}
       <TwoFactorSection />
+      <SessionsSection />
       <GoogleAccountSection />
       <EmailSection />
       <RecoverySection />

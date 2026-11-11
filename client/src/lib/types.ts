@@ -130,6 +130,10 @@ export interface UserSettings {
   emailPromptDismissed?: boolean;
   /** já viu o aviso de que virou Mecenas */
   mecenasSeen?: boolean;
+  /** servidores fixados no topo, na ordem escolhida (os outros ficam na gaveta) */
+  pinnedServers?: string[];
+  /** botões favoritos do deck do celular (sons, reações, Mecenato) */
+  deckFavorites?: string[];
 }
 
 export interface Me extends User {
@@ -208,6 +212,10 @@ export interface Channel {
   userLimit: number;
   overwrites: Overwrite[];
   permissions: number;
+  /** modo gravação ligado (salas de voz do servidor da equipe) */
+  recording?: { until: number; effects?: Record<string, { effect: string; until: number | null }> } | null;
+  /** quem vê pode ligar o modo gravação e usar o painel de direção */
+  canRecord?: boolean;
 }
 
 export interface Member extends User {
@@ -299,15 +307,27 @@ export interface Contract extends ContractBrief {
   /** apoio dos dois desde que o contrato começou (base da multa) */
   contributedCents: number;
   fineEstimateCents: number | null;
+  /** contrato de cortesia (liberado pela equipe): empate ligado e sem multa */
+  courtesy?: boolean;
   /** quem está com a foto escolhida pelo Mecenas */
   avatarOverrides: string[];
   /** efeito surpresa agendado (só para quem agendou) */
   pendingFx: { effect: string; durationMs: number } | null;
   /** onde a outra pessoa está em chamada (se for num servidor seu) */
   otherVoice: { serverId: string; channelId: string; muted: boolean; deafened: boolean; serverMuted: boolean; serverDeafened: boolean } | null;
+  /** onde os poderes podem acontecer: servidores do contrato em que os dois estão */
   mutualServers: { id: string; name: string }[];
+  /** servidores escolhidos por quem propôs (null = contrato antigo: todos em comum, menos o oficial) */
+  servers: ContractServer[] | null;
   endNote: string | null;
   events: ContractEvent[];
+}
+
+export interface ContractServer {
+  id: string;
+  name: string;
+  iconUrl: string | null;
+  iconColor: string | null;
 }
 
 export interface ContractFine {
@@ -328,6 +348,10 @@ export interface ContractsMe {
   shield: ShieldView;
   fines: ContractFine[];
   supportTotalCents: number;
+  /** servidores da pessoa onde um contrato pode valer (o oficial nunca entra) */
+  eligibleServers: ContractServer[];
+  /** liberado pela equipe para o Mecenato sem apoio */
+  courtesy?: boolean;
 }
 
 /** Jam do Spotify fixada numa sala de voz (ver server/src/realtime.ts). */
@@ -399,6 +423,15 @@ export interface Message {
   author: User;
   /** mensagem que esta responde (prévia), ou null */
   replyTo?: ReplyPreview | null;
+}
+
+/** Como eu vejo a pessoa: amigo, pedido que eu mandei, pedido que recebi, ou bloqueada por mim. */
+export type RelationType = 'friend' | 'outgoing' | 'incoming' | 'blocked';
+
+export interface Relationship {
+  user: User;
+  type: RelationType;
+  since: number;
 }
 
 /** Prévia da mensagem respondida. `deleted`: a original foi apagada. */
