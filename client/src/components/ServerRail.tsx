@@ -9,6 +9,7 @@ import { useVoice } from '../store/voice';
 import { useCommunity, usePendingCommunity } from '../store/community';
 import { DragGhost, DrawerLine, pinnedServers, RAIL_MAX, ServerDrawerPanel, useServerDrag } from './ServerDrawer';
 import { cx, initials } from './ui';
+import { RailIconEffect, railHover } from '../workshop/Slots';
 
 /** Fileira de servidores no topo da barra lateral. Mostra até RAIL_MAX servidores; o resto fica na gaveta. */
 export function ServerStrip() {
@@ -103,6 +104,7 @@ export function ServerStrip() {
               aria-current={active ? 'true' : undefined}
               {...(isPinned ? handle(s.id) : {})}
               onClick={() => openServer(s.id)}
+              onMouseEnter={railHover(s.id)}
               className={cx(
                 tile,
                 // segurar para reordenar: sem a prévia da imagem nem o menu "salvar imagem" do celular
@@ -120,6 +122,7 @@ export function ServerStrip() {
               ) : (
                 initials(s.name)
               )}
+              <RailIconEffect serverId={s.id} />
               {voiceServer === s.id && (
                 <span title="Você está numa sala deste servidor" className="absolute -right-0.5 -bottom-0.5 h-4 w-4 rounded-full border-[3px] border-surface-2 bg-ok" />
               )}

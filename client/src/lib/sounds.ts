@@ -17,7 +17,14 @@ const SOUNDS: Record<string, [number, number][]> = {
   clip: [[1175, 0], [1568, 0.07], [1175, 0.16], [1568, 0.23]],
 };
 
+// A Oficina do servidor pode trocar alguns sons (salas de voz) pelos do pacote instalado.
+let override: ((name: string) => boolean) | null = null;
+export function setSoundOverride(fn: ((name: string) => boolean) | null) {
+  override = fn;
+}
+
 export function playSound(name: keyof typeof SOUNDS) {
+  if (override?.(name)) return;
   if (name === 'nudge') return playNudge();
   try {
     ctx ??= new AudioContext();

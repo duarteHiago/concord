@@ -4,6 +4,7 @@ import { toast } from '../store/toast';
 import { desktop } from './desktop';
 import { notifySettings } from './nudge';
 import { playSound } from './sounds';
+import { workshopMention } from '../workshop/runtime';
 import type { DirectChannel, Message, User } from './types';
 
 export interface MentionEvent {
@@ -87,7 +88,8 @@ export function receiveMention(m: MentionEvent) {
     app.activeServerId === m.serverId && app.activeChannels[m.serverId] === m.message.channelId && document.hasFocus();
   if (viewing) return;
 
-  if (prefs.sound) playSound('mention');
+  // servidor com a peça "Notificação" da Oficina: som e aviso com a cara do pacote
+  if (!workshopMention(m, prefs.sound) && prefs.sound) playSound('mention');
   if (!prefs.mentionDesktop) return;
 
   const author = m.message.author.displayName;

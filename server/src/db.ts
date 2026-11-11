@@ -260,6 +260,15 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_server_patches ON server_patches(server_id, created_at);
+  -- Oficina (só no Concord de testes por enquanto): rascunho e versão publicada, em JSON validado
+  -- por shared/workshop.ts. Não guarda dado de pessoas, só a arrumação do servidor.
+  CREATE TABLE IF NOT EXISTS server_workshop (
+    server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+    draft TEXT,
+    published TEXT,
+    updated_at INTEGER NOT NULL,
+    published_at INTEGER
+  );
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_bot_token ON users(bot_token_hash) WHERE bot_token_hash IS NOT NULL;
 `);
 

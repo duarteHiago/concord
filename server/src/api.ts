@@ -78,6 +78,7 @@ import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
 import { registerReportRoutes } from './reports.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
+import { registerWorkshopRoutes } from './workshop.ts';
 import {
   ART_OFFSET,
   ART_SCALE,
@@ -3138,6 +3139,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 registerForumRoutes(api, authorJson);
 registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);
+registerWorkshopRoutes(api);
 registerSupportRoutes(api);
 registerDiagnosticRoutes(api);
 registerAdminRoutes(api);

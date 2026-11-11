@@ -20,6 +20,7 @@ import {
   Video,
   VideoOff,
   Volume2,
+  Puzzle,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
@@ -35,6 +36,8 @@ import { ServerStrip } from './ServerRail';
 import { DeviceSplitButton } from './DeviceMenu';
 import { useMobile } from '../lib/mobile';
 import { Avatar, IconButton, LivePill, VerifiedBadge, cx } from './ui';
+import { MuralEntry, useServerBanner } from '../workshop/Slots';
+import { WORKSHOP_ENABLED, useWorkshop } from '../workshop/store';
 
 export function ChannelSidebar() {
   const detail = useActiveDetail();
@@ -52,6 +55,7 @@ export function ChannelSidebar() {
         <>
           <ServerHeader detail={detail} />
           <div className="flex-1 space-y-5 overflow-y-auto px-3 pb-3">
+            <MuralEntry detail={detail} />
             <ChannelGroup detail={detail} kind="voice" />
             <ChannelGroup detail={detail} kind="forum" />
             <ChannelGroup detail={detail} kind="text" />
@@ -77,6 +81,8 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
   const perms = detail.permissions;
   const isOwner = detail.server.ownerId === me.id;
   const onlineCount = detail.members.filter((m) => online[m.id]).length;
+  // Oficina: faixa animada atrás do nome (o texto troca de cor para continuar legível)
+  const banner = useServerBanner(detail.server.id);
 
   useEffect(() => {
     if (!open) return;
@@ -102,18 +108,24 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
   );
 
   return (
-    <div ref={ref} className="relative px-5 pt-5 pb-3">
-      <button onClick={() => setOpen(!open)} className="group flex w-full items-center gap-2 text-left" aria-expanded={open}>
+    <div ref={ref} className={cx('relative px-5 pt-5 pb-3', !!banner.art && 'mx-3 mt-1 mb-2 overflow-hidden rounded-3xl px-4 pt-4 pb-4')}>
+      {banner.art}
+      <button
+        onClick={() => setOpen(!open)}
+        className="group relative flex w-full items-center gap-2 text-left"
+        aria-expanded={open}
+        style={banner.ink ? { color: banner.ink } : undefined}
+      >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <div className="truncate font-display text-[22px] leading-tight font-bold">{detail.server.name}</div>
             {detail.server.verified && <VerifiedBadge size={17} className="shrink-0" />}
           </div>
-          <div className="text-[13px] text-fg-muted">
+          <div className={cx('text-[13px]', banner.ink ? 'opacity-80' : 'text-fg-muted')}>
             {onlineCount} {onlineCount === 1 ? 'pessoa online' : 'pessoas online'}
           </div>
         </div>
-        <ChevronDown size={20} className={cx('shrink-0 text-fg-muted transition-transform group-hover:text-fg', open && 'rotate-180')} />
+        <ChevronDown size={20} className={cx('shrink-0 transition-transform', banner.ink ? 'opacity-80' : 'text-fg-muted group-hover:text-fg', open && 'rotate-180')} />
       </button>
       {open && (
         <div className="absolute top-full right-3 left-3 z-30 animate-pop-in space-y-0.5 rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
@@ -123,6 +135,7 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
           {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS) || has(perms, P.BAN_MEMBERS) || me.isAuthority) &&
             item('Configurações do servidor', <Settings size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id }))}
           {item('Patches do servidor', <Shirt size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id, tab: 'patches' }))}
+          {WORKSHOP_ENABLED && has(perms, P.MANAGE_SERVER) && item('Oficina', <Puzzle size={16} />, () => useWorkshop.getState().openStudio(detail.server.id))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar sala ou canal', <Plus size={16} />, () => openModal({ type: 'createChannel', serverId: detail.server.id, kind: 'voice' }))}
           <div className="mx-2 my-1 h-px bg-line" />
           {isOwner

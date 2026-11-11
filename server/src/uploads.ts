@@ -5,7 +5,7 @@ import { PACK_STICKER_MAX_BYTES } from '../../shared/cosmetics.ts';
 import { config } from './config.ts';
 import { fail } from './http.ts';
 
-export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds' | 'cards' | 'patches' | 'stickers' | 'packs' | 'files';
+export type UploadKind = 'avatars' | 'icons' | 'backgrounds' | 'banners' | 'sounds' | 'cards' | 'patches' | 'stickers' | 'packs' | 'files' | 'workshop';
 
 const MB = 1024 * 1024;
 // GIFs animados não são redimensionados no navegador, por isso os limites de foto são folgados
@@ -22,6 +22,8 @@ const LIMITS: Record<UploadKind, number> = {
   packs: PACK_STICKER_MAX_BYTES,
   // anexos das conversas: o mesmo limite do Discord grátis
   files: 20 * MB,
+  // imagens dos widgets da Oficina
+  workshop: 4 * MB,
 };
 
 /** Identifica o formato pelos primeiros bytes (não confia no Content-Type). */

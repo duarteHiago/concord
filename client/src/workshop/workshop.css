@@ -1,0 +1,461 @@
+/* Oficina do servidor: arte animada dos pacotes. Cores chegam por variáveis (--wa, --wb, --wg, --wbg, --wbg2,
+   --wink), definidas por pacote em Art.tsx. Com movimento reduzido (data-motion="reduce"), tudo para. */
+
+.ws-vars {
+  --wa: #e8b94a;
+  --wb: #3fa9f5;
+  --wg: rgba(232, 185, 74, 0.5);
+  --wbg: #0b1426;
+  --wbg2: #132449;
+  --wink: #f6e7c1;
+}
+
+/* ------------------------------------------------------------ ícone animado (barra de servidores) */
+
+.ws-rail {
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+  border-radius: 22px;
+  z-index: 1;
+}
+.ws-rail svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ws-rail-glow {
+  position: absolute;
+  inset: 4px;
+  border-radius: 18px;
+  box-shadow: 0 0 0 1.5px var(--wa), 0 0 12px 1px var(--wg);
+  animation: ws-pulse 2.4s ease-in-out infinite;
+}
+.ws-spin {
+  transform-origin: 50% 50%;
+  animation: ws-spin 9s linear infinite;
+}
+.ws-spin-rev {
+  transform-origin: 50% 50%;
+  animation: ws-spin 14s linear infinite reverse;
+}
+.ws-scanline {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  top: 8px;
+  background: linear-gradient(90deg, transparent, var(--wb), transparent);
+  box-shadow: 0 0 8px var(--wb);
+  animation: ws-scan 2.2s ease-in-out infinite;
+}
+.ws-pixel-border {
+  position: absolute;
+  inset: 3px;
+  border-radius: 4px;
+  border: 3px dashed var(--wa);
+  animation: ws-pixel 1.2s steps(2) infinite;
+}
+.ws-mote {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--wa);
+  box-shadow: 0 0 6px var(--wa);
+  opacity: 0;
+  animation: ws-rise 2.6s ease-out infinite;
+}
+.ws-mote.b {
+  background: var(--wb);
+  box-shadow: 0 0 6px var(--wb);
+}
+.ws-steam {
+  position: absolute;
+  inset: 4px;
+  border-radius: 18px;
+  box-shadow: 0 0 14px 3px var(--wg);
+  animation: ws-breathe 3.6s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------ faixa animada (cabeçalho do servidor) */
+
+.ws-banner {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--wbg) 0%, var(--wbg2) 100%);
+}
+.ws-banner::after {
+  /* brilho que passa devagar */
+  content: '';
+  position: absolute;
+  inset: -50% -20%;
+  background: linear-gradient(105deg, transparent 40%, color-mix(in srgb, var(--wa) 22%, transparent) 50%, transparent 60%);
+  animation: ws-sheen 6s ease-in-out infinite;
+}
+.ws-banner-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ws-banner-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--wbg) 85%, transparent) 0%, color-mix(in srgb, var(--wbg) 35%, transparent) 70%, transparent 100%);
+}
+.ws-grid-lines {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--wb) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--wb) 16%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
+  animation: ws-grid 8s linear infinite;
+}
+
+/* ------------------------------------------------------------ intro */
+
+.ws-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--wink);
+  background: radial-gradient(circle at 50% 42%, var(--wbg2) 0%, var(--wbg) 70%);
+  animation: ws-intro-out 0.5s ease-in forwards;
+  animation-delay: 2.5s;
+  cursor: pointer;
+}
+.ws-intro-emblem {
+  animation: ws-zoom 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+  filter: drop-shadow(0 0 24px var(--wg));
+}
+.ws-intro-kicker {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--wb);
+  animation: ws-up 0.6s ease-out 0.35s both;
+}
+.ws-intro-name {
+  font-size: clamp(32px, 6vw, 64px);
+  font-weight: 900;
+  line-height: 1.05;
+  max-width: 90vw;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0 28px var(--wg), 0 2px 0 rgba(0, 0, 0, 0.4);
+  animation: ws-up 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.5s both;
+}
+.ws-intro-line {
+  font-size: 15px;
+  opacity: 0.8;
+  animation: ws-up 0.6s ease-out 0.8s both;
+}
+.ws-intro-bar {
+  margin-top: 18px;
+  width: 180px;
+  height: 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--wink) 15%, transparent);
+  overflow: hidden;
+}
+.ws-intro-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--wa), var(--wb));
+  animation: ws-fill 2.5s linear both;
+}
+
+/* ------------------------------------------------------------ anunciador e menção */
+
+.ws-announce {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  z-index: 65;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: ws-announce 2.8s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
+}
+.ws-announce-ribbon {
+  padding: 10px 34px;
+  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 14px 100%, 0 50%);
+  background: linear-gradient(90deg, var(--wbg2), var(--wbg) 50%, var(--wbg2));
+  border-top: 2px solid var(--wa);
+  border-bottom: 2px solid var(--wa);
+  color: var(--wink);
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 14px var(--wg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.ws-mention {
+  animation: ws-slide-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  background: linear-gradient(135deg, var(--wbg), var(--wbg2));
+  color: var(--wink);
+  border: 1px solid color-mix(in srgb, var(--wa) 60%, transparent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 18px var(--wg);
+}
+
+/* ------------------------------------------------------------ fundo do Mural */
+
+.ws-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 20% 0%, var(--wbg2) 0%, var(--wbg) 65%);
+  pointer-events: none;
+}
+.ws-particle {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--wa);
+  opacity: 0;
+  animation: ws-float 9s ease-in-out infinite;
+}
+.ws-particle.b {
+  background: var(--wb);
+}
+.ws-particle.square {
+  border-radius: 1px;
+}
+.ws-card {
+  background: color-mix(in srgb, var(--wbg) 72%, transparent);
+  color: var(--wink);
+  border: 1px solid color-mix(in srgb, var(--wa) 35%, transparent);
+  backdrop-filter: blur(6px);
+}
+.ws-card .ws-muted {
+  color: color-mix(in srgb, var(--wink) 70%, transparent);
+}
+.ws-card .ws-accent {
+  color: var(--wa);
+}
+.ws-card .ws-chip {
+  background: color-mix(in srgb, var(--wink) 10%, transparent);
+}
+.ws-shape-cut {
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+
+/* ------------------------------------------------------------ editor */
+
+.ws-grid-canvas {
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--color-fg) 18%, transparent) 1px, transparent 1.5px);
+}
+
+/* ------------------------------------------------------------ animações */
+
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ws-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes ws-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.03);
+  }
+}
+@keyframes ws-scan {
+  0%,
+  100% {
+    top: 8px;
+    opacity: 0.2;
+  }
+  50% {
+    top: calc(100% - 10px);
+    opacity: 1;
+  }
+}
+@keyframes ws-pixel {
+  0% {
+    border-color: var(--wa);
+  }
+  100% {
+    border-color: var(--wb);
+  }
+}
+@keyframes ws-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-26px) scale(0.4);
+    opacity: 0;
+  }
+}
+@keyframes ws-sheen {
+  0%,
+  20% {
+    transform: translateX(-60%);
+  }
+  80%,
+  100% {
+    transform: translateX(60%);
+  }
+}
+@keyframes ws-grid {
+  to {
+    background-position: 18px 18px;
+  }
+}
+@keyframes ws-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-30deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ws-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ws-fill {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+@keyframes ws-intro-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes ws-announce {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -30px) scale(0.9);
+  }
+  12%,
+  82% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.98);
+  }
+}
+@keyframes ws-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ws-float {
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  20%,
+  80% {
+    opacity: var(--po, 0.5);
+  }
+  100% {
+    transform: translateY(-120px);
+    opacity: 0;
+  }
+}
+@keyframes ws-flicker {
+  0%,
+  100% {
+    transform: scaleY(1) skewX(0deg);
+  }
+  33% {
+    transform: scaleY(1.08) skewX(-3deg);
+  }
+  66% {
+    transform: scaleY(0.94) skewX(3deg);
+  }
+}
+@keyframes ws-steam-up {
+  0% {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+}
+@keyframes ws-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes ws-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.25;
+  }
+}
+
+[data-motion='reduce'] .ws-rail *,
+[data-motion='reduce'] .ws-banner,
+[data-motion='reduce'] .ws-banner *,
+[data-motion='reduce'] .ws-banner::after,
+[data-motion='reduce'] .ws-backdrop *,
+[data-motion='reduce'] .ws-emblem * {
+  animation: none !important;
+}
+[data-motion='reduce'] .ws-mote,
+[data-motion='reduce'] .ws-particle {
+  display: none;
+}
