@@ -164,6 +164,16 @@ if [ -n "${MECENAS:-}" ]; then
   fi
 fi
 
+# Gravar a sala: ids dos servidores onde a gravação está liberada (separados por vírgula). Vem da variável do CI.
+# Vazio no CI não mexe no que já está no .env; "*" libera em todos.
+if [ -n "${RECORDING_SERVERS:-}" ]; then
+  if printf '%s' "$RECORDING_SERVERS" | grep -qE '^[A-Za-z0-9,* -]{1,2000}$'; then
+    upsert_env RECORDING_SERVERS "$RECORDING_SERVERS"
+  else
+    echo "!! RECORDING_SERVERS com formato inesperado (use: id1,id2); ignorado." >&2
+  fi
+fi
+
 # senha do Grafana: gerada aqui na VPS e nunca impressa (os logs do CI são públicos)
 if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' .env; then
   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)" >> .env

@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
 import { channelPermissions, getChannel } from './access.ts';
+import { config } from './config.ts';
 import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, touchSession, verifySession } from './http.ts';
 import { removeFromRoom, updateVoicePermission, voiceParticipants } from './livekit.ts';
@@ -507,6 +508,9 @@ export function setupRealtime(httpServer: HttpServer) {
       recordToggles = recordToggles.filter((t) => now - t < 60_000);
       if (recordToggles.length >= 10) return ack?.({ ok: false, error: 'Calma: muitas gravações em pouco tempo.' });
       recordToggles.push(now);
+      if (data.recording && config.recordingServers && !config.recordingServers.has(v.serverId)) {
+        return ack?.({ ok: false, error: 'A gravação ainda não está liberada neste servidor.' });
+      }
       if (data.recording && !has(channelPermissions(getChannel(v.channelId), userId), P.RECORD_CALLS)) {
         return ack?.({ ok: false, error: 'Você não tem permissão para gravar esta sala.' });
       }
