@@ -20,6 +20,8 @@ export const P = {
   USE_SOUNDBOARD: 1 << 16,
   MENTION_EVERYONE: 1 << 17,
   BAN_MEMBERS: 1 << 18,
+  /** gravar a sala de voz no próprio aparelho (todos na sala veem o selo "Gravando") */
+  RECORD_CALLS: 1 << 19,
 } as const;
 
 export type PermissionKey = keyof typeof P;
@@ -36,6 +38,7 @@ export const DEFAULT_MODERATOR =
   P.MOVE_MEMBERS |
   P.KICK_MEMBERS |
   P.BAN_MEMBERS |
+  P.RECORD_CALLS |
   P.MANAGE_NICKNAMES |
   P.MENTION_EVERYONE;
 
@@ -57,6 +60,13 @@ export const PERMISSION_INFO: PermissionInfo[] = [
   { key: 'CONNECT', label: 'Conectar', description: 'Permite entrar nas salas de voz.', category: 'Voz e transmissão', channel: true },
   { key: 'SPEAK', label: 'Falar', description: 'Permite usar o microfone nas salas.', category: 'Voz e transmissão', channel: true },
   { key: 'STREAM', label: 'Transmitir', description: 'Permite transmitir tela, janela ou câmera.', category: 'Voz e transmissão', channel: true },
+  {
+    key: 'RECORD_CALLS',
+    label: 'Gravar a sala',
+    description: 'Permite gravar a sala (vozes, telas e câmeras) no próprio computador. Todo mundo na sala vê que está sendo gravado.',
+    category: 'Voz e transmissão',
+    channel: true,
+  },
   { key: 'USE_SOUNDBOARD', label: 'Usar a mesa de sons', description: 'Permite tocar e enviar sons da mesa de sons nas salas.', category: 'Voz e transmissão', channel: true },
   { key: 'MUTE_MEMBERS', label: 'Silenciar membros', description: 'Permite silenciar o microfone e a transmissão de outros.', category: 'Moderação', channel: true },
   { key: 'MOVE_MEMBERS', label: 'Desconectar membros', description: 'Permite remover pessoas das salas de voz.', category: 'Moderação', channel: true },

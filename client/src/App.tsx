@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ForumView } from './components/ForumView';
 import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
+import { RecordDialog } from './components/RecordDialog';
 import { Spinner, Toasts, cx } from './components/ui';
 import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -154,6 +155,7 @@ function MainApp() {
       )}
       {me && dropStage === 'claim' && <DropClaimModal />}
       <ModalHost />
+      {me && <RecordDialog />}
       <Toasts />
       <UpdateBanner />
       <PwaUpdateBanner />

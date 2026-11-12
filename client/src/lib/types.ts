@@ -238,6 +238,8 @@ export interface VoiceState {
   serverMuted: boolean;
   /** ensurdecido pelo Mecenas (não ouve ninguém) */
   serverDeafened?: boolean;
+  /** gravando a sala no próprio aparelho (selo "Gravando" para todos) */
+  recording?: boolean;
 }
 
 // ---- Contratos de Mecenato (ver server/src/contracts.ts e shared/contracts.ts)
@@ -374,6 +376,8 @@ export interface ServerDetail {
   members: Member[];
   voiceStates: VoiceState[];
   jams?: Jam[];
+  /** gravar a sala está liberado neste servidor (enquanto a gravação está em teste na produção) */
+  recording?: boolean;
   online: string[];
 }
 
