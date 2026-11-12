@@ -36,12 +36,13 @@ import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import './lib/visibility';
-import { WorkshopHosts } from './workshop/Hosts';
-import { MuralView } from './workshop/Mural';
+// Oficina (só no Concord de testes): o Mural e os avisos usam Motion, carregados só quando aparecem
+const WorkshopHosts = lazy(() => import('./workshop/Hosts').then((m) => ({ default: m.WorkshopHosts })));
+const MuralView = lazy(() => import('./workshop/Mural').then((m) => ({ default: m.MuralView })));
 import { ServerScreen, useServerScreen } from './workshop/Screen';
 import { useServerThemeScope } from './workshop/theme';
 import { useWorkshopRuntime } from './workshop/runtime';
-import { useWorkshop } from './workshop/store';
+import { WORKSHOP_ENABLED, useWorkshop } from './workshop/store';
 
 const PATH = location.pathname.replace(/\/+$/, '');
 /** /diagnostico abre como janela/aba independente — ver lib/desktop.ts e lib/devStats.ts. */
@@ -172,7 +173,11 @@ function MainApp() {
       {me && <RecordingPill />}
       {me && <PatchInspectorHost />}
       {me && <SpotlightHost />}
-      {me && <WorkshopHosts />}
+      {me && WORKSHOP_ENABLED && (
+        <Suspense fallback={null}>
+          <WorkshopHosts />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -215,7 +220,9 @@ function Shell() {
       ) : activeServerId === HOME ? (
         <DmView />
       ) : activeServerId && mural ? (
-        <MuralView serverId={mural} />
+        <Suspense fallback={<main className="panel flex-1" />}>
+          <MuralView serverId={mural} />
+        </Suspense>
       ) : activeServerId ? (
         channel?.type === 'voice' ? (
           <VoiceView channel={channel} />

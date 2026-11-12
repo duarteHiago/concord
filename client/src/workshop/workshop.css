@@ -1,4 +1,5 @@
-/* Oficina do servidor: arte animada dos pacotes. Cores chegam por variáveis (--wa, --wb, --wg, --wbg, --wbg2,
+/* Oficina do servidor: arte animada dos pacotes (loops em CSS). Entradas e saídas (intro, anunciador,
+   avisos, editor) são molas do Motion, em Hosts.tsx e Studio.tsx. Cores chegam por variáveis (--wa, --wb, --wg, --wbg, --wbg2,
    --wink), definidas por pacote em Art.tsx. Com movimento reduzido (data-motion="reduce"), tudo para. */
 
 .ws-vars {
@@ -129,12 +130,9 @@
   text-align: center;
   color: var(--wink);
   background: radial-gradient(circle at 50% 42%, var(--wbg2) 0%, var(--wbg) 70%);
-  animation: ws-intro-out 0.5s ease-in forwards;
-  animation-delay: 2.5s;
   cursor: pointer;
 }
 .ws-intro-emblem {
-  animation: ws-zoom 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
   filter: drop-shadow(0 0 24px var(--wg));
 }
 .ws-intro-kicker {
@@ -143,7 +141,6 @@
   letter-spacing: 0.32em;
   text-transform: uppercase;
   color: var(--wb);
-  animation: ws-up 0.6s ease-out 0.35s both;
 }
 .ws-intro-name {
   font-size: clamp(32px, 6vw, 64px);
@@ -152,12 +149,10 @@
   max-width: 90vw;
   overflow-wrap: anywhere;
   text-shadow: 0 0 28px var(--wg), 0 2px 0 rgba(0, 0, 0, 0.4);
-  animation: ws-up 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.5s both;
 }
 .ws-intro-line {
   font-size: 15px;
   opacity: 0.8;
-  animation: ws-up 0.6s ease-out 0.8s both;
 }
 .ws-intro-bar {
   margin-top: 18px;
@@ -169,9 +164,9 @@
 }
 .ws-intro-bar > span {
   display: block;
+  width: 100%;
   height: 100%;
   background: linear-gradient(90deg, var(--wa), var(--wb));
-  animation: ws-fill 2.5s linear both;
 }
 
 /* ------------------------------------------------------------ anunciador e menção */
@@ -181,9 +176,7 @@
   top: 22px;
   left: 50%;
   z-index: 65;
-  transform: translateX(-50%);
   pointer-events: none;
-  animation: ws-announce 2.8s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
 }
 .ws-announce-ribbon {
   padding: 10px 34px;
@@ -201,7 +194,6 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 .ws-mention {
-  animation: ws-slide-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
   background: linear-gradient(135deg, var(--wbg), var(--wbg2));
   color: var(--wink);
   border: 1px solid color-mix(in srgb, var(--wa) 60%, transparent);
@@ -327,65 +319,6 @@
 @keyframes ws-grid {
   to {
     background-position: 18px 18px;
-  }
-}
-@keyframes ws-zoom {
-  from {
-    opacity: 0;
-    transform: scale(0.4) rotate(-30deg);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes ws-up {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes ws-fill {
-  from {
-    width: 0;
-  }
-  to {
-    width: 100%;
-  }
-}
-@keyframes ws-intro-out {
-  to {
-    opacity: 0;
-    visibility: hidden;
-  }
-}
-@keyframes ws-announce {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -30px) scale(0.9);
-  }
-  12%,
-  82% {
-    opacity: 1;
-    transform: translate(-50%, 0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -12px) scale(0.98);
-  }
-}
-@keyframes ws-slide-in {
-  from {
-    opacity: 0;
-    transform: translateX(40px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 @keyframes ws-float {

@@ -31,6 +31,7 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   BLOCK_INFO,
@@ -75,6 +76,7 @@ import { GAP_PX, MuralGrid, ROW_PX, WidgetCard } from './Mural';
 import { PACKS, PACK_LIST, type Pack, type SoundSlot } from './packs';
 import { previewSound, showIntro, useOverlays } from './runtime';
 import { useWorkshop } from './store';
+import { springs } from './motion';
 import { themeScope } from './theme';
 import { ThemeDrawer } from './ThemeDrawer';
 import { WidgetBody, type WidgetContext } from './widgets';
@@ -391,7 +393,16 @@ export function Studio({ serverId }: { serverId: string }) {
   const changedSincePublish = !loaded?.published || JSON.stringify(loaded.published) !== JSON.stringify(config);
 
   return (
-    <div className="fixed inset-0 z-50 flex animate-fade-in flex-col bg-surface-1 text-fg" role="dialog" aria-label="Oficina do servidor">
+    <motion.div
+      className="fixed inset-0 z-50 flex flex-col bg-surface-1 text-fg"
+      role="dialog"
+      aria-label="Oficina do servidor"
+      // abre como um app no iPad: cresce um tiquinho, sai do desfoque e assenta
+      initial={{ opacity: 0, scale: 0.97, y: 14, filter: 'blur(8px)' }}
+      animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+      exit={{ opacity: 0, scale: 0.97, y: 10, filter: 'blur(8px)', transition: { duration: 0.22, ease: [0.4, 0, 1, 1] } }}
+      transition={springs.soft}
+    >
       {/* barra de cima */}
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5">
         <button type="button" onClick={close} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold text-fg-muted hover:bg-surface-3 hover:text-fg">
@@ -442,18 +453,30 @@ export function Studio({ serverId }: { serverId: string }) {
                   ['widgets', 'Widgets', <LayoutGrid size={14} key="w" />],
                 ] as const
               ).map(([id, label, icon]) => (
-                <button
+                <motion.button
                   key={id}
                   type="button"
                   onClick={() => setTab(id)}
-                  className={cx('flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-bold', tab === id ? 'bg-accent text-on-accent' : 'text-fg-muted hover:bg-surface-3 hover:text-fg')}
+                  whileTap={{ scale: 0.92 }}
+                  className={cx('relative flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-bold', tab === id ? 'text-on-accent' : 'text-fg-muted hover:text-fg')}
                 >
-                  {icon}
-                  {label}
-                </button>
+                  {tab === id && <motion.span layoutId="ws-drawer-tab" className="absolute inset-0 rounded-full bg-accent" transition={springs.snappy} />}
+                  <span className="relative flex items-center gap-1">
+                    {icon}
+                    {label}
+                  </span>
+                </motion.button>
               ))}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pb-4">
+              <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, x: 18, filter: 'blur(4px)' }}
+                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, x: -18, filter: 'blur(4px)', transition: { duration: 0.12 } }}
+                transition={springs.snappy}
+              >
               {tab === 'packs' && (
                 <PacksDrawer
                   config={config}
@@ -498,6 +521,8 @@ export function Studio({ serverId }: { serverId: string }) {
                   <WidgetsDrawer count={widgetCount} max={maxWidgets} grid={grid} onAdd={(t) => addWidget(t)} />
                 </>
               )}
+              </motion.div>
+              </AnimatePresence>
             </div>
           </aside>
         )}
@@ -512,24 +537,38 @@ export function Studio({ serverId }: { serverId: string }) {
                   ['mural', 'Mural', <LayoutGrid size={15} key="g" />],
                 ] as const
               ).map(([id, label, icon]) => (
-                <button
+                <motion.button
                   key={id}
                   type="button"
                   role="tab"
                   aria-selected={area === id}
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => {
                     setArea(id);
                     setSelected(null);
                   }}
-                  className={cx('flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-sm font-bold', area === id ? 'bg-accent text-on-accent' : 'text-fg-muted hover:text-fg')}
+                  className={cx('relative flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-sm font-bold', area === id ? 'text-on-accent' : 'text-fg-muted hover:text-fg')}
                 >
-                  {icon}
-                  {label}
-                </button>
+                  {area === id && <motion.span layoutId="ws-area-tab" className="absolute inset-0 rounded-full bg-accent" transition={springs.snappy} />}
+                  <span className="relative flex items-center gap-1.5">
+                    {icon}
+                    {label}
+                  </span>
+                </motion.button>
               ))}
             </div>
             {/* prévia do tema do servidor: só a grade, a Oficina continua no tema de quem edita */}
-            <div className={cx('mt-4 rounded-3xl', scope && 'bg-surface-0 p-3')} style={scope?.style} data-ws-shape={scope?.shape}>
+            <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={area}
+              className={cx('mt-4 rounded-3xl', scope && 'bg-surface-0 p-3')}
+              style={scope?.style}
+              data-ws-shape={scope?.shape}
+              initial={{ opacity: 0, y: 16, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.985, transition: { duration: 0.14 } }}
+              transition={springs.snappy}
+            >
             {area === 'screen' ? (
               <ScreenArea
                 config={config}
@@ -598,12 +637,21 @@ export function Studio({ serverId }: { serverId: string }) {
             </div>
             </>
             )}
-            </div>
+            </motion.div>
+            </AnimatePresence>
           </div>
         </section>
 
         {!asMember && (
-          <aside className="w-80 shrink-0 overflow-y-auto border-l border-line bg-surface-2 p-4">
+          <aside className="w-80 shrink-0 overflow-x-hidden overflow-y-auto border-l border-line bg-surface-2 p-4">
+            <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={sel?.id ?? 'ajuda'}
+              initial={{ opacity: 0, x: 14 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -14, transition: { duration: 0.1 } }}
+              transition={springs.snappy}
+            >
             {sel && isBlock(sel) ? (
               <BlockInspector b={sel} onRemove={() => removeItem(sel.id)} />
             ) : sel ? (
@@ -625,10 +673,12 @@ export function Studio({ serverId }: { serverId: string }) {
             ) : (
               <Help />
             )}
+            </motion.div>
+            </AnimatePresence>
           </aside>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -777,9 +827,22 @@ function PacksDrawer({ config, onInstall, serverName, serverId }: { config: Work
       {PACK_LIST.map((pack) => {
         const n = counts(pack.id);
         return (
-          <div key={pack.id} className="overflow-hidden rounded-3xl ring-1 ring-line">
+          <motion.div
+            key={pack.id}
+            className="overflow-hidden rounded-3xl ring-1 ring-line"
+            whileHover={{ y: -4, boxShadow: `0 14px 30px -12px ${pack.colors.glow}` }}
+            transition={springs.snappy}
+          >
             <div className="ws-vars relative flex h-24 items-center gap-3 px-4" style={{ ...packVars(pack), background: `linear-gradient(135deg, ${pack.colors.bg}, ${pack.colors.bg2})`, color: pack.colors.ink }}>
-              <Emblem pack={pack} size={64} />
+              <motion.div
+                key={n}
+                initial={n ? { scale: 0.6, rotate: -20 } : false}
+                animate={{ scale: 1, rotate: 0 }}
+                whileHover={{ rotate: [0, -8, 8, -4, 0], transition: { duration: 0.5 } }}
+                transition={springs.jelly}
+              >
+                <Emblem pack={pack} size={64} />
+              </motion.div>
               <div className="min-w-0">
                 <div className="truncate font-display text-base leading-tight font-extrabold" style={{ fontFamily: pack.font }}>
                   {pack.name}
@@ -795,10 +858,17 @@ function PacksDrawer({ config, onInstall, serverName, serverId }: { config: Work
             <div className="bg-surface-1 p-3">
               <p className="mb-2.5 text-xs text-fg-muted">{pack.tagline}</p>
               <div className="flex flex-wrap gap-1.5">
-                <button type="button" onClick={() => onInstall(pack.id)} className="flex items-center gap-1 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-on-accent hover:bg-accent-hover">
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.9 }}
+                  whileHover={{ scale: 1.05 }}
+                  transition={springs.jelly}
+                  onClick={() => onInstall(pack.id)}
+                  className="flex items-center gap-1 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-on-accent hover:bg-accent-hover"
+                >
                   <Plus size={13} />
                   {n === WORKSHOP_PIECES.length ? 'Instalado' : n ? `Instalar tudo (${n}/${WORKSHOP_PIECES.length})` : 'Instalar tudo'}
-                </button>
+                </motion.button>
                 <button type="button" onClick={() => previewSound(pack, 'enter')} className="flex items-center gap-1 rounded-full bg-surface-3 px-3 py-1.5 text-xs font-bold hover:bg-surface-4">
                   <Volume2 size={13} />
                   Ouvir
@@ -809,7 +879,7 @@ function PacksDrawer({ config, onInstall, serverName, serverId }: { config: Work
                 </button>
               </div>
             </div>
-          </div>
+          </motion.div>
         );
       })}
     </div>
@@ -901,7 +971,8 @@ function WidgetsDrawer({ count, max, grid, onAdd }: { count: number; max: number
             }}
             onClick={() => onAdd(t)}
             disabled={count >= max}
-            className="flex cursor-grab flex-col items-start rounded-2xl bg-surface-1 p-3 text-left ring-1 ring-line hover:ring-accent active:cursor-grabbing disabled:opacity-40"
+            // curva com sobra (mola em CSS): o Motion não convive com o arrastar nativo do HTML5
+            className="flex cursor-grab flex-col items-start rounded-2xl bg-surface-1 p-3 text-left ring-1 ring-line transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1 hover:ring-accent active:scale-95 active:cursor-grabbing disabled:opacity-40"
           >
             <WidgetMini type={t} grid={grid} />
             <span className="mt-2 text-xs leading-tight font-bold">{WIDGET_INFO[t].label}</span>
@@ -931,7 +1002,11 @@ function WidgetMini({ type, grid }: { type: WidgetType; grid: GridSpec }) {
 
 // ------------------------------------------------------------------ grade com arrastar e redimensionar
 
-type Drag = { id: string; mode: 'move' | 'resize'; startX: number; startY: number; orig: ScreenItem; preview: ScreenItem[] | null; dx: number; dy: number };
+type Drag = { id: string; mode: 'move' | 'resize'; startX: number; startY: number; orig: ScreenItem; preview: ScreenItem[] | null; dx: number; dy: number; tilt: number };
+
+/** Pousar no lugar depois de soltar: mola com um tiquinho de sobra, como um ímã. */
+const LAND = { type: 'spring', stiffness: 560, damping: 30, mass: 0.9 } as const;
+const INSTANT = { duration: 0 } as const;
 
 const itemLabel = (i: ScreenItem) => (isBlock(i) ? BLOCK_INFO[i.block].label : WIDGET_INFO[i.type].label);
 
@@ -961,6 +1036,9 @@ function GridEditor({
   const [width, setWidth] = useState(800);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [dropAt, setDropAt] = useState<Box | null>(null);
+  // a inclinação volta a zero quando o mouse para (não chega evento de movimento parado)
+  const tiltTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(tiltTimer.current), []);
 
   useEffect(() => {
     const el = ref.current;
@@ -988,7 +1066,7 @@ function GridEditor({
     e.stopPropagation();
     onSelect(w.id);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setDrag({ id: w.id, mode, startX: e.clientX, startY: e.clientY, orig: w, preview: null, dx: 0, dy: 0 });
+    setDrag({ id: w.id, mode, startX: e.clientX, startY: e.clientY, orig: w, preview: null, dx: 0, dy: 0, tilt: 0 });
   };
 
   const move = (e: React.PointerEvent) => {
@@ -1013,7 +1091,11 @@ function GridEditor({
       const cell = { x: Math.floor((e.clientX - r.left) / stepX), y: Math.floor((e.clientY - r.top) / stepY) };
       preview = swap(items, next, o, grid, cell);
     }
-    setDrag({ ...drag, dx, dy, preview: preview ?? drag.preview });
+    // inclina para o lado do movimento, proporcional à velocidade (o "peso" de desenho animado)
+    const tilt = drag.mode === 'move' ? Math.max(-8, Math.min(8, (dx - drag.dx) * 0.7)) : 0;
+    setDrag({ ...drag, dx, dy, tilt, preview: preview ?? drag.preview });
+    clearTimeout(tiltTimer.current);
+    tiltTimer.current = setTimeout(() => setDrag((d) => (d ? { ...d, tilt: 0 } : d)), 90);
   };
 
   const end = () => {
@@ -1068,35 +1150,63 @@ function GridEditor({
           Arraste widgets da gaveta para cá.
         </div>
       )}
-      {dropAt && <div className={cx('pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10', radius)} style={px(dropAt)} />}
-      {drag?.preview &&
-        (() => {
-          const target = drag.preview.find((w) => w.id === drag.id)!;
-          return <div className={cx('pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10 transition-all duration-100', radius)} style={px(target)} />;
-        })()}
+      {/* sombras tracejadas: deslizam entre as células em vez de pular */}
+      <AnimatePresence>
+        {dropAt && (
+          <motion.div
+            key="drop"
+            className={cx('pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10', radius)}
+            initial={{ ...px(dropAt), opacity: 0, scale: 0.9 }}
+            animate={{ ...px(dropAt), opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={springs.snappy}
+          />
+        )}
+        {drag?.preview &&
+          (() => {
+            const target = drag.preview.find((w) => w.id === drag.id)!;
+            return (
+              <motion.div
+                key="ghost"
+                className={cx('pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10', radius)}
+                initial={{ ...px(target), opacity: 0 }}
+                animate={{ ...px(target), opacity: 1 }}
+                exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                transition={springs.snappy}
+              />
+            );
+          })()}
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
       {shown.map((w) => {
         const isDrag = drag?.id === w.id;
-        // quem está sendo arrastado segue o mouse; os outros já vão para o lugar novo
-        const base = isDrag ? drag.orig : w;
-        const box = px(base);
-        const style =
+        // quem está sendo arrastado segue o mouse na hora (sem mola); ao soltar, a mola leva do ponto onde
+        // ele estava até o lugar novo. Os outros deslizam para o lugar com mola o tempo todo.
+        const box = px(isDrag ? drag.orig : w);
+        const target =
           isDrag && drag.mode === 'move'
-            ? { ...box, transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 20 }
+            ? { left: box.left + drag.dx, top: box.top + drag.dy, width: box.width, height: box.height, scale: 1.045, rotate: drag.tilt, opacity: 1 }
             : isDrag
-              ? { ...box, width: Math.max(colW, box.width + drag.dx), height: Math.max(rowPx, box.height + drag.dy), zIndex: 20 }
-              : box;
+              ? { ...box, width: Math.max(colW, box.width + drag.dx), height: Math.max(rowPx, box.height + drag.dy), scale: 1, rotate: 0, opacity: 1 }
+              : { ...px(w), scale: 1, rotate: 0, opacity: 1 };
+        const transition = isDrag
+          ? { left: INSTANT, top: INSTANT, width: INSTANT, height: INSTANT, scale: springs.bouncy, rotate: springs.jelly }
+          : { ...LAND, opacity: { duration: 0.2 } };
         const required = isBlock(w) && BLOCK_INFO[w.block].required;
         return (
-          <div
+          <motion.div
             key={w.id}
             className={cx(
               'group absolute',
               radius,
-              !isDrag && 'transition-[left,top,width,height] duration-150',
               // o contorno fica fora do card: no formato recortado o clip-path esconderia
               selected === w.id && !readOnly && 'outline-2 outline-offset-4 outline-accent',
             )}
-            style={style}
+            style={{ zIndex: isDrag ? 20 : selected === w.id ? 5 : 1 }}
+            initial={{ ...px(w), opacity: 0, scale: 0.55, rotate: -6 }}
+            animate={target}
+            exit={{ opacity: 0, scale: 0.6, rotate: 4, transition: { duration: 0.18, ease: [0.4, 0, 1, 1] } }}
+            transition={transition}
             onPointerDown={(e) => {
               if (readOnly) return;
               e.stopPropagation();
@@ -1106,7 +1216,7 @@ function GridEditor({
             {isBlock(w) ? (
               <BlockMock b={w} detail={detail} dragging={isDrag} compact={grid.fixed} />
             ) : (
-              <WidgetCard ctx={ctx} className={cx('h-full', grid.fixed && 'p-2.5 text-[12px]', isDrag && 'opacity-90 shadow-2xl')}>
+              <WidgetCard ctx={ctx} className={cx('h-full transition-shadow duration-200', grid.fixed && 'p-2.5 text-[12px]', isDrag && 'shadow-[0_24px_50px_-12px_rgb(0_0_0/0.45)]')}>
                 <div className="pointer-events-none h-full">
                   <WidgetBody w={w} ctx={ctx} />
                 </div>
@@ -1139,9 +1249,10 @@ function GridEditor({
                 />
               </>
             )}
-          </div>
+          </motion.div>
         );
       })}
+      </AnimatePresence>
     </div>
   );
 }
