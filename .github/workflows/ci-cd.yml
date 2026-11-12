@@ -11,6 +11,10 @@ concurrency:
   group: ci-cd-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# o token do GitHub só lê o código: o deploy é por SSH e nenhum job escreve no repositório
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Testes
