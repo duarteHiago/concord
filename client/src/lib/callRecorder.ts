@@ -5,6 +5,7 @@
 // Os arquivos vão sendo gravados no disco aos pedaços (a cada poucos segundos), então uma call longa não
 // enche a memória e, se o app fechar no meio, perde no máximo os últimos segundos.
 import { Track, type Room } from 'livekit-client';
+import { fixMp4Duration } from './mp4Duration';
 
 export type RecordMode = 'mixed' | 'tracks' | 'both';
 
@@ -68,8 +69,13 @@ interface Sink {
   finish(): Promise<void>;
 }
 
-/** Arquivo numa pasta: acrescenta no fim e fecha a cada flush (o que foi fechado já está salvo). */
+/**
+ * Arquivo numa pasta: durante a gravação vai para "<nome>.parte" (acrescenta no fim e fecha a cada flush, então
+ * o que foi fechado já está salvo; se o app cair, o .parte toca no VLC). Ao terminar, escreve o arquivo final
+ * com a duração consertada (ver mp4Duration.ts) e apaga o .parte.
+ */
 function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
+  const partName = `${name}.parte`;
   let handle: FileSystemFileHandle | null = null;
   let size = 0;
   let pending: Blob[] = [];
@@ -79,7 +85,7 @@ function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
       if (!pending.length) return;
       const blob = new Blob(pending);
       pending = [];
-      handle ??= await dir.getFileHandle(name, { create: true });
+      handle ??= await dir.getFileHandle(partName, { create: true });
       const w = await handle.createWritable({ keepExistingData: true });
       await w.seek(size);
       await w.write(blob);
@@ -88,7 +94,18 @@ function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
     });
     return writing;
   };
-  return { name, push: (c) => pending.push(c), flush, finish: flush };
+  const finish = async () => {
+    await flush();
+    if (!handle) return;
+    const part = await handle.getFile();
+    const fixed = name.endsWith('.m4a') ? await fixMp4Duration(part) : null;
+    const final = await dir.getFileHandle(name, { create: true });
+    const w = await final.createWritable();
+    await w.write(fixed?.blob ?? part);
+    await w.close();
+    await dir.removeEntry(partName);
+  };
+  return { name, push: (c) => pending.push(c), flush, finish };
 }
 
 /** Sem pasta (Firefox, Safari): junta na memória e baixa ao parar. */
@@ -100,7 +117,9 @@ function downloadSink(name: string, mime: string): Sink {
     flush: async () => {},
     finish: async () => {
       if (!chunks.length) return;
-      const url = URL.createObjectURL(new Blob(chunks, { type: mime }));
+      const raw = new Blob(chunks, { type: mime });
+      const fixed = name.endsWith('.m4a') ? await fixMp4Duration(raw) : null;
+      const url = URL.createObjectURL(fixed?.blob ?? raw);
       const a = document.createElement('a');
       a.href = url;
       a.download = name;
