@@ -1,11 +1,13 @@
 // Conserta a duração do MP4 que o gravador do navegador (MediaRecorder) cria. Ele grava em pedaços
 // ("fragmentado") sem saber quanto vai durar, então o cabeçalho sai com duração 0: o player toca, mas não
-// mostra o tempo total nem deixa pular para um trecho. Aqui somamos a duração real das amostras de cada
-// pedaço (lendo só os cabeçalhos, não o áudio), escrevemos a duração no cabeçalho (mvhd, tkhd, mdhd) e
-// acrescentamos a caixa "mehd" (duração total do arquivo fragmentado).
+// mostra o tempo total nem deixa pular para um trecho. Aqui somamos a duração real das amostras de cada faixa
+// (áudio e, no vídeo da sala, a faixa de vídeo), lendo só os cabeçalhos dos pedaços (não o conteúdo), e
+// escrevemos a duração no cabeçalho (mvhd, tkhd e mdhd de cada faixa) mais a caixa "mehd" (duração total do
+// arquivo fragmentado).
 //
 // Seguro porque os pedaços do Chrome apontam para os dados a partir do próprio pedaço (default-base-is-moof),
-// não por posição no arquivo: aumentar o cabeçalho não desloca nada.
+// não por posição no arquivo: aumentar o cabeçalho não desloca nada. Se aparecer algo fora desse formato, não
+// mexe (devolve null e o arquivo fica como veio).
 
 const type = (b: Uint8Array, at: number) => String.fromCharCode(b[at + 4], b[at + 5], b[at + 6], b[at + 7]);
 
@@ -13,17 +15,14 @@ async function read(file: Blob, start: number, end: number): Promise<Uint8Array>
   return new Uint8Array(await file.slice(start, end).arrayBuffer());
 }
 
-interface Head {
-  /** onde começa o primeiro pedaço (moof): tudo antes é o cabeçalho (ftyp + moov) */
-  headEnd: number;
-  head: Uint8Array;
-}
+/** Duração somada por faixa (track_ID → ticks da faixa). */
+type Ticks = Map<number, number>;
 
-/** Soma a duração (em ticks da faixa) de todos os pedaços, lendo só os cabeçalhos deles. */
-async function scan(file: Blob): Promise<{ head: Head; ticks: number } | null> {
+async function scan(file: Blob): Promise<{ head: Uint8Array; headEnd: number; ticks: Ticks } | null> {
   let pos = 0;
-  let head: Head | null = null;
-  let ticks = 0;
+  let head: Uint8Array | null = null;
+  let headEnd = 0;
+  const ticks: Ticks = new Map();
   while (pos + 8 <= file.size) {
     const h = await read(file, pos, pos + 16);
     const dv = new DataView(h.buffer);
@@ -32,130 +31,149 @@ async function scan(file: Blob): Promise<{ head: Head; ticks: number } | null> {
     if (size < 8) break;
     const t = type(h, 0);
     if (t === 'moof') {
-      if (!head) head = { headEnd: pos, head: await read(file, 0, pos) };
-      ticks += trunTicks(await read(file, pos, pos + size));
-    } else if (t !== 'ftyp' && t !== 'moov' && t !== 'mdat' && t !== 'free' && t !== 'skip' && t !== 'sidx') {
-      return null; // não é o formato que conhecemos: melhor não mexer
+      if (!head) {
+        head = await read(file, 0, pos);
+        headEnd = pos;
+      }
+      if (!moofTicks(await read(file, pos, pos + size), ticks)) return null;
+    } else if (!['ftyp', 'moov', 'mdat', 'free', 'skip', 'sidx'].includes(t)) {
+      return null;
     }
     pos += size;
   }
-  return head ? { head, ticks } : null;
+  return head ? { head, headEnd, ticks } : null;
 }
 
-/** Duração das amostras de um moof (soma de cada trun). */
-function trunTicks(moof: Uint8Array): number {
+/** Soma as durações das amostras de um moof em `out`. false se usar posição absoluta (não dá para mexer). */
+function moofTicks(moof: Uint8Array, out: Ticks): boolean {
   const dv = new DataView(moof.buffer, moof.byteOffset, moof.byteLength);
-  let total = 0;
-  const walk = (start: number, end: number, defaultDur: number) => {
-    let p = start;
-    let defDur = defaultDur;
-    while (p + 8 <= end) {
-      const size = dv.getUint32(p);
-      if (size < 8) return;
-      const t = type(moof, p);
-      if (t === 'traf') walk(p + 8, p + size, 0);
-      else if (t === 'tfhd') {
-        const flags = dv.getUint32(p + 8) & 0xffffff;
-        let off = p + 16;
-        if (flags & 0x1) off += 8;
-        if (flags & 0x2) off += 4;
-        if (flags & 0x8) defDur = dv.getUint32(off);
-      } else if (t === 'trun') {
-        const flags = dv.getUint32(p + 8) & 0xffffff;
-        const count = dv.getUint32(p + 12);
-        let off = p + 16;
-        if (flags & 0x1) off += 4;
-        if (flags & 0x4) off += 4;
-        const each = (flags & 0x100 ? 4 : 0) + (flags & 0x200 ? 4 : 0) + (flags & 0x400 ? 4 : 0) + (flags & 0x800 ? 4 : 0);
-        for (let i = 0; i < count; i++) {
-          total += flags & 0x100 ? dv.getUint32(off) : defDur;
-          off += each;
+  for (let p = 8; p + 8 <= moof.length; ) {
+    const size = dv.getUint32(p);
+    if (size < 8) return false;
+    if (type(moof, p) === 'traf') {
+      let track = 0;
+      let defDur = 0;
+      for (let q = p + 8; q + 8 <= p + size; ) {
+        const s = dv.getUint32(q);
+        if (s < 8) return false;
+        const t = type(moof, q);
+        const flags = dv.getUint32(q + 8) & 0xffffff;
+        if (t === 'tfhd') {
+          if (flags & 0x1) return false; // base-data-offset absoluto
+          track = dv.getUint32(q + 12);
+          let off = q + 16;
+          if (flags & 0x2) off += 4;
+          if (flags & 0x8) defDur = dv.getUint32(off);
+        } else if (t === 'trun') {
+          const count = dv.getUint32(q + 12);
+          let off = q + 16;
+          if (flags & 0x1) off += 4;
+          if (flags & 0x4) off += 4;
+          const each = (flags & 0x100 ? 4 : 0) + (flags & 0x200 ? 4 : 0) + (flags & 0x400 ? 4 : 0) + (flags & 0x800 ? 4 : 0);
+          let sum = 0;
+          for (let i = 0; i < count; i++) {
+            sum += flags & 0x100 ? dv.getUint32(off) : defDur;
+            off += each;
+          }
+          out.set(track, (out.get(track) ?? 0) + sum);
         }
+        q += s;
       }
-      p += size;
     }
-  };
-  walk(8, moof.length, 0);
-  return total;
+    p += size;
+  }
+  return true;
 }
 
-/** Novo cabeçalho com a duração certa, ou null se não reconhecer o formato. */
-function patchHead(head: Uint8Array, ticks: number): { bytes: Uint8Array; mediaScale: number } | null {
-  const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
-  let moov = -1;
-  for (let p = 0; p + 8 <= head.length; p += dv.getUint32(p)) {
-    if (dv.getUint32(p) < 8) return null;
-    if (type(head, p) === 'moov') {
-      moov = p;
-      break;
-    }
+interface Box {
+  at: number;
+  size: number;
+}
+
+function children(b: Uint8Array, dv: DataView, start: number, end: number): Record<string, Box[]> {
+  const out: Record<string, Box[]> = {};
+  for (let p = start; p + 8 <= end; ) {
+    const size = dv.getUint32(p);
+    if (size < 8) break;
+    (out[type(b, p)] ??= []).push({ at: p, size });
+    p += size;
   }
-  if (moov < 0) return null;
-  const moovEnd = moov + dv.getUint32(moov);
-  // acha as caixas que importam dentro do moov
-  const found: Record<string, number> = {};
-  const walk = (start: number, end: number) => {
-    for (let p = start; p + 8 <= end; ) {
-      const size = dv.getUint32(p);
-      if (size < 8) return;
-      const t = type(head, p);
-      if (!(t in found)) found[t] = p;
-      if (t === 'trak' || t === 'mdia' || t === 'mvex') walk(p + 8, p + size);
-      p += size;
-    }
-  };
-  walk(moov + 8, moovEnd);
-  const { mvhd, tkhd, mdhd, mvex } = found;
-  if (mvhd === undefined || mdhd === undefined || mvex === undefined) return null;
+  return out;
+}
 
+/** Novo cabeçalho com as durações certas, ou null se não reconhecer o formato. */
+function patchHead(head: Uint8Array, ticks: Ticks): { bytes: Uint8Array; seconds: number } | null {
+  const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  const moov = children(head, dv, 0, head.length).moov?.[0];
+  if (!moov) return null;
+  const inMoov = children(head, dv, moov.at + 8, moov.at + moov.size);
+  const mvhd = inMoov.mvhd?.[0];
+  const mvex = inMoov.mvex?.[0];
+  if (!mvhd || !mvex) return null;
   const v1 = (at: number) => head[at + 8] === 1;
-  const movieScale = v1(mvhd) ? dv.getUint32(mvhd + 28) : dv.getUint32(mvhd + 20);
-  const mediaScale = v1(mdhd) ? dv.getUint32(mdhd + 28) : dv.getUint32(mdhd + 20);
-  if (!movieScale || !mediaScale) return null;
-  const movieDur = Math.round((ticks / mediaScale) * movieScale);
+  const movieScale = v1(mvhd.at) ? dv.getUint32(mvhd.at + 28) : dv.getUint32(mvhd.at + 20);
+  if (!movieScale) return null;
 
-  const out = new Uint8Array(head); // cópia: o original fica como estava
+  const out = new Uint8Array(head);
   const odv = new DataView(out.buffer);
   const setDur = (at: number, offV0: number, offV1: number, value: number) => {
-    if (v1(at)) odv.setBigUint64(at + offV1, BigInt(value));
-    else odv.setUint32(at + offV0, Math.min(value, 0xffffffff));
+    if (v1(at)) odv.setBigUint64(at + offV1, BigInt(Math.max(0, Math.round(value))));
+    else odv.setUint32(at + offV0, Math.min(Math.max(0, Math.round(value)), 0xffffffff));
   };
-  setDur(mvhd, 24, 32, movieDur);
-  if (tkhd !== undefined) setDur(tkhd, 28, 36, movieDur);
-  setDur(mdhd, 24, 32, ticks);
 
-  if (found.mehd !== undefined) {
-    setDur(found.mehd, 12, 12, movieDur);
-    return { bytes: out, mediaScale };
+  let movieDur = 0;
+  for (const trak of inMoov.trak ?? []) {
+    const t = children(head, dv, trak.at + 8, trak.at + trak.size);
+    const tkhd = t.tkhd?.[0];
+    const mdia = t.mdia?.[0];
+    if (!tkhd || !mdia) return null;
+    const mdhd = children(head, dv, mdia.at + 8, mdia.at + mdia.size).mdhd?.[0];
+    if (!mdhd) return null;
+    const id = v1(tkhd.at) ? dv.getUint32(tkhd.at + 28) : dv.getUint32(tkhd.at + 20);
+    const mediaScale = v1(mdhd.at) ? dv.getUint32(mdhd.at + 28) : dv.getUint32(mdhd.at + 20);
+    const trackTicks = ticks.get(id) ?? 0;
+    if (!mediaScale) return null;
+    const dur = (trackTicks / mediaScale) * movieScale;
+    setDur(mdhd.at, 24, 32, trackTicks);
+    setDur(tkhd.at, 28, 36, dur);
+    movieDur = Math.max(movieDur, dur);
+  }
+  if (!movieDur) return null;
+  setDur(mvhd.at, 24, 32, movieDur);
+
+  const mehd = children(head, dv, mvex.at + 8, mvex.at + mvex.size).mehd?.[0];
+  if (mehd) {
+    setDur(mehd.at, 12, 12, movieDur);
+    return { bytes: out, seconds: movieDur / movieScale };
   }
   // acrescenta o mehd (versão 1, 20 bytes) no começo do mvex; mvex e moov crescem 20 bytes
-  const mehd = new Uint8Array(20);
-  const mdv = new DataView(mehd.buffer);
-  mdv.setUint32(0, 20);
-  mehd.set([0x6d, 0x65, 0x68, 0x64], 4); // "mehd"
-  mdv.setUint32(8, 0x01000000); // versão 1, flags 0
-  mdv.setBigUint64(12, BigInt(movieDur));
-  odv.setUint32(moov, dv.getUint32(moov) + 20);
-  odv.setUint32(mvex, dv.getUint32(mvex) + 20);
-  const at = mvex + 8;
+  const box = new Uint8Array(20);
+  const bdv = new DataView(box.buffer);
+  bdv.setUint32(0, 20);
+  box.set([0x6d, 0x65, 0x68, 0x64], 4); // "mehd"
+  bdv.setUint32(8, 0x01000000); // versão 1, flags 0
+  bdv.setBigUint64(12, BigInt(Math.round(movieDur)));
+  odv.setUint32(moov.at, moov.size + 20);
+  odv.setUint32(mvex.at, mvex.size + 20);
+  const at = mvex.at + 8;
   const result = new Uint8Array(out.length + 20);
   result.set(out.subarray(0, at), 0);
-  result.set(mehd, at);
+  result.set(box, at);
   result.set(out.subarray(at), at + 20);
-  return { bytes: result, mediaScale };
+  return { bytes: result, seconds: movieDur / movieScale };
 }
 
 /**
- * Devolve o arquivo com a duração consertada (como um Blob que referencia o original, sem copiar o áudio
- * para a memória), ou null quando não é um MP4 fragmentado que a gente reconheça.
+ * Devolve o arquivo com a duração consertada (um Blob que referencia o original, sem copiar o conteúdo para a
+ * memória), ou null quando não é um MP4 fragmentado que a gente reconheça.
  */
 export async function fixMp4Duration(file: Blob): Promise<{ blob: Blob; seconds: number } | null> {
   try {
     const s = await scan(file);
-    if (!s || !s.ticks) return null;
-    const patched = patchHead(s.head.head, s.ticks);
+    if (!s || !s.ticks.size) return null;
+    const patched = patchHead(s.head, s.ticks);
     if (!patched) return null;
-    return { blob: new Blob([patched.bytes as Uint8Array<ArrayBuffer>, file.slice(s.head.headEnd)], { type: file.type || 'audio/mp4' }), seconds: s.ticks / patched.mediaScale };
+    return { blob: new Blob([patched.bytes as Uint8Array<ArrayBuffer>, file.slice(s.headEnd)], { type: file.type || 'video/mp4' }), seconds: patched.seconds };
   } catch {
     return null;
   }

@@ -110,6 +110,9 @@ interface VoiceStore {
   serverDeafened: boolean;
   speaking: Record<string, true>;
   watching: Record<string, true>;
+  /** gravando o vídeo da sala: recebe todas as transmissões, não só as que a pessoa assiste */
+  recordingVideo: boolean;
+  setRecordingVideo: (on: boolean) => void;
   focus: string | null;
   volumes: Record<string, number>;
   /** pessoas silenciadas só para mim (o áudio delas não toca aqui) */
@@ -373,7 +376,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     for (const p of room.remoteParticipants.values()) {
       for (const pub of p.trackPublications.values()) {
         const isScreen = pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio;
-        const want = isScreen ? !!watching[p.identity] : true;
+        const want = isScreen ? !!watching[p.identity] || get().recordingVideo : true;
         if (pub.isSubscribed !== want) pub.setSubscribed(want);
       }
     }
@@ -511,6 +514,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       ...(get().serverDeafened ? { serverDeafened: false, deafened: deafBeforeServer } : {}),
       speaking: {},
       watching: {},
+      recordingVideo: false,
       focus: null,
       shareCodec: null,
       codecRequests: [],
@@ -680,6 +684,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     serverDeafened: false,
     speaking: {},
     watching: {},
+    recordingVideo: false,
     focus: null,
     volumes: load('concord.volumes', {} as Record<string, number>),
     localMuted: load('concord.localMuted', {} as Record<string, true>),
@@ -939,6 +944,11 @@ export const useVoice = create<VoiceStore>((set, get) => {
       else clearBlocked(identity);
       syncSubscriptions();
       bump();
+    },
+
+    setRecordingVideo: (on) => {
+      set({ recordingVideo: on });
+      syncSubscriptions();
     },
 
     setFocus: (focus) => set({ focus }),

@@ -2,6 +2,7 @@
 import { Circle, FolderOpen, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { canPickFolder, type RecordMode } from '../lib/callRecorder';
+import { VIDEO_QUALITY, canRecordVideo, type VideoQuality } from '../lib/callVideo';
 import { pickRecordingFolder, useRecording } from '../store/recording';
 import { Button, Toggle, cx } from './ui';
 
@@ -19,6 +20,9 @@ export function RecordDialog() {
   const [mode, setMode] = useState<RecordMode>('mixed');
   const [streamAudio, setStreamAudio] = useState(true);
   const [dir, setDir] = useState<FileSystemDirectoryHandle | null>(null);
+  const [video, setVideo] = useState<VideoQuality | null>(null);
+  // vídeo pesa muito para ficar na memória até o fim: só gravando direto numa pasta
+  const videoOk = canRecordVideo() && canPickFolder();
   const folders = canPickFolder();
 
   useEffect(() => {
@@ -44,7 +48,7 @@ export function RecordDialog() {
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-lg font-extrabold">Gravar a sala</h2>
-            <p className="text-sm text-fg-muted">Grava o áudio da call no seu computador.</p>
+            <p className="text-sm text-fg-muted">Grava a call no seu computador: as vozes e, se quiser, o vídeo.</p>
           </div>
           <button type="button" onClick={close} aria-label="Fechar" className="rounded-full p-1.5 text-fg-muted hover:bg-surface-3 hover:text-fg">
             <X size={18} />
@@ -79,6 +83,37 @@ export function RecordDialog() {
         </label>
 
         <div className="mt-3 rounded-2xl p-3 ring-1 ring-line">
+          <label className="flex items-center gap-3">
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Gravar o vídeo da sala</span>
+              <span className="block text-xs text-fg-muted">
+                {videoOk ? 'A tela transmitida e as câmeras, com todas as vozes, num arquivo de vídeo.' : 'O vídeo precisa do Chrome, do Edge ou do app do Concord (grava direto numa pasta).'}
+              </span>
+            </span>
+            <Toggle checked={!!video} disabled={!videoOk} onChange={(on) => setVideo(on ? '1080p30' : null)} />
+          </label>
+          {video && (
+            <>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {(Object.keys(VIDEO_QUALITY) as VideoQuality[]).map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => setVideo(q)}
+                    className={cx('rounded-full px-3 py-1 text-xs font-bold', video === q ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
+                  >
+                    {VIDEO_QUALITY[q].label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-fg-subtle">
+                Gravar vídeo usa mais processador e internet (você passa a receber todas as transmissões da sala). Deixe o Concord aberto enquanto grava; no app do Concord pode minimizar.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="mt-3 rounded-2xl p-3 ring-1 ring-line">
           <div className="text-sm font-semibold">Onde salvar</div>
           {folders ? (
             <div className="mt-2 flex items-center gap-2">
@@ -109,7 +144,7 @@ export function RecordDialog() {
             variant="danger"
             loading={status === 'starting'}
             disabled={folders && !dir}
-            onClick={() => void start({ mode, streamAudio, dir })}
+            onClick={() => void start({ mode, streamAudio, dir, video })}
           >
             <Circle size={12} fill="currentColor" />
             Começar a gravar

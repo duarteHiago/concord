@@ -42,8 +42,8 @@ export default {
   highlights: [
     {
       kicker: 'Voz',
-      title: 'Grave o áudio da call no seu computador',
-      text: 'No painel da sala, o botão de gravar salva todas as vozes num arquivo, ou uma faixa para cada pessoa, para editar como podcast. Todo mundo na sala vê o selo REC em quem está gravando, e a gravação fica só com você: nada vai para o Concord.',
+      title: 'Grave a call no seu computador',
+      text: 'No painel da sala, o botão de gravar salva as vozes (num arquivo só ou uma faixa por pessoa, para editar como podcast) e, se quiser, o vídeo com a tela e as câmeras. Todo mundo na sala vê o selo REC em quem está gravando, e a gravação fica só com você: nada vai para o Concord.',
       art: Art,
     },
   ],
