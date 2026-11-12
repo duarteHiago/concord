@@ -90,7 +90,7 @@ export function RecordDialog() {
                 {videoOk ? 'A tela transmitida e as câmeras, com todas as vozes, num arquivo de vídeo.' : 'Este navegador não consegue gravar vídeo. Use o Chrome, o Edge, o Firefox ou o app do Concord.'}
               </span>
             </span>
-            <Toggle checked={!!video} disabled={!videoOk} onChange={(on) => setVideo(on ? '1080p30' : null)} />
+            <Toggle checked={!!video} disabled={!videoOk} onChange={(on) => setVideo(on ? '720p30' : null)} />
           </label>
           {video && (
             <>
