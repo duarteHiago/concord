@@ -2,43 +2,18 @@
 // Animado com Motion (molas), carregado sob demanda pelo App.
 import { AtSign } from 'lucide-react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
-import { lazy, Suspense, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useApp } from '../store/app';
 import { Avatar } from '../components/ui';
-import { Emblem, packVars } from './Art';
+import { packVars } from './Art';
 import { motionPref, springs, squash } from './motion';
-import type { Pack } from './packs';
+import { PackEmblem } from './PackEmblem';
+import { Particles } from './Particles';
+import { BURST, SceneBackdrop, particleColors } from './Scene';
 import { useOverlays } from './runtime';
 import { WORKSHOP_ENABLED, useWorkshop } from './store';
 
 const Studio = lazy(() => import('./Studio').then((m) => ({ default: m.Studio })));
-
-/** Confete que estoura do centro: posições fixas por índice (não muda a cada render). */
-function Burst({ pack, count = 14, radius = 150 }: { pack: Pack; count?: number; radius?: number }) {
-  const bits = useMemo(
-    () =>
-      Array.from({ length: count }, (_, i) => {
-        const a = (i / count) * Math.PI * 2 + (i % 2 ? 0.2 : -0.1);
-        const r = radius * (0.65 + ((i * 37) % 10) / 25);
-        return { x: Math.cos(a) * r, y: Math.sin(a) * r, size: 6 + ((i * 13) % 7), rot: (i * 47) % 360, round: i % 3 !== 0, color: i % 3 === 0 ? pack.colors.b : pack.colors.a };
-      }),
-    [pack, count, radius],
-  );
-  return (
-    <div className="pointer-events-none absolute top-1/2 left-1/2" aria-hidden="true">
-      {bits.map((b, i) => (
-        <motion.span
-          key={i}
-          className="absolute"
-          style={{ width: b.size, height: b.size, borderRadius: b.round ? 999 : 2, background: b.color, marginLeft: -b.size / 2, marginTop: -b.size / 2 }}
-          initial={{ x: 0, y: 0, scale: 0, opacity: 1, rotate: 0 }}
-          animate={{ x: b.x, y: b.y + 30, scale: [0, 1.3, 1, 0.6], opacity: [1, 1, 1, 0], rotate: b.rot }}
-          transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1], delay: 0.38 }}
-        />
-      ))}
-    </div>
-  );
-}
 
 function Intro() {
   const intro = useOverlays((s) => s.intro);
@@ -70,7 +45,25 @@ function Intro() {
           exit={{ opacity: 0, scale: 1.06, filter: 'blur(10px)', transition: { duration: 0.45, ease: [0.4, 0, 0.2, 1] } }}
           transition={{ clipPath: { duration: 0.7, ease: [0.22, 1, 0.36, 1] } }}
         >
+          {/* cena: shader do pacote + partículas no ar; o estouro sai do emblema quando ele pousa */}
+          <SceneBackdrop pack={intro.pack} focus={0.12} density={45} />
+          <Particles mode={BURST[intro.pack.art]} colors={particleColors(intro.pack)} burst count={80} origin={{ x: 0.5, y: 0.36 }} delay={380} />
+          <div className="relative z-10 flex flex-col items-center gap-[10px]">
           <div className="relative flex items-center justify-center">
+            {/* raios de luz girando atrás do emblema */}
+            <motion.span
+              className="pointer-events-none absolute rounded-full"
+              style={{
+                width: 520,
+                height: 520,
+                background: `repeating-conic-gradient(from 0deg, ${intro.pack.colors.glow} 0deg 5deg, transparent 5deg 20deg)`,
+                WebkitMaskImage: 'radial-gradient(circle, black 18%, transparent 68%)',
+                maskImage: 'radial-gradient(circle, black 18%, transparent 68%)',
+              }}
+              initial={{ opacity: 0, scale: 0.4, rotate: 0 }}
+              animate={{ opacity: 0.55, scale: 1, rotate: 360 }}
+              transition={{ opacity: { duration: 0.6, delay: 0.35 }, scale: { ...springs.soft, delay: 0.35 }, rotate: { duration: 40, repeat: Infinity, ease: 'linear' } }}
+            />
             {/* onda de choque quando o emblema "pousa" */}
             <motion.span
               className="absolute rounded-full border-4"
@@ -79,7 +72,6 @@ function Intro() {
               animate={{ scale: [0.6, 2.4], opacity: [0.7, 0] }}
               transition={{ duration: 0.9, ease: 'easeOut', delay: 0.36 }}
             />
-            <Burst pack={intro.pack} />
             <motion.div
               className="ws-intro-emblem"
               initial={{ y: -160, scaleX: 0.3, scaleY: 0.3, rotate: -30, opacity: 0 }}
@@ -88,7 +80,7 @@ function Intro() {
             >
               {/* depois de pousar, flutua de leve */}
               <motion.div animate={{ y: [0, -7, 0] }} transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut', delay: 0.9 }}>
-                <Emblem pack={intro.pack} size={170} />
+                <PackEmblem pack={intro.pack} size={170} />
               </motion.div>
             </motion.div>
           </div>
@@ -100,11 +92,11 @@ function Intro() {
           >
             {intro.pack.intro.kicker}
           </motion.div>
-          <div className="ws-intro-name" style={{ fontFamily: intro.pack.font }} aria-hidden="true">
+          <div className="ws-intro-name" style={{ fontFamily: intro.pack.font, ['--ws-name-grad' as string]: `linear-gradient(180deg, ${intro.pack.colors.ink} 35%, ${intro.pack.colors.a})` }} aria-hidden="true">
             {[...intro.name].map((ch, i) => (
               <motion.span
                 key={i}
-                className="inline-block whitespace-pre"
+                className="ws-grad-text inline-block whitespace-pre"
                 initial={{ y: 46, opacity: 0, rotate: 14, scale: 0.5 }}
                 animate={{ y: 0, opacity: 1, rotate: 0, scale: 1 }}
                 transition={{ ...springs.bouncy, delay: 0.55 + i * 0.035 }}
@@ -127,6 +119,7 @@ function Intro() {
           <motion.div className="mt-3 text-[11px]" initial={{ opacity: 0 }} animate={{ opacity: 0.5 }} transition={{ delay: 1.2 }}>
             clique para pular
           </motion.div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -173,7 +166,9 @@ function Announcer() {
               </motion.span>
             ))}
           </motion.div>
-          <Burst pack={a.pack} count={10} radius={130} />
+          <div className="pointer-events-none absolute -inset-x-48 -inset-y-28">
+            <Particles mode={BURST[a.pack.art]} colors={particleColors(a.pack)} burst count={45} delay={120} />
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

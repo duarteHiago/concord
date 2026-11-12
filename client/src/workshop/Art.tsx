@@ -1,7 +1,10 @@
 // Arte dos pacotes da Oficina, desenhada em SVG e CSS (sem imagens de fora). Ver workshop.css.
-import type { CSSProperties } from 'react';
+import { lazy, Suspense, type CSSProperties } from 'react';
 import type { ArtKind, Pack } from './packs';
 import './workshop.css';
+
+// a cena em shader da faixa vem sob demanda (OGL fora do pacote principal)
+const LazyScene = lazy(() => import('./Scene'));
 
 export const packVars = (pack: Pack): CSSProperties =>
   ({
@@ -128,7 +131,9 @@ function RailArt({ kind }: { kind: ArtKind }) {
 export function BannerArt({ pack }: { pack: Pack }) {
   return (
     <div className="ws-banner ws-vars" style={packVars(pack)} aria-hidden="true">
-      <BannerMotif kind={pack.art} />
+      <Suspense fallback={<BannerMotif kind={pack.art} />}>
+        <LazyScene pack={pack} density={16} quality={0.6} />
+      </Suspense>
       <div className="ws-banner-shade" />
     </div>
   );

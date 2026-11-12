@@ -148,7 +148,14 @@
   line-height: 1.05;
   max-width: 90vw;
   overflow-wrap: anywhere;
-  text-shadow: 0 0 28px var(--wg), 0 2px 0 rgba(0, 0, 0, 0.4);
+  filter: drop-shadow(0 0 22px var(--wg)) drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35));
+}
+/* nome da intro: gradiente de luz (tinta do pacote para o destaque) dentro das letras */
+.ws-grad-text {
+  background-image: var(--ws-name-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .ws-intro-line {
   font-size: 15px;

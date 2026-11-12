@@ -1,4 +1,5 @@
-// Sintetizador dos sons da Oficina (WebAudio, sem arquivos). Volume baixo de propósito: são sons de interface.
+// Sons da Oficina: arquivos gravados (Kenney, CC0, em public/workshop/sounds) e, de reserva, um sintetizador
+// WebAudio. Volume baixo de propósito: são sons de interface.
 import type { Tone } from './packs';
 
 let ctx: AudioContext | null = null;
@@ -88,4 +89,50 @@ export function playTones(tones: Tone[], key?: string, gapMs = 0, volume = 1) {
     src.start(start);
     src.stop(end + 0.05);
   }
+}
+
+// ---------------------------------------------------------------- sons gravados (Kenney, CC0)
+
+const buffers = new Map<string, Promise<AudioBuffer | null>>();
+
+function load(url: string): Promise<AudioBuffer | null> {
+  let p = buffers.get(url);
+  if (!p) {
+    p = fetch(url)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+      .then((data) => context()!.decodeAudioData(data))
+      .catch(() => null); // sem suporte a OGG ou sem rede: quem chamou cai no sintetizador
+    buffers.set(url, p);
+  }
+  return p;
+}
+
+/** Já baixa e decodifica os sons (ao abrir a Oficina ou um servidor com pacote), para tocarem sem atraso. */
+export function preloadSamples(urls: string[]) {
+  if (!context()) return;
+  for (const u of urls) void load(u);
+}
+
+/**
+ * Toca um som gravado; se ele não carregar, toca a receita sintetizada no lugar (`fallback`).
+ * Mesmos freios de `playTones` (key + gapMs).
+ */
+export function playSample(url: string, fallback: Tone[], key?: string, gapMs = 0, volume = 1) {
+  if (key && gapMs) {
+    const now = performance.now();
+    if (now - (lastPlayed.get(key) ?? -Infinity) < gapMs) return;
+    lastPlayed.set(key, now);
+  }
+  const c = context();
+  if (!c) return;
+  void load(url).then((buf) => {
+    if (!buf) return playTones(fallback, undefined, 0, volume);
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const gain = c.createGain();
+    // os arquivos vêm "cheios"; abaixo do volume dos outros sons do app
+    gain.gain.value = Math.max(0, Math.min(1, volume)) * 0.55;
+    src.connect(gain).connect(c.destination);
+    src.start();
+  });
 }

@@ -6,7 +6,8 @@ import { GRID_COLS, type WorkshopConfig } from '../../../shared/workshop.ts';
 import { useMobile } from '../lib/mobile';
 import { useApp } from '../store/app';
 import { cx } from '../components/ui';
-import { Backdrop, packVars } from './Art';
+import { packVars } from './Art';
+import { SceneBackdrop } from './Scene';
 import { GAP_PX, ROW_PX, cardClass } from './Card';
 import { motionPref, springs } from './motion';
 import { useActiveConfig, usePiece, useWorkshop } from './store';
@@ -58,7 +59,7 @@ export function MuralView({ serverId }: { serverId: string }) {
 
   return (
     <main className={cx('panel relative flex min-w-0 flex-1 flex-col overflow-hidden', pack && 'ws-vars')} style={pack ? packVars(pack) : undefined}>
-      {pack && <Backdrop pack={pack} />}
+      {pack && <SceneBackdrop pack={pack} density={40} quality={0.75} />}
       <header className={cx('relative z-10 flex items-center gap-3 px-6 pt-5 pb-3', pack && 'text-[var(--wink)]')}>
         {mobile && (
           <button type="button" aria-label="Voltar" onClick={() => useApp.getState().setMobileView('sidebar')} className="-ml-2 p-2">
