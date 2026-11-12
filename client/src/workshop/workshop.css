@@ -459,3 +459,14 @@
 [data-motion='reduce'] .ws-particle {
   display: none;
 }
+
+/* ------------------------------------------------------------ tema do servidor: formato recortado */
+
+/* (arredondado e pílula só mudam --radius-panel; no celular os painéis ocupam a tela toda e ficam retos) */
+@media (min-width: 768px) {
+  [data-ws-shape='cut'] .panel,
+  [data-ws-shape='cut'] .ws-plain-card {
+    border-radius: 4px;
+    clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  }
+}

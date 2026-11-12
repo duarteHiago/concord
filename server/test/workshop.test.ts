@@ -2,7 +2,7 @@
 // publica, membros só veem o publicado, e fora do Concord de testes as rotas nem existem.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { defaultProps, defaultScreen, emptyWorkshop, installPack, parseWorkshop, type WorkshopConfig } from '../../shared/workshop.ts';
+import { defaultProps, defaultScreen, defaultTheme, emptyWorkshop, installPack, parseWorkshop, type WorkshopConfig } from '../../shared/workshop.ts';
 import { signUp, startServer, type TestServer } from './helpers.ts';
 
 const NOW = Date.UTC(2026, 10, 10);
@@ -97,6 +97,22 @@ describe('validador da Oficina', () => {
     assert.equal(parseWorkshop(withScreen(dup), NOW).ok, false, 'bloco repetido');
     const widgetAsBlock = [...noMembers, { ...placed('text'), id: 'main', x: 10 }];
     assert.equal(parseWorkshop(withScreen(widgetAsBlock), NOW).ok, false, 'widget não usa id de bloco');
+  });
+
+  it('tema do servidor: cores #rrggbb, listas fechadas e contraste mínimo', () => {
+    const withTheme = (patch: Record<string, unknown>) => ({ ...emptyWorkshop(), theme: { ...defaultTheme(), ...patch } });
+    assert.equal(parseWorkshop(withTheme({}), NOW).ok, true, 'o tema padrão passa');
+    assert.equal(parseWorkshop(withTheme({ base: 'light', surface: '#f4f1ea', accent: '#b4235a', accent2: '#1d6b8a' }), NOW).ok, true, 'um claro bem feito passa');
+    assert.equal(parseWorkshop(withTheme({ accent: 'red' }), NOW).ok, false, 'cor por nome');
+    assert.equal(parseWorkshop(withTheme({ accent: '#FFF' }), NOW).ok, false, 'cor curta');
+    assert.equal(parseWorkshop(withTheme({ accent: 'url(javascript:x)' }), NOW).ok, false);
+    assert.match((parseWorkshop(withTheme({ base: 'light', surface: '#202020' }), NOW) as { error: string }).error, /contraste/, 'texto escuro em fundo escuro');
+    assert.match((parseWorkshop(withTheme({ accent: '#1c2233' }), NOW) as { error: string }).error, /contraste/, 'destaque que some no fundo');
+    assert.equal(parseWorkshop(withTheme({ font: 'Comic Sans' }), NOW).ok, false, 'fonte fora da lista');
+    assert.equal(parseWorkshop(withTheme({ shape: 'circle' }), NOW).ok, false);
+    assert.equal(parseWorkshop(withTheme({ css: 'body{}' }), NOW).ok, false, 'chave desconhecida');
+    assert.equal(parseWorkshop(withTheme({ background: { url: 'https://evil.example/x.png', dim: 40 } }), NOW).ok, false, 'imagem de fora');
+    assert.equal(parseWorkshop(withTheme({ background: { url: '', dim: 99 } }), NOW).ok, false, 'escurecer demais');
   });
 
   it('limita números (placar, pomodoro, data do evento)', () => {

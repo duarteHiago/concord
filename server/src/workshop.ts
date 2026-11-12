@@ -48,6 +48,8 @@ function validFor(serverId: string, body: unknown): WorkshopConfig {
   if (!r.ok) fail(400, r.error);
   const value = (r as { ok: true; value: WorkshopConfig }).value;
   const channels = new Set(all<{ id: string }>('SELECT id FROM channels WHERE server_id = ?', serverId).map((c) => c.id));
+  const bg = value.theme?.background.url;
+  if (bg && !bg.startsWith(`/uploads/workshop/${serverId}-`)) fail(400, 'A imagem de fundo precisa ser enviada pela Oficina deste servidor');
   const screenWidgets = (value.screen?.items ?? []).filter((i): i is WidgetPlacement => !isBlock(i));
   for (const w of [...value.mural.widgets, ...screenWidgets]) {
     if (w.type === 'channels' && w.props.channelIds.some((id) => !channels.has(id))) fail(400, 'Um atalho aponta para um canal que não é deste servidor');

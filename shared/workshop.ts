@@ -172,6 +172,116 @@ export const defaultScreen = (): ScreenItem[] => [
   { id: 'members', type: 'block', block: 'members', x: 10, y: 0, w: 2, h: 12 },
 ];
 
+// ---------------------------------------------------------------- tema do servidor (cores, fundo, formato, fonte)
+
+/**
+ * O tema do servidor pinta a área do servidor (barra lateral, conversa, blocos, widgets) com variáveis CSS,
+ * por cima do tema pessoal. Configurações, modais, denúncia e login ficam sempre no tema da própria pessoa.
+ * A paleta inteira sai de 4 escolhas (base, fundo, destaque, destaque 2) e precisa passar no contraste do WCAG.
+ */
+export const THEME_FONTS = ['padrao', 'outfit', 'mono', 'serif', 'sistema'] as const;
+export type ThemeFont = (typeof THEME_FONTS)[number];
+export const THEME_SHAPES = ['rounded', 'cut', 'pill'] as const;
+export type ThemeShape = (typeof THEME_SHAPES)[number];
+
+export const FONT_INFO: Record<ThemeFont, { label: string; sans: string; display: string }> = {
+  padrao: { label: 'Padrão', sans: "'Nunito Sans', ui-sans-serif, system-ui, sans-serif", display: "'Outfit', 'Nunito Sans', ui-sans-serif, system-ui, sans-serif" },
+  outfit: { label: 'Geométrica', sans: "'Outfit', ui-sans-serif, system-ui, sans-serif", display: "'Outfit', ui-sans-serif, system-ui, sans-serif" },
+  mono: { label: 'Terminal', sans: "ui-monospace, 'Cascadia Mono', Consolas, monospace", display: "ui-monospace, 'Cascadia Mono', Consolas, monospace" },
+  serif: { label: 'Clássica', sans: "'Nunito Sans', ui-sans-serif, system-ui, sans-serif", display: "Georgia, 'Times New Roman', serif" },
+  sistema: { label: 'Do sistema', sans: 'system-ui, -apple-system, Segoe UI, sans-serif', display: 'system-ui, -apple-system, Segoe UI, sans-serif' },
+};
+
+export const SHAPE_INFO: Record<ThemeShape, string> = { rounded: 'Arredondado', cut: 'Recortado', pill: 'Pílula' };
+
+export interface ServerTheme {
+  /** escuro: texto claro; claro: texto escuro */
+  base: 'dark' | 'light';
+  /** cor dos painéis; as outras superfícies saem dela */
+  surface: string;
+  accent: string;
+  accent2: string;
+  /** imagem de fundo (enviada pela Oficina) e quanto escurecer, de 0 a 85 (%) */
+  background: { url: string; dim: number };
+  shape: ThemeShape;
+  font: ThemeFont;
+}
+
+export const defaultTheme = (): ServerTheme => ({
+  base: 'dark',
+  surface: '#1a1f2e',
+  accent: '#7c9cff',
+  accent2: '#4ef0d0',
+  background: { url: '', dim: 45 },
+  shape: 'rounded',
+  font: 'padrao',
+});
+
+const HEX = /^#[0-9a-f]{6}$/;
+const toRgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const toHex = (rgb: number[]) => `#${rgb.map((c) => Math.round(Math.max(0, Math.min(255, c))).toString(16).padStart(2, '0')).join('')}`;
+/** mistura `a` com `b` (t = quanto de b) */
+export const mix = (a: string, b: string, t: number) => {
+  const x = toRgb(a);
+  const y = toRgb(b);
+  return toHex(x.map((c, i) => c + (y[i] - c) * t));
+};
+function luminance(hex: string) {
+  const [r, g, b] = toRgb(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+/** Contraste do WCAG entre duas cores (1 a 21). */
+export function contrast(a: string, b: string) {
+  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+/** Texto que mais contrasta com a cor (branco ou quase-preto). */
+export const textOn = (hex: string) => (contrast(hex, '#ffffff') >= contrast(hex, '#14161c') ? '#ffffff' : '#14161c');
+
+export type ThemeTokens = Record<
+  'surface-0' | 'surface-1' | 'surface-2' | 'surface-3' | 'surface-4' | 'line' | 'line-strong' | 'fg' | 'fg-muted' | 'fg-subtle' | 'accent' | 'accent-2' | 'on-accent',
+  string
+>;
+
+/** A paleta completa (os mesmos tokens do tema pessoal) a partir das 4 escolhas. */
+export function themeTokens(t: ServerTheme): ThemeTokens {
+  const s = t.surface;
+  const dark = t.base === 'dark';
+  const fg = dark ? mix('#ffffff', s, 0.06) : mix('#0b0d12', s, 0.06);
+  return {
+    // fundo da página bem mais escuro que os painéis, para eles se destacarem
+    'surface-0': dark ? mix(s, '#000000', 0.55) : mix(s, '#000000', 0.12),
+    'surface-1': dark ? mix(s, '#000000', 0.4) : mix(s, '#000000', 0.07),
+    'surface-2': s,
+    'surface-3': dark ? mix(s, '#ffffff', 0.06) : mix(s, '#000000', 0.035),
+    'surface-4': dark ? mix(s, '#ffffff', 0.12) : mix(s, '#000000', 0.08),
+    line: dark ? 'rgb(255 255 255 / 0.08)' : 'rgb(0 0 0 / 0.09)',
+    'line-strong': dark ? 'rgb(255 255 255 / 0.14)' : 'rgb(0 0 0 / 0.16)',
+    fg,
+    'fg-muted': mix(fg, s, 0.28),
+    'fg-subtle': mix(fg, s, 0.45),
+    accent: t.accent,
+    'accent-2': t.accent2,
+    'on-accent': textOn(t.accent),
+  };
+}
+
+/** O que precisa passar no contraste (mesma régua do readableOn do tema pessoal: 4,5:1 para texto). */
+export function themeContrastIssues(t: ServerTheme): string[] {
+  const k = themeTokens(t);
+  const issues: string[] = [];
+  for (const surf of ['surface-1', 'surface-2', 'surface-3', 'surface-4'] as const)
+    if (contrast(k.fg, k[surf]) < 4.5) issues.push('O texto fica ilegível nesse fundo: troque a base (claro/escuro) ou a cor do fundo.');
+  if (contrast(k['fg-muted'], k['surface-2']) < 4.5) issues.push('O texto secundário fica apagado demais nesse fundo.');
+  if (contrast(k['on-accent'], k.accent) < 4.5) issues.push('O texto dos botões não lê bem sobre o destaque: escolha um destaque mais claro ou mais escuro.');
+  if (contrast(k.accent, k['surface-2']) < 3) issues.push('O destaque some no fundo: precisa de mais contraste com os painéis.');
+  if (contrast(k['accent-2'], k['surface-2']) < 3) issues.push('O destaque 2 some no fundo: precisa de mais contraste com os painéis.');
+  return [...new Set(issues)];
+}
+
 // ---------------------------------------------------------------- configuração
 
 export interface WorkshopConfig {
@@ -180,6 +290,8 @@ export interface WorkshopConfig {
   mural: { title: string; widgets: WidgetPlacement[] };
   /** tela do servidor em grade livre; sem ela, o layout padrão */
   screen?: { items: ScreenItem[] };
+  /** tema do servidor; sem ele, cada pessoa vê o próprio tema */
+  theme?: ServerTheme;
 }
 
 export const emptyWorkshop = (): WorkshopConfig => ({ version: WORKSHOP_VERSION, pieces: {}, mural: { title: 'Mural', widgets: [] } });
@@ -355,6 +467,29 @@ function noOverlap(items: { id: string; x: number; y: number; w: number; h: numb
   });
 }
 
+function color(v: unknown, where: string): string {
+  if (typeof v !== 'string' || !HEX.test(v)) bad(`${where}: cor no formato #rrggbb`);
+  return v as string;
+}
+
+function theme(v: unknown): ServerTheme {
+  const o = obj(v, 'theme', ['base', 'surface', 'accent', 'accent2', 'background', 'shape', 'font']);
+  const bg = obj(o.background, 'theme.background', ['url', 'dim']);
+  const url = bg.url === '' ? '' : typeof bg.url === 'string' && WORKSHOP_IMAGE.test(bg.url) ? bg.url : bad('theme.background.url: só imagens enviadas pela Oficina');
+  const t: ServerTheme = {
+    base: oneOf(o.base, 'theme.base', ['dark', 'light'] as const),
+    surface: color(o.surface, 'theme.surface'),
+    accent: color(o.accent, 'theme.accent'),
+    accent2: color(o.accent2, 'theme.accent2'),
+    background: { url, dim: intIn(bg.dim, 'theme.background.dim', 0, 85) },
+    shape: oneOf(o.shape, 'theme.shape', THEME_SHAPES),
+    font: oneOf(o.font, 'theme.font', THEME_FONTS),
+  };
+  const issues = themeContrastIssues(t);
+  if (issues.length) bad(`theme: contraste insuficiente. ${issues[0]}`);
+  return t;
+}
+
 function screen(v: unknown, now: number): { items: ScreenItem[] } {
   const o = obj(v, 'screen', ['items']);
   if (!Array.isArray(o.items)) bad('screen.items: esperava uma lista');
@@ -373,7 +508,7 @@ function screen(v: unknown, now: number): { items: ScreenItem[] } {
 /** Valida uma configuração vinda de fora. Nunca confia no cliente. */
 export function parseWorkshop(input: unknown, now = Date.now()): ParseResult {
   try {
-    const o = obj(input, 'oficina', ['version', 'pieces', 'mural', 'screen']);
+    const o = obj(input, 'oficina', ['version', 'pieces', 'mural', 'screen', 'theme']);
     if (o.version !== WORKSHOP_VERSION) bad('oficina.version: versão desconhecida');
     const p = obj(o.pieces, 'pieces', WORKSHOP_PIECES);
     const pieces: WorkshopConfig['pieces'] = {};
@@ -383,6 +518,7 @@ export function parseWorkshop(input: unknown, now = Date.now()): ParseResult {
     noOverlap(widgets, 'mural.widgets');
     const value: WorkshopConfig = { version: WORKSHOP_VERSION, pieces, mural: { title: text(m.title, 'mural.title', 40, { min: 1 }), widgets } };
     if (o.screen !== undefined) value.screen = screen(o.screen, now);
+    if (o.theme !== undefined) value.theme = theme(o.theme);
     return { ok: true, value };
   } catch (err) {
     if (err instanceof Invalid) return { ok: false, error: err.message };

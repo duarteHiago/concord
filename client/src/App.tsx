@@ -39,6 +39,7 @@ import './lib/visibility';
 import { WorkshopHosts } from './workshop/Hosts';
 import { MuralView } from './workshop/Mural';
 import { ServerScreen, useServerScreen } from './workshop/Screen';
+import { useServerThemeScope } from './workshop/theme';
 import { useWorkshopRuntime } from './workshop/runtime';
 import { useWorkshop } from './workshop/store';
 
@@ -196,6 +197,8 @@ function Shell() {
   const mural = useWorkshop((s) => (s.muralFor && s.muralFor === activeServerId ? s.muralFor : null));
   // tela do servidor montada na Oficina (grade livre); null = layout padrão
   const screen = useServerScreen();
+  // tema do servidor (cores, fundo, formato, fonte) só na área do servidor
+  const theme = useServerThemeScope();
   const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}|${mural ?? ''}`;
 
   const showSidebar = !mobile || mobileView === 'sidebar';
@@ -238,10 +241,10 @@ function Shell() {
     </ErrorBoundary>
   );
 
-  if (screen) return <ServerScreen items={screen} main={content} />;
+  if (screen) return <ServerScreen items={screen} main={content} theme={theme} />;
 
   return (
-    <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')}>
+    <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')} style={theme?.style} data-ws-shape={theme?.shape}>
       <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
         {showSidebar && <ChannelSidebar />}
         {showContent && content}

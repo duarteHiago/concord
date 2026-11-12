@@ -19,7 +19,12 @@ export const cardShape = (pack: Pack | null) => (pack?.art === 'scan' ? 'ws-shap
 export function WidgetCard({ ctx, children, className, style }: { ctx: WidgetContext; children: ReactNode; className?: string; style?: CSSProperties }) {
   return (
     <div
-      className={cx('relative min-w-0 overflow-hidden p-4', ctx.pack ? 'ws-card' : 'bg-surface-2 text-fg ring-1 ring-line', cardShape(ctx.pack), className)}
+      className={cx(
+        'relative min-w-0 overflow-hidden p-4',
+        // sem pacote, o card segue o tema (cores e formato dos painéis)
+        ctx.pack ? cx('ws-card', cardShape(ctx.pack)) : 'ws-plain-card rounded-[var(--radius-panel)] bg-surface-2 text-fg ring-1 ring-line',
+        className,
+      )}
       style={style}
     >
       {children}

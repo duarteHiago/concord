@@ -7,9 +7,9 @@ import { ChannelsBlock, VoiceUserBlock } from '../components/ChannelSidebar';
 import { MemberListBody } from '../components/MemberList';
 import { ServerStrip } from '../components/ServerRail';
 import { HOME, useApp } from '../store/app';
-import { packVars } from './Art';
 import { WidgetCard } from './Mural';
-import { WORKSHOP_ENABLED, useActiveConfig, usePiece, workshopPrefs } from './store';
+import { WORKSHOP_ENABLED, useActiveConfig, workshopPrefs } from './store';
+import type { ThemeScope } from './theme';
 import { WidgetBody } from './widgets';
 
 /** Largura mínima para a tela montada (abaixo disso, o layout padrão, que já se adapta). */
@@ -39,12 +39,11 @@ export function useServerScreen(): ScreenItem[] | null {
   return config.screen.items;
 }
 
-export function ServerScreen({ items, main }: { items: ScreenItem[]; main: ReactNode }) {
+export function ServerScreen({ items, main, theme }: { items: ScreenItem[]; main: ReactNode; theme: ThemeScope | null }) {
   const serverId = useApp((s) => s.activeServerId)!;
   const detail = useApp((s) => s.details[serverId]);
-  const pack = usePiece(serverId, 'backdrop');
   return (
-    <div className="flex h-full flex-col gap-4 bg-surface-1 p-4">
+    <div className="flex h-full flex-col gap-4 bg-surface-1 p-4" style={theme?.style} data-ws-shape={theme?.shape}>
       <div className="panel shrink-0">
         <ServerStrip />
       </div>
@@ -53,8 +52,6 @@ export function ServerScreen({ items, main }: { items: ScreenItem[]; main: React
         style={{
           gridTemplateColumns: `repeat(${SCREEN_COLS}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${SCREEN_ROWS}, minmax(0, 1fr))`,
-          // cores do pacote do fundo, para os cards dos widgets
-          ...(pack ? packVars(pack) : {}),
         }}
       >
         {items.map((it) => (
@@ -74,8 +71,9 @@ export function ServerScreen({ items, main }: { items: ScreenItem[]; main: React
                 </div>
               )
             ) : (
-              <WidgetCard ctx={{ serverId, pack }} className="flex-1">
-                <WidgetBody w={it} ctx={{ serverId, pack }} />
+              // os widgets da tela seguem o tema (do servidor ou o da pessoa), como os blocos ao lado
+              <WidgetCard ctx={{ serverId, pack: null }} className="flex-1">
+                <WidgetBody w={it} ctx={{ serverId, pack: null }} />
               </WidgetCard>
             )}
           </div>

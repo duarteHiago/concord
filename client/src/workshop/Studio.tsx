@@ -18,6 +18,7 @@ import {
   Mic,
   Monitor,
   Package,
+  Palette,
   Play,
   Plus,
   Puzzle,
@@ -74,6 +75,8 @@ import { GAP_PX, MuralGrid, ROW_PX, WidgetCard } from './Mural';
 import { PACKS, PACK_LIST, type Pack, type SoundSlot } from './packs';
 import { previewSound, showIntro, useOverlays } from './runtime';
 import { useWorkshop } from './store';
+import { themeScope } from './theme';
+import { ThemeDrawer } from './ThemeDrawer';
 import { WidgetBody, type WidgetContext } from './widgets';
 
 interface Loaded {
@@ -162,7 +165,7 @@ export function Studio({ serverId }: { serverId: string }) {
   const [past, setPast] = useState<WorkshopConfig[]>([]);
   const [future, setFuture] = useState<WorkshopConfig[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [tab, setTab] = useState<'packs' | 'pieces' | 'widgets'>('packs');
+  const [tab, setTab] = useState<'packs' | 'theme' | 'pieces' | 'widgets'>('packs');
   /** o que a grade do meio edita: a tela do servidor ou o Mural */
   const [area, setArea] = useState<'screen' | 'mural'>('screen');
   const [asMember, setAsMember] = useState(false);
@@ -383,6 +386,7 @@ export function Studio({ serverId }: { serverId: string }) {
       </div>
     );
   const sel = items.find((w) => w.id === selected) ?? null;
+  const scope = config.theme ? themeScope(config.theme) : null;
   const backdrop = config.pieces.backdrop ? PACKS[config.pieces.backdrop] : null;
   const changedSincePublish = !loaded?.published || JSON.stringify(loaded.published) !== JSON.stringify(config);
 
@@ -432,16 +436,17 @@ export function Studio({ serverId }: { serverId: string }) {
             <div className="flex gap-1 p-2">
               {(
                 [
-                  ['packs', 'Pacotes', <Package size={15} key="p" />],
-                  ['pieces', 'Peças', <Sparkles size={15} key="s" />],
-                  ['widgets', 'Widgets', <LayoutGrid size={15} key="w" />],
+                  ['packs', 'Pacotes', <Package size={14} key="p" />],
+                  ['theme', 'Tema', <Palette size={14} key="t" />],
+                  ['pieces', 'Peças', <Sparkles size={14} key="s" />],
+                  ['widgets', 'Widgets', <LayoutGrid size={14} key="w" />],
                 ] as const
               ).map(([id, label, icon]) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => setTab(id)}
-                  className={cx('flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-sm font-bold', tab === id ? 'bg-accent text-on-accent' : 'text-fg-muted hover:bg-surface-3 hover:text-fg')}
+                  className={cx('flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-bold', tab === id ? 'bg-accent text-on-accent' : 'text-fg-muted hover:bg-surface-3 hover:text-fg')}
                 >
                   {icon}
                   {label}
@@ -449,7 +454,28 @@ export function Studio({ serverId }: { serverId: string }) {
               ))}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-              {tab === 'packs' && <PacksDrawer config={config} onInstall={(id) => update((c) => installPack(c, id))} serverName={detail.server.name} serverId={serverId} />}
+              {tab === 'packs' && (
+                <PacksDrawer
+                  config={config}
+                  // instalar o pacote inteiro também aplica o tema dele (mantém a imagem de fundo, se tiver)
+                  onInstall={(id) => update((c) => ({ ...installPack(c, id), theme: { ...PACKS[id].theme, background: c.theme?.background ?? { url: '', dim: 45 } } }))}
+                  serverName={detail.server.name}
+                  serverId={serverId}
+                />
+              )}
+              {tab === 'theme' && (
+                <ThemeDrawer
+                  theme={config.theme}
+                  serverId={serverId}
+                  onChange={(t) =>
+                    update((c) => {
+                      if (t) return { ...c, theme: t };
+                      const { theme: _drop, ...rest } = c;
+                      return rest;
+                    })
+                  }
+                />
+              )}
               {tab === 'pieces' && (
                 <PiecesDrawer config={config} onChange={(piece, pack) => update((c) => ({ ...c, pieces: { ...c.pieces, [piece]: pack ?? undefined } }))} serverId={serverId} serverName={detail.server.name} />
               )}
@@ -502,6 +528,8 @@ export function Studio({ serverId }: { serverId: string }) {
                 </button>
               ))}
             </div>
+            {/* prévia do tema do servidor: só a grade, a Oficina continua no tema de quem edita */}
+            <div className={cx('mt-4 rounded-3xl', scope && 'bg-surface-0 p-3')} style={scope?.style} data-ws-shape={scope?.shape}>
             {area === 'screen' ? (
               <ScreenArea
                 config={config}
@@ -570,6 +598,7 @@ export function Studio({ serverId }: { serverId: string }) {
             </div>
             </>
             )}
+            </div>
           </div>
         </section>
 
@@ -1145,9 +1174,10 @@ function ScreenArea({
   onDropNew: (type: WidgetType, at: { x: number; y: number }) => void;
 }) {
   const items = config.screen?.items;
-  const ctx: WidgetContext = { serverId, pack: backdrop, editing: true };
+  // como na tela real: os widgets seguem o tema, não a cor do pacote
+  const ctx: WidgetContext = { serverId, pack: null, editing: true };
   return (
-    <div className="mt-4">
+    <div>
       <div className="mb-2 flex items-end justify-between gap-3">
         <div>
           <div className="text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Tela do servidor</div>
