@@ -19,6 +19,8 @@ export interface VoiceState {
   serverMuted: boolean;
   /** sem ouvir ninguém, por decisão do servidor (só o Mecenas faz isso, ver contracts.ts) */
   serverDeafened: boolean;
+  /** gravando a sala no próprio aparelho (nada vem para o servidor; só o aviso, para todos verem o selo) */
+  recording: boolean;
 }
 
 let io: Server;
@@ -383,7 +385,7 @@ export function liveStats() {
   };
 }
 
-const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping']);
+const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:recording', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping']);
 
 // Faxina das salas de voz. O LiveKit aceita qualquer um com token válido, mas só vale estar numa sala quem entrou
 // pelo app (aparece na lista dela) e ainda pode conectar nela. Sai quem foi expulso do servidor, perdeu a
@@ -474,6 +476,8 @@ export function setupRealtime(httpServer: HttpServer) {
           camera: false,
           serverMuted,
           serverDeafened,
+          // trocar de sala para a gravação: o consentimento é por sala, quem grava liga de novo
+          recording: false,
         });
         if (prev && prev.serverId !== channel.server_id) broadcastVoice(prev.serverId);
         broadcastVoice(channel.server_id);
@@ -491,6 +495,24 @@ export function setupRealtime(httpServer: HttpServer) {
       if (typeof data.streaming === 'boolean') v.streaming = data.streaming;
       if (typeof data.camera === 'boolean') v.camera = data.camera;
       broadcastVoice(v.serverId);
+    });
+
+    // Gravação da sala: o áudio fica no aparelho de quem grava. O servidor só guarda o aviso (o selo
+    // "Gravando" que todos na sala veem) e confere a permissão de gravar naquele canal.
+    let recordToggles: number[] = [];
+    socket.on('voice:recording', (data: { recording?: unknown }, ack?: (r: unknown) => void) => {
+      const v = voice.get(userId);
+      if (!v || v.socketId !== socket.id || typeof data?.recording !== 'boolean') return ack?.({ ok: false, error: 'Você não está numa sala' });
+      const now = Date.now();
+      recordToggles = recordToggles.filter((t) => now - t < 60_000);
+      if (recordToggles.length >= 10) return ack?.({ ok: false, error: 'Calma: muitas gravações em pouco tempo.' });
+      recordToggles.push(now);
+      if (data.recording && !has(channelPermissions(getChannel(v.channelId), userId), P.RECORD_CALLS)) {
+        return ack?.({ ok: false, error: 'Você não tem permissão para gravar esta sala.' });
+      }
+      v.recording = data.recording;
+      broadcastVoice(v.serverId);
+      ack?.({ ok: true });
     });
 
     socket.on('voice:leave', () => {

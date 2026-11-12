@@ -91,6 +91,11 @@ export function VoiceView({ channel }: { channel: Channel }) {
   const inRoom = states.filter((v) => v.channelId === channel.id);
   const streamer = inRoom.find((v) => v.streaming);
   const streamerMember = streamer && detail.members.find((m) => m.id === streamer.userId);
+  // quem está gravando a sala (no próprio computador): faixa de aviso no topo, para ninguém ser pego de surpresa
+  const recorders = inRoom.filter((v) => v.recording).map((v) => {
+    const m = detail.members.find((x) => x.id === v.userId);
+    return m ? memberName(m) : 'Alguém';
+  });
   const canChat = has(channel.permissions, P.VIEW_CHANNEL);
   const [chatOpen, setChatOpen] = useState(() => readFlag('concord.roomChat', true));
   const [panelTab, setPanelTab] = useState<'chat' | 'members'>('chat');
@@ -110,6 +115,15 @@ export function VoiceView({ channel }: { channel: Channel }) {
   return (
     <>
       <main className="flex min-w-0 flex-1 flex-col gap-3.5">
+        {recorders.length > 0 && (
+          <div role="status" className="mx-1.5 mt-2 flex items-center gap-2 rounded-2xl bg-danger/12 px-3.5 py-2 text-sm font-semibold text-danger">
+            <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger" />
+            <span className="min-w-0 flex-1">
+              {recorders.join(', ')} {recorders.length === 1 ? 'está' : 'estão'} gravando esta sala
+              <span className="ml-1.5 font-normal text-fg-muted">· só o áudio, no computador de quem grava</span>
+            </span>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1.5 pt-2">
           <MobileBackButton />
           {channel.recording && <RecordingPill className="basis-full md:basis-auto md:order-none" />}
@@ -520,6 +534,7 @@ function Tile({
   const [showStats, setShowStats] = useState(false);
   const openPopover = usePopover((s) => s.open);
   const deafened = useDeafened(detail.server.id, p.identity);
+  const recording = useApp((s) => (s.voiceStates[detail.server.id] ?? []).some((v) => v.userId === p.identity && v.recording));
 
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === ref.current);
@@ -662,6 +677,7 @@ function Tile({
         {muted ? <MicOff size={12} className="shrink-0 text-danger" /> : <Mic size={12} className="shrink-0" />}
         {deafened && <HeadphoneOff size={12} className="shrink-0 text-danger" />}
         <span className="truncate">{isLocal ? `${name} (você)` : name}</span>
+        {recording && <span className="shrink-0 rounded-full bg-danger px-1.5 text-[9px] font-black text-white">REC</span>}
       </span>
     </div>
   );

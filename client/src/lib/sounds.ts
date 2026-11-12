@@ -9,6 +9,9 @@ const SOUNDS: Record<string, [number, number][]> = {
   mute: [[440, 0]],
   unmute: [[660, 0]],
   stream: [[523, 0], [659, 0.07], [784, 0.14]],
+  // gravação da sala: três toques graves subindo (começou) e descendo (parou), bem diferente dos outros
+  recordStart: [[392, 0], [392, 0.12], [587, 0.24]],
+  recordStop: [[587, 0], [392, 0.12]],
   // "chamar atenção": tem som próprio, mais alto e com zumbido (ver playNudge)
   nudge: [],
   nudgeSent: [[660, 0], [880, 0.06]],
