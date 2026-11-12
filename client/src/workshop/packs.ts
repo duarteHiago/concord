@@ -1,6 +1,6 @@
 // Os pacotes oficiais da Oficina: arte (CSS/SVG desenhados aqui) e sons sintetizados com WebAudio, sem
 // arquivos. Tudo original: nenhum logo, personagem, som ou nome de jogo de terceiros.
-import type { WorkshopPackId } from '../../../shared/workshop.ts';
+import type { ServerTheme, WorkshopPackId } from '../../../shared/workshop.ts';
 
 /** Uma nota do sintetizador. `t` e `d` em segundos; `to` desliza a frequência; `noise` usa ruído filtrado. */
 export interface Tone {
@@ -48,6 +48,8 @@ export interface Pack {
   notify: { label: string };
   /** fonte de títulos da arte (só fontes que o app já carrega, ou genéricas do sistema) */
   font: string;
+  /** tema do servidor que combina com o pacote (instalar o pacote inteiro aplica; todos passam no contraste) */
+  theme: Omit<ServerTheme, 'background'>;
   sounds: Record<SoundSlot, Tone[]>;
 }
 
@@ -57,6 +59,7 @@ const arp = (freqs: number[], step: number, d: number, extra: Partial<Tone> = {}
 export const PACKS: Record<WorkshopPackId, Pack> = {
   runas: {
     id: 'runas',
+    theme: { base: 'dark', surface: '#13213f', accent: '#e8b94a', accent2: '#3fa9f5', shape: 'rounded', font: 'outfit' },
     name: 'Arena das Runas',
     genre: 'MOBA e fantasia',
     tagline: 'Ouro, magia azul e sinos de batalha.',
@@ -83,6 +86,7 @@ export const PACKS: Record<WorkshopPackId, Pack> = {
   },
   tatico: {
     id: 'tatico',
+    theme: { base: 'dark', surface: '#151b22', accent: '#ff7a1a', accent2: '#22d3ee', shape: 'cut', font: 'mono' },
     name: 'Neon Tático',
     genre: 'FPS e tiro tático',
     tagline: 'Rádio, mira e cantos recortados.',
@@ -105,6 +109,7 @@ export const PACKS: Record<WorkshopPackId, Pack> = {
   },
   lofi: {
     id: 'lofi',
+    theme: { base: 'dark', surface: '#2a2038', accent: '#f2a7c3', accent2: '#b7a4ff', shape: 'pill', font: 'padrao' },
     name: 'Café Lo-fi',
     genre: 'estudo, música e papo',
     tagline: 'Luz baixa, vapor e acordes macios.',
@@ -127,6 +132,7 @@ export const PACKS: Record<WorkshopPackId, Pack> = {
   },
   arcade: {
     id: 'arcade',
+    theme: { base: 'dark', surface: '#1e0b3d', accent: '#ff3df2', accent2: '#39ff88', shape: 'cut', font: 'mono' },
     name: 'Fliperama 8-bit',
     genre: 'retrô e jogos de festa',
     tagline: 'Pixels piscando e bipes de ficha.',
@@ -149,6 +155,7 @@ export const PACKS: Record<WorkshopPackId, Pack> = {
   },
   acampamento: {
     id: 'acampamento',
+    theme: { base: 'dark', surface: '#18291c', accent: '#ffb547', accent2: '#7bd389', shape: 'rounded', font: 'outfit' },
     name: 'Acampamento',
     genre: 'sobrevivência e aventura',
     tagline: 'Fogueira, vagalumes e ocarina.',
@@ -171,6 +178,7 @@ export const PACKS: Record<WorkshopPackId, Pack> = {
   },
   galaxia: {
     id: 'galaxia',
+    theme: { base: 'dark', surface: '#121838', accent: '#7c9cff', accent2: '#4ef0d0', shape: 'pill', font: 'outfit' },
     name: 'Estação Galáxia',
     genre: 'sci-fi e espaço',
     tagline: 'Órbitas, sonar e motores de dobra.',
