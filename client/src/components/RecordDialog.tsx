@@ -117,7 +117,7 @@ export function RecordDialog() {
           <div className="text-sm font-semibold">Onde salvar</div>
           {folders ? (
             <div className="mt-2 flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{dir ? `Pasta: ${dir.name} (uma subpasta por gravação)` : 'Escolha uma pasta. Os arquivos vão sendo salvos enquanto grava.'}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{dir ? `Pasta: ${dir.name} (uma subpasta por gravação)` : 'Escolha uma pasta, ou deixe assim: os arquivos baixam quando você parar.'}</span>
               <Button variant="secondary" className="h-8 shrink-0 px-3 text-xs" onClick={() => void choose()}>
                 <FolderOpen size={14} />
                 {dir ? 'Trocar' : 'Escolher pasta'}
@@ -143,7 +143,6 @@ export function RecordDialog() {
           <Button
             variant="danger"
             loading={status === 'starting'}
-            disabled={folders && !dir}
             onClick={() => void start({ mode, streamAudio, dir, video })}
           >
             <Circle size={12} fill="currentColor" />
