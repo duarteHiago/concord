@@ -13,72 +13,313 @@
 
 /* ------------------------------------------------------------ ícone animado (barra de servidores) */
 
-.ws-rail {
+/* ângulo animável: o gradiente gira sem girar a forma (o ícone é um quadrado arredondado, não um círculo) */
+@property --ws-ang {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.ws-icon {
   position: absolute;
-  inset: -5px;
-  pointer-events: none;
+  inset: -4px;
   border-radius: 22px;
+  pointer-events: none;
   z-index: 1;
 }
-.ws-rail svg {
+.ws-icon-ring,
+.ws-icon-halo {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
+  border-radius: inherit;
+  background: conic-gradient(from var(--ws-ang), var(--wa), var(--wb) 22%, transparent 38%, transparent 50%, var(--wa) 66%, var(--wb) 84%, var(--wa));
+  animation: ws-ang 4.5s linear infinite;
 }
-.ws-rail-glow {
+/* só a borda: a máscara recorta o miolo (content-box) */
+.ws-icon-ring {
+  inset: 0;
+  padding: 2.5px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.ws-icon-halo {
+  inset: 3px;
+  filter: blur(9px);
+  opacity: 0.5;
+  transition: opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.35s ease;
+}
+button:hover > .ws-icon .ws-icon-halo {
+  opacity: 0.95;
+  filter: blur(12px);
+}
+/* reflexo que atravessa o ícone de tempos em tempos */
+.ws-icon-sheen {
   position: absolute;
   inset: 4px;
   border-radius: 18px;
-  box-shadow: 0 0 0 1.5px var(--wa), 0 0 12px 1px var(--wg);
-  animation: ws-pulse 2.4s ease-in-out infinite;
+  overflow: hidden;
 }
-.ws-spin {
-  transform-origin: 50% 50%;
-  animation: ws-spin 9s linear infinite;
-}
-.ws-spin-rev {
-  transform-origin: 50% 50%;
-  animation: ws-spin 14s linear infinite reverse;
-}
-.ws-scanline {
+.ws-icon-sheen::before {
+  content: '';
   position: absolute;
-  left: 6px;
-  right: 6px;
-  height: 2px;
-  top: 8px;
-  background: linear-gradient(90deg, transparent, var(--wb), transparent);
-  box-shadow: 0 0 8px var(--wb);
-  animation: ws-scan 2.2s ease-in-out infinite;
+  inset: -40%;
+  background: linear-gradient(115deg, transparent 42%, rgb(255 255 255 / 0.55) 50%, transparent 58%);
+  transform: translateX(-70%);
+  animation: ws-icon-sheen 5.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  mix-blend-mode: soft-light;
 }
-.ws-pixel-border {
+
+/* runas: faíscas de quatro pontas orbitando */
+.ws-icon-orbit {
   position: absolute;
-  inset: 3px;
-  border-radius: 4px;
-  border: 3px dashed var(--wa);
-  animation: ws-pixel 1.2s steps(2) infinite;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  animation: ws-spin 7s linear infinite;
 }
-.ws-mote {
+.ws-icon-orbit-fast {
+  animation-duration: 3.2s;
+}
+.ws-icon-spark {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+}
+.ws-icon-spark::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--wa);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  filter: drop-shadow(0 0 3px var(--wa));
+  animation: ws-twinkle 1.6s ease-in-out infinite;
+  animation-delay: inherit;
+}
+
+/* tático: contorno segmentado, como mira, e cantos finos */
+.ws-icon-scan .ws-icon-ring {
+  background: repeating-conic-gradient(from var(--ws-ang), var(--wa) 0deg 14deg, transparent 14deg 30deg);
+  animation-duration: 6s;
+}
+.ws-icon-scan .ws-icon-halo {
+  background: conic-gradient(from var(--ws-ang), var(--wb), transparent 30%, transparent 70%, var(--wa));
+  animation-duration: 2.2s;
+}
+.ws-icon-corner {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 0 solid var(--wb);
+  filter: drop-shadow(0 0 2px var(--wb));
+}
+.ws-icon-corner-tl {
+  left: -3px;
+  top: -3px;
+  border-top-width: 2px;
+  border-left-width: 2px;
+  border-top-left-radius: 4px;
+}
+.ws-icon-corner-tr {
+  right: -3px;
+  top: -3px;
+  border-top-width: 2px;
+  border-right-width: 2px;
+  border-top-right-radius: 4px;
+}
+.ws-icon-corner-br {
+  right: -3px;
+  bottom: -3px;
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+  border-bottom-right-radius: 4px;
+}
+.ws-icon-corner-bl {
+  left: -3px;
+  bottom: -3px;
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+  border-bottom-left-radius: 4px;
+}
+
+/* lo-fi: lento e sonhador, halo grande, bolhas de luz subindo */
+.ws-icon-steam .ws-icon-ring,
+.ws-icon-steam .ws-icon-halo {
+  animation-duration: 9s;
+}
+.ws-icon-steam .ws-icon-halo {
+  filter: blur(13px);
+  opacity: 0.7;
+}
+.ws-icon-bubble {
+  position: absolute;
+  bottom: 70%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, white, var(--wa) 60%, transparent 70%);
+  opacity: 0;
+  filter: blur(0.5px);
+  animation: ws-bubble 3.2s ease-out infinite;
+}
+
+/* 8-bit: gira em degraus, cores chapadas, sombra de pixel em vez de desfoque */
+.ws-icon-pixel .ws-icon-ring,
+.ws-icon-pixel .ws-icon-halo {
+  background: conic-gradient(from var(--ws-ang), var(--wa) 0 25%, var(--wb) 0 50%, var(--wa) 0 75%, var(--wb) 0);
+  animation: ws-ang 1.6s steps(8) infinite;
+}
+.ws-icon-pixel .ws-icon-ring {
+  padding: 3px;
+}
+.ws-icon-pixel .ws-icon-halo {
+  filter: none;
+  opacity: 0.35;
+  inset: 0;
+  transform: translate(2px, 2px);
+}
+.ws-icon-px {
   position: absolute;
   width: 4px;
   height: 4px;
-  border-radius: 50%;
-  background: var(--wa);
-  box-shadow: 0 0 6px var(--wa);
-  opacity: 0;
-  animation: ws-rise 2.6s ease-out infinite;
-}
-.ws-mote.b {
   background: var(--wb);
-  box-shadow: 0 0 6px var(--wb);
+  box-shadow: 0 0 0 1px var(--wbg);
+  animation: ws-blink 0.9s steps(1) infinite;
 }
-.ws-steam {
+.ws-icon-px-0 {
+  left: -5px;
+  top: 30%;
+}
+.ws-icon-px-1 {
+  right: -5px;
+  top: 55%;
+  animation-delay: 0.3s;
+  background: var(--wa);
+}
+.ws-icon-px-2 {
+  left: 40%;
+  top: -5px;
+  animation-delay: 0.6s;
+}
+.ws-icon-px-3 {
+  left: 62%;
+  bottom: -5px;
+  animation-delay: 0.45s;
+  background: var(--wa);
+}
+
+/* acampamento: brilho quente que tremula como chama, brasas subindo */
+.ws-icon-embers .ws-icon-ring,
+.ws-icon-embers .ws-icon-halo {
+  background: conic-gradient(from var(--ws-ang), var(--wa), #ff6a00 25%, transparent 45%, transparent 55%, var(--wa) 75%, #ffd27a, var(--wa));
+  animation: ws-ang 6s linear infinite, ws-flame 1.3s ease-in-out infinite;
+}
+.ws-icon-ember {
   position: absolute;
-  inset: 4px;
-  border-radius: 18px;
-  box-shadow: 0 0 14px 3px var(--wg);
-  animation: ws-breathe 3.6s ease-in-out infinite;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffd27a;
+  box-shadow: 0 0 6px 1px var(--wa);
+  opacity: 0;
+  animation: ws-ember 2s ease-out infinite;
+}
+
+/* galáxia: cometa com cauda dando a volta */
+.ws-icon-comet {
+  position: absolute;
+  left: -3px;
+  top: -33px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 0 6px 2px var(--wb), 0 0 14px 4px var(--wa);
+}
+.ws-icon-comet::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: 1.5px;
+  width: 22px;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--wb));
+  transform-origin: right center;
+  transform: rotate(-12deg);
+}
+.ws-icon-orbit .ws-icon-ring {
+  opacity: 0.75;
+}
+
+@keyframes ws-ang {
+  to {
+    --ws-ang: 360deg;
+  }
+}
+@keyframes ws-icon-sheen {
+  0%,
+  62% {
+    transform: translateX(-70%);
+  }
+  100% {
+    transform: translateX(70%);
+  }
+}
+@keyframes ws-twinkle {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.15) rotate(45deg);
+    opacity: 1;
+  }
+}
+@keyframes ws-bubble {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-22px) scale(1.1);
+    opacity: 0;
+  }
+}
+@keyframes ws-ember {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(4px, -30px) scale(0.3);
+    opacity: 0;
+  }
+}
+@keyframes ws-flame {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  30% {
+    filter: brightness(1.35);
+  }
+  55% {
+    filter: brightness(0.85);
+  }
+  80% {
+    filter: brightness(1.2);
+  }
 }
 
 /* ------------------------------------------------------------ faixa animada (cabeçalho do servidor) */
@@ -387,7 +628,9 @@
   }
 }
 
-[data-motion='reduce'] .ws-rail *,
+[data-motion='reduce'] .ws-icon *,
+[data-motion='reduce'] .ws-icon *::before,
+[data-motion='reduce'] .ws-icon *::after,
 [data-motion='reduce'] .ws-banner,
 [data-motion='reduce'] .ws-banner *,
 [data-motion='reduce'] .ws-banner::after,
