@@ -14,8 +14,10 @@ export interface RecordOptions {
   mode: RecordMode;
   /** incluir o áudio das transmissões de tela (vídeos, jogos) */
   streamAudio: boolean;
-  /** pasta escolhida (File System Access); sem ela, os arquivos baixam ao parar */
+  /** pasta escolhida (File System Access) ou a pasta temporária do navegador (ver `temp`) */
   dir: FileSystemDirectoryHandle | null;
+  /** `dir` é a pasta temporária do navegador (OPFS): ao parar, os arquivos baixam e a pasta é limpa depois */
+  temp: boolean;
   roomName: string;
   /** nome de exibição de cada pessoa (identidade do LiveKit = id do usuário) */
   nameOf: (identity: string) => string;
@@ -36,6 +38,38 @@ export interface RecordingSummary {
 export const canRecord = () => typeof window !== 'undefined' && 'MediaRecorder' in window && 'AudioContext' in window;
 /** Dá para escolher uma pasta e gravar direto nela? (Chrome, Edge, app desktop) */
 export const canPickFolder = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+
+/**
+ * Dá para gravar no armazenamento privado do navegador (OPFS)? Fica no disco, sem pedir permissão, e funciona
+ * onde não dá para escolher pasta (Brave, Firefox, app desktop): grava aos pedaços e baixa ao parar.
+ */
+export const canUseTempStorage = () =>
+  typeof navigator !== 'undefined' &&
+  typeof navigator.storage?.getDirectory === 'function' &&
+  typeof FileSystemFileHandle !== 'undefined' &&
+  'createWritable' in FileSystemFileHandle.prototype;
+
+const TEMP_DIR = 'concord-gravacoes';
+
+/** Pasta temporária para uma gravação nova. Apaga as anteriores (já baixadas na gravação passada). */
+export async function tempRecordingDir(): Promise<FileSystemDirectoryHandle> {
+  const root = await navigator.storage.getDirectory();
+  const dir = await root.getDirectoryHandle(TEMP_DIR, { create: true });
+  const old: string[] = [];
+  for await (const name of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) old.push(name);
+  await Promise.all(old.map((n) => dir.removeEntry(n, { recursive: true }).catch(() => {})));
+  return dir;
+}
+
+function download(file: Blob, name: string) {
+  // o arquivo vem do disco (OPFS): o navegador baixa sem carregar tudo na memória
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
+}
 
 /** Formato: MP4/AAC abre em qualquer editor; WebM/Opus é a reserva. */
 function pickFormat(): { mime: string; ext: string } {
@@ -85,7 +119,8 @@ interface Sink {
   push(chunk: Blob): void;
   /** grava no disco o que acumulou (a pasta escolhida vai sendo atualizada durante a gravação) */
   flush(): Promise<void>;
-  finish(): Promise<void>;
+  /** fecha e devolve o arquivo final (null quando já foi baixado) */
+  finish(): Promise<File | null>;
 }
 
 /**
@@ -115,7 +150,7 @@ function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
   };
   const finish = async () => {
     await flush();
-    if (!handle) return;
+    if (!handle) return null;
     const part = await handle.getFile();
     const fixed = /\.(m4a|mp4)$/.test(name) ? await fixMp4Duration(part) : null;
     const final = await dir.getFileHandle(name, { create: true });
@@ -123,6 +158,7 @@ function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
     await w.write(fixed?.blob ?? part);
     await w.close();
     await dir.removeEntry(partName);
+    return final.getFile();
   };
   return { name, push: (c) => pending.push(c), flush, finish };
 }
@@ -135,15 +171,11 @@ function downloadSink(name: string, mime: string): Sink {
     push: (c) => chunks.push(c),
     flush: async () => {},
     finish: async () => {
-      if (!chunks.length) return;
+      if (!chunks.length) return null;
       const raw = new Blob(chunks, { type: mime });
       const fixed = /\.(m4a|mp4)$/.test(name) ? await fixMp4Duration(raw) : null;
-      const url = URL.createObjectURL(fixed?.blob ?? raw);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      download(fixed?.blob ?? raw, name);
+      return null;
     },
   };
 }
@@ -323,12 +355,22 @@ export class CallRecorder {
       ),
     );
     this.roomVideo?.stop();
-    await Promise.all(lanes.map((l) => l.sink.finish()));
+    const finals = await Promise.all(lanes.map((l) => l.sink.finish()));
     for (const s of this.sources.values()) s.node.disconnect();
     const seconds = Math.round((Date.now() - this.startedAt) / 1000);
     const files = lanes.map((l) => l.sink.name);
-    if (this.folder) await this.writeReadme(files, seconds);
     void this.ctx.close();
+    if (this.opts.temp) {
+      // pasta temporária: baixa cada arquivo (um pouco espaçados, para o navegador não barrar)
+      const prefix = safeName(`Concord - ${this.opts.roomName} - ${stamp(new Date(this.startedAt))}`);
+      for (const [i, f] of finals.entries()) {
+        if (!f) continue;
+        download(f, `${prefix} - ${files[i]}`);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return { folder: null, files, seconds };
+    }
+    if (this.folder) await this.writeReadme(files, seconds);
     return { folder: this.folder?.name ?? null, files, seconds };
   }
 

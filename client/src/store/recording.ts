@@ -1,7 +1,7 @@
 // Gravação da sala (ver lib/callRecorder.ts): o estado na tela, o aviso para o servidor (o selo "Gravando"
 // que todo mundo na sala vê) e os avisos de quando alguém começa ou para de gravar a sua sala.
 import { create } from 'zustand';
-import { CallRecorder, canPickFolder, type RecordMode } from '../lib/callRecorder';
+import { CallRecorder, canPickFolder, canUseTempStorage, tempRecordingDir, type RecordMode } from '../lib/callRecorder';
 import type { VideoQuality } from '../lib/callVideo';
 import { getSocket } from '../lib/socket';
 import { playSound } from '../lib/sounds';
@@ -66,10 +66,14 @@ export const useRecording = create<RecordingStore>((set, get) => ({
     set({ status: 'starting' });
     try {
       await announce(true);
+      // sem pasta escolhida: grava no disco privado do navegador e baixa ao parar
+      const temp = !dir && canUseTempStorage();
+      const target = dir ?? (temp ? await tempRecordingDir() : null);
       recorder = await CallRecorder.start(room, {
         mode,
         streamAudio,
-        dir,
+        dir: target,
+        temp,
         roomName: channel?.name ?? 'sala',
         myIdentity: app.me?.id ?? '',
         nameOf: (id) => {
@@ -87,7 +91,7 @@ export const useRecording = create<RecordingStore>((set, get) => ({
       set({ status: 'recording', startedAt: recorder.startedAt, dialog: false, tracks: recorder.trackCount });
       ticker = setInterval(() => recorder && set({ tracks: recorder.trackCount }), 2000);
       playSound('recordStart');
-      if (!dir) toast.info('Gravando. Os arquivos vão baixar quando você parar.');
+      if (!dir) toast.info('Gravando. Os arquivos baixam quando você parar.');
     } catch (err) {
       recorder = null;
       if (ctx.state !== 'closed') void ctx.close();
