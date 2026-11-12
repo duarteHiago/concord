@@ -5,7 +5,7 @@
 // Os arquivos vão sendo gravados no disco aos pedaços (a cada poucos segundos), então uma call longa não
 // enche a memória e, se o app fechar no meio, perde no máximo os últimos segundos.
 import { Track, type Room } from 'livekit-client';
-import { RoomVideo, type PersonInfo, type VideoQuality } from './callVideo';
+import { FastRoomVideo, RoomVideo, canRecordVideoFast, type PersonInfo, type VideoQuality } from './callVideo';
 import { fixMp4Duration } from './mp4Duration';
 
 export type RecordMode = 'mixed' | 'tracks' | 'both';
@@ -117,6 +117,8 @@ const clock = (ms: number) => {
 interface Sink {
   name: string;
   push(chunk: Blob): void;
+  /** escreve numa posição do arquivo (o empacotador de MP4 pode voltar e corrigir um trecho) */
+  pushAt(chunk: Blob, position: number): void;
   /** grava no disco o que acumulou (a pasta escolhida vai sendo atualizada durante a gravação) */
   flush(): Promise<void>;
   /** fecha e devolve o arquivo final (null quando já foi baixado) */
@@ -132,19 +134,38 @@ function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
   const partName = `${name}.parte`;
   let handle: FileSystemFileHandle | null = null;
   let size = 0;
-  let pending: Blob[] = [];
+  /** pedaços a gravar; `at` = posição fixa (senão, no fim) */
+  let pending: { blob: Blob; at?: number }[] = [];
+  let queued = 0; // tamanho do arquivo contando o que ainda está na fila
   let writing = Promise.resolve();
   const flush = () => {
     writing = writing.then(async () => {
       if (!pending.length) return;
-      const blob = new Blob(pending);
+      const items = pending;
       pending = [];
       handle ??= await dir.getFileHandle(partName, { create: true });
       const w = await handle.createWritable({ keepExistingData: true });
-      await w.seek(size);
-      await w.write(blob);
+      // pedaços seguidos no fim viram uma escrita só
+      let run: Blob[] = [];
+      const writeRun = async () => {
+        if (!run.length) return;
+        const blob = new Blob(run);
+        run = [];
+        await w.seek(size);
+        await w.write(blob);
+        size += blob.size;
+      };
+      for (const it of items) {
+        if (it.at === undefined || it.at === size + run.reduce((n, b) => n + b.size, 0)) run.push(it.blob);
+        else {
+          await writeRun();
+          await w.seek(it.at);
+          await w.write(it.blob);
+          size = Math.max(size, it.at + it.blob.size);
+        }
+      }
+      await writeRun();
       await w.close();
-      size += blob.size;
     });
     return writing;
   };
@@ -160,7 +181,19 @@ function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
     await dir.removeEntry(partName);
     return final.getFile();
   };
-  return { name, push: (c) => pending.push(c), flush, finish };
+  return {
+    name,
+    push: (c) => {
+      pending.push({ blob: c });
+      queued += c.size;
+    },
+    pushAt: (c, position) => {
+      pending.push({ blob: c, at: position });
+      queued = Math.max(queued, position + c.size);
+    },
+    flush,
+    finish,
+  };
 }
 
 /** Sem pasta (Firefox, Safari): junta na memória e baixa ao parar. */
@@ -169,6 +202,8 @@ function downloadSink(name: string, mime: string): Sink {
   return {
     name,
     push: (c) => chunks.push(c),
+    // na memória só cabe o que vem em ordem (o vídeo sempre grava no disco)
+    pushAt: (c) => chunks.push(c),
     flush: async () => {},
     finish: async () => {
       if (!chunks.length) return null;
@@ -185,8 +220,9 @@ function downloadSink(name: string, mime: string): Sink {
 interface Lane {
   /** destino de áudio onde as vozes são ligadas (faixas de áudio); o vídeo usa a mistura */
   dest: MediaStreamAudioDestinationNode | null;
-  recorder: MediaRecorder;
   sink: Sink;
+  /** para de gravar e espera o último pedaço */
+  stop: () => Promise<void>;
 }
 
 interface Person {
@@ -201,6 +237,8 @@ export class CallRecorder {
   private compressor: DynamicsCompressorNode;
   private mixLane: Lane | null = null;
   private videoLane: Lane | null = null;
+  /** codificador do vídeo (caminho leve): para mostrar e diagnosticar */
+  videoInfo: { codec: string; hardware: string; audio: string | null } | null = null;
   private roomVideo: RoomVideo | null = null;
   private people = new Map<string, Person>();
   /** fonte ligada por id da faixa do navegador (MediaStreamTrack): quando a faixa muda, religa */
@@ -244,13 +282,17 @@ export class CallRecorder {
       r.mixLane.dest = dest;
     }
     if (opts.video) {
-      // vídeo da sala (canvas) + a mistura de todas as vozes, num arquivo só
-      r.roomVideo = new RoomVideo(room, opts.video, opts.infoOf);
+      // vídeo da sala + a mistura de todas as vozes, num arquivo só. Primeiro o caminho leve (worker + placa de
+      // vídeo); sem ele, o canvas com MediaRecorder.
       const audio = r.ctx.createMediaStreamDestination();
       r.compressor.connect(audio);
-      const vf = pickVideoFormat();
-      const stream = new MediaStream([r.roomVideo.stream(), ...audio.stream.getAudioTracks()]);
-      r.videoLane = r.lane(stream, `sala-video.${vf.ext}`, vf.mime, r.roomVideo.bitrate);
+      r.videoLane = await r.fastVideoLane(audio);
+      if (!r.videoLane) {
+        r.roomVideo = new RoomVideo(room, opts.video, opts.infoOf);
+        const vf = pickVideoFormat();
+        const stream = new MediaStream([r.roomVideo.stream(), ...audio.stream.getAudioTracks()]);
+        r.videoLane = r.lane(stream, `sala-video.${vf.ext}`, vf.mime, r.roomVideo.bitrate);
+      }
     }
     r.sync();
     // a cada 1,5 s: entra gente, sai gente, alguém liga o microfone ou troca de efeito (a faixa muda)
@@ -269,7 +311,38 @@ export class CallRecorder {
     });
     recorder.ondataavailable = (e) => e.data.size && sink.push(e.data);
     recorder.start(1000);
-    return { dest: null, recorder, sink };
+    const stop = () =>
+      new Promise<void>((resolve) => {
+        if (recorder.state === 'inactive') return resolve();
+        recorder.addEventListener('stop', () => resolve(), { once: true });
+        recorder.stop();
+      });
+    return { dest: null, sink, stop };
+  }
+
+  /**
+   * Vídeo pelo caminho leve: worker + placa de vídeo (ver FastRoomVideo). null se o navegador não tiver ou se o
+   * codificador não abrir neste PC; aí fica o caminho do canvas.
+   */
+  private async fastVideoLane(audio: MediaStreamAudioDestinationNode): Promise<Lane | null> {
+    if (!canRecordVideoFast() || !this.opts.video) return null;
+    const name = 'sala-video.mp4';
+    const sink = this.folder ? fileSink(this.folder, name) : downloadSink(name, 'video/mp4');
+    try {
+      const v = await FastRoomVideo.start(
+        this.room,
+        this.opts.video,
+        this.opts.infoOf,
+        audio.stream.getAudioTracks()[0],
+        (data, position) => sink.pushAt(new Blob([data as Uint8Array<ArrayBuffer>]), position),
+        (message) => console.warn('[gravação]', message),
+      );
+      this.videoInfo = v.info;
+      return { dest: null, sink, stop: async () => void (await v.stop()) };
+    } catch (err) {
+      console.warn('[gravação] caminho leve indisponível, usando o canvas:', (err as Error).message);
+      return null;
+    }
   }
 
   /** Faixas de áudio que estão chegando agora (e o seu microfone), por pessoa. */
@@ -344,16 +417,7 @@ export class CallRecorder {
     this.timers.forEach(clearInterval);
     const lanes = this.lanes();
     // espera o último pedaço de cada gravador antes de fechar os arquivos
-    await Promise.all(
-      lanes.map(
-        (l) =>
-          new Promise<void>((resolve) => {
-            if (l.recorder.state === 'inactive') return resolve();
-            l.recorder.addEventListener('stop', () => resolve(), { once: true });
-            l.recorder.stop();
-          }),
-      ),
-    );
+    await Promise.all(lanes.map((l) => l.stop()));
     this.roomVideo?.stop();
     const finals = await Promise.all(lanes.map((l) => l.sink.finish()));
     for (const s of this.sources.values()) s.node.disconnect();
