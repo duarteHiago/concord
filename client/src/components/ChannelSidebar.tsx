@@ -20,6 +20,8 @@ import {
   Video,
   VideoOff,
   Volume2,
+  Circle,
+  Square,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
@@ -34,6 +36,8 @@ import { RecordingPill } from './Director';
 import { ServerStrip } from './ServerRail';
 import { DeviceSplitButton } from './DeviceMenu';
 import { useMobile } from '../lib/mobile';
+import { canRecord } from '../lib/callRecorder';
+import { useRecording } from '../store/recording';
 import { Avatar, IconButton, LivePill, VerifiedBadge, cx } from './ui';
 
 export function ChannelSidebar() {
@@ -314,6 +318,12 @@ function VoiceParticipant({ detail, state, speaking }: { detail: ServerDetail; s
       <span className="flex-1 truncate font-semibold" style={{ color: memberColor(detail, member.id) }}>
         {memberName(member)}
       </span>
+      {state.recording && (
+        <span title="Gravando esta sala" className="flex shrink-0 items-center gap-1 rounded-full bg-danger px-1.5 py-px text-[9px] font-black tracking-wide text-white">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+          REC
+        </span>
+      )}
       {state.streaming && <MonitorUp size={14} className="text-accent" aria-label="transmitindo" />}
       {state.camera && <Video size={14} className="text-fg-subtle" aria-label="câmera ligada" />}
       {/* mutado e ensurdecido são independentes: quem está com os dois mostra os dois ícones */}
@@ -331,9 +341,14 @@ function VoicePanel() {
   const openChannel = useApp((s) => s.openChannel);
   const openServer = useApp((s) => s.openServer);
   const openModal = useApp((s) => s.openModal);
+  const recStatus = useRecording((s) => s.status);
+  const mobile = useMobile();
   if (status === 'idle' || !serverId || !channelId) return null;
   const detail = details[serverId];
   const channel = detail?.channels.find((c) => c.id === channelId);
+  const recording = recStatus === 'recording';
+  // gravar: com permissão no canal e num navegador que grava áudio (o celular fica de fora por enquanto)
+  const canRec = !mobile && canRecord() && !!channel && has(channel.permissions, P.RECORD_CALLS);
 
   const round = 'flex h-9 w-9 items-center justify-center rounded-full transition-colors';
   return (
@@ -362,10 +377,43 @@ function VoicePanel() {
         >
           <MonitorUp size={16} />
         </button>
+        {canRec && (
+          <button
+            title={recording ? 'Parar a gravação' : 'Gravar a sala'}
+            aria-label={recording ? 'Parar a gravação' : 'Gravar a sala'}
+            disabled={recStatus === 'starting' || recStatus === 'saving'}
+            onClick={() => (recording ? void useRecording.getState().stop() : useRecording.getState().openDialog())}
+            className={cx(round, recording ? 'bg-danger text-white' : 'bg-surface-4 text-fg-muted hover:text-danger', 'disabled:opacity-50')}
+          >
+            {recording ? <Square size={13} fill="currentColor" /> : <Circle size={14} fill="currentColor" className="text-danger" />}
+          </button>
+        )}
         <button title="Sair da sala" onClick={() => void leave()} className={cx(round, 'bg-danger text-white hover:brightness-110')}>
           <PhoneOff size={16} />
         </button>
       </div>
+      {(recording || recStatus === 'saving') && <RecordingLine />}
+    </div>
+  );
+}
+
+/** Enquanto grava: cronômetro e quantas faixas (o selo REC aparece para todo mundo no seu nome). */
+function RecordingLine() {
+  const startedAt = useRecording((s) => s.startedAt);
+  const tracks = useRecording((s) => s.tracks);
+  const status = useRecording((s) => s.status);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+  const time = `${Math.floor(s / 3600) ? `${Math.floor(s / 3600)}:` : ''}${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  return (
+    <div className="mt-2.5 flex items-center gap-2 rounded-xl bg-danger/12 px-2.5 py-1.5 text-xs font-semibold text-danger">
+      <span className="h-2 w-2 animate-pulse rounded-full bg-danger" />
+      {status === 'saving' ? 'Salvando a gravação…' : `Gravando ${time}`}
+      {status !== 'saving' && <span className="ml-auto font-normal text-fg-muted">{tracks} {tracks === 1 ? 'arquivo' : 'arquivos'}</span>}
     </div>
   );
 }
