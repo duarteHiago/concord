@@ -5,6 +5,7 @@
 // Os arquivos vão sendo gravados no disco aos pedaços (a cada poucos segundos), então uma call longa não
 // enche a memória e, se o app fechar no meio, perde no máximo os últimos segundos.
 import { Track, type Room } from 'livekit-client';
+import { RoomVideo, type PersonInfo, type VideoQuality } from './callVideo';
 import { fixMp4Duration } from './mp4Duration';
 
 export type RecordMode = 'mixed' | 'tracks' | 'both';
@@ -18,7 +19,11 @@ export interface RecordOptions {
   roomName: string;
   /** nome de exibição de cada pessoa (identidade do LiveKit = id do usuário) */
   nameOf: (identity: string) => string;
+  /** nome, cor e foto (para o vídeo da sala) */
+  infoOf: (identity: string) => PersonInfo;
   myIdentity: string;
+  /** gravar também o vídeo da sala (tela e câmeras), com o áudio misturado */
+  video: VideoQuality | null;
 }
 
 export interface RecordingSummary {
@@ -39,6 +44,20 @@ function pickFormat(): { mime: string; ext: string } {
     ['audio/mp4', 'm4a'],
     ['audio/webm;codecs=opus', 'webm'],
     ['audio/webm', 'webm'],
+  ] as const) {
+    if (MediaRecorder.isTypeSupported(mime)) return { mime, ext };
+  }
+  return { mime: '', ext: 'webm' };
+}
+
+/** Vídeo: MP4 (H.264 + AAC) abre em qualquer editor e player; WebM é a reserva. */
+function pickVideoFormat(): { mime: string; ext: string } {
+  for (const [mime, ext] of [
+    ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'mp4'],
+    ['video/mp4;codecs=avc1,mp4a.40.2', 'mp4'],
+    ['video/mp4', 'mp4'],
+    ['video/webm;codecs=vp9,opus', 'webm'],
+    ['video/webm;codecs=vp8,opus', 'webm'],
   ] as const) {
     if (MediaRecorder.isTypeSupported(mime)) return { mime, ext };
   }
@@ -98,7 +117,7 @@ function fileSink(dir: FileSystemDirectoryHandle, name: string): Sink {
     await flush();
     if (!handle) return;
     const part = await handle.getFile();
-    const fixed = name.endsWith('.m4a') ? await fixMp4Duration(part) : null;
+    const fixed = /\.(m4a|mp4)$/.test(name) ? await fixMp4Duration(part) : null;
     const final = await dir.getFileHandle(name, { create: true });
     const w = await final.createWritable();
     await w.write(fixed?.blob ?? part);
@@ -118,7 +137,7 @@ function downloadSink(name: string, mime: string): Sink {
     finish: async () => {
       if (!chunks.length) return;
       const raw = new Blob(chunks, { type: mime });
-      const fixed = name.endsWith('.m4a') ? await fixMp4Duration(raw) : null;
+      const fixed = /\.(m4a|mp4)$/.test(name) ? await fixMp4Duration(raw) : null;
       const url = URL.createObjectURL(fixed?.blob ?? raw);
       const a = document.createElement('a');
       a.href = url;
@@ -132,7 +151,8 @@ function downloadSink(name: string, mime: string): Sink {
 // ---------------------------------------------------------------- gravação
 
 interface Lane {
-  dest: MediaStreamAudioDestinationNode;
+  /** destino de áudio onde as vozes são ligadas (faixas de áudio); o vídeo usa a mistura */
+  dest: MediaStreamAudioDestinationNode | null;
   recorder: MediaRecorder;
   sink: Sink;
 }
@@ -148,6 +168,8 @@ export class CallRecorder {
   private mix: GainNode;
   private compressor: DynamicsCompressorNode;
   private mixLane: Lane | null = null;
+  private videoLane: Lane | null = null;
+  private roomVideo: RoomVideo | null = null;
   private people = new Map<string, Person>();
   /** fonte ligada por id da faixa do navegador (MediaStreamTrack): quando a faixa muda, religa */
   private sources = new Map<string, { node: MediaStreamAudioSourceNode; identity: string }>();
@@ -186,7 +208,17 @@ export class CallRecorder {
     if (opts.mode !== 'tracks') {
       const dest = r.ctx.createMediaStreamDestination();
       r.compressor.connect(dest);
-      r.mixLane = r.lane(dest, `sala-completa.${r.format.ext}`);
+      r.mixLane = r.lane(dest.stream, `sala-completa.${r.format.ext}`, r.format.mime, null);
+      r.mixLane.dest = dest;
+    }
+    if (opts.video) {
+      // vídeo da sala (canvas) + a mistura de todas as vozes, num arquivo só
+      r.roomVideo = new RoomVideo(room, opts.video, opts.infoOf);
+      const audio = r.ctx.createMediaStreamDestination();
+      r.compressor.connect(audio);
+      const vf = pickVideoFormat();
+      const stream = new MediaStream([r.roomVideo.stream(), ...audio.stream.getAudioTracks()]);
+      r.videoLane = r.lane(stream, `sala-video.${vf.ext}`, vf.mime, r.roomVideo.bitrate);
     }
     r.sync();
     // a cada 1,5 s: entra gente, sai gente, alguém liga o microfone ou troca de efeito (a faixa muda)
@@ -196,12 +228,16 @@ export class CallRecorder {
     return r;
   }
 
-  private lane(dest: MediaStreamAudioDestinationNode, fileName: string): Lane {
-    const sink = this.folder ? fileSink(this.folder, fileName) : downloadSink(fileName, this.format.mime);
-    const recorder = new MediaRecorder(dest.stream, { ...(this.format.mime ? { mimeType: this.format.mime } : {}), audioBitsPerSecond: 128_000 });
+  private lane(stream: MediaStream, fileName: string, mime: string, videoBps: number | null): Lane {
+    const sink = this.folder ? fileSink(this.folder, fileName) : downloadSink(fileName, mime);
+    const recorder = new MediaRecorder(stream, {
+      ...(mime ? { mimeType: mime } : {}),
+      audioBitsPerSecond: 128_000,
+      ...(videoBps ? { videoBitsPerSecond: videoBps } : {}),
+    });
     recorder.ondataavailable = (e) => e.data.size && sink.push(e.data);
     recorder.start(1000);
-    return { dest, recorder, sink };
+    return { dest: null, recorder, sink };
   }
 
   /** Faixas de áudio que estão chegando agora (e o seu microfone), por pessoa. */
@@ -233,7 +269,8 @@ export class CallRecorder {
         const used = new Set([...this.people.values()].map((x) => x.lane?.sink.name));
         let file = `${safeName(p.name)}.${this.format.ext}`;
         for (let i = 2; used.has(file); i++) file = `${safeName(p.name)} (${i}).${this.format.ext}`;
-        p.lane = this.lane(dest, file);
+        p.lane = this.lane(dest.stream, file, this.format.mime, null);
+        p.lane.dest = dest;
       }
       this.people.set(identity, p);
     }
@@ -252,15 +289,15 @@ export class CallRecorder {
     for (const { identity, track } of live) {
       if (this.sources.has(track.id)) continue;
       const node = this.ctx.createMediaStreamSource(new MediaStream([track]));
-      if (this.mixLane) node.connect(this.mix);
+      if (this.mixLane || this.videoLane) node.connect(this.mix);
       const lane = this.person(identity).lane;
-      if (lane) node.connect(lane.dest);
+      if (lane?.dest) node.connect(lane.dest);
       this.sources.set(track.id, { node, identity });
     }
   }
 
   private lanes(): Lane[] {
-    return [this.mixLane, ...[...this.people.values()].map((p) => p.lane)].filter((l): l is Lane => !!l);
+    return [this.videoLane, this.mixLane, ...[...this.people.values()].map((p) => p.lane)].filter((l): l is Lane => !!l);
   }
 
   private flushAll() {
@@ -285,6 +322,7 @@ export class CallRecorder {
           }),
       ),
     );
+    this.roomVideo?.stop();
     await Promise.all(lanes.map((l) => l.sink.finish()));
     for (const s of this.sources.values()) s.node.disconnect();
     const seconds = Math.round((Date.now() - this.startedAt) / 1000);

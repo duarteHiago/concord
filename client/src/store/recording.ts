@@ -2,6 +2,7 @@
 // que todo mundo na sala vê) e os avisos de quando alguém começa ou para de gravar a sua sala.
 import { create } from 'zustand';
 import { CallRecorder, canPickFolder, type RecordMode } from '../lib/callRecorder';
+import type { VideoQuality } from '../lib/callVideo';
 import { getSocket } from '../lib/socket';
 import { playSound } from '../lib/sounds';
 import { memberName } from '../lib/types';
@@ -23,7 +24,7 @@ interface RecordingStore {
   tracks: number;
   openDialog: () => void;
   closeDialog: () => void;
-  start: (opts: { mode: RecordMode; streamAudio: boolean; dir: FileSystemDirectoryHandle | null }) => Promise<void>;
+  start: (opts: { mode: RecordMode; streamAudio: boolean; dir: FileSystemDirectoryHandle | null; video: VideoQuality | null }) => Promise<void>;
   stop: () => Promise<void>;
 }
 
@@ -52,7 +53,7 @@ export const useRecording = create<RecordingStore>((set, get) => ({
   openDialog: () => set({ dialog: true }),
   closeDialog: () => set({ dialog: false }),
 
-  start: async ({ mode, streamAudio, dir }) => {
+  start: async ({ mode, streamAudio, dir, video }) => {
     const voice = useVoice.getState();
     const room = voice.room;
     if (!room || !voice.serverId || !voice.channelId || get().status !== 'idle') return;
@@ -75,7 +76,14 @@ export const useRecording = create<RecordingStore>((set, get) => ({
           const m = detail?.members.find((x) => x.id === id);
           return m ? memberName(m) : (room.remoteParticipants.get(id)?.name ?? id);
         },
+        infoOf: (id) => {
+          const m = detail?.members.find((x) => x.id === id);
+          return { name: m ? memberName(m) : (room.remoteParticipants.get(id)?.name ?? 'Alguém'), color: m?.avatarColor ?? '#5865f2', avatarUrl: m?.avatarUrl ?? null };
+        },
+        video,
       }, ctx);
+      // vídeo: recebe todas as transmissões da sala, não só as que você está assistindo
+      if (video) useVoice.getState().setRecordingVideo(true);
       set({ status: 'recording', startedAt: recorder.startedAt, dialog: false, tracks: recorder.trackCount });
       ticker = setInterval(() => recorder && set({ tracks: recorder.trackCount }), 2000);
       playSound('recordStart');
@@ -99,6 +107,7 @@ export const useRecording = create<RecordingStore>((set, get) => ({
     playSound('recordStop');
     try {
       const summary = await r.stop();
+      useVoice.getState().setRecordingVideo(false);
       const min = Math.max(1, Math.round(summary.seconds / 60));
       toast.success(
         summary.folder
@@ -108,6 +117,7 @@ export const useRecording = create<RecordingStore>((set, get) => ({
     } catch (err) {
       toast.error(`A gravação não terminou de salvar: ${(err as Error).message}`);
     } finally {
+      if (useVoice.getState().recordingVideo) useVoice.getState().setRecordingVideo(false);
       set({ status: 'idle', startedAt: null, tracks: 0 });
     }
   },

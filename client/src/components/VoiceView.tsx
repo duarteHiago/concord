@@ -120,7 +120,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
             <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger" />
             <span className="min-w-0 flex-1">
               {recorders.join(', ')} {recorders.length === 1 ? 'está' : 'estão'} gravando esta sala
-              <span className="ml-1.5 font-normal text-fg-muted">· só o áudio, no computador de quem grava</span>
+              <span className="ml-1.5 font-normal text-fg-muted">· no computador de quem grava</span>
             </span>
           </div>
         )}

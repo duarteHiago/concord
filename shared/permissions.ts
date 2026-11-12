@@ -63,7 +63,7 @@ export const PERMISSION_INFO: PermissionInfo[] = [
   {
     key: 'RECORD_CALLS',
     label: 'Gravar a sala',
-    description: 'Permite gravar o áudio da sala no próprio computador. Todo mundo na sala vê que está sendo gravado.',
+    description: 'Permite gravar a sala (vozes, telas e câmeras) no próprio computador. Todo mundo na sala vê que está sendo gravado.',
     category: 'Voz e transmissão',
     channel: true,
   },
