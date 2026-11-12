@@ -7,8 +7,8 @@ import type { MentionEvent } from '../lib/mentions';
 import { setSoundOverride } from '../lib/sounds';
 import { HOME, useApp } from '../store/app';
 import { useVoice } from '../store/voice';
-import { playTones } from './audio';
-import type { Pack, SoundSlot } from './packs';
+import { playSample, preloadSamples } from './audio';
+import { SOUND_SLOTS, sampleUrl, type Pack, type SoundSlot } from './packs';
 import { WORKSHOP_ENABLED, activeConfig, pieceFor, useWorkshop, workshopPrefs } from './store';
 
 // ---------------------------------------------------------------- avisos na tela (intro, anunciador, menção)
@@ -39,13 +39,13 @@ export function playPiece(serverId: string | null | undefined, piece: WorkshopPi
   const pack = pieceFor(serverId, piece);
   if (!pack) return false;
   const prefs = workshopPrefs();
-  if (prefs.sounds) playTones(pack.sounds[slot], `${piece}:${slot}`, gapMs, prefs.volume / 100);
+  if (prefs.sounds) playSample(sampleUrl(pack, slot), pack.sounds[slot], `${piece}:${slot}`, gapMs, prefs.volume / 100);
   return true;
 }
 
 /** Ouvir na Oficina (ignora as preferências: é a pessoa pedindo para ouvir). */
 export function previewSound(pack: Pack, slot: SoundSlot) {
-  playTones(pack.sounds[slot], undefined, 0, workshopPrefs().volume / 100 || 0.7);
+  playSample(sampleUrl(pack, slot), pack.sounds[slot], undefined, 0, workshopPrefs().volume / 100 || 0.7);
 }
 
 export function showIntro(serverId: string, pack: Pack, name: string) {
@@ -65,7 +65,7 @@ export function workshopMention(m: MentionEvent, soundOn: boolean): boolean {
   const pack = pieceFor(m.serverId, 'notify');
   if (!pack) return false;
   const prefs = workshopPrefs();
-  if (soundOn && prefs.sounds) playTones(pack.sounds.notify, 'notify', 400, prefs.volume / 100);
+  if (soundOn && prefs.sounds) playSample(sampleUrl(pack, 'notify'), pack.sounds.notify, 'notify', 400, prefs.volume / 100);
   const card: MentionCard = {
     id: ++seq,
     pack,
@@ -100,7 +100,21 @@ function markIntro(serverId: string) {
   }
 }
 
+/** Baixa antes os sons dos pacotes que o servidor usa (tocam na hora, sem esperar a rede). */
+export function preloadServerSounds(serverId: string) {
+  const config = activeConfig(serverId);
+  if (!config || !workshopPrefs().sounds) return;
+  const packs = new Set(Object.values(config.pieces));
+  const urls: string[] = [];
+  for (const id of packs) {
+    const pack = pieceFor(serverId, 'enter', { ...config, pieces: { enter: id } });
+    if (pack) for (const slot of SOUND_SLOTS) urls.push(sampleUrl(pack, slot));
+  }
+  preloadSamples(urls);
+}
+
 function enteredServer(serverId: string) {
+  preloadServerSounds(serverId);
   playPiece(serverId, 'enter', 'enter', 600);
   const pack = pieceFor(serverId, 'intro');
   if (!pack || introSeen(serverId)) return;
@@ -139,7 +153,7 @@ function checkAnnouncer() {
   if (!pack) return;
   showAnnounce(pack, pack.announcer[reached]);
   const prefs = workshopPrefs();
-  if (prefs.sounds) playTones(pack.sounds.announce, 'announce', 1500, prefs.volume / 100);
+  if (prefs.sounds) playSample(sampleUrl(pack, 'announce'), pack.sounds.announce, 'announce', 1500, prefs.volume / 100);
 }
 
 // ---------------------------------------------------------------- hook

@@ -1,0 +1,12 @@
+Arte e sons de terceiros usados na Oficina (Concord de testes)
+
+Sons: Kenney (kenney.nl), pacotes Interface Sounds, RPG Audio, Sci-fi Sounds, Impact Sounds e Music Jingles.
+Licença Creative Commons Zero (CC0), domínio público. Ver sounds/LICENSE-kenney.txt.
+
+Animações (LottieFiles, Lottie Simple License: uso comercial livre, crédito não obrigatório):
+- lottie/runas.lottie: "Magic Crystal Ball", de Milan
+  https://lottiefiles.com/free-animation/magic-crystal-ball-X3bO89Mis6
+- lottie/arcade.lottie: "8 bit coin flipping horizontally", de Emre Ayaz
+  https://lottiefiles.com/free-animation/8-bit-coin-flipping-horizontally-tFbUWqVa7m
+- lottie/acampamento.lottie: "the campfire", de It's Kali
+  https://lottiefiles.com/free-animation/the-campfire-voS9QvqPcr

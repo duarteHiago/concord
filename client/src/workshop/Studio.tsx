@@ -71,7 +71,9 @@ import type { ServerDetail } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
 import { Avatar, Button, cx, initials } from '../components/ui';
-import { Backdrop, BannerArt, Emblem, RailEffect, packVars } from './Art';
+import { BannerArt, RailEffect, packVars } from './Art';
+import { PackEmblem } from './PackEmblem';
+import { SceneBackdrop } from './Scene';
 import { GAP_PX, MuralGrid, ROW_PX, WidgetCard } from './Mural';
 import { PACKS, PACK_LIST, type Pack, type SoundSlot } from './packs';
 import { previewSound, showIntro, useOverlays } from './runtime';
@@ -613,7 +615,7 @@ export function Studio({ serverId }: { serverId: string }) {
               )}
             </div>
             <div className={cx('relative overflow-hidden rounded-3xl', backdrop ? 'ws-vars p-4' : asMember ? '' : 'p-0')} style={backdrop ? packVars(backdrop) : undefined}>
-              {backdrop && <Backdrop pack={backdrop} />}
+              {backdrop && <SceneBackdrop pack={backdrop} density={30} quality={0.6} />}
               <div className="relative">
                 {asMember ? (
                   config.mural.widgets.length ? (
@@ -841,7 +843,7 @@ function PacksDrawer({ config, onInstall, serverName, serverId }: { config: Work
                 whileHover={{ rotate: [0, -8, 8, -4, 0], transition: { duration: 0.5 } }}
                 transition={springs.jelly}
               >
-                <Emblem pack={pack} size={64} />
+                <PackEmblem pack={pack} size={64} />
               </motion.div>
               <div className="min-w-0">
                 <div className="truncate font-display text-base leading-tight font-extrabold" style={{ fontFamily: pack.font }}>

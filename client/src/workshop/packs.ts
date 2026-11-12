@@ -202,3 +202,7 @@ export const PACKS: Record<WorkshopPackId, Pack> = {
 };
 
 export const PACK_LIST = Object.values(PACKS);
+
+/** Som gravado de um pacote (Kenney, CC0): public/workshop/sounds/<pacote>/<papel>.ogg */
+export const sampleUrl = (pack: Pack, slot: SoundSlot) => `/workshop/sounds/${pack.id}/${slot}.ogg`;
+export const SOUND_SLOTS: SoundSlot[] = ['hover', 'enter', 'notify', 'voiceJoin', 'voiceLeave', 'peerJoin', 'peerLeave', 'announce'];
