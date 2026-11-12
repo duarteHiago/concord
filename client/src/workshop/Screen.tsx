@@ -7,7 +7,7 @@ import { ChannelsBlock, VoiceUserBlock } from '../components/ChannelSidebar';
 import { MemberListBody } from '../components/MemberList';
 import { ServerStrip } from '../components/ServerRail';
 import { HOME, useApp } from '../store/app';
-import { WidgetCard } from './Mural';
+import { WidgetCard } from './Card';
 import { WORKSHOP_ENABLED, useActiveConfig, workshopPrefs } from './store';
 import type { ThemeScope } from './theme';
 import { WidgetBody } from './widgets';
