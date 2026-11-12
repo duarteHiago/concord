@@ -1,7 +1,7 @@
 // Janela "Gravar a sala": escolher o que gravar e onde salvar. O aviso de consentimento fica bem à vista.
 import { Circle, FolderOpen, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { canPickFolder, type RecordMode } from '../lib/callRecorder';
+import { canPickFolder, canUseTempStorage, type RecordMode } from '../lib/callRecorder';
 import { VIDEO_QUALITY, canRecordVideo, type VideoQuality } from '../lib/callVideo';
 import { pickRecordingFolder, useRecording } from '../store/recording';
 import { Button, Toggle, cx } from './ui';
@@ -21,8 +21,8 @@ export function RecordDialog() {
   const [streamAudio, setStreamAudio] = useState(true);
   const [dir, setDir] = useState<FileSystemDirectoryHandle | null>(null);
   const [video, setVideo] = useState<VideoQuality | null>(null);
-  // vídeo pesa muito para ficar na memória até o fim: só gravando direto numa pasta
-  const videoOk = canRecordVideo() && canPickFolder();
+  // vídeo pesa muito para ficar na memória até o fim: grava no disco (pasta escolhida ou a do navegador)
+  const videoOk = canRecordVideo() && (canPickFolder() || canUseTempStorage());
   const folders = canPickFolder();
 
   useEffect(() => {
@@ -87,7 +87,7 @@ export function RecordDialog() {
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-semibold">Gravar o vídeo da sala</span>
               <span className="block text-xs text-fg-muted">
-                {videoOk ? 'A tela transmitida e as câmeras, com todas as vozes, num arquivo de vídeo.' : 'O vídeo precisa do Chrome, do Edge ou do app do Concord (grava direto numa pasta).'}
+                {videoOk ? 'A tela transmitida e as câmeras, com todas as vozes, num arquivo de vídeo.' : 'Este navegador não consegue gravar vídeo. Use o Chrome, o Edge, o Firefox ou o app do Concord.'}
               </span>
             </span>
             <Toggle checked={!!video} disabled={!videoOk} onChange={(on) => setVideo(on ? '1080p30' : null)} />
@@ -124,7 +124,7 @@ export function RecordDialog() {
               </Button>
             </div>
           ) : (
-            <p className="mt-1 text-xs text-fg-muted">Neste navegador os arquivos baixam quando você parar. No Chrome, no Edge ou no app do Concord dá para gravar direto numa pasta.</p>
+            <p className="mt-1 text-xs text-fg-muted">Os arquivos vão sendo guardados no seu computador enquanto grava e baixam quando você parar (vão para a pasta de downloads).</p>
           )}
         </div>
 
