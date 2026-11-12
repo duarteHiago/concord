@@ -25,103 +25,68 @@ const rand = (i: number, salt = 1) => {
 // ------------------------------------------------------------------ ícone animado
 
 export function RailEffect({ pack }: { pack: Pack }) {
+  // contorno de luz em gradiente girando (segue o arredondado do ícone), halo desfocado, reflexo que
+  // atravessa o ícone e um detalhe de cada pacote. Tudo em CSS (workshop.css), sem peso no app.
   return (
-    <span className="ws-rail ws-vars" style={packVars(pack)} aria-hidden="true">
-      <RailArt kind={pack.art} />
+    <span className={`ws-icon ws-icon-${pack.art} ws-vars`} style={packVars(pack)} aria-hidden="true">
+      <span className="ws-icon-halo" />
+      <span className="ws-icon-ring" />
+      <span className="ws-icon-sheen" />
+      <RailExtra kind={pack.art} />
     </span>
   );
 }
 
-function RailArt({ kind }: { kind: ArtKind }) {
+/** O detalhe que diferencia cada pacote no ícone. */
+function RailExtra({ kind }: { kind: ArtKind }) {
   switch (kind) {
     case 'runes':
+      // três faíscas de quatro pontas orbitando, cada uma piscando no seu tempo
       return (
-        <>
-          <span className="ws-rail-glow" />
-          <svg viewBox="0 0 58 58">
-            <g className="ws-spin">
-              <circle cx="29" cy="29" r="27.5" fill="none" stroke="var(--wa)" strokeWidth="1.4" strokeDasharray="5 3 1 3" />
-            </g>
-            <g className="ws-spin-rev">
-              {[0, 60, 120, 180, 240, 300].map((a) => (
-                <rect key={a} x="27.5" y="-0.5" width="3" height="3" fill="var(--wb)" transform={`rotate(${a} 29 29) rotate(45 29 1)`} />
-              ))}
-            </g>
-          </svg>
-        </>
+        <span className="ws-icon-orbit">
+          {[0, 120, 240].map((a, i) => (
+            <span key={a} className="ws-icon-spark" style={{ transform: `rotate(${a}deg) translateY(-31px)`, animationDelay: `${i * 0.5}s` }} />
+          ))}
+        </span>
       );
     case 'scan':
       return (
         <>
-          <svg viewBox="0 0 58 58">
-            {[
-              'M2 12 V2 H12',
-              'M46 2 H56 V12',
-              'M56 46 V56 H46',
-              'M12 56 H2 V46',
-            ].map((d) => (
-              <path key={d} d={d} fill="none" stroke="var(--wa)" strokeWidth="2.4" strokeLinecap="square" />
-            ))}
-          </svg>
-          <span className="ws-scanline" />
+          {['tl', 'tr', 'br', 'bl'].map((c) => (
+            <span key={c} className={`ws-icon-corner ws-icon-corner-${c}`} />
+          ))}
         </>
       );
     case 'steam':
       return (
         <>
-          <span className="ws-steam" />
-          {[0, 1, 2].map((i) => (
-            <span key={i} className={`ws-mote ${i % 2 ? 'b' : ''}`} style={{ left: `${30 + i * 20}%`, top: 2, animationDelay: `${i * 0.8}s`, width: 5, height: 5 }} />
+          {[0, 1].map((i) => (
+            <span key={i} className="ws-icon-bubble" style={{ left: `${38 + i * 26}%`, animationDelay: `${i * 1.6}s` }} />
           ))}
         </>
       );
     case 'pixel':
       return (
         <>
-          <span className="ws-pixel-border" />
-          {[
-            [0, 0],
-            [1, 0],
-            [0, 1],
-            [1, 1],
-          ].map(([x, y], i) => (
-            <span
-              key={i}
-              style={{
-                position: 'absolute',
-                width: 5,
-                height: 5,
-                [x ? 'right' : 'left']: 0,
-                [y ? 'bottom' : 'top']: 0,
-                background: i % 2 ? 'var(--wb)' : 'var(--wa)',
-                animation: `ws-blink 0.8s steps(1) ${i * 0.2}s infinite`,
-              }}
-            />
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} className={`ws-icon-px ws-icon-px-${i}`} />
           ))}
         </>
       );
     case 'embers':
       return (
         <>
-          <span className="ws-rail-glow" style={{ boxShadow: '0 6px 14px -2px var(--wg), 0 0 0 1.5px color-mix(in srgb, var(--wa) 70%, transparent)' }} />
-          {[0, 1, 2, 3, 4].map((i) => (
-            <span
-              key={i}
-              className={`ws-mote ${i === 2 ? 'b' : ''}`}
-              style={{ left: `${15 + rand(i) * 70}%`, bottom: 2, width: 3, height: 3, animationDelay: `${i * 0.5}s`, animationDuration: `${2 + rand(i, 2)}s` }}
-            />
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="ws-icon-ember" style={{ left: `${24 + i * 26}%`, animationDelay: `${i * 0.7}s`, animationDuration: `${1.8 + i * 0.4}s` }} />
           ))}
         </>
       );
     case 'orbit':
+      // cometa com cauda dando a volta no ícone
       return (
-        <svg viewBox="0 0 58 58">
-          <ellipse cx="29" cy="29" rx="28" ry="10" fill="none" stroke="color-mix(in srgb, var(--wa) 70%, transparent)" strokeWidth="1" transform="rotate(-20 29 29)" />
-          <g className="ws-spin" style={{ animationDuration: '4s' }}>
-            <circle cx="29" cy="1.5" r="3" fill="var(--wb)" style={{ filter: 'drop-shadow(0 0 3px var(--wb))' }} />
-          </g>
-          <circle cx="29" cy="29" r="27.5" fill="none" stroke="var(--wg)" strokeWidth="1" />
-        </svg>
+        <span className="ws-icon-orbit ws-icon-orbit-fast">
+          <span className="ws-icon-comet" />
+        </span>
       );
   }
 }
