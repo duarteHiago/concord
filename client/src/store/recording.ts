@@ -2,6 +2,7 @@
 // que todo mundo na sala vê) e os avisos de quando alguém começa ou para de gravar a sua sala.
 import { create } from 'zustand';
 import { CallRecorder, canPickFolder, canUseTempStorage, tempRecordingDir, type RecordMode } from '../lib/callRecorder';
+import { liveSources } from '../lib/callSources';
 import type { VideoQuality } from '../lib/callVideo';
 import { getSocket } from '../lib/socket';
 import { playSound } from '../lib/sounds';
@@ -22,14 +23,40 @@ interface RecordingStore {
   status: 'idle' | 'starting' | 'recording' | 'saving';
   startedAt: number | null;
   tracks: number;
+  /** gravando por fonte: dá para escolher e trocar as telas e câmeras no meio */
+  bySource: boolean;
+  /** fontes escolhidas ("<id>:screen", "<id>:camera") */
+  sources: string[];
+  toggleSource: (key: string) => void;
   openDialog: () => void;
   closeDialog: () => void;
-  start: (opts: { mode: RecordMode; streamAudio: boolean; dir: FileSystemDirectoryHandle | null; video: VideoQuality | null }) => Promise<void>;
+  start: (opts: { mode: RecordMode; streamAudio: boolean; dir: FileSystemDirectoryHandle | null; video: VideoQuality | null; sources: string[] | null }) => Promise<void>;
   stop: () => Promise<void>;
 }
 
 let recorder: CallRecorder | null = null;
 let ticker: ReturnType<typeof setInterval> | undefined;
+/** fontes que já apareceram nesta gravação (para avisar só das novas) */
+let knownSources = new Set<string>();
+
+/** As telas dos outros que a gravação precisa receber, mesmo sem você assistir. */
+const screensOf = (keys: string[], me: string) => keys.filter((k) => k.endsWith(':screen') && !k.startsWith(`${me}:`)).map((k) => k.slice(0, -':screen'.length));
+
+/** Durante a gravação por fonte: avisa quando alguém começa a transmitir ou liga a câmera. */
+function watchNewSources() {
+  const room = useVoice.getState().room;
+  const { bySource, sources } = useRecording.getState();
+  if (!room || !bySource) return;
+  for (const s of liveSources(room)) {
+    if (knownSources.has(s.key)) continue;
+    knownSources.add(s.key);
+    if (s.mine || sources.includes(s.key)) continue;
+    const { serverId } = useVoice.getState();
+    const m = serverId ? useApp.getState().details[serverId]?.members.find((x) => x.id === s.identity) : undefined;
+    const name = m ? memberName(m) : 'Alguém';
+    toast.info(`${name} ${s.kind === 'screen' ? 'começou a transmitir' : 'ligou a câmera'}. Para gravar também, marque em "Fontes" no painel da gravação.`);
+  }
+}
 
 /** Avisa o servidor (selo para todos). Sem confirmação, não grava: o aviso faz parte do consentimento. */
 function announce(recording: boolean): Promise<void> {
@@ -50,10 +77,20 @@ export const useRecording = create<RecordingStore>((set, get) => ({
   status: 'idle',
   startedAt: null,
   tracks: 0,
+  bySource: false,
+  sources: [],
+  toggleSource: (key) => {
+    if (!recorder?.bySource) return;
+    const cur = get().sources;
+    const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
+    set({ sources: next });
+    recorder.setSources(next);
+    useVoice.getState().setRecordingScreens(screensOf(next, useApp.getState().me?.id ?? ''));
+  },
   openDialog: () => set({ dialog: true }),
   closeDialog: () => set({ dialog: false }),
 
-  start: async ({ mode, streamAudio, dir, video }) => {
+  start: async ({ mode, streamAudio, dir, video, sources }) => {
     const voice = useVoice.getState();
     const room = voice.room;
     if (!room || !voice.serverId || !voice.channelId || get().status !== 'idle') return;
@@ -85,11 +122,19 @@ export const useRecording = create<RecordingStore>((set, get) => ({
           return { name: m ? memberName(m) : (room.remoteParticipants.get(id)?.name ?? 'Alguém'), color: m?.avatarColor ?? '#5865f2', avatarUrl: m?.avatarUrl ?? null };
         },
         video,
+        sources,
       }, ctx);
-      // vídeo: recebe todas as transmissões da sala, não só as que você está assistindo
-      if (video) useVoice.getState().setRecordingVideo(true);
-      set({ status: 'recording', startedAt: recorder.startedAt, dialog: false, tracks: recorder.trackCount });
-      ticker = setInterval(() => recorder && set({ tracks: recorder.trackCount }), 2000);
+      // por fonte: recebe só as telas escolhidas; vídeo da sala inteira (reserva): todas as transmissões
+      const bySource = recorder.bySource;
+      if (bySource) useVoice.getState().setRecordingScreens(screensOf(sources ?? [], app.me?.id ?? ''));
+      else if (video) useVoice.getState().setRecordingScreens('all');
+      knownSources = new Set(liveSources(room).map((s) => s.key));
+      set({ status: 'recording', startedAt: recorder.startedAt, dialog: false, tracks: recorder.trackCount, bySource, sources: bySource ? (sources ?? []) : [] });
+      ticker = setInterval(() => {
+        if (!recorder) return;
+        set({ tracks: recorder.trackCount });
+        watchNewSources();
+      }, 2000);
       playSound('recordStart');
       if (!dir) toast.info('Gravando. Os arquivos baixam quando você parar.');
     } catch (err) {
@@ -111,7 +156,7 @@ export const useRecording = create<RecordingStore>((set, get) => ({
     playSound('recordStop');
     try {
       const summary = await r.stop();
-      useVoice.getState().setRecordingVideo(false);
+      useVoice.getState().setRecordingScreens(null);
       const min = Math.max(1, Math.round(summary.seconds / 60));
       toast.success(
         summary.folder
@@ -121,8 +166,8 @@ export const useRecording = create<RecordingStore>((set, get) => ({
     } catch (err) {
       toast.error(`A gravação não terminou de salvar: ${(err as Error).message}`);
     } finally {
-      if (useVoice.getState().recordingVideo) useVoice.getState().setRecordingVideo(false);
-      set({ status: 'idle', startedAt: null, tracks: 0 });
+      if (useVoice.getState().recordingScreens) useVoice.getState().setRecordingScreens(null);
+      set({ status: 'idle', startedAt: null, tracks: 0, bySource: false, sources: [] });
     }
   },
 }));

@@ -110,9 +110,12 @@ interface VoiceStore {
   serverDeafened: boolean;
   speaking: Record<string, true>;
   watching: Record<string, true>;
-  /** gravando o vídeo da sala: recebe todas as transmissões, não só as que a pessoa assiste */
-  recordingVideo: boolean;
-  setRecordingVideo: (on: boolean) => void;
+  /**
+   * Telas que a gravação precisa receber mesmo sem a pessoa estar assistindo: 'all' (vídeo da sala inteira)
+   * ou as pessoas escolhidas. null: nenhuma.
+   */
+  recordingScreens: 'all' | string[] | null;
+  setRecordingScreens: (screens: 'all' | string[] | null) => void;
   focus: string | null;
   volumes: Record<string, number>;
   /** pessoas silenciadas só para mim (o áudio delas não toca aqui) */
@@ -376,7 +379,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
     for (const p of room.remoteParticipants.values()) {
       for (const pub of p.trackPublications.values()) {
         const isScreen = pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio;
-        const want = isScreen ? !!watching[p.identity] || get().recordingVideo : true;
+        const rec = get().recordingScreens;
+        const want = isScreen ? !!watching[p.identity] || rec === 'all' || (!!rec && rec.includes(p.identity)) : true;
         if (pub.isSubscribed !== want) pub.setSubscribed(want);
       }
     }
@@ -514,7 +518,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       ...(get().serverDeafened ? { serverDeafened: false, deafened: deafBeforeServer } : {}),
       speaking: {},
       watching: {},
-      recordingVideo: false,
+      recordingScreens: null,
       focus: null,
       shareCodec: null,
       codecRequests: [],
@@ -684,7 +688,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     serverDeafened: false,
     speaking: {},
     watching: {},
-    recordingVideo: false,
+    recordingScreens: null,
     focus: null,
     volumes: load('concord.volumes', {} as Record<string, number>),
     localMuted: load('concord.localMuted', {} as Record<string, true>),
@@ -946,8 +950,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
       bump();
     },
 
-    setRecordingVideo: (on) => {
-      set({ recordingVideo: on });
+    setRecordingScreens: (screens) => {
+      set({ recordingScreens: screens });
       syncSubscriptions();
     },
 

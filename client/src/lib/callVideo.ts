@@ -14,7 +14,7 @@ export type VideoQuality = '720p30' | '1080p30' | '1080p60';
 export const VIDEO_QUALITY: Record<VideoQuality, { w: number; h: number; fps: number; bps: number; label: string }> = {
   '720p30': { w: 1280, h: 720, fps: 30, bps: 4_000_000, label: '720p · 30 qps (leve)' },
   '1080p30': { w: 1920, h: 1080, fps: 30, bps: 7_000_000, label: '1080p · 30 qps' },
-  '1080p60': { w: 1920, h: 1080, fps: 60, bps: 11_000_000, label: '1080p · 60 qps (pesado)' },
+  '1080p60': { w: 1920, h: 1080, fps: 60, bps: 11_000_000, label: '1080p · 60 qps (pesa em quem joga)' },
 };
 
 /** Dá para gravar vídeo neste navegador? */
@@ -313,5 +313,179 @@ export class RoomVideo {
     g.textBaseline = 'middle';
     g.fillText(text, x + pad, top + h / 2, 600 * s);
     g.restore();
+  }
+}
+
+// ---------------------------------------------------------------- caminho leve (worker + placa de vídeo)
+
+declare class MediaStreamTrackProcessor<T> {
+  constructor(init: { track: MediaStreamTrack; maxBufferSize?: number });
+  readonly readable: ReadableStream<T>;
+}
+
+/**
+ * O navegador tem o caminho leve? (Chrome, Edge, app desktop). Ele tira o vídeo da linha da interface e codifica
+ * na placa de vídeo; sem ele, fica o `RoomVideo` (canvas + MediaRecorder), mais pesado.
+ */
+export const canRecordVideoFast = () =>
+  typeof window !== 'undefined' && 'MediaStreamTrackProcessor' in window && 'VideoEncoder' in window && 'AudioEncoder' in window && 'OffscreenCanvas' in window;
+
+/**
+ * Vídeo da sala pelo worker (ver recordWorker.ts). O app só entrega os quadros de cada tela/câmera e o áudio
+ * misturado; montar, codificar e empacotar acontece fora da interface. `onChunk` recebe o MP4 aos pedaços.
+ */
+export class FastRoomVideo {
+  private worker = new Worker(new URL('./recordWorker.ts', import.meta.url), { type: 'module' });
+  private stage = document.createElement('div');
+  private feeds = new Map<string, { detach: () => void }>();
+  private avatarsSent = new Set<string>();
+  private timers: ReturnType<typeof setInterval>[] = [];
+  private done: Promise<{ frames: number; dropped: number }>;
+  private q: (typeof VIDEO_QUALITY)[VideoQuality];
+  /** codificador escolhido (para mostrar e diagnosticar) */
+  info: { codec: string; hardware: string; audio: string | null } | null = null;
+
+  private constructor(
+    private room: Room,
+    quality: VideoQuality,
+    private personInfo: (identity: string) => PersonInfo,
+    onChunk: (data: Uint8Array, position: number) => void,
+    onError: (message: string) => void,
+  ) {
+    this.q = VIDEO_QUALITY[quality];
+    this.stage.setAttribute('aria-hidden', 'true');
+    this.stage.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;overflow:hidden;opacity:0;pointer-events:none;z-index:-1';
+    document.body.appendChild(this.stage);
+    let resolveDone!: (v: { frames: number; dropped: number }) => void;
+    this.done = new Promise((r) => (resolveDone = r));
+    this.worker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'chunk') onChunk(new Uint8Array(m.data), m.position);
+      else if (m.type === 'done') resolveDone({ frames: m.frames, dropped: m.dropped });
+      else if (m.type === 'error' && !m.fatal) onError(m.message);
+    };
+  }
+
+  /** Liga o worker e espera o codificador ficar pronto (falha: o caminho leve não serve neste PC). */
+  static async start(
+    room: Room,
+    quality: VideoQuality,
+    personInfo: (identity: string) => PersonInfo,
+    audioTrack: MediaStreamTrack,
+    onChunk: (data: Uint8Array, position: number) => void,
+    onError: (message: string) => void,
+  ): Promise<FastRoomVideo> {
+    const v = new FastRoomVideo(room, quality, personInfo, onChunk, onError);
+    const settings = audioTrack.getSettings();
+    await new Promise<void>((resolve, reject) => {
+      const onReady = (e: MessageEvent) => {
+        if (e.data.type === 'ready') {
+          v.info = { codec: e.data.codec, hardware: e.data.hardware, audio: e.data.audio };
+          v.worker.removeEventListener('message', onReady);
+          resolve();
+        } else if (e.data.type === 'error' && e.data.fatal) {
+          v.worker.removeEventListener('message', onReady);
+          reject(new Error(e.data.message));
+        }
+      };
+      v.worker.addEventListener('message', onReady);
+      v.worker.postMessage({
+        type: 'init',
+        width: v.q.w,
+        height: v.q.h,
+        fps: v.q.fps,
+        bitrate: v.q.bps,
+        audio: { sampleRate: settings.sampleRate ?? 48000, channels: settings.channelCount ?? 2 },
+      });
+    }).catch((err) => {
+      v.dispose();
+      throw err;
+    });
+    const audio = new MediaStreamTrackProcessor<AudioData>({ track: audioTrack });
+    v.worker.postMessage({ type: 'audio', readable: audio.readable }, [audio.readable as unknown as Transferable]);
+    v.sync();
+    v.scene();
+    v.timers.push(setInterval(() => v.sync(), 1000));
+    v.timers.push(setInterval(() => v.scene(), 250));
+    return v;
+  }
+
+  private participants(): Participant[] {
+    return [this.room.localParticipant, ...this.room.remoteParticipants.values()];
+  }
+
+  private sync() {
+    const live = new Set<string>();
+    for (const p of this.participants()) {
+      for (const source of [Track.Source.Camera, Track.Source.ScreenShare]) {
+        const pub = p.getTrackPublication(source);
+        const track = pub?.track;
+        const mst = track?.mediaStreamTrack;
+        if (!track || !mst || pub.isMuted || mst.readyState !== 'live') continue;
+        live.add(mst.id);
+        if (this.feeds.has(mst.id)) continue;
+        // os quadros vão direto para o worker, sem passar pela página
+        const proc = new MediaStreamTrackProcessor<VideoFrame>({ track: mst, maxBufferSize: 2 });
+        this.worker.postMessage(
+          { type: 'source', id: mst.id, identity: p.identity, kind: source === Track.Source.ScreenShare ? 'screen' : 'camera', readable: proc.readable },
+          [proc.readable as unknown as Transferable],
+        );
+        let detach = () => {};
+        if (p !== this.room.localParticipant) {
+          // só para o LiveKit (adaptiveStream) ver o vídeo "na tela" e mandar a qualidade alta
+          const el = document.createElement('video');
+          el.muted = true;
+          el.style.cssText = `position:absolute;left:0;top:0;width:${source === Track.Source.ScreenShare ? this.q.w : Math.round(this.q.w / 3)}px;height:auto`;
+          this.stage.appendChild(el);
+          track.attach(el);
+          detach = () => {
+            track.detach(el);
+            el.remove();
+          };
+        }
+        this.feeds.set(mst.id, { detach });
+      }
+    }
+    for (const [id, f] of this.feeds) {
+      if (live.has(id)) continue;
+      this.worker.postMessage({ type: 'remove', id });
+      f.detach();
+      this.feeds.delete(id);
+    }
+  }
+
+  private scene() {
+    const people = this.participants().map((p) => {
+      const i = this.personInfo(p.identity);
+      return { identity: p.identity, name: i.name, color: i.color, speaking: p.isSpeaking };
+    });
+    this.worker.postMessage({ type: 'scene', people });
+    // fotos: uma vez por pessoa, como ImageBitmap (o worker não carrega imagens sozinho)
+    for (const p of this.participants()) {
+      const url = this.personInfo(p.identity).avatarUrl;
+      if (!url || this.avatarsSent.has(p.identity)) continue;
+      this.avatarsSent.add(p.identity);
+      fetch(url)
+        .then((r) => r.blob())
+        .then((b) => createImageBitmap(b, { resizeWidth: 128, resizeHeight: 128 }))
+        .then((bmp) => this.worker.postMessage({ type: 'scene', people, avatars: [[p.identity, bmp]] }, [bmp]))
+        .catch(() => {});
+    }
+  }
+
+  async stop(): Promise<{ frames: number; dropped: number }> {
+    this.timers.forEach(clearInterval);
+    this.worker.postMessage({ type: 'stop' });
+    const result = await Promise.race([this.done, new Promise<{ frames: number; dropped: number }>((r) => setTimeout(() => r({ frames: 0, dropped: 0 }), 15_000))]);
+    this.dispose();
+    return result;
+  }
+
+  private dispose() {
+    this.timers.forEach(clearInterval);
+    for (const f of this.feeds.values()) f.detach();
+    this.feeds.clear();
+    this.stage.remove();
+    this.worker.terminate();
   }
 }
