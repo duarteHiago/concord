@@ -1,7 +1,7 @@
 {
   "name": "concord-desktop",
   "productName": "Concord",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Concord para desktop: transmissão de tela a 60 fps com áudio sem retorno",
   "author": "duarteHiago",
   "license": "MIT",
