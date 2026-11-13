@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.mjs\"",
     "release:draft": "node scripts/release-draft.mjs"
   },
   "dependencies": {
