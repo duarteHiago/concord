@@ -23,7 +23,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { closePopout } from '../lib/popout';
-import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, updateNoiseStrength, EFFECTS, updateGate, micLevels, voiceNotices, type EffectId, type GateSettings, type MicLevel, type NoiseMode } from '../lib/voiceEffects';
+import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, NOISE_LABEL, updateNoiseStrength, EFFECTS, updateGate, micLevels, voiceNotices, type ActiveNotice, type EffectId, type GateSettings, type MicLevel, type NoiseMode } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { diagnoseH265, h265Support, type H265Diagnosis } from '../lib/h265';
@@ -123,6 +123,8 @@ interface VoiceStore {
   streamVolumes: Record<string, number>;
   shareSettings: ShareSettings;
   audioSettings: AudioSettings;
+  /** supressão de ruído valendo agora no microfone (pode diferir da escolhida se o modelo não carregou); null = sem processador */
+  activeNoise: NoiseMode | null;
   tick: number;
   /** codec em que a minha tela está saindo agora ('h264-backup': era H.265 e o servidor passou todos para H.264) */
   shareCodec: VideoCodec | 'h264-backup' | null;
@@ -170,13 +172,28 @@ function save(key: string, value: unknown) {
   }
 }
 
-// a IA máxima não carregou (rede, navegador antigo, ou um reinício do microfone no meio de uma
-// falha passageira — ver o "cooldown" em voiceEffects.ts): o processamento já caiu para a IA leve
-// sozinho. Só avisa; não grava isso como preferência (a pessoa continua com a IA máxima escolhida
-// em Configurações, e o próprio voiceEffects.ts volta a tentar de novo sozinho depois de um tempo —
-// gravar a troca aqui fazia a pessoa ter que voltar em Configurações toda vez pra "destravar").
-voiceNotices.addEventListener('fallback', () => {
-  toast.info('A supressão máxima (DeepFilterNet 3) não carregou agora; usando a IA leve (GTCRN) por alguns minutos.');
+// O que está valendo de fato no microfone. Se o modelo escolhido não carregou (rede, navegador antigo, ou um
+// reinício do microfone no meio de uma falha passageira — ver o "cooldown" em voiceEffects.ts), o processamento
+// cai para o seguinte sozinho e isso aparece em Configurações ("valendo agora: ..."). Não grava a troca como
+// preferência: a pessoa continua com o modelo que escolheu, e o voiceEffects volta a tentar depois de um tempo.
+voiceNotices.addEventListener('active', (e) => {
+  const { wanted, active, reason } = (e as CustomEvent<ActiveNotice>).detail;
+  const prev = useVoice.getState().activeNoise;
+  useVoice.setState({ activeNoise: active });
+  if (active !== wanted && prev !== active) {
+    toast.info(`A supressão "${NOISE_LABEL[wanted]}" não carregou agora${reason ? ` (${reason})` : ''}; usando "${NOISE_LABEL[active]}" por alguns minutos.`);
+  }
+});
+// o vigia percebeu que o som entrava e não saía (ou um modelo quebrou) e remontou a cadeia
+voiceNotices.addEventListener('rebuilt', (e) => {
+  const { reason } = (e as CustomEvent<{ reason: string; count: number }>).detail;
+  toast.info(`O processamento do microfone foi remontado (${reason}).`);
+});
+voiceNotices.addEventListener('stuck', () => {
+  toast.error('O som do microfone não está saindo e remontar não resolveu. Desligue e ligue o microfone; se continuar, troque a supressão de ruído em Configurações.');
+});
+voiceNotices.addEventListener('suspended', () => {
+  toast.info('O navegador pausou o áudio do microfone. Clique em qualquer lugar para voltar.');
 });
 
 const DEFAULT_SHARE: ShareSettings = { presetId: '1080p', fps: 60, audio: true, mode: 'motion', codec: 'auto', allowFallback: true, v: 2 };
@@ -650,7 +667,16 @@ export const useVoice = create<VoiceStore>((set, get) => {
     }
   }
 
-  async function enableMic(on: boolean) {
+  // ligar/desligar o microfone é uma coisa de cada vez: trocar uma configuração dispara "desliga e liga", e
+  // se um clique no botão do microfone caísse no meio, a faixa podia ficar publicada sem processamento
+  let micQueue: Promise<unknown> = Promise.resolve();
+  function enableMic(on: boolean) {
+    const next = micQueue.then(() => enableMicNow(on), () => enableMicNow(on));
+    micQueue = next.catch(() => {});
+    return next;
+  }
+
+  async function enableMicNow(on: boolean) {
     const room = get().room;
     if (!room) return;
     const { inputId, noiseMode, echoCancellation, autoGain } = get().audioSettings;
@@ -658,8 +684,10 @@ export const useVoice = create<VoiceStore>((set, get) => {
       on,
       {
         deviceId: inputId,
-        // voz é sempre mono: alguns fones/placas se apresentam como estéreo com um lado vazio
-        channelCount: 1,
+        // a voz sai sempre em mono, mas a captura vem como o dispositivo manda: se um fone/placa USB se
+        // apresenta em estéreo (às vezes com um lado vazio ou em oposição de fase), é o processador que junta
+        // os canais sem cancelar a voz (ver o worklet "mono" em voiceEffects). Pedir mono aqui deixava o
+        // navegador somar os canais, e com fase invertida a voz sumia.
         // com a IA ligada, o filtro do navegador fica desligado (senão a voz é processada duas vezes)
         noiseSuppression: noiseMode === 'browser',
         echoCancellation,
@@ -672,6 +700,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     );
     syncLocalFlags();
     if (on) await applyCurrentEffect();
+    else set({ activeNoise: null });
   }
 
   return {
@@ -706,6 +735,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     streamVolumes: load('concord.streamVolumes', {} as Record<string, number>),
     shareSettings: loadShareSettings(),
     audioSettings: loadAudioSettings(),
+    activeNoise: null,
     tick: 0,
     shareCodec: null,
     codecRequests: [],

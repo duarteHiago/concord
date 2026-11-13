@@ -7,11 +7,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "node --test test/",
     "release:draft": "node scripts/release-draft.mjs"
   },
   "dependencies": {
     "@sapphi-red/web-noise-suppressor": "0.4.1",
-    "deepfilternet3-noise-filter": "1.3.0",
     "livekit-client": "^2.15.0",
     "lucide-react": "^1.64.0",
     "mediabunny": "1.63.0",

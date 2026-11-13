@@ -38,6 +38,11 @@ jobs:
         working-directory: client
         run: npm ci --no-audit --no-fund && npm run build
 
+      # os worklets do microfone (mono, medidor, DeepFilterNet3 com o modelo de verdade) rodam em Node
+      - name: Cliente — testes (processamento do microfone)
+        working-directory: client
+        run: npm test
+
       - name: Imagem Docker
         run: docker build -t concord-app:test .
 
