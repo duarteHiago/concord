@@ -7,3 +7,8 @@ data-dev/
 client/build-commit.txt
 *.tgz
 deploy/monitoring/prometheus.yml
+
+# bancada da supressão de ruído: áudio e resultados ficam fora do git
+tools/denoise-bench/data/
+tools/denoise-bench/results/
+tools/denoise-bench/node_modules/
