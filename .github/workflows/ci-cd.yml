@@ -42,6 +42,11 @@ jobs:
         working-directory: client
         run: npm ci --no-audit --no-fund && npm run build
 
+      # os worklets do microfone (mono, medidor, DeepFilterNet3 com o modelo de verdade) rodam em Node
+      - name: Cliente — testes (processamento do microfone)
+        working-directory: client
+        run: npm test
+
       - name: Imagem Docker
         run: docker build -t concord-app:test .
 
@@ -131,7 +136,7 @@ jobs:
             && cd /opt/concord && rm -rf client server shared desktop tests examples docs \
             && tar -xzf /tmp/concord-deploy.tgz -C /opt/concord \
             && cd /opt/concord && chmod +x deploy/setup.sh \
-            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENATO_COURTESY='$MECENATO_COURTESY' MECENAS='${{ vars.MECENAS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} TURNSTILE_SITE_KEY=${{ vars.TURNSTILE_SITE_KEY }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
+            && MODE=${{ vars.DEPLOY_MODE }} DOMAIN=${{ vars.DEPLOY_DOMAIN }} COMMUNITY_INVITE=${{ vars.COMMUNITY_INVITE }} ADMIN_USERS='${{ vars.ADMIN_USERS }}' MECENATO_COURTESY='$MECENATO_COURTESY' MECENAS='${{ vars.MECENAS }}' RECORDING_SERVERS='${{ vars.RECORDING_SERVERS }}' GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }} MAIL_FROM=${{ vars.MAIL_FROM }} TURNSTILE_SITE_KEY=${{ vars.TURNSTILE_SITE_KEY }} BACKUP_S3_ENDPOINT=${{ vars.BACKUP_S3_ENDPOINT }} BACKUP_S3_BUCKET=${{ vars.BACKUP_S3_BUCKET }} ./deploy/setup.sh"
 
       # Verifica de dentro da VPS: a Cloudflare costuma bloquear (403) os runners do GitHub.
       - name: Verificar saúde

@@ -232,10 +232,11 @@ app.on('second-instance', () => {
 // ------------------------------------------------------------------ permissões e captura de tela
 
 function setupSession() {
-  const allowed = new Set(['media', 'display-capture', 'notifications', 'fullscreen', 'clipboard-sanitized-write']);
+  // fileSystem: a pasta que a pessoa escolhe para salvar a gravação da sala (showDirectoryPicker)
+  const allowed = new Set(['media', 'display-capture', 'notifications', 'fullscreen', 'clipboard-sanitized-write', 'fileSystem']);
   const fromServer = (origin) => {
     try {
-      return new URL(origin).origin === serverOrigin();
+      return new URL(String(origin).replace(/^blob:/, '')).origin === serverOrigin();
     } catch {
       return false;
     }
@@ -244,6 +245,20 @@ function setupSession() {
     callback(allowed.has(permission) && fromServer(details.requestingUrl || wc.getURL()));
   });
   session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => allowed.has(permission) && fromServer(origin));
+
+  // Gravação da sala sem pasta escolhida: os arquivos vão direto para Downloads\Concord, sem a janela de
+  // "Salvar como" para cada um.
+  session.defaultSession.on('will-download', (_event, item) => {
+    const name = item.getFilename();
+    if (!fromServer(item.getURL()) || !name.startsWith('Concord - ')) return;
+    const dir = path.join(app.getPath('downloads'), 'Concord');
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      item.setSavePath(path.join(dir, path.basename(name)));
+    } catch {
+      // sem a pasta: deixa o Electron perguntar onde salvar
+    }
+  });
 
   // A página escolhe a fonte no seletor do próprio Concord (concord:select-source) e
   // só depois chama getDisplayMedia; aqui entregamos exatamente a fonte escolhida.

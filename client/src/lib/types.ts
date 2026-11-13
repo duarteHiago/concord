@@ -376,6 +376,8 @@ export interface ServerDetail {
   members: Member[];
   voiceStates: VoiceState[];
   jams?: Jam[];
+  /** gravar a sala está liberado neste servidor (enquanto a gravação está em teste na produção) */
+  recording?: boolean;
   online: string[];
 }
 

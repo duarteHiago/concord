@@ -24,6 +24,8 @@ services:
       STAGING: ${STAGING:-false}
       STAGING_USERS: ${STAGING_USERS:-}
       MECENAS: ${MECENAS:-}
+      # gravar a sala: só nestes servidores (ids separados por vírgula); vazio = em todos
+      RECORDING_SERVERS: ${RECORDING_SERVERS:-}
       PUBLIC_URL: https://${DOMAIN}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

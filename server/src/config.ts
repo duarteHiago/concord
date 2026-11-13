@@ -30,6 +30,14 @@ export const config = {
   // servidor cujo cargo "Administrador" vira autoridade da instalação inteira: dá o selo de verificado
   // em qualquer servidor ou pessoa (não só no próprio servidor). Vazio desliga a função.
   authorityServerId: (env.AUTHORITY_SERVER_ID ?? '').trim(),
+  /**
+   * Servidores onde dá para gravar a sala (ids separados por vírgula). Vazio: em todos (o Concord de testes).
+   * Na produção, enquanto a gravação está em teste, só os servidores da lista.
+   */
+  recordingServers: (() => {
+    const ids = (env.RECORDING_SERVERS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    return ids.length && !ids.includes('*') ? new Set(ids) : null;
+  })(),
   // quem entra no portal da equipe (/admin): nomes de usuário separados por vírgula. Vazio desliga o portal.
   /** Mecenato de cortesia por nome de usuário (além do que a equipe libera no portal /admin) */
   mecenatoCourtesy: new Set(

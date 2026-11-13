@@ -66,6 +66,13 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: { cacheName: 'user-uploads', expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 } },
           },
+          {
+            // modelos de supressão de ruído (o DeepFilterNet3 tem 24 MB): baixa uma vez e fica; sem isso cada
+            // reinício do microfone podia depender da rede, e um dia de rede ruim trocava o modelo sem avisar
+            urlPattern: /\/vendor\/.*/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'noise-models', expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 60 * 60 }, cacheableResponse: { statuses: [0, 200] } },
+          },
         ],
       },
       manifest: false,

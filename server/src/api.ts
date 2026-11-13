@@ -1451,6 +1451,8 @@ api.get('/servers/:id', (req, res) => {
     members,
     voiceStates: voiceStatesFor(server.id),
     jams: jamsFor(server.id),
+    // gravar a sala: liberado neste servidor? (ver config.recordingServers)
+    recording: !config.recordingServers || config.recordingServers.has(server.id),
     online: onlineUserIds().filter((id) => members.some((m) => m.id === id)),
   });
 });

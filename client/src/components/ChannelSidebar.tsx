@@ -388,7 +388,7 @@ function VoicePanel() {
   const channel = detail?.channels.find((c) => c.id === channelId);
   const recording = recStatus === 'recording';
   // gravar: com permissão no canal e num navegador que grava áudio (o celular fica de fora por enquanto)
-  const canRec = !mobile && canRecord() && !!channel && has(channel.permissions, P.RECORD_CALLS);
+  const canRec = !mobile && canRecord() && !!channel && detail?.recording !== false && has(channel.permissions, P.RECORD_CALLS);
 
   const round = 'flex h-9 w-9 items-center justify-center rounded-full transition-colors';
   return (

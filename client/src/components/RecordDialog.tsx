@@ -3,6 +3,7 @@ import { Circle, FolderOpen, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { canPickFolder, canUseTempStorage, type RecordMode } from '../lib/callRecorder';
 import { canRecordSources, liveSources } from '../lib/callSources';
+import { loadFolder, saveFolder } from '../lib/savedFolder';
 import { VIDEO_QUALITY, canRecordVideo, type VideoQuality } from '../lib/callVideo';
 import { pickRecordingFolder, useRecording } from '../store/recording';
 import { useVoice } from '../store/voice';
@@ -36,6 +37,16 @@ export function RecordDialog() {
   const videoOk = canRecordVideo() && (canPickFolder() || canUseTempStorage());
   const folders = canPickFolder();
 
+  // a pasta da última gravação já vem escolhida
+  useEffect(() => {
+    if (!open || !folders) return;
+    let alive = true;
+    void loadFolder().then((d) => alive && d && setDir(d));
+    return () => {
+      alive = false;
+    };
+  }, [open, folders]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
@@ -47,7 +58,10 @@ export function RecordDialog() {
 
   const choose = async () => {
     const d = await pickRecordingFolder();
-    if (d && d !== 'cancelled') setDir(d);
+    if (d && d !== 'cancelled') {
+      setDir(d);
+      void saveFolder(d);
+    }
   };
 
   return (
@@ -141,6 +155,18 @@ export function RecordDialog() {
           {folders ? (
             <div className="mt-2 flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{dir ? `Pasta: ${dir.name} (uma subpasta por gravação)` : 'Escolha uma pasta, ou deixe assim: os arquivos baixam quando você parar.'}</span>
+              {dir && (
+                <Button
+                  variant="ghost"
+                  className="h-8 shrink-0 px-2 text-xs"
+                  onClick={() => {
+                    setDir(null);
+                    void saveFolder(null);
+                  }}
+                >
+                  Não usar
+                </Button>
+              )}
               <Button variant="secondary" className="h-8 shrink-0 px-3 text-xs" onClick={() => void choose()}>
                 <FolderOpen size={14} />
                 {dir ? 'Trocar' : 'Escolher pasta'}
