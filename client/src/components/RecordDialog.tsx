@@ -2,8 +2,11 @@
 import { Circle, FolderOpen, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { canPickFolder, canUseTempStorage, type RecordMode } from '../lib/callRecorder';
+import { canRecordSources, liveSources } from '../lib/callSources';
 import { VIDEO_QUALITY, canRecordVideo, type VideoQuality } from '../lib/callVideo';
 import { pickRecordingFolder, useRecording } from '../store/recording';
+import { useVoice } from '../store/voice';
+import { SourcePicker, defaultSources } from './RecordSources';
 import { Button, Toggle, cx } from './ui';
 
 const MODES: { id: RecordMode; title: string; hint: string }[] = [
@@ -21,6 +24,14 @@ export function RecordDialog() {
   const [streamAudio, setStreamAudio] = useState(true);
   const [dir, setDir] = useState<FileSystemDirectoryHandle | null>(null);
   const [video, setVideo] = useState<VideoQuality | null>(null);
+  // por fonte (Chrome, Edge, app): a pessoa escolhe quais telas e câmeras gravar, cada uma num arquivo
+  const bySource = canRecordSources();
+  const [sources, setSources] = useState<string[]>([]);
+  const turnVideo = (on: boolean) => {
+    setVideo(on ? '720p30' : null);
+    const { room, watching } = useVoice.getState();
+    if (on && bySource && room) setSources(defaultSources(liveSources(room), watching));
+  };
   // vídeo pesa muito para ficar na memória até o fim: grava no disco (pasta escolhida ou a do navegador)
   const videoOk = canRecordVideo() && (canPickFolder() || canUseTempStorage());
   const folders = canPickFolder();
@@ -41,7 +52,7 @@ export function RecordDialog() {
 
   return (
     <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-black/60 p-4" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div role="dialog" aria-label="Gravar a sala" className="w-full max-w-md animate-pop-in rounded-[28px] bg-surface-2 p-6 shadow-2xl ring-1 ring-line">
+      <div role="dialog" aria-label="Gravar a sala" className="max-h-full w-full max-w-md animate-pop-in overflow-y-auto rounded-[28px] bg-surface-2 p-6 shadow-2xl ring-1 ring-line">
         <div className="mb-4 flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger/15 text-danger">
             <Circle size={18} fill="currentColor" />
@@ -85,14 +96,26 @@ export function RecordDialog() {
         <div className="mt-3 rounded-2xl p-3 ring-1 ring-line">
           <label className="flex items-center gap-3">
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold">Gravar o vídeo da sala</span>
+              <span className="block text-sm font-semibold">{bySource ? 'Gravar telas e câmeras' : 'Gravar o vídeo da sala'}</span>
               <span className="block text-xs text-fg-muted">
-                {videoOk ? 'A tela transmitida e as câmeras, com todas as vozes, num arquivo de vídeo.' : 'Este navegador não consegue gravar vídeo. Use o Chrome, o Edge, o Firefox ou o app do Concord.'}
+                {!videoOk
+                  ? 'Este navegador não consegue gravar vídeo. Use o Chrome, o Edge, o Firefox ou o app do Concord.'
+                  : bySource
+                    ? 'Cada tela ou câmera escolhida vira um vídeo, na qualidade em que chega, com todas as vozes.'
+                    : 'A tela transmitida e as câmeras, com todas as vozes, num arquivo de vídeo.'}
               </span>
             </span>
-            <Toggle checked={!!video} disabled={!videoOk} onChange={(on) => setVideo(on ? '720p30' : null)} />
+            <Toggle checked={!!video} disabled={!videoOk} onChange={turnVideo} />
           </label>
-          {video && (
+          {video && bySource && (
+            <div className="mt-2.5">
+              <SourcePicker selected={sources} onToggle={(k) => setSources((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]))} />
+              <p className="mt-2 text-[11px] text-fg-subtle">
+                Dá para marcar e desmarcar durante a gravação, no painel da sala. Quanto menos fontes, mais leve: cada uma usa a placa de vídeo e, se for de outra pessoa, internet.
+              </p>
+            </div>
+          )}
+          {video && !bySource && (
             <>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {(Object.keys(VIDEO_QUALITY) as VideoQuality[]).map((q) => (
@@ -143,7 +166,7 @@ export function RecordDialog() {
           <Button
             variant="danger"
             loading={status === 'starting'}
-            onClick={() => void start({ mode, streamAudio, dir, video })}
+            onClick={() => void start({ mode, streamAudio, dir, video, sources: video && bySource ? sources : null })}
           >
             <Circle size={12} fill="currentColor" />
             Começar a gravar
