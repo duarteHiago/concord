@@ -6,6 +6,7 @@
 // enche a memória e, se o app fechar no meio, perde no máximo os últimos segundos.
 import { Track, type Room } from 'livekit-client';
 import { FastRoomVideo, RoomVideo, canRecordVideoFast, type PersonInfo, type VideoQuality } from './callVideo';
+import { SourceRecorder, canRecordSources, type LiveSource } from './callSources';
 import { fixMp4Duration } from './mp4Duration';
 
 export type RecordMode = 'mixed' | 'tracks' | 'both';
@@ -26,6 +27,11 @@ export interface RecordOptions {
   myIdentity: string;
   /** gravar também o vídeo da sala (tela e câmeras), com o áudio misturado */
   video: VideoQuality | null;
+  /**
+   * Gravar por fonte: as telas e câmeras escolhidas ("<id>:screen", "<id>:camera"), cada uma num arquivo.
+   * Quando o navegador suporta, vale no lugar de `video` (que fica como reserva).
+   */
+  sources: string[] | null;
 }
 
 export interface RecordingSummary {
@@ -240,6 +246,8 @@ export class CallRecorder {
   /** codificador do vídeo (caminho leve): para mostrar e diagnosticar */
   videoInfo: { codec: string; hardware: string; audio: string | null } | null = null;
   private roomVideo: RoomVideo | null = null;
+  private sourceRec: SourceRecorder | null = null;
+  private sourceSinks: Sink[] = [];
   private people = new Map<string, Person>();
   /** fonte ligada por id da faixa do navegador (MediaStreamTrack): quando a faixa muda, religa */
   private sources = new Map<string, { node: MediaStreamAudioSourceNode; identity: string }>();
@@ -281,7 +289,25 @@ export class CallRecorder {
       r.mixLane = r.lane(dest.stream, `sala-completa.${r.format.ext}`, r.format.mime, null);
       r.mixLane.dest = dest;
     }
-    if (opts.video) {
+    if (opts.sources && canRecordSources()) {
+      // por fonte: cada tela ou câmera escolhida num arquivo, com as vozes misturadas
+      const audio = r.ctx.createMediaStreamDestination();
+      r.compressor.connect(audio);
+      const label = (s: LiveSource) => `${s.kind === 'screen' ? 'tela' : 'camera'} - ${safeName(opts.nameOf(s.identity))}`;
+      r.sourceRec = await SourceRecorder.start(
+        room,
+        r.startedAt,
+        audio.stream.getAudioTracks()[0],
+        opts.sources,
+        (name) => {
+          const sink = r.folder ? fileSink(r.folder, name) : downloadSink(name, 'video/mp4');
+          r.sourceSinks.push(sink);
+          return sink;
+        },
+        label,
+        (message) => console.warn('[gravação]', message),
+      );
+    } else if (opts.video) {
       // vídeo da sala + a mistura de todas as vozes, num arquivo só. Primeiro o caminho leve (worker + placa de
       // vídeo); sem ele, o canvas com MediaRecorder.
       const audio = r.ctx.createMediaStreamDestination();
@@ -394,7 +420,7 @@ export class CallRecorder {
     for (const { identity, track } of live) {
       if (this.sources.has(track.id)) continue;
       const node = this.ctx.createMediaStreamSource(new MediaStream([track]));
-      if (this.mixLane || this.videoLane) node.connect(this.mix);
+      if (this.mixLane || this.videoLane || this.sourceRec) node.connect(this.mix);
       const lane = this.person(identity).lane;
       if (lane?.dest) node.connect(lane.dest);
       this.sources.set(track.id, { node, identity });
@@ -406,11 +432,21 @@ export class CallRecorder {
   }
 
   private flushAll() {
-    return Promise.all(this.lanes().map((l) => l.sink.flush()));
+    return Promise.all([...this.lanes().map((l) => l.sink), ...this.sourceSinks].map((s) => s.flush()));
   }
 
   get trackCount() {
-    return this.lanes().length;
+    return this.lanes().length + (this.sourceRec?.files.filter((f) => f.startMs !== null).length ?? 0);
+  }
+
+  /** Gravando por fonte (dá para escolher e trocar as fontes)? */
+  get bySource() {
+    return !!this.sourceRec;
+  }
+
+  /** Troca as fontes gravadas no meio da gravação. */
+  setSources(keys: string[]) {
+    this.sourceRec?.setWanted(keys);
   }
 
   async stop(): Promise<RecordingSummary> {
@@ -419,10 +455,14 @@ export class CallRecorder {
     // espera o último pedaço de cada gravador antes de fechar os arquivos
     await Promise.all(lanes.map((l) => l.stop()));
     this.roomVideo?.stop();
-    const finals = await Promise.all(lanes.map((l) => l.sink.finish()));
+    await this.sourceRec?.stop();
+    // fontes que chegaram a gravar alguma coisa (uma tela escolhida que nunca transmitiu não vira arquivo)
+    const recorded = this.sourceRec?.files.filter((f) => f.startMs !== null) ?? [];
+    const sinks = [...lanes.map((l) => l.sink), ...this.sourceSinks.filter((s) => recorded.some((f) => f.name === s.name))];
+    const finals = await Promise.all(sinks.map((s) => s.finish()));
     for (const s of this.sources.values()) s.node.disconnect();
     const seconds = Math.round((Date.now() - this.startedAt) / 1000);
-    const files = lanes.map((l) => l.sink.name);
+    const files = sinks.map((s) => s.name);
     void this.ctx.close();
     if (this.opts.temp) {
       // pasta temporária: baixa cada arquivo (um pouco espaçados, para o navegador não barrar)
@@ -450,6 +490,11 @@ export class CallRecorder {
     if (late.length) {
       lines.push('', 'Quem entrou depois do começo (a faixa da pessoa começa nesse ponto da gravação):');
       for (const p of late) lines.push(`- ${p.lane!.sink.name} (${p.name}): começa em ${clock(p.joinedAtMs)}`);
+    }
+    const lateVideo = (this.sourceRec?.files ?? []).filter((f) => f.startMs !== null && f.startMs > 3000);
+    if (lateVideo.length) {
+      lines.push('', 'Vídeos que começaram depois (o arquivo começa nesse ponto da gravação):');
+      for (const f of lateVideo) lines.push(`- ${f.name}: começa em ${clock(f.startMs!)}`);
     }
     lines.push('', 'A gravação ficou só neste computador: nada dela foi enviado para o Concord.');
     const h = await this.folder!.getFileHandle('LEIA-ME.txt', { create: true });

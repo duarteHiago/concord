@@ -39,6 +39,7 @@ import { DeviceSplitButton } from './DeviceMenu';
 import { useMobile } from '../lib/mobile';
 import { canRecord } from '../lib/callRecorder';
 import { useRecording } from '../store/recording';
+import { SourcePicker } from './RecordSources';
 import { Avatar, IconButton, LivePill, VerifiedBadge, cx } from './ui';
 import { MuralEntry, useServerBanner } from '../workshop/Slots';
 import { WORKSHOP_ENABLED, useWorkshop } from '../workshop/store';
@@ -441,6 +442,9 @@ function RecordingLine() {
   const startedAt = useRecording((s) => s.startedAt);
   const tracks = useRecording((s) => s.tracks);
   const status = useRecording((s) => s.status);
+  const bySource = useRecording((s) => s.bySource);
+  const sources = useRecording((s) => s.sources);
+  const toggleSource = useRecording((s) => s.toggleSource);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 1000);
@@ -449,10 +453,19 @@ function RecordingLine() {
   const s = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
   const time = `${Math.floor(s / 3600) ? `${Math.floor(s / 3600)}:` : ''}${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   return (
-    <div className="mt-2.5 flex items-center gap-2 rounded-xl bg-danger/12 px-2.5 py-1.5 text-xs font-semibold text-danger">
-      <span className="h-2 w-2 animate-pulse rounded-full bg-danger" />
-      {status === 'saving' ? 'Salvando a gravação…' : `Gravando ${time}`}
-      {status !== 'saving' && <span className="ml-auto font-normal text-fg-muted">{tracks} {tracks === 1 ? 'arquivo' : 'arquivos'}</span>}
+    <div className="mt-2.5 rounded-xl bg-danger/12 px-2.5 py-1.5">
+      <div className="flex items-center gap-2 text-xs font-semibold text-danger">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-danger" />
+        {status === 'saving' ? 'Salvando a gravação…' : `Gravando ${time}`}
+        {status !== 'saving' && <span className="ml-auto font-normal text-fg-muted">{tracks} {tracks === 1 ? 'arquivo' : 'arquivos'}</span>}
+      </div>
+      {/* por fonte: marcar e desmarcar telas e câmeras sem parar a gravação */}
+      {bySource && status === 'recording' && (
+        <div className="mt-1.5">
+          <div className="mb-1 text-[10px] font-extrabold tracking-wider text-fg-subtle uppercase">Fontes</div>
+          <SourcePicker selected={sources} onToggle={toggleSource} compact />
+        </div>
+      )}
     </div>
   );
 }
