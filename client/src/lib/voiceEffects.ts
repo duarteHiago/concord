@@ -92,6 +92,18 @@ async function fetchRetry(url: string, tries = 3): Promise<Response> {
 
 // DeepFilterNet3: arquivos servidos pelo próprio Concord (client/public/vendor/deepfilternet3)
 export const DFN_BASE = '/vendor/deepfilternet3/v3';
+
+/**
+ * O modelo tem que chegar ao wasm como tar.gz. Alguns servidores (o Vite em desenvolvimento, proxies) mandam o
+ * .tar.gz com "Content-Encoding: gzip" e o navegador entrega o tar já aberto: o wasm então falhava com
+ * "unreachable" e a IA máxima caía para a natural sem a pessoa saber por quê. Se não vier comprimido, comprime aqui.
+ */
+async function ensureGzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
+  const head = new Uint8Array(bytes, 0, 2);
+  if (head[0] === 0x1f && head[1] === 0x8b) return bytes;
+  if (typeof CompressionStream === 'undefined') throw new Error('modelo do DeepFilterNet3 chegou sem compressão');
+  return new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+}
 interface DfnAssets {
   wasmModule: WebAssembly.Module;
   modelBytes: ArrayBuffer;
@@ -101,7 +113,7 @@ function loadDfnAssets(): Promise<DfnAssets> {
   dfnAssets ??= (async () => {
     const [wasmModule, model] = await Promise.all([
       fetchRetry(`${DFN_BASE}/pkg/df_bg.wasm`).then((r) => ('compileStreaming' in WebAssembly ? WebAssembly.compileStreaming(r) : r.arrayBuffer().then((b) => WebAssembly.compile(b)))),
-      fetchRetry(`${DFN_BASE}/models/DeepFilterNet3_onnx.tar.gz`).then((r) => r.arrayBuffer()),
+      fetchRetry(`${DFN_BASE}/models/DeepFilterNet3_onnx.tar.gz`).then((r) => r.arrayBuffer()).then(ensureGzip),
     ]);
     return { wasmModule, modelBytes: model };
   })().catch((err) => {

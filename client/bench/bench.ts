@@ -25,6 +25,10 @@ async function renderChain(b64: string, settings: ChainSettings) {
     src.buffer = buffer;
     const chain = new Chain(ctx, src, ctx.destination, settings, {});
     await chain.build();
+    // GTCRN e RNNoise iniciam o wasm de forma assíncrona dentro do worklet e não avisam quando ficam prontos;
+    // num contexto offline o render acabaria antes disso e sairia só silêncio (na chamada de verdade são os
+    // primeiros milissegundos). Espera um pouco antes de renderizar.
+    if (settings.noise === 'gtcrn' || settings.noise === 'rnnoise') await new Promise((r) => setTimeout(r, 1500));
     src.start();
     const rendered = await ctx.startRendering();
     chain.teardown();
