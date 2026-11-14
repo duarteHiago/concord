@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { CallRecorder, canPickFolder, canUseTempStorage, tempRecordingDir, type RecordMode } from '../lib/callRecorder';
 import { liveSources } from '../lib/callSources';
 import type { VideoQuality } from '../lib/callVideo';
+import { canWrite } from '../lib/savedFolder';
 import { getSocket } from '../lib/socket';
 import { playSound } from '../lib/sounds';
 import { memberName } from '../lib/types';
@@ -90,7 +91,7 @@ export const useRecording = create<RecordingStore>((set, get) => ({
   openDialog: () => set({ dialog: true }),
   closeDialog: () => set({ dialog: false }),
 
-  start: async ({ mode, streamAudio, dir, video, sources }) => {
+  start: async ({ mode, streamAudio, dir: picked, video, sources }) => {
     const voice = useVoice.getState();
     const room = voice.room;
     if (!room || !voice.serverId || !voice.channelId || get().status !== 'idle') return;
@@ -102,6 +103,9 @@ export const useRecording = create<RecordingStore>((set, get) => ({
     void ctx.resume();
     set({ status: 'starting' });
     try {
+      // pasta lembrada de outra vez: o navegador pode pedir licença de novo; sem licença, baixa ao parar
+      const dir = picked && (await canWrite(picked)) ? picked : null;
+      if (picked && !dir) toast.info(`Sem acesso à pasta "${picked.name}". Os arquivos baixam quando você parar.`);
       await announce(true);
       // sem pasta escolhida: grava no disco privado do navegador e baixa ao parar
       const temp = !dir && canUseTempStorage();
@@ -136,7 +140,7 @@ export const useRecording = create<RecordingStore>((set, get) => ({
         watchNewSources();
       }, 2000);
       playSound('recordStart');
-      if (!dir) toast.info('Gravando. Os arquivos baixam quando você parar.');
+      if (!picked) toast.info('Gravando. Os arquivos baixam quando você parar.');
     } catch (err) {
       recorder = null;
       if (ctx.state !== 'closed') void ctx.close();
