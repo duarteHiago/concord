@@ -36,6 +36,8 @@ import { DeckScreen } from './components/Deck';
 import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { reduceMotion, setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
+import { usePlaza } from './store/plaza';
+import { PlazaButton } from './components/plaza/PlazaButton';
 import './lib/visibility';
 // Oficina (só no Concord de testes): o Mural e os avisos usam Motion, carregados só quando aparecem
 const WorkshopHosts = lazy(() => import('./workshop/Hosts').then((m) => ({ default: m.WorkshopHosts })));
@@ -57,6 +59,8 @@ const CompatibilityPage = lazy(() => import('./components/CompatibilityPage'));
 /** /admin: portal da equipe (só quem está em ADMIN_USERS no servidor) — ver components/admin/. */
 const IS_ADMIN = PATH === '/admin';
 const AdminPortal = lazy(() => import('./components/admin/AdminPortal'));
+/** Praça do servidor (components/plaza/): só carrega quando alguém abre */
+const PlazaView = lazy(() => import('./components/plaza/PlazaView'));
 
 export default function App() {
   if (IS_DEV_WINDOW) return <DevWindow />;
@@ -93,6 +97,7 @@ function MainApp() {
     return channelId && serverId ? { channelId, serverId } : null;
   });
   const room = useVoice((s) => s.room);
+  const plazaOpen = usePlaza((s) => s.serverId !== null);
   useClaimAfterLogin();
   useDevStatsPublisher(me ? room : null);
 
@@ -184,6 +189,18 @@ function MainApp() {
         </Suspense>
       )}
       {me && WORKSHOP_ENABLED && !remote && <LabPanel />}
+      {me && plazaOpen && (
+        <div className="fixed inset-0 z-[60] flex bg-[#231a3a]">
+          <ErrorBoundary area="painel" resetKey="praca">
+            <Suspense fallback={<div className="flex flex-1 items-center justify-center"><Spinner size={36} /></div>}>
+              <PlazaView />
+            </Suspense>
+          </ErrorBoundary>
+          <button onClick={() => usePlaza.getState().close()} className="absolute top-3 right-3 z-[59] rounded-xl bg-black/30 px-3 py-1.5 text-sm text-white">
+            Sair da praça
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -255,27 +272,32 @@ function Shell() {
   );
 
   return (
-    <LabFrame>
-      {screen ? (
-        <ServerScreen plan={screen} main={content} theme={theme} />
-      ) : (
-        <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')} style={theme?.style} data-ws-shape={theme?.shape}>
-          <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
-            {showSidebar && (
-              <LabMove id="channels" className="flex shrink-0">
-                <ChannelSidebar />
-              </LabMove>
-            )}
-            {showContent && (
-              <LabMove id="main" className="flex min-w-0 flex-1">
-                {content}
-              </LabMove>
-            )}
+    <>
+      <LabFrame>
+        {screen ? (
+          <ServerScreen plan={screen} main={content} theme={theme} />
+        ) : (
+          <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')} style={theme?.style} data-ws-shape={theme?.shape}>
+            <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
+              {showSidebar && (
+                <LabMove id="channels" className="flex shrink-0">
+                  <ChannelSidebar />
+                </LabMove>
+              )}
+              {showContent && (
+                <LabMove id="main" className="flex min-w-0 flex-1">
+                  {content}
+                </LabMove>
+              )}
+            </div>
+            <MobileBottomNav />
           </div>
-          <MobileBottomNav />
-        </div>
+        )}
+      </LabFrame>
+      {activeServerId && activeServerId !== HOME && detail?.plaza && !settingsOpen && !profileOpen && !releasesOpen && (
+        <PlazaButton serverId={activeServerId} initialCount={detail.plaza.count} />
       )}
-    </LabFrame>
+    </>
   );
 }
 
