@@ -85,6 +85,11 @@ export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 export const PEEK_MS = 10_000;
 /** Depois de espiar uma mesa, quanto esperar para espiar a mesma de novo. */
 export const PEEK_COOLDOWN_MS = 60_000;
+/** Ouvir de perto: até quantas casas do meio da mesa a conversa dela chega (sem falar, com aviso para a mesa). */
+export const NEAR_RADIUS = 3;
+/** Ouvir de perto vale por este tempo e o app renova enquanto a pessoa continua perto. */
+export const NEAR_MS = 12_000;
+
 /** Volume do cochicho de quem espia, para quem está na call. */
 export const WHISPER_VOLUME = 0.3;
 

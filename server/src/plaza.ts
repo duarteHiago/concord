@@ -3,7 +3,7 @@
 // Quem está sentado (na call) vem do estado de voz, não daqui.
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
-import { PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
+import { NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
 import { createVoiceToken, removeFromRoom } from './livekit.ts';
 import { getVoiceState, isServerDeafened, isServerMuted, voiceStatesFor } from './realtime.ts';
 import { channelPermissions, getChannel, isMember } from './access.ts';
@@ -46,23 +46,53 @@ function dropLobbyVoice(serverId: string, userId: string) {
   void removeFromRoom(lobbyRoom(serverId), userId).catch(() => {});
 }
 
-// ---- espiar uma mesa ----
-// Quem está andando lá dentro pode ouvir uma call por PEEK_MS (e cochichar baixinho). Todo mundo da call vê o
-// aviso "fulano está espiando" enquanto dura; quem está na mesa pode fechá-la; sala trancada não deixa.
+// ---- espiar uma mesa / ouvir de perto ----
+// Quem está andando lá dentro pode ouvir uma call: espiando (PEEK_MS, pode cochichar) ou só chegando perto da mesa
+// (NEAR_MS, renovado enquanto continua perto, sem falar). Todo mundo da call vê o aviso enquanto dura; quem está
+// na mesa pode fechá-la para as duas coisas; sala trancada não deixa.
 
-const peeks = new Map<string, Map<string, number>>(); // channelId -> userId -> até quando
+interface Listening {
+  until: number;
+  /** só ouvindo de perto (sem microfone) */
+  near: boolean;
+}
+const peeks = new Map<string, Map<string, Listening>>(); // channelId -> userId -> espiada
 const peekCooldown = new Map<string, number>(); // `${userId}:${channelId}` -> quando pode de novo
 const closedTables = new Set<string>(); // salas fechadas para espiadas (só na memória)
 
 /** Está espiando esta sala agora? (a faxina das salas de voz deixa ficar, mesmo sem estar na call) */
 export function isPeeking(channelId: string, userId: string) {
-  return (peeks.get(channelId)?.get(userId) ?? 0) > Date.now();
+  return (peeks.get(channelId)?.get(userId)?.until ?? 0) > Date.now();
 }
+
+/** Tira uma espiada (acabou, saiu de perto, a mesa fechou): avisa todo mundo e tira da sala do LiveKit. */
+function endPeek(serverId: string, channelId: string, userId: string) {
+  const cur = peeks.get(channelId);
+  if (!cur?.delete(userId)) return;
+  if (!cur.size) peeks.delete(channelId);
+  broadcastPeeks(serverId);
+  if (getVoiceState(userId)?.channelId !== channelId) void removeFromRoom(channelId, userId).catch(() => {});
+}
+
+// faxina das espiadas vencidas (uma vez por segundo)
+setInterval(() => {
+  const now = Date.now();
+  for (const [channelId, m] of peeks) {
+    for (const [userId, l] of m) {
+      if (l.until > now) continue;
+      try {
+        endPeek(getChannel(channelId).server_id, channelId, userId);
+      } catch {
+        m.delete(userId);
+      }
+    }
+  }
+}, 1000).unref();
 
 function peeksOf(serverId: string) {
   const ids = new Set(voiceChannels(serverId).map((c) => c.id));
-  const out: { channelId: string; userId: string; until: number }[] = [];
-  for (const [channelId, m] of peeks) if (ids.has(channelId)) for (const [userId, until] of m) out.push({ channelId, userId, until });
+  const out: { channelId: string; userId: string; until: number; near: boolean }[] = [];
+  for (const [channelId, m] of peeks) if (ids.has(channelId)) for (const [userId, l] of m) out.push({ channelId, userId, until: l.until, near: l.near });
   return out;
 }
 
@@ -213,6 +243,13 @@ function tableSpot(serverId: string, userId: string) {
   const layout = insideLayout(serverId, channels);
   const t = layout.tables[channels.findIndex((c) => c.id === v.channelId)];
   return t ? { layout, front: t.front } : null;
+}
+
+/** Está a até NEAR_RADIUS casas do meio da mesa desta sala (lá dentro)? */
+function closeToTable(serverId: string, w: { x: number; y: number }, channelId: string) {
+  const channels = voiceChannels(serverId);
+  const t = insideLayout(serverId, channels).tables[channels.findIndex((c) => c.id === channelId)];
+  return !!t && distance(w, { x: t.x + 0.5, y: t.y + 0.5 }) <= NEAR_RADIUS + 0.5;
 }
 
 const room = (serverId: string) => `plaza:${serverId}`;
@@ -415,12 +452,15 @@ export function registerPlaza(socket: Socket, userId: string) {
 
   // espiar uma mesa: devolve o token para ouvir a call por PEEK_MS
   const peekRate = rate(6, 60_000);
-  socket.on('plaza:peek', async (data: { serverId?: unknown; channelId?: unknown }, ack?: (r: unknown) => void) => {
+  // ouvir de perto liga e desliga enquanto a pessoa anda: limite próprio, mais folgado
+  const nearRate = rate(20, 60_000);
+  socket.on('plaza:peek', async (data: { serverId?: unknown; channelId?: unknown; near?: unknown }, ack?: (r: unknown) => void) => {
     if (typeof ack !== 'function') return;
     try {
+      const near = data?.near === true;
       const here = walkerHere(data?.serverId);
       if (!here || here.w.scene !== 'inside') return ack({ ok: false, error: 'Entre no prédio para espiar uma mesa.' });
-      if (!peekRate()) return ack({ ok: false, error: 'Calma: muitas espiadas em pouco tempo.' });
+      if (!(near ? nearRate() : peekRate())) return ack({ ok: false, error: 'Calma: muitas espiadas em pouco tempo.' });
       const channelId = typeof data.channelId === 'string' ? data.channelId : '';
       const channel = getChannel(channelId);
       if (channel.server_id !== here.serverId || channel.type !== 'voice') return ack({ ok: false, error: 'Mesa inválida.' });
@@ -430,48 +470,60 @@ export function registerPlaza(socket: Socket, userId: string) {
       if (getVoiceState(userId)?.channelId === channelId) return ack({ ok: false, error: 'Você já está nessa mesa.' });
       const inCall = voiceStatesFor(here.serverId).filter((v) => v.channelId === channelId);
       if (!inCall.length) return ack({ ok: false, error: 'Não tem ninguém nessa mesa.' });
+      if (near && !closeToTable(here.serverId, here.w, channelId)) return ack({ ok: false, error: 'Chegue mais perto da mesa.' });
       const key = `${userId}:${channelId}`;
       const wait = (peekCooldown.get(key) ?? 0) - Date.now();
-      if (wait > 0) return ack({ ok: false, error: `Espere ${Math.ceil(wait / 1000)} s para espiar essa mesa de novo.` });
+      if (!near && wait > 0) return ack({ ok: false, error: `Espere ${Math.ceil(wait / 1000)} s para espiar essa mesa de novo.` });
       const user = get<UserRow>('SELECT * FROM users WHERE id = ?', userId)!;
       const token = await createVoiceToken({
         roomName: channelId,
         identity: userId,
         name: user.display_name,
         metadata: JSON.stringify({ avatarColor: user.avatar_color, username: user.username, peek: true }),
-        // só o microfone (o cochicho), nunca tela ou câmera
-        perms: perms & P.SPEAK,
+        // espiando: só o microfone (o cochicho), nunca tela ou câmera; de perto: só ouvir
+        perms: near ? 0 : perms & P.SPEAK,
         serverMuted: isServerMuted(here.serverId, userId),
         serverDeafened: isServerDeafened(here.serverId, userId),
       });
-      const until = Date.now() + PEEK_MS;
-      const m = peeks.get(channelId) ?? new Map<string, number>();
-      m.set(userId, until);
+      const until = Date.now() + (near ? NEAR_MS : PEEK_MS);
+      // só uma mesa por vez: sai da que estava ouvindo antes
+      for (const [other, m] of peeks) if (other !== channelId && m.has(userId)) endPeek(here.serverId, other, userId);
+      const m = peeks.get(channelId) ?? new Map<string, Listening>();
+      m.set(userId, { until, near });
       peeks.set(channelId, m);
-      peekCooldown.set(key, until + PEEK_COOLDOWN_MS);
+      if (!near) peekCooldown.set(key, until + PEEK_COOLDOWN_MS);
       broadcastPeeks(here.serverId);
-      const serverId = here.serverId;
-      setTimeout(() => {
-        const cur = peeks.get(channelId);
-        if (cur?.get(userId) !== until) return;
-        cur.delete(userId);
-        if (!cur.size) peeks.delete(channelId);
-        broadcastPeeks(serverId);
-        // acabou o tempo: sai da call, mesmo que o app não saia sozinho
-        if (getVoiceState(userId)?.channelId !== channelId) void removeFromRoom(channelId, userId).catch(() => {});
-      }, PEEK_MS + 500).unref();
+      // a faxina tira quando o tempo acabar, mesmo que o app não saia sozinho
       ack({ ok: true, token, url: config.livekit.publicUrl || null, until });
     } catch {
       ack({ ok: false, error: 'Não deu para espiar essa mesa.' });
     }
   });
 
-  // quem está na call fecha (ou abre) a mesa para espiadas
+  // ouvir de perto: o app renova enquanto a pessoa continua perto da mesa
+  const renewRate = rate(20, 60_000);
+  socket.on('plaza:peek-renew', (data: { serverId?: unknown; channelId?: unknown }, ack?: (r: unknown) => void) => {
+    const here = walkerHere(data?.serverId);
+    const channelId = typeof data?.channelId === 'string' ? data.channelId : '';
+    const l = peeks.get(channelId)?.get(userId);
+    const ok = !!here && !!l && l.near && renewRate() && !closedTables.has(channelId) && here.w.scene === 'inside' && closeToTable(here.serverId, here.w, channelId);
+    if (ok) l!.until = Date.now() + NEAR_MS;
+    else if (here && l) endPeek(here.serverId, channelId, userId);
+    if (typeof ack === 'function') ack({ ok, until: l?.until });
+  });
+
+  socket.on('plaza:peek-stop', (data: { serverId?: unknown; channelId?: unknown }) => {
+    const here = walkerHere(data?.serverId);
+    if (here && typeof data?.channelId === 'string') endPeek(here.serverId, data.channelId, userId);
+  });
+
+  // quem está na call fecha (ou abre) a mesa para espiadas (e para quem ouve de perto)
   socket.on('plaza:close-table', (data: { channelId?: unknown; closed?: unknown }) => {
     const v = getVoiceState(userId);
     if (!v || v.channelId !== data?.channelId || typeof data.closed !== 'boolean') return;
     if (data.closed) closedTables.add(v.channelId);
     else closedTables.delete(v.channelId);
+    if (data.closed) for (const id of [...(peeks.get(v.channelId)?.keys() ?? [])]) endPeek(v.serverId, v.channelId, id);
     io.to(`server:${v.serverId}`).emit('plaza:closed', { serverId: v.serverId, closed: closedOf(v.serverId) });
   });
 

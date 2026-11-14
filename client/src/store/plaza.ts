@@ -28,6 +28,8 @@ export interface Peek {
   channelId: string;
   userId: string;
   until: number;
+  /** só ouvindo de perto (sem cochichar) */
+  near?: boolean;
 }
 
 type Ack = {
