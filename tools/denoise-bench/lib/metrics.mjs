@@ -153,14 +153,18 @@ export function evaluate({ clean, noisy, out, sampleRate }) {
   };
 }
 
-/** Buracos: trechos de mais de `minMs` ms em que a saída é silêncio absoluto enquanto a entrada tem som. */
-export function findDropouts(input, out, sampleRate, minMs = 300) {
+/**
+ * Buracos: trechos de mais de `minMs` ms em que a saída é silêncio absoluto enquanto a entrada tem som.
+ * Com `ref` (a voz limpa), só conta onde há voz: tirar todo o ruído de uma pausa não é buraco, é o trabalho.
+ */
+export function findDropouts(input, out, sampleRate, minMs = 300, ref = null) {
   const hop = Math.round(sampleRate * 0.01);
   const n = Math.floor(Math.min(input.length, out.length) / hop);
   const holes = [];
   let start = -1;
   for (let f = 0; f <= n; f++) {
-    const silent = f < n && energy(input, f * hop, (f + 1) * hop) > 1e-6 && energy(out, f * hop, (f + 1) * hop) < 1e-10;
+    const hasVoice = !ref || energy(ref, f * hop, (f + 1) * hop) > 1e-5;
+    const silent = f < n && hasVoice && energy(input, f * hop, (f + 1) * hop) > 1e-6 && energy(out, f * hop, (f + 1) * hop) < 1e-10;
     if (silent && start < 0) start = f;
     if (!silent && start >= 0) {
       const ms = (f - start) * 10;

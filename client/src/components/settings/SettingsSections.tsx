@@ -1,10 +1,8 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { clipSettings } from '../../lib/clip';
-import { NOISE_LABEL, NOISE_MODES, micLevels, preloadDfn, startMicTest, type ActiveNotice, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
+import { NOISE_LABEL, NOISE_MODES, canVoiceIsolation, micLevels, preloadDfn, startMicTest, type ActiveNotice, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
-import { WorkshopAppearance } from '../../workshop/Slots';
-import { WORKSHOP_ENABLED } from '../../workshop/store';
 import { CardPreview, StyleTab } from '../modals/StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
@@ -21,7 +19,7 @@ import { memberName, type Activity, type Me, type ThemeSettings } from '../../li
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
-import { useVoice } from '../../store/voice';
+import { useVoice, type AudioSettings } from '../../store/voice';
 import { Avatar, Button, Input, Toggle, cx } from '../ui';
 
 const COLORS = ['#5865f2', '#7c5cff', '#3ba55c', '#1abc9c', '#00b0f4', '#faa61a', '#e67e22', '#ed4245', '#eb459e', '#9b59b6'];
@@ -458,13 +456,6 @@ export function Appearance() {
         </div>
       </div>
 
-      {WORKSHOP_ENABLED && (
-        <div>
-          <SectionTitle>Oficina dos servidores</SectionTitle>
-          <WorkshopAppearance />
-        </div>
-      )}
-
       <Button
         variant="ghost"
         onClick={() => {
@@ -765,11 +756,11 @@ export function Audio() {
       <div>
         <SectionTitle>Supressão de ruído</SectionTitle>
         <div className="grid gap-2 sm:grid-cols-2">
-          {NOISE_MODES.map((m) => (
+          {NOISE_MODES.filter((m) => (!m.lab || settings.labNoise) && (m.id !== 'browser-iso' || canVoiceIsolation())).map((m) => (
             <button
               key={m.id}
               onClick={() => {
-                if (m.id === 'dfn') preloadDfn();
+                if (m.id === 'dfn' || m.id === 'dfn-auto') preloadDfn();
                 void setAudioSettings({ noiseMode: m.id });
               }}
               aria-pressed={settings.noiseMode === m.id}
@@ -778,12 +769,33 @@ export function Audio() {
                 settings.noiseMode === m.id ? 'border-accent bg-accent/10' : 'border-transparent bg-surface-0 hover:bg-surface-3',
               )}
             >
-              <span className="block text-sm font-bold">{m.label}</span>
+              <span className="block text-sm font-bold">
+                {m.label}
+                {m.lab && <span className="ml-1.5 rounded-full bg-warn/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase">experimental</span>}
+              </span>
               <span className="block text-xs text-fg-muted">{m.hint}</span>
             </button>
           ))}
         </div>
         <ActiveNoiseNote />
+        <label className="mt-2 flex items-center gap-3 rounded-xl bg-surface-0 p-3">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">Modos experimentais</span>
+            <span className="block text-xs text-fg-muted">
+              Libera supressões e um portão de voz que ainda estamos testando com a comunidade. Podem mudar ou sair. Conte para a gente o que achou.
+            </span>
+          </span>
+          <Toggle
+            checked={settings.labNoise}
+            onChange={(v) => {
+              const patch: Partial<AudioSettings> = { labNoise: v };
+              // desligou: volta para um modo normal se estava num experimental
+              if (!v && NOISE_MODES.find((m) => m.id === settings.noiseMode)?.lab) patch.noiseMode = 'gtcrn';
+              if (!v && settings.gate.mode === 'smart') patch.gate = { ...settings.gate, mode: 'auto' };
+              void setAudioSettings(patch);
+            }}
+          />
+        </label>
       </div>
       {settings.noiseMode === 'dfn' && <NoiseStrength />}
       <MicSensitivity />
@@ -986,10 +998,12 @@ function MicSensitivity() {
   // -80 dB (silêncio) a -10 dB (bem alto) → 0 a 100%
   const pct = (db: number) => Math.min(100, Math.max(0, ((db + 80) / 70) * 100));
   const threshold = gate.mode === 'manual' ? gate.threshold : (level?.threshold ?? -50);
+  const labNoise = useVoice((s) => s.audioSettings.labNoise);
   const modes: [GateMode, string][] = [
     ['auto', 'Automática'],
     ['manual', 'Manual'],
     ['off', 'Desligada'],
+    ...(labNoise || gate.mode === 'smart' ? ([['smart', 'Guiada pela IA (experimental)']] as [GateMode, string][]) : []),
   ];
 
   return (
@@ -1014,7 +1028,9 @@ function MicSensitivity() {
             ? 'O microfone só abre quando você fala; nas pausas ninguém ouve o barulho de fundo. O limite se ajusta sozinho ao ambiente.'
             : gate.mode === 'manual'
               ? 'Arraste a linha: abaixo dela o microfone fica fechado.'
-              : 'O microfone fica sempre aberto (só a supressão de ruído atua).'}
+              : gate.mode === 'smart'
+                ? 'A própria IA de supressão decide: o microfone abre quando ela reconhece voz e fecha quando o que sobrou era só ruído. Precisa de uma supressão por IA ligada; sem ela, vale como a automática.'
+                : 'O microfone fica sempre aberto (só a supressão de ruído atua).'}
         </p>
         {gate.mode !== 'off' && (
           <>

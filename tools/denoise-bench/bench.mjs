@@ -12,6 +12,9 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith('--') ? [a.slice(2), all[i + 1]?.startsWith('--') || all[i + 1] === undefined ? true : all[i + 1]] : [])).filter((x) => x.length));
 const modes = String(args.modes ?? 'off,rnnoise,gtcrn,dfn').split(',');
 const strength = Number(args.strength ?? 45);
+const beta = Number(args.beta ?? 0);
+// portão (só no modo browser, que roda a cadeia inteira): off | auto | manual | smart
+const gate = { mode: String(args.gate ?? 'off'), threshold: -50 };
 const engine = args.engine ?? 'node';
 const filter = args.filter ? String(args.filter) : null;
 
@@ -22,7 +25,7 @@ if (args.long) {
   const { pink, SR } = await import('./lib/synth.mjs');
   const mode = modes.at(-1);
   console.log(`Estabilidade: ${seconds}s contínuos no modelo ${mode}...`);
-  const eng = await makeEngine(mode, { strength });
+  const eng = await makeEngine(mode, { strength, beta, gate });
   const chunk = pink(10);
   let holes = [];
   let worst = -Infinity;
@@ -48,7 +51,7 @@ if (!manifest.length) {
 
 const rows = [];
 for (const mode of modes) {
-  const eng = await makeEngine(mode, { strength });
+  const eng = await makeEngine(mode, { strength, beta, gate });
   let seconds = 0;
   let ms = 0;
   for (const item of manifest) {
@@ -60,7 +63,7 @@ for (const mode of modes) {
     seconds += noisy.length / 48000;
     const a = align(clean, raw, 48000);
     const m = evaluate({ clean: a.ref, noisy: noisy.subarray(0, a.ref.length), out: a.out, sampleRate: 48000 });
-    const holes = findDropouts(noisy.subarray(a.delay), raw.subarray(a.delay), 48000);
+    const holes = findDropouts(noisy.subarray(a.delay), raw.subarray(a.delay), 48000, 300, clean.subarray(a.delay));
     rows.push({ mode, ...item, delayMs: (a.delay / 48) | 0, ...m, dropouts: holes.length, workletErrors: eng.errors?.().length ?? 0 });
   }
   rows.filter((r) => r.mode === mode).forEach((r) => (r.rtf = ms / 1000 / seconds));
@@ -94,7 +97,7 @@ for (const s of Object.values(summary)) {
 
 mkdirSync(join(here, 'results'), { recursive: true });
 const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
-const out = { at: new Date().toISOString(), engine, strength, node: process.version, rows, summary: Object.values(summary) };
+const out = { at: new Date().toISOString(), engine, strength, beta, gate: gate.mode, node: process.version, rows, summary: Object.values(summary) };
 writeFileSync(join(here, 'results', `${stamp}-${engine}.json`), JSON.stringify(out, null, 2));
 writeFileSync(join(here, 'results', `latest-${engine}.json`), JSON.stringify(out, null, 2));
 console.log(`\n${rows.length} medições salvas em results/${stamp}-${engine}.json`);
