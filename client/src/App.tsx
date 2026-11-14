@@ -37,6 +37,7 @@ import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { reduceMotion, setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import { usePlaza } from './store/plaza';
+import { PeekNotice } from './components/plaza/PeekNotice';
 import './lib/visibility';
 // Oficina (só no Concord de testes): o Mural e os avisos usam Motion, carregados só quando aparecem
 const WorkshopHosts = lazy(() => import('./workshop/Hosts').then((m) => ({ default: m.WorkshopHosts })));
@@ -188,6 +189,7 @@ function MainApp() {
         </Suspense>
       )}
       {me && WORKSHOP_ENABLED && !remote && <LabPanel />}
+      {me && <PeekNotice />}
       {me && plazaOpen && (
         <div className="plaza-root fixed inset-0 z-[60] flex bg-[#231a3a]">
           <ErrorBoundary area="painel" resetKey="praca">

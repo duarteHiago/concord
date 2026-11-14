@@ -279,6 +279,41 @@ describe('praça: andando e conversando', () => {
     assert.equal((again.places as { lobby: unknown }).lobby, null);
   });
 
+  it('espiar: só de dentro, quem está na call recebe o aviso, tem intervalo e a mesa pode fechar', async () => {
+    const { ana, bia, serverId, a, b, c } = await setup();
+    const detail = (await ana.get(`/servers/${serverId}`)).body as { channels: { id: string; type: string; name: string }[] };
+    const mesa = detail.channels.find((ch) => ch.name === 'mesa-1')!;
+    assert.equal(((await emitAck(b, 'voice:join', { channelId: mesa.id })) as { ok: boolean }).ok, true);
+    await emitAck(a, 'plaza:enter', { serverId });
+    await emitAck(c, 'plaza:enter', { serverId });
+    // lá fora não dá
+    assert.equal((await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id })).ok, false);
+    const lobby = buildLobby();
+    for (const s of [a, c]) {
+      s.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+      await sleep(80);
+      s.emit('plaza:door', { serverId });
+    }
+    await sleep(200);
+    const notices: { peeks: { userId: string; channelId: string }[] }[] = [];
+    b.on('voice:peeks', (m) => notices.push(m));
+    const r = await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id });
+    assert.equal(r.ok, true);
+    assert.equal(typeof r.token, 'string');
+    await sleep(200);
+    assert.ok(notices.some((n) => n.peeks.some((p) => p.userId === ana.id && p.channelId === mesa.id)));
+    // de novo antes do intervalo: não
+    const again = await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id });
+    assert.equal(again.ok, false);
+    // quem está na mesa fecha: ninguém mais espia
+    b.emit('plaza:close-table', { channelId: mesa.id, closed: true });
+    await sleep(150);
+    const closed = await emitAck(c, 'plaza:peek', { serverId, channelId: mesa.id });
+    assert.equal(closed.ok, false);
+    assert.match(String(closed.error), /fechou/);
+    void bia;
+  });
+
   it('quem sai do servidor sai da praça', async () => {
     const { bia, serverId, a, b } = await setup();
     await emitAck(a, 'plaza:enter', { serverId });

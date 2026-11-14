@@ -7,7 +7,7 @@ import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, touchSession, verifySession } from './http.ts';
 import { removeFromRoom, updateVoicePermission, voiceParticipants } from './livekit.ts';
 import { socketEvents, timedSocket } from './metrics.ts';
-import { inPlaza, lobbyServerOf, plazaLeaveServer, registerPlaza, setupPlaza } from './plaza.ts';
+import { inPlaza, isPeeking, lobbyServerOf, plazaLeaveServer, registerPlaza, setupPlaza } from './plaza.ts';
 
 export interface VoiceState {
   userId: string;
@@ -388,7 +388,7 @@ export function liveStats() {
   };
 }
 
-const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:recording', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping', 'plaza:enter', 'plaza:leave', 'plaza:move', 'plaza:say', 'plaza:emote', 'plaza:avatar', 'plaza:avatars', 'plaza:door', 'plaza:table']);
+const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:recording', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping', 'plaza:enter', 'plaza:leave', 'plaza:move', 'plaza:say', 'plaza:emote', 'plaza:avatar', 'plaza:avatars', 'plaza:door', 'plaza:table', 'plaza:peek', 'plaza:close-table']);
 
 // Faxina das salas de voz. O LiveKit aceita qualquer um com token válido, mas só vale estar numa sala quem entrou
 // pelo app (aparece na lista dela) e ainda pode conectar nela. Sai quem foi expulso do servidor, perdeu a
@@ -406,7 +406,9 @@ async function sweepVoiceRooms() {
   for (const p of list) {
     // sala de voz da Praça: vale para quem está andando pela Praça daquele servidor (lobby ou dentro)
     const lobbyOf = lobbyServerOf(p.room);
-    let ok = lobbyOf ? inPlaza(lobbyOf, p.identity) : voice.get(p.identity)?.channelId === p.room;
+    // quem está espiando uma mesa fica na sala dela até a espiada acabar (sem estar na lista da call)
+    const peeking = !lobbyOf && isPeeking(p.room, p.identity);
+    let ok = lobbyOf ? inPlaza(lobbyOf, p.identity) : peeking || voice.get(p.identity)?.channelId === p.room;
     if (ok && !lobbyOf) {
       try {
         ok = has(channelPermissions(getChannel(p.room), p.identity), P.CONNECT);

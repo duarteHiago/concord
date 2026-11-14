@@ -79,6 +79,15 @@ export function proximityVolume(d: number) {
   return k * k;
 }
 export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+// ---- espiar uma mesa (ouvir a call por alguns segundos, com aviso para quem está nela) ----
+
+/** Quanto dura uma espiada. */
+export const PEEK_MS = 10_000;
+/** Depois de espiar uma mesa, quanto esperar para espiar a mesma de novo. */
+export const PEEK_COOLDOWN_MS = 60_000;
+/** Volume do cochicho de quem espia, para quem está na call. */
+export const WHISPER_VOLUME = 0.3;
+
 /** Sala de voz do lobby de um servidor, no LiveKit. */
 export const lobbyRoom = (serverId: string) => `plaza_${serverId}`;
 
