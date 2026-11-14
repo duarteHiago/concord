@@ -37,7 +37,7 @@ export function MuralEntry({ detail }: { detail: ServerDetail }) {
   const hasMural = !!config?.mural.widgets.length;
   if (!hasMural && !canEdit) return null;
   return (
-    <div className="space-y-1">
+    <div className="lab-mural-entry space-y-1">
       {hasMural && (
         <button
           type="button"

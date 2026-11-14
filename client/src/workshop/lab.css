@@ -1,0 +1,85 @@
+/*
+ * Laboratório de layout, caminho 1: os blocos principais mudam pelo espaço que têm (container queries), não
+ * pelo tamanho da janela. Só vale com a chave ligada ([data-lab-adaptive] na raiz da tela montada).
+ */
+
+[data-lab-adaptive] .lab-slot-voicebar {
+  container: vb / size;
+}
+/* nos moldes o bloco de voz tem a altura do conteúdo: contêiner só na largura (size zeraria a altura) */
+[data-lab-adaptive] .lab-slot-voicebar.lab-auto-h {
+  container: vb / inline-size;
+}
+[data-lab-adaptive] .lab-slot-channels {
+  container: nav / size;
+}
+[data-lab-adaptive] .lab-slot-main {
+  container: room / inline-size;
+}
+
+/* voz e perfil baixo: o "Na sala" vira uma linha compacta e o cartão encolhe */
+@container vb (max-height: 160px) {
+  [data-lab-adaptive] .lab-voice-panel {
+    margin-bottom: 6px;
+    padding: 6px 10px;
+  }
+  [data-lab-adaptive] .lab-voice-sub {
+    display: none;
+  }
+  [data-lab-adaptive] .lab-user-card {
+    margin-bottom: 8px;
+    padding: 6px;
+  }
+}
+/* voz e perfil estreito: ajuda e configurações saem do cartão (continuam no menu do nome) */
+@container vb (max-width: 300px) {
+  [data-lab-adaptive] .lab-user-extra {
+    display: none;
+  }
+  [data-lab-adaptive] .lab-user-bio {
+    display: none;
+  }
+}
+
+/* canais baixos: o atalho do Mural sai para sobrar espaço para as salas */
+@container nav (max-height: 340px) {
+  [data-lab-adaptive] .lab-mural-entry {
+    display: none;
+  }
+}
+
+/* sala de voz: o papo lateral aparece pelo espaço do bloco, não pela largura da janela */
+@container room (min-width: 980px) {
+  [data-lab-adaptive] .room-panel {
+    display: flex !important;
+  }
+}
+@container room (max-width: 979px) {
+  [data-lab-adaptive] .room-panel {
+    display: none !important;
+  }
+}
+/* barra de controles estreita: quebra em duas linhas em vez de vazar para os lados */
+@container dock (max-width: 560px) {
+  [data-lab-adaptive] .control-dock {
+    overflow: visible;
+  }
+  [data-lab-adaptive] .dock-row {
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 28px;
+  }
+}
+
+/* caminho 4, arranjo "palco" escolhido por quem vê: o palco fica com a sala inteira (sem o papo ao lado) */
+[data-lab-room='palco'] .room-panel {
+  display: none !important;
+}
+
+/* caminho 6: janela simulada, para ver a tela como ficaria num monitor menor */
+.lab-sim {
+  margin-inline: auto;
+  height: 100%;
+  outline: 2px dashed var(--color-warn, #e9b949);
+  outline-offset: -2px;
+}

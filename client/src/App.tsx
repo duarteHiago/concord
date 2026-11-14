@@ -34,13 +34,16 @@ import { useMobile } from './lib/mobile';
 import { useDevStatsPublisher } from './lib/devStats';
 import { DeckScreen } from './components/Deck';
 import { DirectorRemote, DirectorWindowHost } from './components/Director';
-import { setMotionPref } from './lib/motion';
+import { reduceMotion, setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import './lib/visibility';
 // Oficina (só no Concord de testes): o Mural e os avisos usam Motion, carregados só quando aparecem
 const WorkshopHosts = lazy(() => import('./workshop/Hosts').then((m) => ({ default: m.WorkshopHosts })));
 const MuralView = lazy(() => import('./workshop/Mural').then((m) => ({ default: m.MuralView })));
-import { ServerScreen, useServerScreen } from './workshop/Screen';
+import { MotionConfig, motion as m } from 'motion/react';
+import { LAB_SPRING, ServerScreen, useServerScreen } from './workshop/Screen';
+import { LabPanel } from './workshop/LabPanel';
+import { useLab } from './workshop/lab';
 import { useServerThemeScope } from './workshop/theme';
 import { useWorkshopRuntime } from './workshop/runtime';
 import { WORKSHOP_ENABLED, useWorkshop } from './workshop/store';
@@ -180,6 +183,7 @@ function MainApp() {
           <WorkshopHosts />
         </Suspense>
       )}
+      {me && WORKSHOP_ENABLED && !remote && <LabPanel />}
     </>
   );
 }
@@ -250,15 +254,59 @@ function Shell() {
     </ErrorBoundary>
   );
 
-  if (screen) return <ServerScreen items={screen} main={content} theme={theme} />;
-
   return (
-    <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')} style={theme?.style} data-ws-shape={theme?.shape}>
-      <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
-        {showSidebar && <ChannelSidebar />}
-        {showContent && content}
-      </div>
-      <MobileBottomNav />
+    <LabFrame>
+      {screen ? (
+        <ServerScreen plan={screen} main={content} theme={theme} />
+      ) : (
+        <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')} style={theme?.style} data-ws-shape={theme?.shape}>
+          <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
+            {showSidebar && (
+              <LabMove id="channels" className="flex shrink-0">
+                <ChannelSidebar />
+              </LabMove>
+            )}
+            {showContent && (
+              <LabMove id="main" className="flex min-w-0 flex-1">
+                {content}
+              </LabMove>
+            )}
+          </div>
+          <MobileBottomNav />
+        </div>
+      )}
+    </LabFrame>
+  );
+}
+
+/**
+ * Laboratório de layout (só no Concord de testes): janela simulada (caminho 6) e a configuração das animações
+ * (caminho 5). Fora do laboratório não muda nada.
+ */
+function LabFrame({ children }: { children: React.ReactNode }) {
+  const simulate = useLab((s) => s.simulate);
+  const animate = useLab((s) => s.animate);
+  if (!WORKSHOP_ENABLED) return <>{children}</>;
+  const body = simulate ? (
+    <div className="lab-sim" style={{ maxWidth: simulate }}>
+      {children}
     </div>
+  ) : (
+    children
+  );
+  return animate ? <MotionConfig reducedMotion={reduceMotion() ? 'always' : 'never'}>{body}</MotionConfig> : <>{body}</>;
+}
+
+/**
+ * Caminho 5: no layout padrão (o das conversas privadas), canais e conteúdo levam o mesmo layoutId dos blocos
+ * da tela montada, então deslizam de uma arrumação para a outra em vez de trocar seco.
+ */
+function LabMove({ id, className, children }: { id: string; className: string; children: React.ReactNode }) {
+  const animate = useLab((s) => s.animate);
+  if (!WORKSHOP_ENABLED || !animate) return <>{children}</>;
+  return (
+    <m.div layoutId={`lab-${id}`} layout className={className} transition={LAB_SPRING}>
+      {children}
+    </m.div>
   );
 }

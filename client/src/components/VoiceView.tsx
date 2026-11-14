@@ -175,7 +175,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
       </main>
 
       {canChat && chatOpen && (
-        <aside aria-label="Painel da sala" className="panel relative hidden shrink-0 flex-col overflow-hidden xl:flex" style={{ width: shownPanelWidth }}>
+        <aside aria-label="Painel da sala" className="room-panel panel relative hidden shrink-0 flex-col overflow-hidden xl:flex" style={{ width: shownPanelWidth }}>
           <PanelResizer width={shownPanelWidth} onChange={setPanelWidth} />
           <div className="flex items-center gap-1 px-3 pt-3 pb-1">
             <div role="tablist" className="flex flex-1 gap-1 rounded-full bg-surface-0 p-1">
