@@ -1,6 +1,7 @@
 import type { SupporterTier } from '../../../shared/supporter.ts';
 import type { Overwrite } from '../../../shared/permissions.ts';
 import type { Patch, StickerFinish } from '../../../shared/cosmetics.ts';
+import type { PlazaAvatar } from '../../../shared/plaza.ts';
 
 export type { Patch, StickerFinish };
 
@@ -134,6 +135,8 @@ export interface UserSettings {
   pinnedServers?: string[];
   /** botões favoritos do deck do celular (sons, reações, Mecenato) */
   deckFavorites?: string[];
+  /** como o boneco aparece na Praça do servidor (ver shared/plaza.ts) */
+  plazaAvatar?: PlazaAvatar;
 }
 
 export interface Me extends User {
@@ -378,6 +381,8 @@ export interface ServerDetail {
   jams?: Jam[];
   /** gravar a sala está liberado neste servidor (enquanto a gravação está em teste na produção) */
   recording?: boolean;
+  /** Praça do servidor liberada aqui (null = não), com quantas pessoas estão nela agora */
+  plaza?: { count: number } | null;
   online: string[];
 }
 

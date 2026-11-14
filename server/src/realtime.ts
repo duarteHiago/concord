@@ -7,6 +7,7 @@ import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, touchSession, verifySession } from './http.ts';
 import { removeFromRoom, updateVoicePermission, voiceParticipants } from './livekit.ts';
 import { socketEvents, timedSocket } from './metrics.ts';
+import { plazaLeaveServer, registerPlaza, setupPlaza } from './plaza.ts';
 
 export interface VoiceState {
   userId: string;
@@ -151,6 +152,7 @@ export function joinServerRoom(userId: string, serverId: string) {
 
 export function leaveServerRoom(userId: string, serverId: string) {
   io.in(`user:${userId}`).socketsLeave(`server:${serverId}`);
+  plazaLeaveServer(userId, serverId);
   const v = voice.get(userId);
   if (v?.serverId === serverId) {
     voice.delete(userId);
@@ -386,7 +388,7 @@ export function liveStats() {
   };
 }
 
-const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:recording', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping']);
+const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:recording', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping', 'plaza:enter', 'plaza:leave', 'plaza:move', 'plaza:say', 'plaza:emote', 'plaza:avatar', 'plaza:avatars']);
 
 // Faxina das salas de voz. O LiveKit aceita qualquer um com token válido, mas só vale estar numa sala quem entrou
 // pelo app (aparece na lista dela) e ainda pode conectar nela. Sai quem foi expulso do servidor, perdeu a
@@ -422,6 +424,7 @@ export function setupRealtime(httpServer: HttpServer) {
   setInterval(() => void sweepVoiceRooms(), 30_000).unref();
 
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
+  setupPlaza(io);
 
   io.use((socket, next) => {
     const session = verifySession(socket.handshake.auth?.token);
@@ -454,6 +457,8 @@ export function setupRealtime(httpServer: HttpServer) {
     online.set(userId, count);
     socket.emit('presence:list', presenceListFor(userId));
     if (count === 1) emitPresence(userId, presenceOf(userId));
+
+    registerPlaza(socket, userId);
 
     socket.on('voice:join', (data: { channelId: string }, ack?: (r: unknown) => void) => {
       try {
