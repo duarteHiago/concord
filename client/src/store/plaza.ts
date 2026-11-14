@@ -2,12 +2,14 @@
 // O desenho e a animação dos passos ficam no componente (components/plaza/); aqui só o que vem do servidor.
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
-import type { EmoteId, PlazaAvatar } from '../../../shared/plaza.ts';
+import type { EmoteId, PlazaAvatar, Scene } from '../../../shared/plaza.ts';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
 
 export interface Walker {
   userId: string;
+  /** na praça (lobby) ou dentro do estabelecimento */
+  scene: Scene;
   x: number;
   y: number;
   avatar: PlazaAvatar;
@@ -44,6 +46,8 @@ interface PlazaState {
   arrived: () => void;
   close: () => void;
   move: (x: number, y: number) => void;
+  /** pisei na porta: o servidor confere e troca de lugar */
+  door: () => void;
   say: (text: string) => Promise<boolean>;
   emote: (emote: EmoteId) => void;
   avatarChanged: () => void;
@@ -106,6 +110,10 @@ export const usePlaza = create<PlazaState>((set, get) => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:move', { serverId, x, y });
     },
+    door: () => {
+      const serverId = get().serverId;
+      if (serverId) getSocket()?.emit('plaza:door', { serverId });
+    },
     say: (text) =>
       new Promise((resolve) => {
         const serverId = get().serverId;
@@ -154,8 +162,11 @@ export function bindPlazaSocket(socket: Socket) {
     const { [userId]: _gone, ...rest } = s().walkers;
     usePlaza.setState({ walkers: rest });
   });
-  socket.on('plaza:move', ({ serverId, userId, x, y }: { serverId: string; userId: string; x: number; y: number }) => {
-    if (here(serverId)) patchWalker(userId, { x, y, activeAt: Date.now() });
+  socket.on('plaza:move', ({ serverId, userId, scene, x, y }: { serverId: string; userId: string; scene: Scene; x: number; y: number }) => {
+    if (here(serverId)) patchWalker(userId, { scene, x, y, activeAt: Date.now() });
+  });
+  socket.on('plaza:scene', ({ serverId, userId, scene, x, y }: { serverId: string; userId: string; scene: Scene; x: number; y: number }) => {
+    if (here(serverId)) patchWalker(userId, { scene, x, y, activeAt: Date.now() });
   });
   socket.on('plaza:avatar', ({ serverId, userId, avatar }: { serverId: string; userId: string; avatar: PlazaAvatar }) => {
     if (!here(serverId)) return;

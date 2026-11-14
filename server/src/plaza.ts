@@ -3,12 +3,14 @@
 // Quem está sentado (na call) vem do estado de voz, não daqui.
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
-import { buildLayout, cleanSay, isEmote, nearestWalkable, sanitizeAvatar, walkable, type PlazaAvatar, type PlazaLayout } from '../../shared/plaza.ts';
+import { buildLobby, buildLayout, cleanSay, isEmote, nearestWalkable, sanitizeAvatar, walkable, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
 import { channelPermissions, isMember } from './access.ts';
 import { config } from './config.ts';
 import { all, get, type ChannelRow } from './db.ts';
 
 interface Walker {
+  /** no lobby (a praça) ou dentro do estabelecimento */
+  scene: Scene;
   x: number;
   y: number;
   avatar: PlazaAvatar;
@@ -34,8 +36,15 @@ function voiceChannels(serverId: string) {
   return all<ChannelRow>("SELECT * FROM channels WHERE server_id = ? AND type = 'voice' ORDER BY position, name", serverId);
 }
 
-/** O mapa sai das salas de voz (todas, mesmo as que a pessoa não vê: a mesa delas aparece sem nome). */
-function layoutOf(serverId: string, channels = voiceChannels(serverId)) {
+const LOBBY = buildLobby();
+
+/** O mapa de cada lugar: o lobby é fixo; o de dentro sai das salas de voz. */
+function layoutOf(serverId: string, scene: Scene) {
+  return scene === 'lobby' ? LOBBY : insideLayout(serverId);
+}
+
+/** O de dentro sai das salas de voz (todas, mesmo as que a pessoa não vê: a mesa delas aparece sem nome). */
+function insideLayout(serverId: string, channels = voiceChannels(serverId)) {
   const key = channels.map((c) => c.id).join(',');
   const cached = layouts.get(serverId);
   if (cached?.key === key) return cached.layout;
@@ -67,9 +76,9 @@ function blockedPairs(userId: string) {
 }
 
 /** Onde chega quem entra: no portal, ou numa casa livre em volta dele (para ninguém nascer em cima de ninguém). */
-function spawnPoint(layout: PlazaLayout, plaza: Map<string, Walker>) {
-  const taken = new Set([...plaza.values()].map((w) => `${w.x},${w.y}`));
-  const { x, y } = layout.spawn;
+function spawnPoint(layout: PlazaLayout, plaza: Map<string, Walker>, center = layout.spawn) {
+  const taken = new Set([...plaza.values()].filter((w) => w.scene === layout.kind).map((w) => `${w.x},${w.y}`));
+  const { x, y } = center;
   for (let r = 0; r <= 2; r++) {
     const ring: { x: number; y: number }[] = [];
     for (let dy = -r; dy <= r; dy++) {
@@ -79,11 +88,11 @@ function spawnPoint(layout: PlazaLayout, plaza: Map<string, Walker>) {
     }
     if (ring.length) return ring[Math.floor(Math.random() * ring.length)];
   }
-  return layout.spawn;
+  return nearestWalkable(layout, center);
 }
 
 const room = (serverId: string) => `plaza:${serverId}`;
-const walkerJson = (userId: string, w: Walker) => ({ userId, x: w.x, y: w.y, avatar: w.avatar, activeAt: w.activeAt });
+const walkerJson = (userId: string, w: Walker) => ({ userId, scene: w.scene, x: w.x, y: w.y, avatar: w.avatar, activeAt: w.activeAt });
 
 let io: Server;
 
@@ -141,17 +150,17 @@ export function registerPlaza(socket: Socket, userId: string) {
     if (!plazaEnabled(serverId)) return ack?.({ ok: false, error: 'A praça ainda não abriu neste servidor.' });
 
     const channels = voiceChannels(serverId);
-    const layout = layoutOf(serverId, channels);
+    const inside = insideLayout(serverId, channels);
     const plaza = plazas.get(serverId) ?? new Map<string, Walker>();
     plazas.set(serverId, plaza);
     let w = plaza.get(userId);
     const isNew = !w;
     if (!w) {
-      w = { ...spawnPoint(layout, plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
+      w = { scene: 'lobby', ...spawnPoint(LOBBY, plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
       plaza.set(userId, w);
     } else {
       // o mapa pode ter mudado (sala criada ou apagada) desde a última vez
-      Object.assign(w, nearestWalkable(layout, w));
+      Object.assign(w, nearestWalkable(w.scene === 'lobby' ? LOBBY : inside, w));
     }
     w.sockets.add(socket.id);
     joined.add(serverId);
@@ -160,7 +169,7 @@ export function registerPlaza(socket: Socket, userId: string) {
     ack?.({
       ok: true,
       // a mesa de uma sala que a pessoa não vê vai sem o id (aparece como "mesa reservada")
-      tables: channels.slice(0, layout.tables.length).map((c) => (has(channelPermissions(c, userId), P.VIEW_CHANNEL) ? c.id : null)),
+      tables: channels.slice(0, inside.tables.length).map((c) => (has(channelPermissions(c, userId), P.VIEW_CHANNEL) ? c.id : null)),
       walkers: [...plaza.entries()].map(([id, x]) => walkerJson(id, x)),
     });
     if (isNew) {
@@ -185,21 +194,40 @@ export function registerPlaza(socket: Socket, userId: string) {
   socket.on('plaza:move', (data: { serverId?: unknown; x?: unknown; y?: unknown }) => {
     const here = walkerHere(data?.serverId);
     if (!here || !moveRate()) return;
-    const layout = layoutOf(here.serverId);
+    const layout = layoutOf(here.serverId, here.w.scene);
     const x = Number(data.x);
     const y = Number(data.y);
     if (!walkable(layout, x, y)) return;
     here.w.x = x;
     here.w.y = y;
     here.w.activeAt = Date.now();
-    io.to(room(here.serverId)).emit('plaza:move', { serverId: here.serverId, userId, x, y });
+    io.to(room(here.serverId)).emit('plaza:move', { serverId: here.serverId, userId, scene: here.w.scene, x, y });
   });
 
-  /** Manda para quem está na praça, menos quem bloqueou a pessoa (ou foi bloqueado por ela). */
+  // pisou na porta: entra no estabelecimento (ou sai para a praça). Só vale estando de fato na porta.
+  socket.on('plaza:door', (data: { serverId?: unknown }) => {
+    const here = walkerHere(data?.serverId);
+    if (!here || !moveRate()) return;
+    const { w } = here;
+    const from = layoutOf(here.serverId, w.scene);
+    if (w.x !== from.door.x || w.y !== from.door.y) return;
+    const scene: Scene = w.scene === 'lobby' ? 'inside' : 'lobby';
+    const to = layoutOf(here.serverId, scene);
+    const arrive = scene === 'lobby' ? { x: to.door.x, y: to.door.y + 1 } : to.spawn;
+    const others = new Map([...plazas.get(here.serverId)!].filter(([id]) => id !== userId));
+    Object.assign(w, { scene, ...spawnPoint(to, others, arrive), activeAt: Date.now() });
+    io.to(room(here.serverId)).emit('plaza:scene', { serverId: here.serverId, userId, scene, x: w.x, y: w.y });
+  });
+
+  /** Manda para quem está no mesmo lugar (lobby ou dentro), menos quem bloqueou a pessoa (ou foi bloqueado por ela). */
   async function sendToPlaza(serverId: string, event: string, payload: unknown) {
     const blocked = blockedPairs(userId);
+    const plaza = plazas.get(serverId);
+    const scene = plaza?.get(userId)?.scene;
     for (const s of await io.in(room(serverId)).fetchSockets()) {
-      if (!blocked.has(s.data.userId as string)) s.emit(event, payload);
+      const other = s.data.userId as string;
+      if (blocked.has(other) || plaza?.get(other)?.scene !== scene) continue;
+      s.emit(event, payload);
     }
   }
 
