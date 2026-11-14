@@ -28,7 +28,18 @@ export interface Release {
   also?: string[];
   /** escritos do ponto de vista de quem sofria com o problema */
   fixes?: string[];
+  /** só para parte das pessoas: 'plaza' = quem está num servidor com a Praça (enquanto ela não é de todos) */
+  audience?: 'plaza';
 }
+
+/** A pessoa está em algum servidor com a Praça? */
+function hasPlaza() {
+  const s = useApp.getState();
+  return s.servers.some((x) => x.plaza) || Object.values(s.details).some((d) => !!d.plaza);
+}
+
+/** A nota é para esta pessoa? (as da Praça só para quem tem a Praça em algum servidor) */
+export const releaseVisible = (r: Release) => r.audience !== 'plaza' || hasPlaza();
 
 const modules = import.meta.glob<{ default: Release }>('./*.tsx', { eager: true });
 
@@ -53,12 +64,14 @@ export const RELEASE_DAYS: { day: string; releases: Release[] }[] = RELEASES.red
 
 /** Notas que a pessoa ainda não viu. Quem nunca viu nenhuma (contas de antes desta função) recebe só o último dia. */
 export function unseenReleases(lastSeen: string | undefined): Release[] {
-  if (!lastSeen) return RELEASE_DAYS[0]?.releases ?? [];
-  return RELEASES.filter((r) => r.id > lastSeen);
+  if (!lastSeen) return (RELEASE_DAYS[0]?.releases ?? []).filter(releaseVisible);
+  return RELEASES.filter((r) => r.id > lastSeen && releaseVisible(r));
 }
 
 export function useUnseenReleases(): Release[] {
   const lastSeen = useApp((s) => s.me?.settings.lastSeenRelease);
+  // a lista de servidores decide se as notas da Praça aparecem: refaz quando ela chega
+  useApp((s) => s.servers);
   return unseenReleases(lastSeen);
 }
 

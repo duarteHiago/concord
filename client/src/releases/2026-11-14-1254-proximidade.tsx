@@ -28,6 +28,7 @@ function ProximidadeArt() {
 
 export default {
   id: '2026-11-14-1254',
+  audience: 'plaza',
   title: 'Conversa por proximidade na Praça',
   highlights: [
     {

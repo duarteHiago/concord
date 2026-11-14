@@ -206,7 +206,10 @@ function Shell() {
   const channel = detail?.channels.find((c) => c.id === channelId);
   const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}`;
 
-  const showPlaza = !!activeServerId && activeServerId !== HOME && !!detail?.plaza && !settingsOpen && !profileOpen && !releasesOpen;
+  // na tela de uma call em andamento o globo vai na linha dos botões da call (VoiceView); nas outras, na faixa de baixo
+  const inThisCall = useVoice((s) => s.status !== 'idle' && !!channelId && s.channelId === channelId);
+  const showPlaza =
+    !!activeServerId && activeServerId !== HOME && !!detail?.plaza && !settingsOpen && !profileOpen && !releasesOpen && !(channel?.type === 'voice' && inThisCall);
   const showSidebar = !mobile || mobileView === 'sidebar';
   const showContent = !mobile || mobileView === 'chat';
 

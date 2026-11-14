@@ -194,6 +194,8 @@ export interface ServerSummary {
   iconColor: string;
   iconUrl: string | null;
   verified?: boolean;
+  /** o servidor tem a Praça (só vem na lista de servidores da pessoa) */
+  plaza?: boolean;
 }
 
 export interface Role {

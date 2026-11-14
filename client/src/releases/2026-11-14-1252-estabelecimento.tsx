@@ -26,6 +26,7 @@ function MiniTvArt() {
 
 export default {
   id: '2026-11-14-1252',
+  audience: 'plaza',
   title: 'O estabelecimento do servidor',
   highlights: [
     {
