@@ -183,8 +183,10 @@ export function registerFeedbackRoutes(api: Router) {
     if (Date.now() - f.created_at > 10 * 60_000) fail(400, 'Os prints vão junto com o envio. Mande um feedback novo.');
     if (f.images >= FEEDBACK_MAX_IMAGES) fail(400, `No máximo ${FEEDBACK_MAX_IMAGES} prints.`);
     if (!allowImages(me)) fail(429, 'Muitos prints agora há pouco. Tente de novo daqui a pouco.');
-    const buf = req.body as Buffer;
-    const type = Buffer.isBuffer(buf) ? sniff(buf) : null;
+    if (!Buffer.isBuffer(req.body)) fail(400, 'O print precisa ser PNG, JPEG ou WebP.');
+    // cópia própria dos bytes: daqui para frente é só um Buffer, venha o que vier no corpo
+    const buf = Buffer.from(req.body as Buffer);
+    const type = sniff(buf);
     if (!type) fail(400, 'O print precisa ser PNG, JPEG ou WebP.');
     writeFileSync(join(dir, `${f.id}-${f.images}.${EXT[type!]}`), buf);
     run('UPDATE feedback SET images = images + 1 WHERE id = ?', f.id);
@@ -234,7 +236,9 @@ export function registerFeedbackAdminRoutes(api: Router, page: (req: express.Req
   });
 
   api.get('/admin/feedback/:id/image/:n', (req, res) => {
-    const img = feedbackImage(req.params.id, Number(req.params.n)) ?? fail(404, 'Print não encontrado');
+    // o id que vira caminho é o do banco (não o que veio na URL)
+    const f = get<FeedbackRow>('SELECT * FROM feedback WHERE id = ?', req.params.id) ?? fail(404, 'Print não encontrado');
+    const img = feedbackImage(f.id, Math.floor(Number(req.params.n))) ?? fail(404, 'Print não encontrado');
     res.setHeader('Content-Type', img.type);
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
