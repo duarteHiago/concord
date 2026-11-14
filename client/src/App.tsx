@@ -42,7 +42,7 @@ const WorkshopHosts = lazy(() => import('./workshop/Hosts').then((m) => ({ defau
 const MuralView = lazy(() => import('./workshop/Mural').then((m) => ({ default: m.MuralView })));
 import { MotionConfig, motion as m } from 'motion/react';
 import { LAB_SPRING, ServerScreen, useServerScreen } from './workshop/Screen';
-import { LabPanel } from './workshop/LabPanel';
+import { useRoomArrangement } from './workshop/LabPanel';
 import { useLab } from './workshop/lab';
 import { useServerThemeScope } from './workshop/theme';
 import { useWorkshopRuntime } from './workshop/runtime';
@@ -183,7 +183,6 @@ function MainApp() {
           <WorkshopHosts />
         </Suspense>
       )}
-      {me && WORKSHOP_ENABLED && !remote && <LabPanel />}
     </>
   );
 }
@@ -280,21 +279,14 @@ function Shell() {
 }
 
 /**
- * Laboratório de layout (só no Concord de testes): janela simulada (caminho 6) e a configuração das animações
- * (caminho 5). Fora do laboratório não muda nada.
+ * Laboratório de layout (só no Concord de testes): animações entre telas (caminho 5) e o arranjo da sala escolhido
+ * por quem vê (caminho 4). As escolhas ficam no editor da Oficina. Fora do laboratório não muda nada.
  */
 function LabFrame({ children }: { children: React.ReactNode }) {
-  const simulate = useLab((s) => s.simulate);
   const animate = useLab((s) => s.animate);
-  if (!WORKSHOP_ENABLED) return <>{children}</>;
-  const body = simulate ? (
-    <div className="lab-sim" style={{ maxWidth: simulate }}>
-      {children}
-    </div>
-  ) : (
-    children
-  );
-  return animate ? <MotionConfig reducedMotion={reduceMotion() ? 'always' : 'never'}>{body}</MotionConfig> : <>{body}</>;
+  useRoomArrangement();
+  if (!WORKSHOP_ENABLED || !animate) return <>{children}</>;
+  return <MotionConfig reducedMotion={reduceMotion() ? 'always' : 'never'}>{children}</MotionConfig>;
 }
 
 /**

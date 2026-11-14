@@ -12,10 +12,7 @@ import {
   GripVertical,
   ImagePlus,
   LayoutGrid,
-  Hash,
-  Headphones,
   Megaphone,
-  Mic,
   Monitor,
   Package,
   Palette,
@@ -27,7 +24,6 @@ import {
   Sparkles,
   Trash2,
   Undo2,
-  Users,
   Volume2,
   X,
 } from 'lucide-react';
@@ -65,12 +61,16 @@ import {
   type WorkshopPiece,
 } from '../../../shared/workshop.ts';
 import { api } from '../lib/api';
+import { BlockMock, tooSmall, type MockSituation } from './Mocks';
+import { LabBar, TransitionDemo, type PreviewState } from './LabPanel';
+import { PREVIEW_WINDOWS, blockMinPx, cellsToPx, gridArea, minCells, useLab } from './lab';
+import { TemplateEditor, TemplatePicker } from './TemplateEditor';
 import { useMobile } from '../lib/mobile';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import type { ServerDetail } from '../lib/types';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
-import { Avatar, Button, cx, initials } from '../components/ui';
+import { Button, cx, initials } from '../components/ui';
 import { BannerArt, RailEffect, packVars } from './Art';
 import { PackEmblem } from './PackEmblem';
 import { SceneBackdrop } from './Scene';
@@ -100,6 +100,8 @@ interface GridSpec {
   rows: number;
   /** tela fixa: a grade inteira aparece, com a proporção de uma tela */
   fixed: boolean;
+  /** altura ÷ largura da área da grade (tela fixa); sem isso, 16:9 */
+  aspect?: number;
   gap: number;
   limits: (i: ScreenItem) => { min: [number, number]; max: [number, number] };
 }
@@ -1022,6 +1024,7 @@ function GridEditor({
   onChange,
   onDropNew,
   readOnly,
+  sitFor,
 }: {
   items: ScreenItem[];
   grid: GridSpec;
@@ -1033,6 +1036,8 @@ function GridEditor({
   onDropNew: (type: WidgetType, at: { x: number; y: number }) => void;
   /** "ver como membro": sem alças */
   readOnly?: boolean;
+  /** situação da prévia para cada bloco (laboratório de layout): tamanho real na janela, em call, sala de voz */
+  sitFor?: (i: ScreenItem) => MockSituation;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -1054,7 +1059,7 @@ function GridEditor({
   const gap = grid.gap;
   const colW = (width - gap * (grid.cols - 1)) / grid.cols;
   // a tela tem proporção de monitor (16:9); o Mural usa a altura de linha dele
-  const rowPx = grid.fixed ? Math.max(24, (width * 0.5625 - gap * (grid.rows - 1)) / grid.rows) : ROW_PX;
+  const rowPx = grid.fixed ? Math.max(24, (width * (grid.aspect ?? 0.5625) - gap * (grid.rows - 1)) / grid.rows) : ROW_PX;
   const stepX = colW + gap;
   const stepY = rowPx + gap;
   const shown = drag?.preview ?? items;
@@ -1164,6 +1169,22 @@ function GridEditor({
             transition={springs.snappy}
           />
         )}
+        {/* redimensionando: o tamanho mínimo aparece como um fantasma (não dá para passar dele) */}
+        {drag?.mode === 'resize' &&
+          (() => {
+            const { min } = grid.limits(drag.orig);
+            return (
+              <motion.div
+                key="min"
+                className={cx('pointer-events-none absolute z-30 border-2 border-dashed border-warn bg-warn/10', radius)}
+                initial={{ ...px({ x: drag.orig.x, y: drag.orig.y, w: min[0], h: min[1] }), opacity: 0 }}
+                animate={{ ...px({ x: drag.orig.x, y: drag.orig.y, w: min[0], h: min[1] }), opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <span className="absolute top-1 left-1 rounded-full bg-warn px-1.5 py-0.5 text-[9px] font-extrabold text-black">mínimo</span>
+              </motion.div>
+            );
+          })()}
         {drag?.preview &&
           (() => {
             const target = drag.preview.find((w) => w.id === drag.id)!;
@@ -1216,7 +1237,14 @@ function GridEditor({
             }}
           >
             {isBlock(w) ? (
-              <BlockMock b={w} detail={detail} dragging={isDrag} compact={grid.fixed} />
+              <>
+                <BlockMock b={w} detail={detail} dragging={isDrag} compact={grid.fixed} sit={sitFor?.(w)} />
+                {sitFor && tooSmall(w.block, sitFor(w)) && (
+                  <span className="pointer-events-none absolute bottom-1.5 left-1.5 z-10 rounded-full bg-danger px-1.5 py-0.5 font-mono text-[9px] font-bold text-white">
+                    {sitFor(w).real!.w}×{sitFor(w).real!.h} · precisa {blockMinPx(w.block, sitFor(w)).w}×{blockMinPx(w.block, sitFor(w)).h}
+                  </span>
+                )}
+              </>
             ) : (
               <WidgetCard ctx={ctx} className={cx('h-full transition-shadow duration-200', grid.fixed && 'p-2.5 text-[12px]', isDrag && 'shadow-[0_24px_50px_-12px_rgb(0_0_0/0.45)]')}>
                 <div className="pointer-events-none h-full">
@@ -1289,6 +1317,39 @@ function ScreenArea({
   const items = config.screen?.items;
   // como na tela real: os widgets seguem o tema, não a cor do pacote
   const ctx: WidgetContext = { serverId, pack: null, editing: true };
+  const lab = useLab();
+  const [preview, setPreview] = useState<PreviewState>({ win: PREVIEW_WINDOWS[0], inCall: false, voiceRoom: false, dm: false });
+  const sitBase = { inCall: preview.inCall, voiceRoom: preview.voiceRoom, adaptive: lab.adaptive };
+  const area = gridArea(preview.win);
+  const sitFor = (i: ScreenItem): MockSituation => ({ ...sitBase, real: cellsToPx(i, preview.win) });
+  // grade com limites: o mínimo de cada bloco vem dos pixels da janela da prévia e da situação
+  const screenGrid: GridSpec = {
+    ...SCREEN_GRID,
+    aspect: area.h / area.w,
+    limits:
+      lab.mode === 'limites'
+        ? (i) => {
+            const base = screenLimits(i);
+            if (!isBlock(i)) return base;
+            const [mw, mh] = minCells(i.block, sitBase, preview.win);
+            return { min: [Math.max(base.min[0], mw), Math.max(base.min[1], mh)], max: base.max };
+          }
+        : screenLimits,
+  };
+  const voiceMorph = lab.voiceLayout && preview.voiceRoom;
+  const widgets = (items ?? []).filter((i): i is WidgetPlacement => !isBlock(i));
+  const situation = [preview.inCall && 'em call', preview.voiceRoom && 'com a sala de voz aberta'].filter(Boolean).join(' e ');
+  const problems =
+    !items || voiceMorph || lab.mode === 'moldes'
+      ? []
+      : items.filter(isBlock).flatMap((b) => {
+          const sit = sitFor(b);
+          if (!tooSmall(b.block, sit)) return [];
+          const min = blockMinPx(b.block, sit);
+          return [
+            `${BLOCK_INFO[b.block].label}: ${sit.real!.w}×${sit.real!.h} px numa janela de ${preview.win.w} px${situation ? ` ${situation}` : ''}; precisa de ${min.w}×${min.h}.${lab.adaptive ? ' Com os blocos que se adaptam, ele se rearruma.' : ''}`,
+          ];
+        });
   return (
     <div>
       <div className="mb-2 flex items-end justify-between gap-3">
@@ -1306,6 +1367,16 @@ function ScreenArea({
           </Button>
         )}
       </div>
+      {items && !asMember && (
+        <LabBar
+          preview={preview}
+          onPreview={(patch) => setPreview((cur) => ({ ...cur, ...patch }))}
+          problems={problems}
+        />
+      )}
+      {preview.dm && items && (
+        <p className="mb-2 text-[11px] text-fg-muted">Use o botão no canto da prévia para ir e voltar. Ligue e desligue "Animação entre telas" para comparar com a troca seca de hoje.</p>
+      )}
       {/* moldura de "monitor": a barra de servidores fixa em cima, a grade embaixo */}
       <div className={cx('overflow-hidden rounded-3xl bg-surface-1 p-2.5 ring-1 ring-line', backdrop && 'ws-vars')} style={backdrop ? packVars(backdrop) : undefined}>
         <div className="mb-2 flex h-8 items-center gap-1.5 rounded-2xl bg-surface-2 px-2.5" aria-hidden="true">
@@ -1314,10 +1385,35 @@ function ScreenArea({
           ))}
           <span className="ml-2 text-[10px] font-bold text-fg-subtle">barra de servidores · fixa</span>
         </div>
-        {items ? (
+        {items && preview.dm ? (
+          <TransitionDemo items={items} />
+        ) : items && voiceMorph ? (
+          <>
+            <p className="mb-2 text-[11px] text-fg-muted">Sala de voz aberta: com "Mudar a tela na sala de voz" ligado, a tela vira o molde Palco (sem widgets). Ao sair da sala, volta para a montagem abaixo.</p>
+            <TemplateEditor template="palco" widgets={[]} detail={detail} ctx={ctx} win={preview.win} sit={sitBase} splits={undefined} onSplit={() => {}} selected={null} onSelect={() => {}} onDropWidget={() => {}} readOnly />
+          </>
+        ) : items && lab.mode === 'moldes' ? (
+          <div className="space-y-3">
+            {!asMember && <TemplatePicker value={lab.template} onChange={(template) => lab.set({ template })} />}
+            <TemplateEditor
+              template={lab.template}
+              widgets={widgets}
+              detail={detail}
+              ctx={ctx}
+              win={preview.win}
+              sit={sitBase}
+              splits={lab.splits[lab.template]}
+              onSplit={(sp) => lab.set({ splits: { ...lab.splits, [lab.template]: sp } })}
+              selected={selected}
+              onSelect={onSelect}
+              onDropWidget={(type) => onDropNew(type, { x: 0, y: 0 })}
+              readOnly={asMember}
+            />
+          </div>
+        ) : items ? (
           <GridEditor
             items={items}
-            grid={SCREEN_GRID}
+            grid={screenGrid}
             ctx={ctx}
             detail={detail}
             selected={selected}
@@ -1325,6 +1421,7 @@ function ScreenArea({
             onChange={onChange}
             onDropNew={onDropNew}
             readOnly={asMember}
+            sitFor={sitFor}
           />
         ) : (
           <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-line-strong text-center">
@@ -1339,76 +1436,6 @@ function ScreenArea({
       </p>
     </div>
   );
-}
-
-/** Miniatura de um bloco do sistema, com os dados reais do servidor (nomes dos canais, membros). */
-function BlockMock({ b, detail, dragging, compact }: { b: BlockPlacement; detail: ServerDetail; dragging: boolean; compact: boolean }) {
-  const me = useApp((s) => s.me);
-  const firstText = detail.channels.find((c) => c.type === 'text');
-  const shell = cx('pointer-events-none flex h-full flex-col overflow-hidden rounded-2xl bg-surface-2 ring-1 ring-line', compact ? 'p-2 text-[11px]' : 'p-3 text-sm', dragging && 'opacity-90 shadow-2xl');
-  switch (b.block) {
-    case 'channels':
-      return (
-        <div className={shell}>
-          <div className="truncate font-display text-[13px] font-extrabold">{detail.server.name}</div>
-          <div className="mb-1.5 text-[10px] text-fg-muted">{detail.online.length} online</div>
-          <div className="min-h-0 space-y-0.5 overflow-hidden">
-            {detail.channels.map((c) => (
-              <div key={c.id} className="flex items-center gap-1 truncate rounded-md px-1 py-0.5 text-fg-muted">
-                {c.type === 'voice' ? <Volume2 size={11} /> : <Hash size={11} />}
-                <span className="truncate">{c.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    case 'main':
-      return (
-        <div className={shell}>
-          <div className="mb-2 flex items-center gap-1 font-bold">
-            <Hash size={12} className="text-fg-muted" />
-            {firstText?.name ?? 'conversa'}
-          </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
-            {[70, 45, 85, 55, 30].map((w, i) => (
-              <div key={i} className="flex items-start gap-1.5">
-                <span className="h-4 w-4 shrink-0 rounded-full bg-surface-4" />
-                <span className="mt-1 h-2 rounded-full bg-surface-4" style={{ width: `${w}%` }} />
-              </div>
-            ))}
-          </div>
-          <div className="mt-1.5 truncate rounded-full bg-surface-3 px-2.5 py-1 text-[10px] text-fg-subtle">Mensagem em #{firstText?.name ?? 'geral'}</div>
-        </div>
-      );
-    case 'members':
-      return (
-        <div className={shell}>
-          <div className="mb-1.5 flex items-center gap-1 text-[10px] font-extrabold tracking-wider text-fg-subtle uppercase">
-            <Users size={11} />
-            Membros · {detail.members.length}
-          </div>
-          <div className="min-h-0 space-y-1 overflow-hidden">
-            {detail.members.slice(0, 12).map((m) => (
-              <div key={m.id} className="flex items-center gap-1.5 truncate">
-                <Avatar name={m.nickname || m.displayName} color={m.avatarColor} src={m.avatarUrl} size={16} />
-                <span className="truncate">{m.nickname || m.displayName}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    case 'voicebar':
-      return (
-        <div className={cx(shell, 'justify-end')}>
-          <div className="flex items-center gap-1.5 rounded-xl bg-surface-3 p-1.5">
-            {me && <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={18} />}
-            <span className="min-w-0 flex-1 truncate font-semibold">{me?.displayName}</span>
-            <Mic size={12} className="text-fg-muted" />
-            <Headphones size={12} className="text-fg-muted" />
-          </div>
-        </div>
-      );
-  }
 }
 
 function BlocksDrawer({ items, onAdd }: { items: ScreenItem[] | null; onAdd: (b: SystemBlock) => void }) {

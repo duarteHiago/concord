@@ -7,7 +7,7 @@
 // ('moldes', TemplateScreen.tsx) — e ligar os blocos que se adaptam, a arrumação de voz, a animação e o
 // contorno dos limites. Nada disso muda o servidor para os outros.
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { SCREEN_COLS, SCREEN_ROWS, isBlock, type ScreenItem, type WidgetPlacement } from '../../../shared/workshop.ts';
 import { ChannelsBlock, VoiceUserBlock } from '../components/ChannelSidebar';
 import { MemberListBody } from '../components/MemberList';
@@ -186,7 +186,7 @@ export function Slot({
   const body = (
     <>
       {children}
-      {lab.showLimits && block && min && <LimitFrame min={min} />}
+      {/* o contorno dos limites fica no editor da Oficina (laboratório de layout) */}
     </>
   );
   if (!lab.animate) {
@@ -209,28 +209,5 @@ export function Slot({
     >
       {body}
     </motion.div>
-  );
-}
-
-/** Contorno de um bloco: verde se cabe no mínimo da situação atual, vermelho se está menor (e quanto). */
-function LimitFrame({ min }: { min: { w: number; h: number } }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  useEffect(() => {
-    const el = ref.current?.parentElement;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setSize({ w: Math.round(el.clientWidth), h: Math.round(el.clientHeight) }));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const ok = !size || (size.w >= min.w && size.h >= min.h);
-  return (
-    <div ref={ref} aria-hidden className={cx('pointer-events-none absolute inset-0 z-20 rounded-[inherit] border-2', ok ? 'border-ok/70' : 'border-danger')}>
-      {size && (
-        <span className={cx('absolute top-1 right-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold', ok ? 'bg-ok/85 text-black' : 'bg-danger text-white')}>
-          {size.w}×{size.h} · mín {min.w}×{min.h}
-        </span>
-      )}
-    </div>
   );
 }
