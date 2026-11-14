@@ -35,6 +35,34 @@ Estabilidade: 300 s contínuos de ruído rosa no DFN3 em Node, 0 buracos, 0 erro
 - Custo numa thread livre: todos abaixo de 0,04 do tempo real. O que falta medir é a thread de áudio do
   navegador com jogo aberto (modo browser da bancada + `--long`, no PC do usuário).
 
+## Varredura da força do DFN3 (mesmo material, modo Node)
+
+Fala cortada (%) por força e SNR, média dos 4 ruídos:
+
+| força \ SNR | 0 dB | 5 dB | 10 dB | 20 dB | ruído tirado (média) |
+|---|---|---|---|---|---|
+| 20 | 1,5 | 1,6 | 2,1 | 3,3 | ~18 dB |
+| 30 | 8,1 | 5,6 | 5,1 | 4,8 | ~25 dB |
+| 45 | 12,8 | 7,7 | 5,4 | 5,3 | ~31 dB |
+| 60 | 12,9 | 7,7 | 5,5 | 5,3 | ~34 dB |
+| 80 | 12,9 | 7,7 | 5,5 | 5,3 | ~36 dB |
+
+Leitura: com ruído forte a força 20 preserva a fala (1,5 % contra 13 %); acima de 45 o corte não piora mais e só
+se tira mais ruído, então em sala silenciosa compensa apertar. Foi daí que saíram os degraus da **IA máxima
+automática** (`client/src/lib/noiseAuto.ts`: 20 / 30 / 45 / 60 dB conforme a relação voz/ruído estimada).
+
+## IA máxima automática (modo experimental) na mesma bancada
+
+| modelo | ruído | SI-SDR entra→sai | ruído tirado | resto nas pausas | fala cortada | ganho na fala | atraso |
+|---|---|---|---|---|---|---|---|
+| dfn-auto | ventilador | 8,7 → 11,5 | 16,1 | −45,3 | **1,4** | −1,1 | 40 |
+| dfn-auto | zumbido | 8,7 → 10,7 | 17,5 | −46,7 | **1,6** | −1,1 | 40 |
+| dfn-auto | teclado | 9,6 → 9,0 | 20,2 | −49,6 | **6,3** | −0,4 | 40 |
+| dfn-auto | branco | 8,8 → 16,5 | 20,8 | −49,9 | **3,0** | −0,7 | 40 |
+
+Contra a força fixa de 45 (4,9 / 4,5 / 8,9 / 12,9 % de fala cortada): corta bem menos, tirando de 16 a 21 dB de
+ruído em vez de 20 a 42. Nas misturas de 20 dB de SNR o controlador chegou a 45–60 dB sozinho.
+
 ## Próximas rodadas
 
 1. Voz real em pt-BR (gravações do usuário ou MLS português) e ruídos gravados (teclado mecânico de verdade,

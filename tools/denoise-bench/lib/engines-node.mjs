@@ -46,15 +46,62 @@ async function worklet(file, name) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Um "motor": `process(Float32Array) → Float32Array` e `destroy()`. */
-export async function makeEngine(mode, { strength = 45 } = {}) {
+export async function makeEngine(mode, { strength = 45, beta = 0 } = {}) {
   if (mode === 'off') return { name: 'off', process: (x) => x, destroy() {} };
-  if (mode === 'dfn') {
+  if (mode === 'dfn' || mode === 'dfn-auto') {
     const Dfn = await worklet(join(client, 'src/lib/worklets/deepfilter.worklet.js'), 'deepfilter-audio-processor');
     const wasmModule = await WebAssembly.compile(readFileSync(join(client, 'public/vendor/deepfilternet3/v3/pkg/df_bg.wasm')));
     const modelBytes = readFileSync(join(client, 'public/vendor/deepfilternet3/v3/models/DeepFilterNet3_onnx.tar.gz'));
-    const proc = new Dfn({ processorOptions: { wasmModule, modelBytes, suppressionLevel: strength } });
+    if (mode === 'dfn') {
+      const proc = new Dfn({ processorOptions: { wasmModule, modelBytes, suppressionLevel: strength, postFilterBeta: beta } });
+      if (proc.port.sent[0]?.type !== 'ready') throw new Error(`DFN não ficou pronto: ${JSON.stringify(proc.port.sent)}`);
+      return wrap('dfn', proc);
+    }
+    // "IA máxima automática": o mesmo controlador do app (client/src/lib/noiseAuto.ts) lê o nível da entrada a
+    // cada 100 ms (média de 200 ms, como o medidor) e manda a força nova para o worklet
+    const { AUTO_INITIAL, autoStep } = await import(pathToFileURL(join(client, 'src/lib/noiseAuto.ts')).href);
+    const proc = new Dfn({ processorOptions: { wasmModule, modelBytes, suppressionLevel: AUTO_INITIAL.strength, postFilterBeta: AUTO_INITIAL.beta } });
     if (proc.port.sent[0]?.type !== 'ready') throw new Error(`DFN não ficou pronto: ${JSON.stringify(proc.port.sent)}`);
-    return wrap('dfn', proc);
+    const base = wrap('dfn-auto', proc);
+    let auto = { ...AUTO_INITIAL };
+    let energy = 0;
+    const alpha = 1 - Math.exp(-128 / (SR * 0.2));
+    let clock = 0;
+    const strengths = [];
+    return {
+      ...base,
+      process(x) {
+        // bloco a bloco (sem cortar o sinal em pedaços, que desalinharia a saída); o controlador roda a cada 100 ms
+        const out = new Float32Array(x.length);
+        const input = new Float32Array(BLOCK);
+        let since = 0;
+        for (let pos = 0; pos < x.length; pos += BLOCK) {
+          const len = Math.min(BLOCK, x.length - pos);
+          input.fill(0);
+          input.set(x.subarray(pos, pos + len));
+          let e = 0;
+          for (let i = 0; i < len; i++) e += input[i] * input[i];
+          energy += (e / len - energy) * alpha; // nível como o medidor do app (EMA de 200 ms)
+          since += len;
+          if (since >= SR * 0.1) {
+            since = 0;
+            clock += 100;
+            const next = autoStep(auto, 10 * Math.log10(energy + 1e-12), clock);
+            if (next.strength !== auto.strength) {
+              proc.port.dispatch({ type: 'SET_SUPPRESSION_LEVEL', value: next.strength });
+              proc.port.dispatch({ type: 'SET_POST_FILTER_BETA', value: next.beta });
+            }
+            auto = next;
+            strengths.push(auto.strength);
+          }
+          const block = [new Float32Array(BLOCK)];
+          if (!proc.process([[input]], [block], {})) throw new Error('dfn-auto: o processador pediu para morrer');
+          out.set(block[0].subarray(0, len), pos);
+        }
+        return out;
+      },
+      strengths: () => strengths,
+    };
   }
   if (mode === 'gtcrn' || mode === 'rnnoise') {
     // os mesmos arquivos que o cliente importa (`...Worklet.js?url` e `...wasm?url`), pelas exportações do pacote

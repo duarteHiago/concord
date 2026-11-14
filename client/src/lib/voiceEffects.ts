@@ -11,14 +11,29 @@ import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseSimdWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
 import type { AudioProcessorOptions, LocalAudioTrack, Track, TrackProcessor } from 'livekit-client';
+import { AUTO_INITIAL, autoStep, type AutoState } from './noiseAuto';
 import dfnWorkletUrl from './worklets/deepfilter.worklet.js?url';
 import meterWorkletUrl from './worklets/meter.worklet.js?url';
 import monoWorkletUrl from './worklets/mono.worklet.js?url';
+import smartGateWorkletUrl from './worklets/smartgate.worklet.js?url';
 
-/** off: nenhum; browser: filtro do navegador; dfn / rnnoise / gtcrn: redes neurais (rodam no seu PC). */
-export type NoiseMode = 'off' | 'browser' | 'rnnoise' | 'gtcrn' | 'dfn';
+/**
+ * off: nenhum; browser: filtro do navegador; dfn / rnnoise / gtcrn: redes neurais (rodam no seu PC).
+ * Experimentais (aparecem com "Modos experimentais" ligado em Configurações): dfn-auto (DFN3 com a força
+ * escolhida pelo ruído da sala) e browser-iso (isolamento de voz do próprio navegador, onde existir).
+ */
+export type NoiseMode = 'off' | 'browser' | 'rnnoise' | 'gtcrn' | 'dfn' | 'dfn-auto' | 'browser-iso';
 
-export const NOISE_MODES: { id: NoiseMode; label: string; hint: string }[] = [
+/** O navegador oferece o isolamento de voz nativo (restrição voiceIsolation do getUserMedia)? */
+export const canVoiceIsolation = () => {
+  try {
+    return (navigator.mediaDevices?.getSupportedConstraints?.() as { voiceIsolation?: boolean } | undefined)?.voiceIsolation === true;
+  } catch {
+    return false;
+  }
+};
+
+export const NOISE_MODES: { id: NoiseMode; label: string; hint: string; lab?: boolean }[] = [
   {
     id: 'gtcrn',
     label: 'IA natural (recomendada)',
@@ -32,14 +47,36 @@ export const NOISE_MODES: { id: NoiseMode; label: string; hint: string }[] = [
   { id: 'rnnoise', label: 'IA básica (RNNoise)', hint: 'Só ruído constante (ventilador, chiado); deixa passar teclado.' },
   { id: 'browser', label: 'Do navegador', hint: 'O filtro básico do Chrome.' },
   { id: 'off', label: 'Desligada', hint: 'Som cru do microfone (bom para música).' },
+  {
+    id: 'dfn-auto',
+    label: 'IA máxima automática',
+    hint: 'O DeepFilterNet 3 com a força escolhida sozinha pelo ruído da sua sala: aperta quando está silêncio, alivia quando há barulho, para não cortar a voz.',
+    lab: true,
+  },
+  {
+    id: 'browser-iso',
+    label: 'Isolamento de voz do navegador',
+    hint: 'O isolamento de voz do próprio navegador, quando o sistema oferece. Leve, mas depende do seu computador.',
+    lab: true,
+  },
 ];
 
-export const NOISE_LABEL: Record<NoiseMode, string> = { dfn: 'IA máxima', gtcrn: 'IA natural', rnnoise: 'IA básica', browser: 'do navegador', off: 'desligada' };
+export const NOISE_LABEL: Record<NoiseMode, string> = {
+  dfn: 'IA máxima',
+  'dfn-auto': 'IA máxima automática',
+  gtcrn: 'IA natural',
+  rnnoise: 'IA básica',
+  browser: 'do navegador',
+  'browser-iso': 'isolamento do navegador',
+  off: 'desligada',
+};
 
-export const isAiMode = (m: NoiseMode) => m === 'dfn' || m === 'gtcrn' || m === 'rnnoise';
+export const isAiMode = (m: NoiseMode) => m === 'dfn' || m === 'dfn-auto' || m === 'gtcrn' || m === 'rnnoise';
+/** Modos em que o filtro do próprio navegador faz o trabalho (nenhum modelo nosso). */
+export const isBrowserMode = (m: NoiseMode) => m === 'browser' || m === 'browser-iso';
 
 /** Se um modelo falha, cai para o seguinte (e avisa): dfn → gtcrn → rnnoise → nenhum. */
-const FALLBACK: Record<NoiseMode, NoiseMode | null> = { dfn: 'gtcrn', gtcrn: 'rnnoise', rnnoise: 'off', browser: null, off: null };
+const FALLBACK: Record<NoiseMode, NoiseMode | null> = { 'dfn-auto': 'gtcrn', dfn: 'gtcrn', gtcrn: 'rnnoise', rnnoise: 'off', browser: null, 'browser-iso': null, off: null };
 
 // ---------------------------------------------------------------- carregamento (wasm, modelos, worklets)
 
@@ -149,17 +186,23 @@ interface DenoiseNode {
   mode: NoiseMode;
   destroy(): void;
   setStrength?(db: number): void;
+  setBeta?(beta: number): void;
 }
 
 /** Monta o nó de um modelo. Lança se não deu (quem chama decide o plano B). */
 async function makeDenoise(ctx: BaseAudioContext, mode: NoiseMode, strength: number, onError: (err: Error) => void): Promise<DenoiseNode | null> {
-  if (mode === 'dfn') {
+  if (mode === 'dfn' || mode === 'dfn-auto') {
     const [assets] = await Promise.all([loadDfnAssets(), addModule(ctx, dfnWorkletUrl)]);
     const node = new AudioWorkletNode(ctx, 'deepfilter-audio-processor', {
       channelCount: 1,
       channelCountMode: 'explicit',
       outputChannelCount: [1],
-      processorOptions: { wasmModule: assets.wasmModule, modelBytes: assets.modelBytes, suppressionLevel: strength },
+      processorOptions: {
+        wasmModule: assets.wasmModule,
+        modelBytes: assets.modelBytes,
+        suppressionLevel: mode === 'dfn-auto' ? AUTO_INITIAL.strength : strength,
+        postFilterBeta: mode === 'dfn-auto' ? AUTO_INITIAL.beta : 0,
+      },
     });
     // o worklet avisa quando o modelo ficou pronto; sem isso ele passaria o som cru em silêncio
     await new Promise<void>((resolve, reject) => {
@@ -185,6 +228,7 @@ async function makeDenoise(ctx: BaseAudioContext, mode: NoiseMode, strength: num
       mode,
       destroy: () => node.port.postMessage('destroy'),
       setStrength: (db) => node.port.postMessage({ type: 'SET_SUPPRESSION_LEVEL', value: Math.round(db) }),
+      setBeta: (beta) => node.port.postMessage({ type: 'SET_POST_FILTER_BETA', value: beta }),
     };
   }
   if (mode === 'gtcrn') {
@@ -226,7 +270,7 @@ async function denoiseWithFallback(ctx: BaseAudioContext, wanted: NoiseMode, str
       mode = FALLBACK[mode];
     }
   }
-  return { denoise: null, active: wanted === 'browser' ? 'browser' : 'off', reason };
+  return { denoise: null, active: isBrowserMode(wanted) ? wanted : 'off', reason };
 }
 
 // ---------------------------------------------------------------- avisos e saúde (para a UI e o diagnóstico)
@@ -257,12 +301,14 @@ export interface VoiceHealth {
   outDb: number | null;
   /** como o estéreo virou mono ('avg', 'left', 'right', 'inv'; null = chegou em mono) */
   mono: string | null;
+  /** força do DeepFilterNet3 escolhida pela "IA máxima automática" agora (null fora desse modo) */
+  autoStrength: number | null;
   /** remontagens feitas pelo vigia nesta sessão */
   rebuilds: number;
   lastError: string | null;
   lastErrorAt: number | null;
 }
-const health: VoiceHealth = { active: null, wanted: null, contextState: null, inDb: null, outDb: null, mono: null, rebuilds: 0, lastError: null, lastErrorAt: null };
+const health: VoiceHealth = { active: null, wanted: null, contextState: null, inDb: null, outDb: null, mono: null, autoStrength: null, rebuilds: 0, lastError: null, lastErrorAt: null };
 /** Fotografia do estado do processamento (para o diagnóstico e o modo desenvolvedor). */
 export const getVoiceHealth = (): VoiceHealth => ({ ...health, contextState: sharedContext?.state ?? health.contextState });
 const noteError = (err: Error) => {
@@ -393,7 +439,8 @@ class ConcordGate extends AudioWorkletProcessor {
 registerProcessor('concord-gate', ConcordGate);
 `;
 
-export type GateMode = 'auto' | 'manual' | 'off';
+/** smart (experimental): guiado pela IA, abre pelo que a supressão deixou passar; sem IA ativa vale como 'auto'. */
+export type GateMode = 'auto' | 'manual' | 'off' | 'smart';
 export interface GateSettings {
   mode: GateMode;
   /** limiar em dB (modo manual) */
@@ -557,6 +604,9 @@ export class Chain {
   private broken = false;
   private gateOpen = true;
   private done = false;
+  private auto: AutoState | null = null;
+  /** o portão em uso é o guiado pela IA (duas entradas) */
+  private smart = false;
 
   constructor(
     private ctx: BaseAudioContext,
@@ -580,7 +630,12 @@ export class Chain {
   async build() {
     const { ctx, settings } = this;
     const add = <T extends AudioNode>(n: T) => (this.nodes.push(n), n);
-    await Promise.all([addModule(ctx, monoWorkletUrl), addModule(ctx, meterWorkletUrl), loadInlineWorklet(ctx, 'concord-gate', GATE_WORKLET)]);
+    await Promise.all([
+      addModule(ctx, monoWorkletUrl),
+      addModule(ctx, meterWorkletUrl),
+      loadInlineWorklet(ctx, 'concord-gate', GATE_WORKLET),
+      settings.gate.mode === 'smart' ? addModule(ctx, smartGateWorkletUrl) : Promise.resolve(),
+    ]);
     if (this.done) return;
 
     // tudo em mono: a supressão de ruído só processa um canal; se o microfone vier em estéreo, o 2º canal ficaria
@@ -611,16 +666,22 @@ export class Chain {
       input = denoise.node;
       this.nodes.push(denoise.node);
     }
+    if (active === 'dfn-auto' && denoise) this.auto = { ...AUTO_INITIAL, lastChangeAt: Date.now() };
 
     // portão depois da IA (decide pelo som já limpo) e antes do efeito (não corta o eco/reverb)
-    const gate = add(new AudioWorkletNode(ctx, 'concord-gate', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] }));
-    gate.port.postMessage(settings.gate);
+    this.smart = settings.gate.mode === 'smart' && !!denoise;
+    const gate = this.smart
+      ? add(new AudioWorkletNode(ctx, 'concord-smartgate', { numberOfInputs: 2, channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] }))
+      : add(new AudioWorkletNode(ctx, 'concord-gate', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] }));
+    // 'smart' sem IA ativa (modelo não carregou, modo do navegador): vale como o automático por volume
+    if (!this.smart) gate.port.postMessage(settings.gate.mode === 'smart' ? { ...settings.gate, mode: 'auto' } : settings.gate);
     gate.port.onmessage = (e: MessageEvent<MicLevel>) => {
       this.gateOpen = e.data.open;
       this.hooks.onLevel?.(e.data);
     };
     this.watchWorklet(gate, 'o portão de voz');
-    input.connect(gate);
+    input.connect(gate, 0, 0);
+    if (this.smart) meterIn.connect(gate, 0, 1); // o som cru, para comparar com o que a IA deixou
     input = gate;
     this.gate = gate;
 
@@ -661,6 +722,15 @@ export class Chain {
   private onIn(db: number) {
     this.inDb = db;
     if (this.hooks.primary) health.inDb = db;
+    if (this.auto && this.denoise) {
+      const next = autoStep(this.auto, db, Date.now());
+      if (next.strength !== this.auto.strength) {
+        this.denoise.setStrength?.(next.strength);
+        this.denoise.setBeta?.(next.beta);
+      }
+      this.auto = next;
+      if (this.hooks.primary) health.autoStrength = next.strength;
+    }
   }
 
   private onOut(db: number) {
@@ -676,14 +746,18 @@ export class Chain {
     } else this.silentSince = null;
   }
 
-  updateGate(gate: GateSettings) {
+  /** Troca a sensibilidade na hora. Devolve false quando a troca pede remontar (entrar ou sair do portão guiado pela IA). */
+  updateGate(gate: GateSettings): boolean {
+    const wasSmart = this.settings.gate.mode === 'smart';
     this.settings = { ...this.settings, gate };
-    this.gate?.port.postMessage(gate);
+    if (wasSmart !== (gate.mode === 'smart')) return false;
+    if (!this.smart) this.gate?.port.postMessage(gate.mode === 'smart' ? { ...gate, mode: 'auto' } : gate);
+    return true;
   }
 
   setStrength(db: number) {
     this.settings = { ...this.settings, strength: db };
-    this.denoise?.setStrength?.(db);
+    if (!this.auto) this.denoise?.setStrength?.(db);
   }
 
   teardown() {
@@ -724,9 +798,9 @@ const MAX_REBUILDS = 3;
 const REBUILD_WINDOW_MS = 60_000;
 
 let liveChain: Chain | null = null;
-/** Muda a sensibilidade na hora, sem reiniciar o microfone. */
-export function updateGate(gate: GateSettings) {
-  liveChain?.updateGate(gate);
+/** Muda a sensibilidade na hora, sem reiniciar o microfone. False = precisa remontar (quem chama reaplica). */
+export function updateGate(gate: GateSettings): boolean {
+  return liveChain?.updateGate(gate) ?? true;
 }
 /** Muda a intensidade do DeepFilterNet3 na hora (sem reiniciar o microfone). */
 export function updateNoiseStrength(level: number) {
@@ -827,6 +901,7 @@ class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorO
         health.inDb = null;
         health.outDb = null;
         health.mono = null;
+        health.autoStrength = null;
       }
       this.chain = null;
       this.source?.disconnect();
@@ -918,10 +993,8 @@ export async function startMicTest(
       // só a sensibilidade e a força mudam sem remontar
       const same = next.noise === settings.noise && next.level === settings.level;
       settings = next;
-      if (same) {
-        chain?.updateGate(next.gate);
-        chain?.setStrength(next.strength);
-      } else void rebuild();
+      if (same && chain?.updateGate(next.gate) !== false) chain?.setStrength(next.strength);
+      else void rebuild();
     },
     setMonitorVolume(v) {
       monitor.gain.value = v;

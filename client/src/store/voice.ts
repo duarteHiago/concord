@@ -23,7 +23,7 @@ import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { desktop, desktopInfo, startDesktopAudio, type DesktopAudio } from '../lib/desktop';
 import { closePopout } from '../lib/popout';
-import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, NOISE_LABEL, updateNoiseStrength, EFFECTS, updateGate, micLevels, voiceNotices, type ActiveNotice, type EffectId, type GateSettings, type MicLevel, type NoiseMode } from '../lib/voiceEffects';
+import { applyVoiceProcessing, DEFAULT_GATE, DEFAULT_NOISE_STRENGTH, NOISE_LABEL, isAiMode, isBrowserMode, updateNoiseStrength, EFFECTS, updateGate, micLevels, voiceNotices, type ActiveNotice, type EffectId, type GateSettings, type MicLevel, type NoiseMode } from '../lib/voiceEffects';
 import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { diagnoseH265, h265Support, type H265Diagnosis } from '../lib/h265';
@@ -87,6 +87,8 @@ export interface AudioSettings {
   gate: GateSettings;
   /** força da supressão do DeepFilterNet3 (limite de atenuação em dB) */
   noiseStrength: number;
+  /** mostra os modos experimentais de supressão e de portão (para testar com a galera) */
+  labNoise: boolean;
   /** versão das preferências (para migrações) */
   v?: number;
   videoInputId: string;
@@ -282,6 +284,7 @@ const DEFAULT_AUDIO: AudioSettings = {
   autoGain: true,
   gate: DEFAULT_GATE,
   noiseStrength: DEFAULT_NOISE_STRENGTH,
+  labNoise: false,
   v: 2,
   videoInputId: '',
   cameraQuality: '720p',
@@ -689,10 +692,12 @@ export const useVoice = create<VoiceStore>((set, get) => {
         // os canais sem cancelar a voz (ver o worklet "mono" em voiceEffects). Pedir mono aqui deixava o
         // navegador somar os canais, e com fase invertida a voz sumia.
         // com a IA ligada, o filtro do navegador fica desligado (senão a voz é processada duas vezes)
-        noiseSuppression: noiseMode === 'browser',
+        noiseSuppression: isBrowserMode(noiseMode),
+        // isolamento de voz nativo (experimental): só onde o navegador oferece; nos outros a chave é ignorada
+        ...(noiseMode === 'browser-iso' ? ({ voiceIsolation: true } as Record<string, boolean>) : {}),
         echoCancellation,
         // com IA, o volume é nivelado depois da limpeza (ver voiceEffects); o do navegador aumentava o ruído
-        autoGainControl: autoGain && !['dfn', 'gtcrn', 'rnnoise'].includes(noiseMode),
+        autoGainControl: autoGain && !isAiMode(noiseMode),
       },
       // sem isso o LiveKit publica em estéreo quando o microfone diz ter 2 canais, e quem ouve
       // pode receber a voz só num lado do fone
@@ -1023,8 +1028,10 @@ export const useVoice = create<VoiceStore>((set, get) => {
           // ligar/desligar o portão muda o processamento; só o limiar muda na hora
           if (patch.gate.mode === 'off' || !get().room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.getProcessor()) {
             await applyCurrentEffect();
+          } else if (!updateGate(audioSettings.gate)) {
+            // entrar ou sair do portão guiado pela IA troca o nó: remonta
+            await applyCurrentEffect();
           }
-          updateGate(audioSettings.gate);
         }
         if (patch.noiseStrength !== undefined) updateNoiseStrength(patch.noiseStrength);
         if ((patch.noiseMode !== undefined || patch.echoCancellation !== undefined || patch.autoGain !== undefined) && get().micOn) {

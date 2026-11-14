@@ -1,7 +1,7 @@
 import { Check, ChevronUp } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { NOISE_LABEL, NOISE_MODES } from '../lib/voiceEffects';
+import { NOISE_LABEL, NOISE_MODES, canVoiceIsolation } from '../lib/voiceEffects';
 import { useVoice } from '../store/voice';
 import { cx } from './ui';
 
@@ -141,7 +141,7 @@ function DeviceList({ kind, anchor, onDone, ref }: { kind: Kind; anchor: DOMRect
         <>
           <div className="mx-2 my-1.5 h-px bg-line" />
           <div className="px-3 pt-1 pb-1.5 text-xs font-bold text-fg-subtle">Supressão de ruído</div>
-          {NOISE_MODES.map((m) => (
+          {NOISE_MODES.filter((m) => (!m.lab || settings.labNoise) && (m.id !== 'browser-iso' || canVoiceIsolation())).map((m) => (
             <button
               key={m.id}
               role="menuitemradio"
