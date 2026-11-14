@@ -41,9 +41,9 @@ import './lib/visibility';
 const WorkshopHosts = lazy(() => import('./workshop/Hosts').then((m) => ({ default: m.WorkshopHosts })));
 const MuralView = lazy(() => import('./workshop/Mural').then((m) => ({ default: m.MuralView })));
 import { MotionConfig, motion as m } from 'motion/react';
-import { LAB_SPRING, ServerScreen, useServerScreen } from './workshop/Screen';
-import { useRoomArrangement } from './workshop/LabPanel';
-import { useLab } from './workshop/lab';
+import { ServerScreen, useServerScreen } from './workshop/Screen';
+import { LabPanel } from './workshop/LabPanel';
+import { LAB_SPRING, useLab } from './workshop/lab';
 import { useServerThemeScope } from './workshop/theme';
 import { useWorkshopRuntime } from './workshop/runtime';
 import { WORKSHOP_ENABLED, useWorkshop } from './workshop/store';
@@ -183,6 +183,7 @@ function MainApp() {
           <WorkshopHosts />
         </Suspense>
       )}
+      {me && WORKSHOP_ENABLED && !remote && <LabPanel />}
     </>
   );
 }
@@ -279,22 +280,21 @@ function Shell() {
 }
 
 /**
- * Laboratório de layout (só no Concord de testes): animações entre telas (caminho 5) e o arranjo da sala escolhido
- * por quem vê (caminho 4). As escolhas ficam no editor da Oficina. Fora do laboratório não muda nada.
+ * Laboratório de layout (só no Concord de testes): no modo 3 as trocas de tela são animadas (servidor ↔ sala ↔
+ * conversas privadas). Fora do laboratório não muda nada.
  */
 function LabFrame({ children }: { children: React.ReactNode }) {
-  const animate = useLab((s) => s.animate);
-  useRoomArrangement();
+  const animate = useLab((s) => s.mode === 'call');
   if (!WORKSHOP_ENABLED || !animate) return <>{children}</>;
   return <MotionConfig reducedMotion={reduceMotion() ? 'always' : 'never'}>{children}</MotionConfig>;
 }
 
 /**
- * Caminho 5: no layout padrão (o das conversas privadas), canais e conteúdo levam o mesmo layoutId dos blocos
- * da tela montada, então deslizam de uma arrumação para a outra em vez de trocar seco.
+ * Modo 3: no layout padrão (o das conversas privadas), canais e conteúdo levam o mesmo layoutId dos blocos da tela
+ * montada, então deslizam de uma arrumação para a outra em vez de trocar seco.
  */
 function LabMove({ id, className, children }: { id: string; className: string; children: React.ReactNode }) {
-  const animate = useLab((s) => s.animate);
+  const animate = useLab((s) => s.mode === 'call');
   if (!WORKSHOP_ENABLED || !animate) return <>{children}</>;
   return (
     <m.div layoutId={`lab-${id}`} layout className={className} transition={LAB_SPRING}>

@@ -27,7 +27,8 @@ import {
   PictureInPicture2,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { DOCK_ITEMS, type DockItem } from '../../../shared/workshop.ts';
 import { P, has } from '../../../shared/permissions.ts';
 import { memberName, type Channel, type ServerDetail } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
@@ -84,7 +85,11 @@ function WatchersBadge({ people }: { people: { id: string; name: string; color: 
   );
 }
 
-export function VoiceView({ channel }: { channel: Channel }) {
+/**
+ * `dock`: na tela da sala da Oficina (modo 3 do laboratório de layout), os botões da barra na ordem do dono, e as
+ * laterais ficam por conta da tela da sala (sem o papo embutido aqui).
+ */
+export function VoiceView({ channel, dock }: { channel: Channel; dock?: readonly DockItem[] }) {
   const detail = useActiveDetail()!;
   const status = useVoice((s) => (s.channelId === channel.id ? s.status : 'idle'));
   const states = useApp((s) => s.voiceStates[detail.server.id]) ?? [];
@@ -136,7 +141,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
             <DeckQrButton />
             <JamButton detail={detail} channel={channel} />
             {status === 'connected' && <ConnectionQuality />}
-            {canChat && (
+            {canChat && !dock && (
               <button
                 onClick={toggleChat}
                 title={chatOpen ? 'Fechar o papo da sala' : 'Abrir o papo da sala'}
@@ -171,10 +176,10 @@ export function VoiceView({ channel }: { channel: Channel }) {
           )}
         </section>
 
-        {status !== 'idle' && <ControlDock channel={channel} />}
+        {status !== 'idle' && <ControlDock channel={channel} order={dock} />}
       </main>
 
-      {canChat && chatOpen && (
+      {canChat && chatOpen && !dock && (
         <aside aria-label="Painel da sala" className="room-panel panel relative hidden shrink-0 flex-col overflow-hidden xl:flex" style={{ width: shownPanelWidth }}>
           <PanelResizer width={shownPanelWidth} onChange={setPanelWidth} />
           <div className="flex items-center gap-1 px-3 pt-3 pb-1">
@@ -901,7 +906,7 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
 
 // ------------------------------------------------------------------ controles
 
-function ControlDock({ channel }: { channel: Channel }) {
+function ControlDock({ channel, order }: { channel: Channel; order?: readonly DockItem[] }) {
   const { micOn, deafened, cameraOn, sharing, serverMuted, toggleMic, toggleDeafen, toggleCamera, stopShare, leave } = useVoice();
   const openModal = useApp((s) => s.openModal);
 
@@ -921,17 +926,17 @@ function ControlDock({ channel }: { channel: Channel }) {
     </button>
   );
 
-  return (
-    <div className="control-dock flex shrink-0 justify-center">
-      <div className="dock-row flex items-center gap-2.5 rounded-full bg-surface-2 p-2.5">
-        {round(serverMuted ? 'Silenciado por um moderador' : micOn ? 'Silenciar' : 'Ativar microfone', () => void toggleMic(), micOn ? <Mic size={20} /> : <MicOff size={20} />, micOn ? 'default' : 'off')}
-        {round(deafened ? 'Ativar áudio' : 'Ensurdecer', () => void toggleDeafen(), deafened ? <HeadphoneOff size={20} /> : <Headphones size={20} />, deafened ? 'off' : 'default')}
-        {round(cameraOn ? 'Desligar câmera' : 'Ligar câmera', () => void toggleCamera(), cameraOn ? <Video size={20} /> : <VideoOff size={20} />)}
-        <VoiceEffectsButton />
-        <SoundboardButton />
-        <ReactionsButton />
-        <StickerButton channel={channel} />
-        <ClipButton />
+  const items: Record<DockItem, ReactNode> = {
+    mic: round(serverMuted ? 'Silenciado por um moderador' : micOn ? 'Silenciar' : 'Ativar microfone', () => void toggleMic(), micOn ? <Mic size={20} /> : <MicOff size={20} />, micOn ? 'default' : 'off'),
+    deafen: round(deafened ? 'Ativar áudio' : 'Ensurdecer', () => void toggleDeafen(), deafened ? <HeadphoneOff size={20} /> : <Headphones size={20} />, deafened ? 'off' : 'default'),
+    camera: round(cameraOn ? 'Desligar câmera' : 'Ligar câmera', () => void toggleCamera(), cameraOn ? <Video size={20} /> : <VideoOff size={20} />),
+    effects: <VoiceEffectsButton />,
+    sounds: <SoundboardButton />,
+    reactions: <ReactionsButton />,
+    stickers: <StickerButton channel={channel} />,
+    clip: <ClipButton />,
+    share: (
+      <>
         <button
           onClick={() => (sharing ? void stopShare() : openModal({ type: 'shareScreen' }))}
           aria-label={sharing ? 'Parar transmissão' : 'Transmitir tela'}
@@ -944,7 +949,17 @@ function ControlDock({ channel }: { channel: Channel }) {
           <span className="dock-label">{sharing ? 'Parar transmissão' : 'Transmitir tela'}</span>
         </button>
         {sharing && round('Trocar qualidade ou fonte', () => openModal({ type: 'shareScreen' }), <Settings2 size={20} />)}
-        {round('Sair da sala', () => void leave(), <PhoneOff size={20} />, 'danger')}
+      </>
+    ),
+    leave: round('Sair da sala', () => void leave(), <PhoneOff size={20} />, 'danger'),
+  };
+
+  return (
+    <div className="control-dock flex shrink-0 justify-center">
+      <div className="dock-row flex items-center gap-2.5 rounded-full bg-surface-2 p-2.5">
+        {(order ?? DOCK_ITEMS).map((id) => (
+          <Fragment key={id}>{items[id]}</Fragment>
+        ))}
       </div>
     </div>
   );

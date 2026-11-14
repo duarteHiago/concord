@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowUp,
   Bell,
+  Clapperboard,
   Copy,
   Eye,
   EyeOff,
@@ -39,10 +40,13 @@ import {
   SCREEN_ROWS,
   SYSTEM_BLOCKS,
   defaultScreen,
+  defaultRoom,
+  defaultSlots,
   isBlock,
   screenLimits,
   type BlockPlacement,
   type ScreenItem,
+  type SlotLayout,
   type SystemBlock,
   PIECE_INFO,
   TIMEZONES,
@@ -62,10 +66,8 @@ import {
 } from '../../../shared/workshop.ts';
 import { api } from '../lib/api';
 import { BlockMock, tooSmall, type MockSituation } from './Mocks';
-import { LabBar, TransitionDemo, type PreviewState } from './LabPanel';
-import { PREVIEW_WINDOWS, blockMinPx, cellsToPx, gridArea, minCells, useLab } from './lab';
-import { TemplateEditor, TemplatePicker } from './TemplateEditor';
-import { LivePreview, liveCaption } from './LivePreview';
+import { BASE_WINDOW, WORST_CASE, blockMinPx, gridArea, minCells, useLab } from './lab';
+import { ModeBadge, RoomEditor, SlotEditor } from './ModeEditors';
 import { useMobile } from '../lib/mobile';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import type { ServerDetail } from '../lib/types';
@@ -174,7 +176,12 @@ export function Studio({ serverId }: { serverId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<'packs' | 'theme' | 'pieces' | 'widgets'>('packs');
   /** o que a grade do meio edita: a tela do servidor ou o Mural */
-  const [area, setArea] = useState<'screen' | 'mural'>('screen');
+  const [area, setArea] = useState<'screen' | 'room' | 'mural'>('screen');
+  const labModeNow = useLab((s) => s.mode);
+  // a aba "Tela da sala" só existe no modo 3
+  useEffect(() => {
+    if (area === 'room' && labModeNow !== 'call') setArea('screen');
+  }, [area, labModeNow]);
   const [asMember, setAsMember] = useState(false);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [publishing, setPublishing] = useState(false);
@@ -261,16 +268,16 @@ export function Studio({ serverId }: { serverId: string }) {
     });
   }, []);
 
-  const grid = area === 'screen' ? SCREEN_GRID : MURAL_GRID;
-  const items: ScreenItem[] = area === 'screen' ? (config.screen?.items ?? []) : config.mural.widgets;
+  const grid = area !== 'mural' ? SCREEN_GRID : MURAL_GRID;
+  const items: ScreenItem[] = area !== 'mural' ? (config.screen?.items ?? []) : config.mural.widgets;
   const widgetCount = items.filter((i) => !isBlock(i)).length;
-  const maxWidgets = area === 'screen' ? MAX_SCREEN_WIDGETS : MAX_WIDGETS;
+  const maxWidgets = area !== 'mural' ? MAX_SCREEN_WIDGETS : MAX_WIDGETS;
 
   /** Mexe nos itens da área aberta (a tela começa do layout padrão na primeira mudança). */
   const setItems = useCallback(
     (fn: (xs: ScreenItem[]) => ScreenItem[]) =>
       update((c) =>
-        area === 'screen'
+        area !== 'mural'
           ? { ...c, screen: { items: fn(c.screen?.items ?? defaultScreen()) } }
           : { ...c, mural: { ...c.mural, widgets: fn(c.mural.widgets) as WidgetPlacement[] } },
       ),
@@ -279,11 +286,11 @@ export function Studio({ serverId }: { serverId: string }) {
 
   const addWidget = useCallback(
     (type: WidgetType, at?: { x: number; y: number }) => {
-      const base = area === 'screen' ? (config.screen?.items ?? defaultScreen()) : config.mural.widgets;
+      const base = area !== 'mural' ? (config.screen?.items ?? defaultScreen()) : config.mural.widgets;
       if (base.filter((i) => !isBlock(i)).length >= maxWidgets) return toast.error(`Aqui cabem até ${maxWidgets} widgets.`);
       const [w, h] = startSize(type, grid);
       const spot = at ?? freeSpot(base, w, h, grid.cols, grid.rows);
-      if (!spot && area === 'screen') {
+      if (!spot && area !== 'mural') {
         // tela cheia (o layout padrão ocupa tudo): abre espaço em cima da conversa, encolhendo ela
         const main = base.find((i): i is BlockPlacement => isBlock(i) && i.block === 'main');
         if (main && main.h - h >= BLOCK_INFO.main.min[1]) {
@@ -294,7 +301,7 @@ export function Studio({ serverId }: { serverId: string }) {
           return;
         }
       }
-      if (!spot) return toast.error(area === 'screen' ? 'Não tem espaço livre na tela. Diminua ou tire algum bloco ou widget.' : 'Não tem mais espaço na grade.');
+      if (!spot) return toast.error(area !== 'mural' ? 'Não tem espaço livre na tela. Diminua ou tire algum bloco ou widget.' : 'Não tem mais espaço na grade.');
       const item = { id: newId(), type, x: Math.min(spot.x, grid.cols - w), y: Math.min(spot.y, grid.rows - h), w, h, props: defaultProps(type) } as WidgetPlacement;
       const next = resolve<ScreenItem>([...base, item], item, grid.rows);
       if (!next) return toast.error('Não coube aí. Abra espaço primeiro.');
@@ -509,7 +516,7 @@ export function Studio({ serverId }: { serverId: string }) {
               )}
               {tab === 'widgets' && (
                 <>
-                  {area === 'screen' && (
+                  {area !== 'mural' && labModeNow !== 'encaixes' && (
                     <BlocksDrawer
                       items={config.screen?.items ?? null}
                       onAdd={(b) => {
@@ -539,6 +546,7 @@ export function Studio({ serverId }: { serverId: string }) {
               {(
                 [
                   ['screen', 'Tela do servidor', <Monitor size={15} key="m" />],
+                  ...(labModeNow === 'call' ? ([['room', 'Tela da sala', <Clapperboard size={15} key="r" />]] as const) : []),
                   ['mural', 'Mural', <LayoutGrid size={15} key="g" />],
                 ] as const
               ).map(([id, label, icon]) => (
@@ -574,7 +582,14 @@ export function Studio({ serverId }: { serverId: string }) {
               exit={{ opacity: 0, y: -10, scale: 0.985, transition: { duration: 0.14 } }}
               transition={springs.snappy}
             >
-            {area === 'screen' ? (
+            {area === 'room' ? (
+              <div>
+                <ModeBadge />
+                <div className="mb-2 text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Tela da sala</div>
+                <p className="mb-3 text-xs text-fg-muted">Quando alguém abre uma sala de voz, a tela do servidor desliza para esta. Vale para todo mundo do servidor depois de publicar.</p>
+                <RoomEditor room={config.room ?? defaultRoom()} detail={detail} readOnly={asMember} onChange={(room) => update((c) => ({ ...c, room }))} />
+              </div>
+            ) : area === 'screen' ? (
               <ScreenArea
                 config={config}
                 detail={detail}
@@ -593,6 +608,7 @@ export function Studio({ serverId }: { serverId: string }) {
                 }}
                 onChange={(xs) => setItems(() => xs)}
                 onDropNew={(type, at) => addWidget(type, at)}
+                onSlots={(slots) => update((c) => ({ ...c, slots }))}
               />
             ) : (
             <>
@@ -1308,6 +1324,7 @@ function ScreenArea({
   onReset,
   onChange,
   onDropNew,
+  onSlots,
 }: {
   config: WorkshopConfig;
   detail: ServerDetail;
@@ -1320,52 +1337,39 @@ function ScreenArea({
   onReset: () => void;
   onChange: (xs: ScreenItem[]) => void;
   onDropNew: (type: WidgetType, at: { x: number; y: number }) => void;
+  onSlots: (s: SlotLayout) => void;
 }) {
   const items = config.screen?.items;
   // como na tela real: os widgets seguem o tema, não a cor do pacote
   const ctx: WidgetContext = { serverId, pack: null, editing: true };
-  const lab = useLab();
-  const [preview, setPreview] = useState<PreviewState>({ win: PREVIEW_WINDOWS[0], inCall: false, voiceRoom: false, dm: false });
-  const sitBase = { inCall: preview.inCall, voiceRoom: preview.voiceRoom, adaptive: lab.adaptive };
-  const area = gridArea(preview.win);
-  const sitFor = (i: ScreenItem): MockSituation => ({ ...sitBase, real: cellsToPx(i, preview.win) });
-  // grade com limites: o mínimo de cada bloco vem dos pixels da janela da prévia e da situação
+  const mode = useLab((s) => s.mode);
+  const area = gridArea(BASE_WINDOW);
+  // modos 1 e 3: cada bloco tem um mínimo em casas, calculado para caber numa janela de 1100 px já em call
+  const sitFor = (i: ScreenItem): MockSituation => ({ ...WORST_CASE, adaptive: true, real: cellsToPx(i) });
   const screenGrid: GridSpec = {
     ...SCREEN_GRID,
     aspect: area.h / area.w,
-    limits:
-      lab.mode === 'limites'
-        ? (i) => {
-            const base = screenLimits(i);
-            if (!isBlock(i)) return base;
-            const [mw, mh] = minCells(i.block, sitBase, preview.win);
-            return { min: [Math.max(base.min[0], mw), Math.max(base.min[1], mh)], max: base.max };
-          }
-        : screenLimits,
+    limits: (i) => {
+      const base = screenLimits(i);
+      if (!isBlock(i)) return base;
+      const [mw, mh] = minCells(i.block, WORST_CASE);
+      return { min: [Math.max(base.min[0], mw), Math.max(base.min[1], mh)], max: base.max };
+    },
   };
-  const voiceMorph = lab.voiceLayout && preview.voiceRoom;
   const widgets = (items ?? []).filter((i): i is WidgetPlacement => !isBlock(i));
-  const situation = [preview.inCall && 'em call', preview.voiceRoom && 'com a sala de voz aberta'].filter(Boolean).join(' e ');
-  const problems =
-    !items || voiceMorph || lab.mode === 'moldes'
-      ? []
-      : items.filter(isBlock).flatMap((b) => {
-          const sit = sitFor(b);
-          if (!tooSmall(b.block, sit)) return [];
-          const min = blockMinPx(b.block, sit);
-          return [
-            `${BLOCK_INFO[b.block].label}: ${sit.real!.w}×${sit.real!.h} px numa janela de ${preview.win.w} px${situation ? ` ${situation}` : ''}; precisa de ${min.w}×${min.h}.${lab.adaptive ? ' Com os blocos que se adaptam, ele se rearruma.' : ''}`,
-          ];
-        });
+  const small = (items ?? []).filter(isBlock).filter((b) => tooSmall(b.block, sitFor(b)));
   return (
     <div>
+      {!asMember && <ModeBadge />}
       <div className="mb-2 flex items-end justify-between gap-3">
         <div>
           <div className="text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Tela do servidor</div>
           <div className="text-xs text-fg-muted">
-            {items
-              ? 'Arraste blocos e widgets para qualquer lugar e puxe o canto para mudar o tamanho. A barra de servidores fica sempre em cima.'
-              : 'Este servidor usa o layout padrão do Concord.'}
+            {!items
+              ? 'Este servidor usa o layout padrão do Concord.'
+              : mode === 'encaixes'
+                ? 'Cada bloco tem os lugares dele: arraste pela alça e veja onde pode encaixar.'
+                : 'Arraste blocos e widgets para qualquer lugar e puxe o canto para mudar o tamanho. Os blocos principais param no tamanho mínimo.'}
           </div>
         </div>
         {items && !asMember && (
@@ -1374,49 +1378,21 @@ function ScreenArea({
           </Button>
         )}
       </div>
-      {items && !asMember && (
-        <LabBar
-          preview={preview}
-          onPreview={(patch) => setPreview((cur) => ({ ...cur, ...patch }))}
-          problems={problems}
-        />
+      {items && mode !== 'encaixes' && small.length > 0 && !asMember && (
+        <p className="mb-2 rounded-2xl bg-warn/15 px-3 py-2 text-[11px]">
+          {small.map((b) => BLOCK_INFO[b.block].label).join(', ')} {small.length === 1 ? 'está menor' : 'estão menores'} que o mínimo numa janela de 1100 px em call. Na tela, o bloco ganha o mínimo e o resto se ajusta; puxe o canto para aumentar aqui também.
+        </p>
       )}
-      {preview.dm && items && (
-        <p className="mb-2 text-[11px] text-fg-muted">Use o botão no canto da prévia para ir e voltar. Ligue e desligue "Animação entre telas" para comparar com a troca seca de hoje.</p>
-      )}
-      {/* moldura de "monitor": a barra de servidores fixa em cima, a grade embaixo */}
+      {/* moldura de "monitor": a barra de servidores fixa em cima, a montagem embaixo */}
       <div className={cx('overflow-hidden rounded-3xl bg-surface-1 p-2.5 ring-1 ring-line', backdrop && 'ws-vars')} style={backdrop ? packVars(backdrop) : undefined}>
         <div className="mb-2 flex h-8 items-center gap-1.5 rounded-2xl bg-surface-2 px-2.5" aria-hidden="true">
           {[0, 1, 2, 3].map((i) => (
             <span key={i} className={cx('h-5 w-5 rounded-lg', i === 1 ? 'bg-accent' : 'bg-surface-3')} />
           ))}
-          <span className="ml-2 text-[10px] font-bold text-fg-subtle">barra de servidores · fixa</span>
+          <span className="ml-2 text-[10px] font-bold text-fg-subtle">barra de servidores · sempre em cima</span>
         </div>
-        {items && preview.dm ? (
-          <TransitionDemo items={items} />
-        ) : items && voiceMorph ? (
-          <>
-            <p className="mb-2 text-[11px] text-fg-muted">Sala de voz aberta: com "Mudar a tela na sala de voz" ligado, a tela vira o molde Palco (sem widgets). Ao sair da sala, volta para a montagem abaixo.</p>
-            <TemplateEditor template="palco" widgets={[]} detail={detail} ctx={ctx} win={preview.win} sit={sitBase} splits={undefined} onSplit={() => {}} selected={null} onSelect={() => {}} onDropWidget={() => {}} readOnly />
-          </>
-        ) : items && lab.mode === 'moldes' ? (
-          <div className="space-y-3">
-            {!asMember && <TemplatePicker value={lab.template} onChange={(template) => lab.set({ template })} />}
-            <TemplateEditor
-              template={lab.template}
-              widgets={widgets}
-              detail={detail}
-              ctx={ctx}
-              win={preview.win}
-              sit={sitBase}
-              splits={lab.splits[lab.template]}
-              onSplit={(sp) => lab.set({ splits: { ...lab.splits, [lab.template]: sp } })}
-              selected={selected}
-              onSelect={onSelect}
-              onDropWidget={(type) => onDropNew(type, { x: 0, y: 0 })}
-              readOnly={asMember}
-            />
-          </div>
+        {items && mode === 'encaixes' ? (
+          <SlotEditor slots={config.slots ?? defaultSlots()} widgets={widgets} detail={detail} ctx={ctx} selected={selected} onSelect={onSelect} onChange={onSlots} readOnly={asMember} />
         ) : items ? (
           <GridEditor
             items={items}
@@ -1438,22 +1414,23 @@ function ScreenArea({
           </div>
         )}
       </div>
-      {items && !asMember && !preview.dm && !voiceMorph && lab.mode !== 'moldes' && (
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-baseline justify-between gap-3">
-            <div className="text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">
-              Na tela de verdade · {preview.win.w} px{situation ? ` · ${situation}` : ''}
-            </div>
-          </div>
-          <LivePreview items={items} detail={detail} win={preview.win} sit={sitBase} mode={lab.mode} />
-          <p className="mt-1.5 text-[11px] text-fg-muted">{liveCaption(lab.mode, lab.adaptive)}</p>
-        </div>
+      {mode === 'call' && items && !asMember && (
+        <p className="mt-2 text-[11px] text-fg-muted">Modo 3: ao abrir uma sala de voz, esta tela desliza para a "Tela da sala" (aba ao lado).</p>
       )}
       <p className="mt-2 text-[11px] text-fg-subtle">
         Vale em telas a partir de 1100 px de largura. No celular e em telas menores, todo mundo vê o layout padrão, e cada membro pode voltar ao padrão em Configurações › Aparência.
       </p>
     </div>
   );
+}
+
+/** Tamanho real (px) de um item da grade 12×12 na janela base (1100 px). */
+function cellsToPx(item: { w: number; h: number }) {
+  const a = gridArea(BASE_WINDOW);
+  const gap = 16;
+  const cw = (a.w - gap * 11) / 12;
+  const ch = (a.h - gap * 11) / 12;
+  return { w: Math.round(item.w * cw + (item.w - 1) * gap), h: Math.round(item.h * ch + (item.h - 1) * gap) };
 }
 
 function BlocksDrawer({ items, onAdd }: { items: ScreenItem[] | null; onAdd: (b: SystemBlock) => void }) {

@@ -1,6 +1,6 @@
 /*
- * Laboratório de layout, caminho 1: os blocos principais mudam pelo espaço que têm (container queries), não
- * pelo tamanho da janela. Só vale com a chave ligada ([data-lab-adaptive] na raiz da tela montada).
+ * Laboratório de layout: os blocos principais mudam pelo espaço que têm (container queries), não pelo tamanho
+ * da janela. Vale em toda tela montada na Oficina ([data-lab-adaptive] na raiz).
  */
 
 [data-lab-adaptive] .lab-slot-voicebar {
@@ -71,15 +71,13 @@
   }
 }
 
-/* caminho 4, arranjo "palco" escolhido por quem vê: o palco fica com a sala inteira (sem o papo ao lado) */
-[data-lab-room='palco'] .room-panel {
-  display: none !important;
+/* modo 2, voz e perfil na barra de baixo: o "Na sala" e o seu cartão lado a lado, na largura toda */
+.lab-bottom-bar .lab-voice-stack {
+  display: flex;
+  align-items: stretch;
 }
-
-/* caminho 6: janela simulada, para ver a tela como ficaria num monitor menor */
-.lab-sim {
-  margin-inline: auto;
-  height: 100%;
-  outline: 2px dashed var(--color-warn, #e9b949);
-  outline-offset: -2px;
+.lab-bottom-bar .lab-voice-panel,
+.lab-bottom-bar .lab-user-card {
+  flex: 1;
+  margin-bottom: 12px;
 }

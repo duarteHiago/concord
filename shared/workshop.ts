@@ -284,12 +284,49 @@ export function themeContrastIssues(t: ServerTheme): string[] {
 
 // ---------------------------------------------------------------- configuração
 
+// ------------------------------------------------------------------ modos da tela (laboratório de layout)
+
+/**
+ * Modo 2 · Encaixes: lugares fixos. A conversa/sala fica sempre no centro e a barra de servidores sempre em cima;
+ * os outros blocos escolhem entre os lugares permitidos.
+ */
+export interface SlotLayout {
+  channels: 'left' | 'right';
+  /** voz e perfil: embaixo da coluna dos canais, ou uma barra embaixo da tela inteira */
+  voicebar: 'column' | 'bottom';
+  members: 'left' | 'right' | 'hidden';
+  /** zona de cada widget da tela (pelo id); sem zona, o widget fica guardado e não aparece */
+  widgets: Record<string, SlotZone>;
+}
+export const SLOT_ZONES = ['top', 'left', 'right'] as const;
+export type SlotZone = (typeof SLOT_ZONES)[number];
+export const defaultSlots = (): SlotLayout => ({ channels: 'left', voicebar: 'column', members: 'right', widgets: {} });
+
+/** Modo 3 · tela da sala: o que fica em cada lateral e a ordem dos botões da barra de interação. */
+export const ROOM_SIDES = ['nav', 'chat', 'members', 'none'] as const;
+export type RoomSide = (typeof ROOM_SIDES)[number];
+export const DOCK_ITEMS = ['mic', 'deafen', 'camera', 'effects', 'sounds', 'reactions', 'stickers', 'clip', 'share', 'leave'] as const;
+export type DockItem = (typeof DOCK_ITEMS)[number];
+/** não podem sair da barra: sem eles a pessoa não consegue se silenciar nem sair da sala */
+export const DOCK_FIXED: readonly DockItem[] = ['mic', 'deafen', 'leave'];
+export interface RoomLayout {
+  left: RoomSide;
+  right: RoomSide;
+  /** botões que aparecem, na ordem */
+  dock: DockItem[];
+}
+export const defaultRoom = (): RoomLayout => ({ left: 'nav', right: 'chat', dock: [...DOCK_ITEMS] });
+
 export interface WorkshopConfig {
   version: typeof WORKSHOP_VERSION;
   pieces: Partial<Record<WorkshopPiece, WorkshopPackId>>;
   mural: { title: string; widgets: WidgetPlacement[] };
   /** tela do servidor em grade livre; sem ela, o layout padrão */
   screen?: { items: ScreenItem[] };
+  /** modo 2: onde cada bloco encaixa */
+  slots?: SlotLayout;
+  /** modo 3: a tela da sala de voz */
+  room?: RoomLayout;
   /** tema do servidor; sem ele, cada pessoa vê o próprio tema */
   theme?: ServerTheme;
 }
@@ -506,9 +543,34 @@ function screen(v: unknown, now: number): { items: ScreenItem[] } {
 }
 
 /** Valida uma configuração vinda de fora. Nunca confia no cliente. */
+function slots(v: unknown): SlotLayout {
+  const o = obj(v, 'slots', ['channels', 'voicebar', 'members', 'widgets']);
+  const w = obj(o.widgets, 'slots.widgets', Object.keys(isObj(o.widgets) ? o.widgets : {}));
+  if (Object.keys(w).length > MAX_SCREEN_WIDGETS) bad('slots.widgets: widgets demais');
+  const widgets: Record<string, SlotZone> = {};
+  for (const [id, zone] of Object.entries(w)) widgets[text(id, 'slots.widgets.id', 40, { min: 1 })] = oneOf(zone, `slots.widgets.${id}`, SLOT_ZONES);
+  return {
+    channels: oneOf(o.channels, 'slots.channels', ['left', 'right'] as const),
+    voicebar: oneOf(o.voicebar, 'slots.voicebar', ['column', 'bottom'] as const),
+    members: oneOf(o.members, 'slots.members', ['left', 'right', 'hidden'] as const),
+    widgets,
+  };
+}
+
+function room(v: unknown): RoomLayout {
+  const o = obj(v, 'room', ['left', 'right', 'dock']);
+  const left = oneOf(o.left, 'room.left', ROOM_SIDES);
+  const right = oneOf(o.right, 'room.right', ROOM_SIDES);
+  if (left !== 'none' && left === right) bad('room: as duas laterais com a mesma coisa');
+  const dock = list(o.dock, 'room.dock', DOCK_ITEMS.length, (x, i) => oneOf(x, `room.dock[${i}]`, DOCK_ITEMS));
+  if (new Set(dock).size !== dock.length) bad('room.dock: botão repetido');
+  for (const f of DOCK_FIXED) if (!dock.includes(f)) bad(`room.dock: "${f}" não pode sair da barra`);
+  return { left, right, dock };
+}
+
 export function parseWorkshop(input: unknown, now = Date.now()): ParseResult {
   try {
-    const o = obj(input, 'oficina', ['version', 'pieces', 'mural', 'screen', 'theme']);
+    const o = obj(input, 'oficina', ['version', 'pieces', 'mural', 'screen', 'slots', 'room', 'theme']);
     if (o.version !== WORKSHOP_VERSION) bad('oficina.version: versão desconhecida');
     const p = obj(o.pieces, 'pieces', WORKSHOP_PIECES);
     const pieces: WorkshopConfig['pieces'] = {};
@@ -518,6 +580,8 @@ export function parseWorkshop(input: unknown, now = Date.now()): ParseResult {
     noOverlap(widgets, 'mural.widgets');
     const value: WorkshopConfig = { version: WORKSHOP_VERSION, pieces, mural: { title: text(m.title, 'mural.title', 40, { min: 1 }), widgets } };
     if (o.screen !== undefined) value.screen = screen(o.screen, now);
+    if (o.slots !== undefined) value.slots = slots(o.slots);
+    if (o.room !== undefined) value.room = room(o.room);
     if (o.theme !== undefined) value.theme = theme(o.theme);
     return { ok: true, value };
   } catch (err) {
