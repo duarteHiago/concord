@@ -1,20 +1,24 @@
 // Praça do servidor: o servidor como um lugar em pixel art isométrico. Cada sala de voz é uma mesa (clicar
 // leva o boneco até ela e entra na call), a TV acende quando alguém transmite, e a conversa é por balão,
 // só para quem está na praça. Quem está numa call aparece sentado, mesmo sem ter aberto a praça.
-import { DoorOpen, Hand, LogOut, Maximize2, MessageSquare, Mic, MicOff, Minus, Plus, Headphones, HeadphoneOff, Shirt, X, Send, Crosshair, Lock, Radio } from 'lucide-react';
+import { DoorOpen, Hammer, Hand, LogOut, Maximize2, MessageSquare, Mic, MicOff, Minus, Plus, Headphones, HeadphoneOff, Shirt, X, Send, Crosshair, Lock, Radio } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { P, has } from '../../../../shared/permissions.ts';
 import {
   EMOTES,
   SAY_MAX,
   defaultAvatar,
+  defaultStyle,
   distance,
+  footprint,
   layoutFor,
   proximityVolume,
   findPath,
   nearestWalkable,
   walkable,
   type Facing,
+  type Furniture,
+  type PlaceStyle,
   type PlazaAvatar,
   type PlazaLayout,
   type Point,
@@ -29,8 +33,10 @@ import { useVoice } from '../../store/voice';
 import { cx } from '../ui';
 import { AvatarEditor } from './AvatarEditor';
 import { StreamPip } from './StreamPip';
+import { PlaceEditor, type EditorTool } from './PlaceEditor';
+import { api } from '../../lib/api';
 import { Globe } from './Globe';
-import { at, drawAvatar, lampLight, PAL, renderStatic, sceneObjects, tileAt, type Pose } from './pixels';
+import { at, drawAvatar, drawItem, lampLight, outlineTiles, PAL, renderStatic, sceneObjects, tileAt, type Pose } from './pixels';
 
 const SPEED = 3.6; // casas por segundo
 const IDLE_MS = 5 * 60_000;
@@ -61,6 +67,11 @@ interface Figure {
 }
 
 const NO_SEATS = new Map<string, { table: number; seat: number }>();
+
+/** O móvel cabe ali? (o mesmo teste do servidor, menos a passagem, que é conferida ao salvar) */
+function canPlace(draft: PlaceStyle, it: Furniture, scene: 'lobby' | 'inside', tableCount: number) {
+  return layoutFor(scene, tableCount, { ...draft, items: [...draft.items, it] }).items.length === draft.items.length + 1;
+}
 
 const facingOf = (dx: number, dy: number): Facing => (dx > 0 ? 0 : dx < 0 ? 2 : dy > 0 ? 1 : 3);
 
@@ -123,7 +134,18 @@ export default function PlazaView() {
   // onde eu estou: na praça (lobby) ou dentro do estabelecimento
   const myScene = walkers[me.id]?.scene ?? 'lobby';
   const inside = myScene === 'inside';
-  const layout = useMemo(() => layoutFor(myScene, tables.length), [myScene, tables.length]);
+  // editor da Praça (quem gerencia o servidor): o rascunho de como este lugar vai ficar
+  const places = usePlaza((s) => s.places);
+  const canManage = has(detail?.permissions ?? 0, P.MANAGE_SERVER);
+  const [draft, setDraft] = useState<PlaceStyle | null>(null);
+  const [tool, setTool] = useState<EditorTool>('select');
+  const [rot, setRot] = useState<0 | 1>(0);
+  const [itemColor, setItemColor] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [savingPlace, setSavingPlace] = useState(false);
+  const layout = useMemo(() => layoutFor(myScene, tables.length, draft ?? places[myScene]), [myScene, tables.length, draft, places]);
+  const editRef = useRef({ draft, tool, rot, itemColor, selected, hover: null as Point | null, tableCount: tables.length });
+  editRef.current = { ...editRef.current, draft, tool, rot, itemColor, selected, tableCount: tables.length };
   // mini TV flutuante com a transmissão de alguém (id de quem transmite)
   const [pip, setPip] = useState<string | null>(null);
   const pendingWatch = useRef<string | null>(null);
@@ -196,7 +218,7 @@ export default function PlazaView() {
       const voice = useVoice.getState();
 
       // camada fixa: refeita só quando o mapa muda
-      const key = `${layout.kind}:${layout.w}x${layout.h}`;
+      const key = `${layout.kind}:${layout.w}x${layout.h}:${layout.floor}:${layout.wall}:${JSON.stringify(layout.items.filter((i) => i.k === 'rug'))}`;
       if (w.staticKey !== key) {
         w.staticLayer = renderStatic(layout, PAL.coral);
         w.staticKey = key;
@@ -371,7 +393,14 @@ export default function PlazaView() {
       }
       lctx.setTransform(1, 0, 0, 1, -viewX, -viewY);
       lctx.drawImage(st.canvas, -st.originX, -st.originY);
-      for (const l of layout.lamps) lampLight(lctx, l.x, l.y);
+      for (const it of layout.items) if (it.k === 'lamp') lampLight(lctx, it.x, it.y);
+
+      // editor: contorno do móvel selecionado e a prévia de onde o novo vai
+      const ed = editRef.current;
+      if (ed.draft) {
+        const sel = ed.selected !== null ? ed.draft.items[ed.selected] : undefined;
+        if (sel) outlineTiles(lctx, footprint(sel), 'rgba(255, 230, 160, 0.45)');
+      }
 
       const looks = L.tables.map((channelId) => {
         const ch = channelId ? L.channelById.get(channelId) : undefined;
@@ -391,6 +420,16 @@ export default function PlazaView() {
       }
       items.sort((p, q) => p.depth - q.depth);
       for (const it of items) it.draw(lctx);
+      if (ed.draft && ed.tool !== 'select' && ed.hover) {
+        const ghost: Furniture = { k: ed.tool, x: ed.hover.x, y: ed.hover.y, r: ed.rot, c: ed.itemColor };
+        const ok = canPlace(ed.draft, ghost, layout.kind, ed.tableCount);
+        outlineTiles(lctx, footprint(ghost), ok ? 'rgba(58, 208, 122, 0.4)' : 'rgba(255, 77, 94, 0.4)');
+        if (ok) {
+          lctx.globalAlpha = 0.65;
+          drawItem(lctx, ghost, layout.kind, now);
+          lctx.globalAlpha = 1;
+        }
+      }
 
       // vinheta suave nas bordas (noite)
       lctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -484,7 +523,13 @@ export default function PlazaView() {
     down.current = { x: e.clientX, y: e.clientY, panX: world.current.pan.x, panY: world.current.pan.y, moved: false };
     setCard(null);
   };
+  const tileUnder = (e: React.PointerEvent | PointerEvent, lift = 0) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const { x: vx, y: vy, scale, dpr } = world.current.view;
+    return tileAt(((e.clientX - rect.left) * dpr) / scale + vx, ((e.clientY - rect.top) * dpr) / scale + vy + lift);
+  };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (draft) editRef.current.hover = tileUnder(e);
     const d = down.current;
     if (!d) return;
     const dx = e.clientX - d.x;
@@ -502,6 +547,26 @@ export default function PlazaView() {
     const { x: vx, y: vy, scale, dpr } = world.current.view;
     const nx = ((e.clientX - rect.left) * dpr) / scale + vx;
     const ny = ((e.clientY - rect.top) * dpr) / scale + vy;
+
+    // editor: põe o móvel escolhido ou seleciona o que está ali
+    if (draft) {
+      if (tool === 'select') {
+        for (const lift of [0, 12, 24]) {
+          const t = tileUnder(e, lift);
+          let idx = -1;
+          draft.items.forEach((it, i) => {
+            if (footprint(it).some((f) => f.x === t.x && f.y === t.y) && (idx < 0 || draft.items[idx].k === 'rug')) idx = i;
+          });
+          if (idx >= 0) return setSelected(idx);
+        }
+        return setSelected(null);
+      }
+      const t = tileUnder(e);
+      const it: Furniture = { k: tool, x: t.x, y: t.y, r: rot, c: itemColor };
+      if (!canPlace(draft, it, layout.kind, tables.length)) return toast.info('Não cabe aí.');
+      setDraft({ ...draft, items: [...draft.items, it] });
+      return;
+    }
 
     // 1) clicou num boneco: o cartão da pessoa
     const hitFig = [...world.current.figures]
@@ -554,6 +619,19 @@ export default function PlazaView() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (draft) {
+        if (e.key === 'Escape') {
+          if (selected !== null) setSelected(null);
+          else setTool('select');
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected !== null) {
+          setDraft({ ...draft, items: draft.items.filter((_, j) => j !== selected) });
+          setSelected(null);
+        } else if (e.key === 'r' || e.key === 'R') {
+          if (selected !== null) setDraft({ ...draft, items: draft.items.map((it, j) => (j === selected ? { ...it, r: it.r ? 0 : 1 } : it)) });
+          else setRot(rot ? 0 : 1);
+        }
+        return;
+      }
       if (e.key === 'Escape') {
         if (editing) setEditing(false);
         else if (card) setCard(null);
@@ -658,6 +736,41 @@ export default function PlazaView() {
 
   const goDoor = () => moveMe(layout.door);
 
+  // ---- editor ----
+  const startEdit = () => {
+    setDraft(structuredClone(places[myScene] ?? defaultStyle(myScene, tables.length)));
+    setTool('select');
+    setSelected(null);
+    setCard(null);
+  };
+  const stopEdit = () => {
+    setDraft(null);
+    setSelected(null);
+    editRef.current.hover = null;
+  };
+  // trocou de lugar no meio da edição: o rascunho era do outro lugar, então sai do editor
+  const prevScene = useRef(myScene);
+  useEffect(() => {
+    if (prevScene.current === myScene) return;
+    prevScene.current = myScene;
+    setDraft(null);
+    setSelected(null);
+  }, [myScene]);
+  const savePlace = async () => {
+    if (!draft) return;
+    setSavingPlace(true);
+    try {
+      await api.put(`/servers/${serverId}/plaza/place`, { scene: myScene, style: draft });
+      usePlaza.setState({ places: { ...usePlaza.getState().places, [myScene]: draft } });
+      stopEdit();
+      toast.success(myScene === 'lobby' ? 'Praça salva.' : 'Prédio salvo.');
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setSavingPlace(false);
+    }
+  };
+
   const myVoice = voiceStates?.find((v) => v.userId === me.id);
   const myChannel = voiceChannelId ? channelById.get(voiceChannelId) : undefined;
   const count = Object.values(walkers).filter((w) => w.scene === myScene).length;
@@ -724,6 +837,11 @@ export default function PlazaView() {
         <HudButton label="Aproximar" onClick={() => setZoom((z) => Math.min(5, z + 1))}>
           <Plus size={16} />
         </HudButton>
+        {canManage && !draft && (
+          <button onClick={startEdit} title={inside ? 'Montar o prédio' : 'Montar a praça'} className="flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-[#1b1430]/85 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-[#2b2350]">
+            <Hammer size={15} /> Montar
+          </button>
+        )}
         <HudButton label="Centralizar em mim" onClick={() => (world.current.pan = { x: 0, y: 0 })}>
           <Crosshair size={16} />
         </HudButton>
@@ -786,6 +904,28 @@ export default function PlazaView() {
 
       {card && <PersonCard userId={card} member={memberById.get(card)} isMe={card === me.id} onEdit={() => setEditing(true)} onClose={() => setCard(null)} serverId={serverId} />}
       {editing && <AvatarEditor onClose={() => setEditing(false)} />}
+      {draft && (
+        <PlaceEditor
+          scene={myScene}
+          draft={draft}
+          setDraft={setDraft}
+          tool={tool}
+          setTool={setTool}
+          rot={rot}
+          setRot={setRot}
+          color={itemColor}
+          setColor={setItemColor}
+          selected={selected}
+          setSelected={setSelected}
+          saving={savingPlace}
+          onSave={() => void savePlace()}
+          onCancel={stopEdit}
+          onReset={() => {
+            setDraft(defaultStyle(myScene, tables.length));
+            setSelected(null);
+          }}
+        />
+      )}
       {pip && (
         <StreamPip
           userId={pip}

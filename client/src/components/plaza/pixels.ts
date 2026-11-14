@@ -3,11 +3,18 @@
 // normal do canvas borra a borda, e ampliado isso vira um degradê feio).
 import {
   CLOTH_COLORS,
+  FLOORS,
   HAIR_COLORS,
+  ITEM_COLORS,
   SKIN_TONES,
+  WALLS,
+  footprint,
   type Facing,
+  type Furniture,
   type PlazaAvatar,
   type PlazaLayout,
+  type Point,
+  type Scene,
 } from '../../../../shared/plaza.ts';
 
 export const TW = 32;
@@ -130,14 +137,14 @@ export function box(ctx: Ctx, x: number, y: number, a: number, b: number, z0: nu
 
 // ---- chão ----
 
-function floorTile(ctx: Ctx, x: number, y: number) {
+function floorTile(ctx: Ctx, x: number, y: number, a = PAL.tileA, b = PAL.tileB) {
   const p = iso(x, y);
   const even = (x + y) % 2 === 0;
-  fillPoly(ctx, [p, { x: p.x + 16, y: p.y + 8 }, { x: p.x, y: p.y + 16 }, { x: p.x - 16, y: p.y + 8 }], even ? PAL.tileA : PAL.tileB);
+  fillPoly(ctx, [p, { x: p.x + 16, y: p.y + 8 }, { x: p.x, y: p.y + 16 }, { x: p.x - 16, y: p.y + 8 }], even ? a : b);
   // o desenho do azulejo: uma flor de quatro pontas no meio e as quinas claras
   const cx = p.x;
   const cy = p.y + 8;
-  ctx.fillStyle = even ? PAL.tileLine : '#8590e0';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
   ctx.fillRect(cx - 4, cy, 8, 1);
   ctx.fillRect(cx - 1, cy - 2, 2, 5);
   ctx.fillStyle = PAL.tileDot;
@@ -380,10 +387,10 @@ function portal(ctx: Ctx, x: number, y: number, t: number) {
 
 // ---- estabelecimento (por dentro) ----
 
-function woodTile(ctx: Ctx, x: number, y: number) {
+function woodTile(ctx: Ctx, x: number, y: number, a = '#9a6a4f', b = '#8c5f46') {
   const p = iso(x, y);
   const even = (x + y) % 2 === 0;
-  fillPoly(ctx, [p, { x: p.x + 16, y: p.y + 8 }, { x: p.x, y: p.y + 16 }, { x: p.x - 16, y: p.y + 8 }], even ? '#9a6a4f' : '#8c5f46');
+  fillPoly(ctx, [p, { x: p.x + 16, y: p.y + 8 }, { x: p.x, y: p.y + 16 }, { x: p.x - 16, y: p.y + 8 }], even ? a : b);
   // tábuas: linhas ao longo de x
   ctx.fillStyle = 'rgba(60, 34, 22, 0.35)';
   for (const k of [0.33, 0.66]) {
@@ -404,8 +411,9 @@ function interiorWalls(ctx: Ctx, layout: PlazaLayout, accent: string) {
   const H = 64;
   const { w, h } = layout;
   // parede esquerda (x = 0, olhando para +x) e parede do fundo (y = 0, olhando para +y)
-  fillPoly(ctx, [at(0, h), at(0, 0), at(0, 0, H), at(0, h, H)], '#5b4a8a');
-  fillPoly(ctx, [at(0, 0), at(w, 0), at(w, 0, H), at(0, 0, H)], '#6a589c');
+  const colors = WALLS[layout.wall] ?? WALLS[0];
+  fillPoly(ctx, [at(0, h), at(0, 0), at(0, 0, H), at(0, h, H)], colors.left);
+  fillPoly(ctx, [at(0, 0), at(w, 0), at(w, 0, H), at(0, 0, H)], colors.back);
   // faixa de azulejo na parte de baixo das paredes
   fillPoly(ctx, [at(0, h), at(0, 0), at(0, 0, 14), at(0, h, 14)], '#3f6fd9');
   fillPoly(ctx, [at(0, 0), at(w, 0), at(w, 0, 14), at(0, 0, 14)], '#4a7ae6');
@@ -513,6 +521,175 @@ function floorLamp(ctx: Ctx, x: number, y: number, t: number) {
   fillPoly(ctx, [{ x: bx - 4, y: by - 38 }, { x: bx + 4, y: by - 38 }, { x: bx + 4, y: by - 37 }, { x: bx - 4, y: by - 37 }], '#c9953f');
 }
 
+// ---- móveis do editor ----
+
+const hexShade = (hex: string, amt: number) => {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v: number) => Math.max(0, Math.min(255, Math.round(v + amt * (amt < 0 ? v : 255 - v))));
+  return `rgb(${f(n >> 16)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
+};
+
+function tree(ctx: Ctx, x: number, y: number) {
+  const c = at(x + 0.5, y + 0.5);
+  fillEllipse(ctx, c.x, c.y, 9, 4.5, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = '#6e4834';
+  ctx.fillRect(Math.round(c.x) - 2, Math.round(c.y) - 16, 4, 16);
+  fillEllipse(ctx, c.x, c.y - 26, 14, 13, PAL.leafDark);
+  fillEllipse(ctx, c.x - 3, c.y - 30, 11, 10, PAL.leaf);
+  fillEllipse(ctx, c.x + 4, c.y - 22, 7, 6, PAL.leaf);
+  fillEllipse(ctx, c.x - 6, c.y - 34, 4, 4, PAL.leafLight);
+  fillEllipse(ctx, c.x + 5, c.y - 30, 3, 3, PAL.leafLight);
+}
+
+function flowers(ctx: Ctx, x: number, y: number, color: string) {
+  box(ctx, x + 0.1, y + 0.1, 0.8, 0.8, 0, 5, { top: '#4a3020', left: '#8a5a3c', right: '#6e4834' });
+  const c = at(x + 0.5, y + 0.5, 5);
+  fillEllipse(ctx, c.x, c.y - 3, 11, 5, PAL.leafDark);
+  fillEllipse(ctx, c.x, c.y - 4, 9, 4, PAL.leaf);
+  ctx.fillStyle = color;
+  for (const [dx, dy] of [
+    [-6, -4],
+    [-2, -7],
+    [3, -5],
+    [6, -3],
+    [0, -2],
+    [-4, -1],
+  ]) ctx.fillRect(Math.round(c.x) + dx, Math.round(c.y) + dy, 2, 2);
+  ctx.fillStyle = '#f5c451';
+  ctx.fillRect(Math.round(c.x) - 1, Math.round(c.y) - 5, 1, 1);
+}
+
+function sofa(ctx: Ctx, it: Furniture, color: string) {
+  const w = it.r ? 1 : 2;
+  const h = it.r ? 2 : 1;
+  const dark = hexShade(color, -0.3);
+  const mid = hexShade(color, -0.15);
+  box(ctx, it.x + 0.1, it.y + 0.15, w - 0.2, h - 0.3, 0, 8, { top: color, left: mid, right: dark });
+  // encosto atrás (no lado de y menor, ou de x menor girado) e braços
+  if (it.r) box(ctx, it.x + 0.1, it.y + 0.15, 0.25, h - 0.3, 8, 9, { top: mid, left: mid, right: dark });
+  else box(ctx, it.x + 0.1, it.y + 0.15, w - 0.2, 0.25, 8, 9, { top: mid, left: mid, right: dark });
+  // almofadas
+  const c1 = at(it.x + (it.r ? 0.55 : 0.55), it.y + (it.r ? 0.55 : 0.6), 8);
+  const c2 = at(it.x + (it.r ? 0.55 : 1.45), it.y + (it.r ? 1.45 : 0.6), 8);
+  fillEllipse(ctx, c1.x, c1.y, 6, 3, hexShade(color, 0.15));
+  fillEllipse(ctx, c2.x, c2.y, 6, 3, hexShade(color, 0.15));
+}
+
+function rug(ctx: Ctx, it: Furniture, color: string) {
+  const w = it.r ? 2 : 2;
+  const h = 2;
+  const pts = [at(it.x + 0.1, it.y + 0.1), at(it.x + w - 0.1, it.y + 0.1), at(it.x + w - 0.1, it.y + h - 0.1), at(it.x + 0.1, it.y + h - 0.1)];
+  fillPoly(ctx, pts, hexShade(color, -0.25));
+  const inner = [at(it.x + 0.3, it.y + 0.3), at(it.x + w - 0.3, it.y + 0.3), at(it.x + w - 0.3, it.y + h - 0.3), at(it.x + 0.3, it.y + h - 0.3)];
+  fillPoly(ctx, inner, color);
+  const core = [at(it.x + 0.75, it.y + 0.75), at(it.x + w - 0.75, it.y + 0.75), at(it.x + w - 0.75, it.y + h - 0.75), at(it.x + 0.75, it.y + h - 0.75)];
+  fillPoly(ctx, core, hexShade(color, 0.3));
+}
+
+function shelf(ctx: Ctx, x: number, y: number) {
+  box(ctx, x + 0.1, y + 0.3, 0.8, 0.4, 0, 34, { top: '#6e4834', left: '#8a5a3c', right: '#5e3826' });
+  const f = (u: number, z: number) => at(x + 0.1 + u, y + 0.7, z);
+  const colors = ['#e8685a', '#2f62e6', '#f5c451', '#2e9e6a', '#8b5cf6', '#ececec'];
+  for (const [row, z] of [
+    [0, 4],
+    [1, 15],
+    [2, 26],
+  ]) {
+    fillPoly(ctx, [f(0.05, z - 1), f(0.75, z - 1), f(0.75, z), f(0.05, z)], '#4a2f22');
+    for (let i = 0; i < 5; i++) {
+      const u = 0.08 + i * 0.13;
+      fillPoly(ctx, [f(u, z), f(u + 0.1, z), f(u + 0.1, z + 8), f(u, z + 8)], colors[(i + row * 2) % colors.length]);
+    }
+  }
+}
+
+function arcade(ctx: Ctx, x: number, y: number, color: string, t: number) {
+  box(ctx, x + 0.15, y + 0.2, 0.7, 0.6, 0, 30, { top: hexShade(color, -0.35), left: color, right: hexShade(color, -0.3) });
+  const f = (u: number, z: number) => at(x + 0.15 + u, y + 0.8, z);
+  // tela piscando
+  const hue = Math.floor(t / 300) % 3;
+  fillPoly(ctx, [f(0.08, 17), f(0.62, 17), f(0.62, 27), f(0.08, 27)], PAL.outline);
+  fillPoly(ctx, [f(0.12, 18), f(0.58, 18), f(0.58, 26), f(0.12, 26)], ['#2f62e6', '#8b5cf6', '#3fb8c9'][hue]);
+  fillPoly(ctx, [f(0.25, 21), f(0.32, 21), f(0.32, 23), f(0.25, 23)], '#f5c451');
+  // painel com botões
+  fillPoly(ctx, [f(0.05, 12), f(0.65, 12), f(0.65, 15), f(0.05, 15)], '#2b2350');
+  const b1 = f(0.2, 13.5);
+  const b2 = f(0.45, 13.5);
+  ctx.fillStyle = '#ff4d5e';
+  ctx.fillRect(Math.round(b1.x), Math.round(b1.y), 2, 1);
+  ctx.fillStyle = '#ffe6a0';
+  ctx.fillRect(Math.round(b2.x), Math.round(b2.y), 2, 1);
+}
+
+function fountain(ctx: Ctx, x: number, y: number, t: number) {
+  const c = at(x + 1, y + 1);
+  fillEllipse(ctx, c.x, c.y + 1, 28, 14, 'rgba(0,0,0,0.25)');
+  fillEllipse(ctx, c.x, c.y - 4, 28, 14, '#8e8aa3');
+  fillEllipse(ctx, c.x, c.y - 6, 28, 14, '#b9b5cc');
+  fillEllipse(ctx, c.x, c.y - 6, 23, 11.5, '#3f6fd9');
+  fillEllipse(ctx, c.x, c.y - 7, 20, 10, '#5b8cf0');
+  // brilhos da água
+  const k = (t / 400) % (Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillRect(Math.round(c.x + Math.cos(k) * 12), Math.round(c.y - 7 + Math.sin(k) * 5), 2, 1);
+  ctx.fillRect(Math.round(c.x - Math.cos(k) * 9), Math.round(c.y - 6 - Math.sin(k) * 4), 2, 1);
+  // pilar e jato
+  ctx.fillStyle = '#b9b5cc';
+  ctx.fillRect(Math.round(c.x) - 2, Math.round(c.y) - 20, 4, 14);
+  fillEllipse(ctx, c.x, c.y - 20, 6, 3, '#d4d1e3');
+  const jet = 3 + Math.sin(t / 150) * 1.5;
+  ctx.fillStyle = 'rgba(190, 215, 255, 0.85)';
+  ctx.fillRect(Math.round(c.x), Math.round(c.y - 22 - jet * 3), 1, Math.round(jet * 3));
+  for (const dx of [-5, -3, 3, 5]) ctx.fillRect(Math.round(c.x + dx), Math.round(c.y - 19 + Math.abs(dx) - jet), 1, 2);
+}
+
+const itemColor = (it: Furniture) => ITEM_COLORS[it.c] ?? ITEM_COLORS[0];
+
+/** Desenha um móvel (menos o tapete, que fica na camada do chão). */
+export function drawItem(ctx: Ctx, it: Furniture, scene: Scene, t: number) {
+  switch (it.k) {
+    case 'plant':
+      return plant(ctx, it.x, it.y);
+    case 'tree':
+      return tree(ctx, it.x, it.y);
+    case 'flowers':
+      return flowers(ctx, it.x, it.y, itemColor(it));
+    case 'lamp':
+      return scene === 'inside' ? floorLamp(ctx, it.x, it.y, t) : lampPost(ctx, it.x, it.y, t);
+    case 'bench':
+      return bench(ctx, it.x, it.y);
+    case 'cafe':
+      return cafeTable(ctx, it.x, it.y);
+    case 'stool':
+      return stool(ctx, it.x, it.y, itemColor(it));
+    case 'sofa':
+      return sofa(ctx, it, itemColor(it));
+    case 'rug':
+      return rug(ctx, it, itemColor(it));
+    case 'shelf':
+      return shelf(ctx, it.x, it.y);
+    case 'arcade':
+      return arcade(ctx, it.x, it.y, itemColor(it), t);
+    case 'fountain':
+      return fountain(ctx, it.x, it.y, t);
+  }
+}
+
+/** Profundidade de um móvel: o meio dele (os grandes ficam atrás de quem passa na frente). */
+export function itemDepth(it: Furniture) {
+  const fp = footprint(it);
+  const last = fp[fp.length - 1];
+  return (it.x + last.x + 1) / 2 + (it.y + last.y + 1) / 2;
+}
+
+/** Contorno de casas (para o editor: o móvel selecionado e a prévia de onde ele vai). */
+export function outlineTiles(ctx: Ctx, tiles: Point[], color: string) {
+  for (const t of tiles) {
+    const p = iso(t.x, t.y);
+    fillPoly(ctx, [p, { x: p.x + 16, y: p.y + 8 }, { x: p.x, y: p.y + 16 }, { x: p.x - 16, y: p.y + 8 }], color);
+  }
+}
+
 // ---- cena ----
 
 /** Camada fixa (chão, borda e prédio): desenhada uma vez por mapa. Devolve o canvas e onde fica a casa (0, 0). */
@@ -529,11 +706,13 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
   if (layout.kind === 'inside') {
     interiorWalls(ctx, layout, accent);
     platformEdge(ctx, layout, true);
-    for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) woodTile(ctx, x, y);
+    const f = FLOORS.inside[layout.floor] ?? FLOORS.inside[0];
+    for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) woodTile(ctx, x, y, f.a, f.b);
     exitMat(ctx, layout.door.x, layout.door.y);
   } else {
     platformEdge(ctx, layout);
-    for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) floorTile(ctx, x, y);
+    const f = FLOORS.lobby[layout.floor] ?? FLOORS.lobby[0];
+    for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) floorTile(ctx, x, y, f.a, f.b);
     doorMat(ctx, layout.door.x, layout.door.y);
   }
   // tapete embaixo de cada mesa
@@ -542,6 +721,8 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
     fillEllipse(ctx, c.x, c.y, 46, 23, 'rgba(35, 26, 58, 0.25)');
     fillEllipse(ctx, c.x, c.y, 42, 21, 'rgba(232, 104, 90, 0.20)');
   }
+  // tapetes ficam no chão (dá para pisar em cima)
+  for (const it of layout.items) if (it.k === 'rug') drawItem(ctx, it, layout.kind, 0);
   if (layout.kind === 'inside') counter(ctx, layout, accent);
   else building(ctx, layout, accent);
   return { canvas, originX: Math.round(-left), originY: -top };
@@ -568,15 +749,11 @@ export function sceneObjects(layout: PlazaLayout, tables: TableLook[], accent: s
     out.push({ depth: d(tb.x + 1, tb.y + 1), draw: (ctx) => table(ctx, tb.x, tb.y, look.locked, accent) });
     for (const s of tb.seats) out.push({ depth: d(s.x + 0.4, s.y + 0.4), draw: (ctx) => stool(ctx, s.x, s.y, accent) });
   });
-  for (const c of layout.cafes) {
-    out.push({ depth: d(c.x - 0.6, c.y + 0.4), draw: (ctx) => stool(ctx, c.x - 1, c.y, accent) });
-    out.push({ depth: d(c.x + 0.5, c.y + 0.5), draw: (ctx) => cafeTable(ctx, c.x, c.y) });
-    out.push({ depth: d(c.x + 1.4, c.y + 0.4), draw: (ctx) => stool(ctx, c.x + 1, c.y, accent) });
-  }
   const indoor = layout.kind === 'inside';
-  for (const l of layout.lamps) out.push({ depth: d(l.x + 0.5, l.y + 0.5), draw: (ctx) => (indoor ? floorLamp(ctx, l.x, l.y, t) : lampPost(ctx, l.x, l.y, t)) });
-  for (const p of layout.plants) out.push({ depth: d(p.x + 0.5, p.y + 0.5), draw: (ctx) => plant(ctx, p.x, p.y) });
-  for (const b of layout.benches) out.push({ depth: d(b.x + 0.5, b.y + 0.5), draw: (ctx) => bench(ctx, b.x, b.y) });
+  for (const it of layout.items) {
+    if (it.k === 'rug') continue;
+    out.push({ depth: itemDepth(it), draw: (ctx) => drawItem(ctx, it, layout.kind, t) });
+  }
   if (!indoor) out.push({ depth: -1, draw: (ctx) => portal(ctx, layout.spawn.x, layout.spawn.y, t) });
   return out;
 }
