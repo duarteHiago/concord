@@ -13,6 +13,8 @@ export interface Walker {
   scene: Scene;
   /** andar, lá dentro (0 = térreo) */
   floor?: number;
+  /** no quarto de quem (o id do dono), quando está num quarto */
+  roomOf?: string | null;
   /** bebida na mão (pedida no balcão) */
   drink?: string | null;
   x: number;
@@ -46,6 +48,7 @@ type Ack = {
   closed?: string[];
   floors?: (string | null)[][];
   floorAssign?: Record<string, number>;
+  rooms?: Record<string, PlaceStyle | null>;
 };
 
 interface PlazaState {
@@ -61,6 +64,8 @@ interface PlazaState {
   floorAssign: Record<string, number>;
   /** como cada lugar está montado (null = o padrão), pelo editor de quem gerencia o servidor */
   places: Partial<Record<Scene, PlaceStyle | null>>;
+  /** como está montado o quarto de cada pessoa (null = o padrão), pelo próprio dono */
+  rooms: Record<string, PlaceStyle | null>;
   /** quem está espiando cada mesa agora, por servidor (chega também para quem está na call sem abrir a praça) */
   peeks: Record<string, Peek[]>;
   /** mesas fechadas para espiadas, por servidor */
@@ -79,8 +84,12 @@ interface PlazaState {
   arrived: () => void;
   close: () => void;
   move: (x: number, y: number) => void;
-  /** pisei na porta: o servidor confere e troca de lugar */
-  door: () => void;
+  /** pisei na porta: o servidor confere e troca de lugar (saindo do quarto, `x` é a porta dele no corredor) */
+  door: (x?: number) => void;
+  /** no elevador: ir para o corredor dos quartos */
+  goHall: () => void;
+  /** na frente da porta, no corredor: entrar no quarto de alguém */
+  enterRoom: (owner: string) => void;
   /** entrei numa call com a praça aberta: o boneco vai para a mesa dela, lá dentro */
   table: () => void;
   /** no elevador: ir para um andar */
@@ -114,6 +123,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
         floorAssign: r.floorAssign ?? {},
         walkers,
         places: r.places ?? {},
+        rooms: r.rooms ?? {},
         peeks: { ...get().peeks, [serverId]: r.peeks ?? [] },
         closed: { ...get().closed, [serverId]: r.closed ?? [] },
       });
@@ -127,6 +137,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
     floors: [],
     floorAssign: {},
     places: {},
+    rooms: {},
     peeks: {},
     closed: {},
     walkers: {},
@@ -162,9 +173,17 @@ export const usePlaza = create<PlazaState>((set, get) => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:move', { serverId, x, y });
     },
-    door: () => {
+    door: (x) => {
       const serverId = get().serverId;
-      if (serverId) getSocket()?.emit('plaza:door', { serverId });
+      if (serverId) getSocket()?.emit('plaza:door', { serverId, x });
+    },
+    goHall: () => {
+      const serverId = get().serverId;
+      if (serverId) getSocket()?.emit('plaza:hall', { serverId });
+    },
+    enterRoom: (owner) => {
+      const serverId = get().serverId;
+      if (serverId) getSocket()?.emit('plaza:room', { serverId, owner });
     },
     table: () => {
       const serverId = get().serverId;
@@ -249,9 +268,12 @@ export function bindPlazaSocket(socket: Socket) {
     const { [userId]: _gone, ...rest } = s().walkers;
     usePlaza.setState({ walkers: rest });
   });
-  type Where = { serverId: string; userId: string; scene: Scene; floor?: number; x: number; y: number };
-  socket.on('plaza:move', ({ serverId, userId, scene, floor, x, y }: Where) => {
-    if (here(serverId)) patchWalker(userId, { scene, floor: floor ?? 0, x, y, activeAt: Date.now() });
+  type Where = { serverId: string; userId: string; scene: Scene; floor?: number; roomOf?: string | null; x: number; y: number; roomStyle?: PlaceStyle | null };
+  socket.on('plaza:move', ({ serverId, userId, scene, floor, roomOf, x, y }: Where) => {
+    if (here(serverId)) patchWalker(userId, { scene, floor: floor ?? 0, roomOf: roomOf ?? null, x, y, activeAt: Date.now() });
+  });
+  socket.on('plaza:room-style', ({ serverId, owner, style }: { serverId: string; owner: string; style: PlaceStyle | null }) => {
+    if (here(serverId)) usePlaza.setState({ rooms: { ...s().rooms, [owner]: style } });
   });
   socket.on('plaza:floors', ({ serverId, floors, assign }: { serverId: string; floors: (string | null)[][]; assign?: Record<string, number> }) => {
     if (here(serverId)) usePlaza.setState({ floors, tables: floors[0] ?? [], ...(assign ? { floorAssign: assign } : {}) });
@@ -266,8 +288,11 @@ export function bindPlazaSocket(socket: Socket) {
       }, DRINK_MS);
     }
   });
-  socket.on('plaza:scene', ({ serverId, userId, scene, floor, x, y }: Where) => {
-    if (here(serverId)) patchWalker(userId, { scene, floor: floor ?? 0, x, y, activeAt: Date.now() });
+  socket.on('plaza:scene', ({ serverId, userId, scene, floor, roomOf, x, y, roomStyle }: Where) => {
+    if (!here(serverId)) return;
+    // entrou num quarto: o servidor manda junto como ele está montado
+    if (roomOf && roomStyle !== undefined) usePlaza.setState({ rooms: { ...s().rooms, [roomOf]: roomStyle } });
+    patchWalker(userId, { scene, floor: floor ?? 0, roomOf: roomOf ?? null, x, y, activeAt: Date.now() });
   });
   socket.on('plaza:avatar', ({ serverId, userId, avatar }: { serverId: string; userId: string; avatar: PlazaAvatar }) => {
     if (!here(serverId)) return;

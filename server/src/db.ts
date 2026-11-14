@@ -659,6 +659,15 @@ db.exec(`
     PRIMARY KEY (server_id, scene)
   );
 `);
+// Quarto de cada pessoa na Praça (ver plaza.ts): chão, paredes e móveis, montados só pelo dono. É da pessoa, não do
+// servidor: o mesmo quarto em toda Praça. Sem linha, vale o padrão (shared/plaza.ts#defaultStyle('room')).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS plaza_rooms (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+`);
 // Praça do servidor (ver plaza.ts): chão, paredes e móveis de cada lugar (lobby e estabelecimento), montados
 // por quem gerencia o servidor. Sem linha, vale o padrão (shared/plaza.ts#defaultStyle).
 db.exec(`
