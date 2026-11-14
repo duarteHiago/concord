@@ -1366,7 +1366,7 @@ export default function PlazaView() {
 function TableMenu({ channel, people, closed, onSit, onPeek, onClose }: { channel?: Channel; people: number; closed: boolean; onSit: () => void; onPeek: () => void; onClose: () => void }) {
   const peekBlock = closed ? 'A mesa fechou para espiadas' : people === 0 ? 'Ninguém na mesa' : null;
   return (
-    <div className="animate-pop-in flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 whitespace-nowrap text-white shadow-xl">
+    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 text-white shadow-xl">
       <span className="plaza-pixel max-w-[140px] truncate text-[13px] font-bold">#{channel?.name ?? 'mesa'}</span>
       {people > 0 && <span className="text-[11px] text-white/50">· {people}</span>}
       <button onClick={onSit} className="ml-1 rounded-lg bg-[#e8685a] px-2.5 py-1 text-xs font-bold hover:brightness-110">
@@ -1541,7 +1541,7 @@ function FloorMenu({
 /** Cardápio do balcão: aparece em cima do balcão, quando o boneco chega lá. */
 function BarMenu({ holding, onPick, onClose }: { holding: string | null; onPick: (drink: string | null) => void; onClose: () => void }) {
   return (
-    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 text-white shadow-xl">
+    <div className="animate-pop-in flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 whitespace-nowrap text-white shadow-xl">
       <span className="plaza-pixel mr-1 text-[13px] font-bold">Balcão</span>
       {DRINKS.map((d) => (
         <button
