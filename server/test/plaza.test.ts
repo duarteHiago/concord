@@ -344,6 +344,27 @@ describe('praça: andando e conversando', () => {
     assert.equal((await emitAck(a, 'plaza:peek-renew', { serverId, channelId: mesa.id })).ok, false);
   });
 
+  it('bebida: só no balcão, lá dentro, e todo mundo vê', async () => {
+    const { ana, serverId, a, b } = await setup();
+    const r = await emitAck(a, 'plaza:enter', { serverId });
+    await emitAck(b, 'plaza:enter', { serverId });
+    assert.equal((await emitAck(a, 'plaza:drink', { serverId, drink: 'chopp' })).ok, false);
+    const lobby = buildLobby();
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(80);
+    a.emit('plaza:door', { serverId });
+    await sleep(150);
+    const inside = buildLayout((r.tables as unknown[]).length);
+    a.emit('plaza:move', { serverId, x: inside.building.x0 + 1, y: 3 });
+    await sleep(150);
+    const seen: { userId: string; drink: string | null }[] = [];
+    b.on('plaza:drink', (m) => seen.push(m));
+    assert.equal((await emitAck(a, 'plaza:drink', { serverId, drink: 'whisky' })).ok, false);
+    assert.equal((await emitAck(a, 'plaza:drink', { serverId, drink: 'refri' })).ok, true);
+    await sleep(150);
+    assert.deepEqual(seen.map((x) => [x.userId, x.drink]), [[ana.id, 'refri']]);
+  });
+
   it('quem sai do servidor sai da praça', async () => {
     const { bia, serverId, a, b } = await setup();
     await emitAck(a, 'plaza:enter', { serverId });

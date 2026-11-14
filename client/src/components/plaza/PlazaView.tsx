@@ -5,8 +5,10 @@ import { DoorOpen, Eye, EyeOff, Hammer, Hand, LogOut, MonitorUp, Maximize2, Mess
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { P, has } from '../../../../shared/permissions.ts';
 import {
+  DRINKS,
   EMOTES,
   NEAR_RADIUS,
+  nearCounter,
   SAY_MAX,
   defaultAvatar,
   defaultStyle,
@@ -109,6 +111,7 @@ export default function PlazaView() {
   const detail = useApp((s) => s.details[serverId]);
   const me = useApp((s) => s.me)!;
   const voiceStates = useApp((s) => s.voiceStates[serverId]);
+  const online = useApp((s) => s.online);
   const voiceChannelId = useVoice((s) => (s.serverId === serverId && s.status !== 'idle' ? s.channelId : null));
 
   const [leaving, setLeaving] = useState(false);
@@ -153,6 +156,8 @@ export default function PlazaView() {
   // mini TV flutuante com a transmissão de alguém (id de quem transmite)
   const [pip, setPip] = useState<string | null>(null);
   const [tvMenu, setTvMenu] = useState(false);
+  // cardápio do balcão (a coluna do balcão clicada, para ir até ali)
+  const [barMenu, setBarMenu] = useState<number | null>(null);
   // mesa clicada (fora de call): sentar ou espiar
   const [tableMenu, setTableMenu] = useState<number | null>(null);
   const peeking = usePlazaPeek((s) => s.channelId);
@@ -178,6 +183,8 @@ export default function PlazaView() {
     pendingJoin: null as { channelId: string; table: number } | null,
     /** fui andando até a porta: ao chegar, troca de lugar */
     pendingDoor: false,
+    /** pedi uma bebida longe do balcão: ao chegar nele, pede */
+    pendingDrink: null as string | null,
     /** quando o volume da voz do lobby foi recalculado pela última vez */
     volumesAt: 0,
     /** ouvir de perto: última checagem, última renovação, tentativa em andamento, falhas recentes por mesa */
@@ -362,6 +369,12 @@ export default function PlazaView() {
         peek.stop();
       }
 
+      // cheguei no balcão com um pedido: pede a bebida
+      if (w.pendingDrink && meAnim && !meAnim.path.length && nearCounter(layout, { x: Math.round(meAnim.x), y: Math.round(meAnim.y) })) {
+        plaza.drink(w.pendingDrink);
+        w.pendingDrink = null;
+      }
+
       // cheguei na porta: troca de lugar (o servidor confere)
       const atDoor = meId ? w.anims.get(meId) : undefined;
       if (w.pendingDoor && atDoor && !atDoor.path.length && atDoor.x === layout.door.x && atDoor.y === layout.door.y) {
@@ -476,9 +489,15 @@ export default function PlazaView() {
       for (const f of figs) {
         // lá dentro, quem fala na call da mesa; no lobby, quem fala na voz da praça
         const speaking = f.seated ? !!voice.speaking[f.userId] : !!pv.speaking[f.userId];
+        // sentado e mutado: dorme na mesa; sentado e jogando (o app desktop detecta): console na mão
+        const vs = f.seated ? L.voiceStates.find((v) => v.userId === f.userId) : undefined;
+        const sleeping = !!vs && (vs.muted || vs.deafened) && f.pose === 'sit';
+        const playing = f.seated && !!useApp.getState().online[f.userId]?.activities?.some((a) => a.type === 'playing');
+        const wk = plaza.walkers[f.userId];
+        const drinkColor = wk?.drink ? (DRINKS.find((d) => d.id === wk.drink)?.color ?? null) : null;
         items.push({
           depth: f.x + f.y + (f.seated ? 0.05 : 0),
-          draw: (ctx) => drawAvatar(ctx, f.avatar, f.facing, f.pose, f.fx, f.fy, { speaking, bob: f.bob, t: now }),
+          draw: (ctx) => drawAvatar(ctx, f.avatar, f.facing, f.pose, f.fx, f.fy, { speaking: speaking && !sleeping, bob: f.bob, t: now, sleeping, console: playing, drink: drinkColor }),
         });
       }
       items.sort((p, q) => p.depth - q.depth);
@@ -680,7 +699,18 @@ export default function PlazaView() {
         return clickTable(i);
       }
     }
-    // 3) no lobby, clicar no prédio leva até a porta
+    // 3) lá dentro, clicar no balcão abre o cardápio de bebidas
+    if (layout.kind === 'inside') {
+      const { x0, x1 } = layout.building;
+      for (const off of [0, 10, 20, 30, 40]) {
+        const b = tileAt(nx, ny + off);
+        if (b.x >= x0 && b.x <= x1 && b.y >= 0 && b.y <= 2) {
+          setBarMenu(Math.min(x1, Math.max(x0, b.x)));
+          return;
+        }
+      }
+    }
+    // no lobby, clicar no prédio leva até a porta
     if (layout.kind === 'lobby') {
       const { x0, x1 } = layout.building;
       for (const off of [0, 16, 32, 48]) {
@@ -913,7 +943,11 @@ export default function PlazaView() {
             member={memberById.get(id)}
             isMe={id === me.id}
             voice={(voiceStates ?? []).find((v) => v.userId === id)}
-            idle={!seating.has(id) && !!walkers[id] && Date.now() - walkers[id].activeAt > IDLE_MS}
+            idle={
+              (!seating.has(id) && !!walkers[id] && Date.now() - walkers[id].activeAt > IDLE_MS) ||
+              (inside && seating.has(id) && !!(voiceStates ?? []).find((v) => v.userId === id && (v.muted || v.deafened)))
+            }
+            playing={inside && seating.has(id) ? online[id]?.activities?.find((a) => a.type === 'playing')?.name : undefined}
             bubbles={bubbles.filter((b) => b.userId === id)}
             peeking={(allPeeks ?? []).find((p) => p.userId === id && p.until > Date.now())?.near ? 'near' : (allPeeks ?? []).some((p) => p.userId === id && p.until > Date.now()) ? 'peek' : undefined}
             emote={emotes[id]}
@@ -1041,6 +1075,23 @@ export default function PlazaView() {
         />
       )}
       {tvMenu && <TvShareMenu onClose={() => setTvMenu(false)} />}
+      {barMenu !== null && (
+        <BarMenu
+          holding={walkers[me.id]?.drink ?? null}
+          onPick={(drink) => {
+            const col = barMenu;
+            setBarMenu(null);
+            if (drink === null) return usePlaza.getState().drink(null);
+            const cur = walkers[me.id];
+            if (cur && nearCounter(layout, cur)) return usePlaza.getState().drink(drink);
+            // vai até o balcão e pede ao chegar
+            const target = nearestWalkable(layout, { x: col, y: 3 });
+            moveMe(target);
+            world.current.pendingDrink = drink;
+          }}
+          onClose={() => setBarMenu(null)}
+        />
+      )}
       {tableMenu !== null && tables[tableMenu] && (
         <TableMenu
           channel={channelById.get(tables[tableMenu]!)}
@@ -1129,6 +1180,34 @@ function PeekBar({ channel, until, whispering, near }: { channel?: Channel; unti
         <Mic size={13} />
       </button>
       <button onClick={() => peek.stop()} aria-label="Parar de espiar" className="grid h-7 w-7 place-items-center rounded-full text-white/70 hover:bg-white/10">
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+/** Cardápio do balcão: escolhe a bebida (o boneco vai até o balcão e pede). */
+function BarMenu({ holding, onPick, onClose }: { holding: string | null; onPick: (drink: string | null) => void; onClose: () => void }) {
+  return (
+    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 text-white shadow-xl">
+      <span className="plaza-pixel mr-1 text-[13px] font-bold">Balcão</span>
+      {DRINKS.map((d) => (
+        <button
+          key={d.id}
+          onClick={() => onPick(d.id)}
+          title={d.label}
+          aria-label={d.label}
+          className={cx('grid h-8 w-8 place-items-center rounded-lg text-lg hover:bg-white/10', holding === d.id && 'bg-white/15')}
+        >
+          {d.emoji}
+        </button>
+      ))}
+      {holding && (
+        <button onClick={() => onPick(null)} className="rounded-lg px-2 py-1 text-xs font-semibold text-white/70 hover:bg-white/10">
+          Largar
+        </button>
+      )}
+      <button onClick={onClose} aria-label="Fechar" className="rounded-lg p-1 text-white/60 hover:bg-white/10">
         <X size={13} />
       </button>
     </div>
@@ -1257,8 +1336,10 @@ function PersonTag({
   bubbles,
   emote,
   peeking,
+  playing,
 }: {
   peeking?: 'peek' | 'near';
+  playing?: string;
   member?: Member;
   isMe: boolean;
   voice?: VoiceState;
@@ -1283,7 +1364,20 @@ function PersonTag({
           {emoji}
         </div>
       )}
-      {idle && <div className="plaza-zzz plaza-pixel absolute -top-3 right-0 text-sm font-bold text-[#bfc7ff]">z</div>}
+      {idle && (
+        <div className="pointer-events-none absolute -top-5 -right-2">
+          <span className="plaza-zzz plaza-pixel absolute top-2 right-3 text-xs font-bold text-[#bfc7ff]">z</span>
+          <span className="plaza-zzz plaza-pixel absolute top-0 right-1 text-sm font-bold text-[#bfc7ff]" style={{ animationDelay: '0.8s' }}>
+            z
+          </span>
+          <span className="plaza-zzz plaza-pixel absolute -top-2 -right-1 text-base font-bold text-[#bfc7ff]" style={{ animationDelay: '1.6s' }}>
+            Z
+          </span>
+        </div>
+      )}
+      {playing && !idle && (
+        <div className="absolute top-full left-1/2 mt-0.5 -translate-x-1/2 rounded bg-[#1b1430]/80 px-1 text-[9px] whitespace-nowrap text-[#9fe7b5]">🎮 {playing.slice(0, 24)}</div>
+      )}
       <div className={cx('plaza-pixel flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-bold leading-[16px]', isMe ? 'bg-[#e8685a] text-white' : 'bg-[#1b1430]/75 text-white')}>
         {voice?.streaming && <span className="rounded-sm bg-[#ff5c7a] px-0.5 text-[9px] leading-[12px]">AO VIVO</span>}
         {peeking && <span title={peeking === 'near' ? 'Ouvindo uma mesa de perto' : 'Espiando uma mesa'}>{peeking === 'near' ? '👂' : '👀'}</span>}

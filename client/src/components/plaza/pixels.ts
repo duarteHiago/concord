@@ -957,10 +957,11 @@ export function drawAvatar(
   pose: Pose,
   fx: number,
   fy: number,
-  opts: { speaking?: boolean; bob?: number; t: number; ghost?: boolean },
+  opts: { speaking?: boolean; bob?: number; t: number; ghost?: boolean; sleeping?: boolean; console?: boolean; drink?: string | null },
 ) {
   const x = Math.round(fx);
-  const y = Math.round(fy);
+  // dormindo na mesa: o corpo escorrega um pouco para frente, a cabeça "cai" sobre a mesa
+  const y = Math.round(fy) + (opts.sleeping ? 3 : 0);
   if (opts.speaking) {
     const a = 0.55 + 0.35 * Math.sin(opts.t / 120);
     fillEllipse(ctx, x, y, 10, 5, `rgba(58, 208, 122, ${a})`);
@@ -968,8 +969,41 @@ export function drawAvatar(
   } else {
     fillEllipse(ctx, x, y, 7, 3.5, 'rgba(20, 12, 40, 0.35)');
   }
-  const sprite = avatarSprite(av, facing, pose);
+  // dormindo: vira para a mesa (de costas para quem olha), como se apoiasse a cabeça nos braços
+  const sprite = avatarSprite(av, opts.sleeping ? ((facing === 0 ? 3 : facing === 1 ? 2 : facing) as Facing) : facing, pose);
   if (opts.ghost) ctx.globalAlpha = 0.75;
-  ctx.drawImage(sprite, x - SPRITE_W / 2, y - SPRITE_H + 1 + Math.round(opts.bob ?? 0));
+  const top = y - SPRITE_H + 1 + Math.round(opts.bob ?? 0);
+  ctx.drawImage(sprite, x - SPRITE_W / 2, top);
   ctx.globalAlpha = 1;
+  // nas mãos (mais ou menos na altura da barriga do boneco)
+  const handY = top + 19;
+  if (opts.console && !opts.sleeping) {
+    // console portátil: corpo escuro, tela piscando em cores, dois botões
+    ctx.fillStyle = PAL.outline;
+    ctx.fillRect(x - 6, handY - 1, 12, 7);
+    ctx.fillStyle = '#4b4470';
+    ctx.fillRect(x - 5, handY, 10, 5);
+    const hue = Math.floor(opts.t / 250) % 4;
+    ctx.fillStyle = ['#3fb8c9', '#8b5cf6', '#2e9e6a', '#f5c451'][hue];
+    ctx.fillRect(x - 2, handY + 1, 4, 3);
+    ctx.fillStyle = '#e8685a';
+    ctx.fillRect(x + 3, handY + 2, 1, 1);
+    ctx.fillStyle = '#ffe6a0';
+    ctx.fillRect(x - 4, handY + 2, 1, 1);
+  } else if (opts.drink && !opts.sleeping) {
+    // copo na mão direita (de quem olha): vidro claro com a bebida e, às vezes, levado à boca
+    const sip = Math.floor(opts.t / 3000) % 6 === 0;
+    const cx = x + 6;
+    const cy = sip ? top + 11 : handY;
+    ctx.fillStyle = PAL.outline;
+    ctx.fillRect(cx - 2, cy - 1, 5, 7);
+    ctx.fillStyle = 'rgba(220, 235, 255, 0.9)';
+    ctx.fillRect(cx - 1, cy, 3, 5);
+    ctx.fillStyle = opts.drink;
+    ctx.fillRect(cx - 1, cy + 2, 3, 3);
+    if (opts.drink === '#f0b429') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx - 1, cy, 3, 1); // espuma do chopp
+    }
+  }
 }
