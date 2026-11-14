@@ -281,7 +281,7 @@ function Shell() {
               <ServerScreen plan={screen} main={content} theme={theme} />
             </div>
             {showPlaza && (
-            <div className={cx('flex shrink-0 justify-end', mobile ? 'px-3 py-1.5' : 'pt-2')}>
+            <div className={cx('flex shrink-0 justify-end', mobile ? 'px-3 py-1.5' : 'pt-2 pr-1')}>
               <PlazaButton serverId={activeServerId!} initialCount={detail!.plaza!.count} />
             </div>
             )}
@@ -302,7 +302,7 @@ function Shell() {
             </div>
             {/* faixa própria do globo da Praça, embaixo dos painéis: não cobre nada e não some */}
             {showPlaza && (
-              <div className={cx('flex shrink-0 justify-end', mobile ? 'px-3 py-1.5' : 'pt-2')}>
+              <div className={cx('flex shrink-0 justify-end', mobile ? 'px-3 py-1.5' : 'pt-2 pr-1')}>
                 <PlazaButton serverId={activeServerId!} initialCount={detail!.plaza!.count} />
               </div>
             )}
