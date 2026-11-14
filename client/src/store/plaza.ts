@@ -2,7 +2,7 @@
 // O desenho e a animação dos passos ficam no componente (components/plaza/); aqui só o que vem do servidor.
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
-import { WHISPER_VOLUME, type EmoteId, type PlaceStyle, type PlazaAvatar, type Scene } from '../../../shared/plaza.ts';
+import { DRINK_MS, WHISPER_VOLUME, type EmoteId, type PlaceStyle, type PlazaAvatar, type Scene } from '../../../shared/plaza.ts';
 import { useVoice } from './voice';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
@@ -11,6 +11,8 @@ export interface Walker {
   userId: string;
   /** na praça (lobby) ou dentro do estabelecimento */
   scene: Scene;
+  /** bebida na mão (pedida no balcão) */
+  drink?: string | null;
   x: number;
   y: number;
   avatar: PlazaAvatar;
@@ -73,6 +75,8 @@ interface PlazaState {
   door: () => void;
   /** entrei numa call com a praça aberta: o boneco vai para a mesa dela, lá dentro */
   table: () => void;
+  /** pedir (ou largar, com null) uma bebida no balcão */
+  drink: (drink: string | null) => void;
   say: (text: string) => Promise<boolean>;
   emote: (emote: EmoteId) => void;
   avatarChanged: () => void;
@@ -152,6 +156,13 @@ export const usePlaza = create<PlazaState>((set, get) => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:table', { serverId });
     },
+    drink: (drink) => {
+      const serverId = get().serverId;
+      if (!serverId) return;
+      getSocket()?.emit('plaza:drink', { serverId, drink }, (r: { ok: boolean; error?: string }) => {
+        if (!r?.ok && r?.error) toast.info(r.error);
+      });
+    },
     say: (text) =>
       new Promise((resolve) => {
         const serverId = get().serverId;
@@ -222,6 +233,16 @@ export function bindPlazaSocket(socket: Socket) {
   });
   socket.on('plaza:move', ({ serverId, userId, scene, x, y }: { serverId: string; userId: string; scene: Scene; x: number; y: number }) => {
     if (here(serverId)) patchWalker(userId, { scene, x, y, activeAt: Date.now() });
+  });
+  socket.on('plaza:drink', ({ serverId, userId, drink }: { serverId: string; userId: string; drink: string | null }) => {
+    if (!here(serverId)) return;
+    patchWalker(userId, { drink });
+    // a bebida acaba sozinha depois de um tempo (o servidor também esquece)
+    if (drink) {
+      setTimeout(() => {
+        if (s().walkers[userId]?.drink === drink) patchWalker(userId, { drink: null });
+      }, DRINK_MS);
+    }
   });
   socket.on('plaza:scene', ({ serverId, userId, scene, x, y }: { serverId: string; userId: string; scene: Scene; x: number; y: number }) => {
     if (here(serverId)) patchWalker(userId, { scene, x, y, activeAt: Date.now() });

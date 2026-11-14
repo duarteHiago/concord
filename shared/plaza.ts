@@ -113,6 +113,27 @@ export const EMOTES = [
 export type EmoteId = (typeof EMOTES)[number]['id'];
 export const isEmote = (raw: unknown): raw is EmoteId => EMOTES.some((e) => e.id === raw);
 
+// ---- bebidas do balcão (lá dentro do estabelecimento) ----
+
+export const DRINKS = [
+  { id: 'refri', label: 'Refri', emoji: '🥤', color: '#e8685a' },
+  { id: 'suco', label: 'Suco', emoji: '🧃', color: '#f5c451' },
+  { id: 'chopp', label: 'Chopp', emoji: '🍺', color: '#f0b429' },
+  { id: 'cafe', label: 'Café', emoji: '☕', color: '#6e4834' },
+  { id: 'milkshake', label: 'Milkshake', emoji: '🥛', color: '#f08fb0' },
+  { id: 'agua', label: 'Água', emoji: '💧', color: '#8fd3ff' },
+] as const;
+export type DrinkId = (typeof DRINKS)[number]['id'];
+export const isDrink = (raw: unknown): raw is DrinkId => DRINKS.some((d) => d.id === raw);
+/** Quanto tempo a bebida fica na mão (vai junto para a mesa quando a pessoa senta). */
+export const DRINK_MS = 30 * 60_000;
+
+/** Está perto o bastante do balcão para pedir (a fila logo na frente dele, lá dentro). */
+export function nearCounter(layout: PlazaLayout, p: Point) {
+  const { x0, x1 } = layout.building;
+  return layout.kind === 'inside' && p.y >= 3 && p.y <= 4 && p.x >= x0 - 1 && p.x <= x1 + 1;
+}
+
 /** A praça (lobby, ao ar livre) ou o estabelecimento do servidor (por dentro, com as mesas das calls). */
 export type Scene = 'lobby' | 'inside';
 export const isScene = (raw: unknown): raw is Scene => raw === 'lobby' || raw === 'inside';

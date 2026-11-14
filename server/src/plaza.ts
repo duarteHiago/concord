@@ -3,7 +3,7 @@
 // Quem está sentado (na call) vem do estado de voz, não daqui.
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
-import { NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
+import { DRINK_MS, isDrink, nearCounter, NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
 import { createVoiceToken, removeFromRoom } from './livekit.ts';
 import { getVoiceState, isServerDeafened, isServerMuted, voiceStatesFor } from './realtime.ts';
 import { channelPermissions, getChannel, isMember } from './access.ts';
@@ -20,6 +20,9 @@ interface Walker {
   sockets: Set<string>;
   /** quando entrou ou mexeu pela última vez (o app mostra "zzz" em quem está parado há muito tempo) */
   activeAt: number;
+  /** bebida na mão (pedida no balcão) e até quando */
+  drink: string | null;
+  drinkUntil: number;
 }
 
 const plazas = new Map<string, Map<string, Walker>>(); // serverId -> userId -> boneco
@@ -253,7 +256,15 @@ function closeToTable(serverId: string, w: { x: number; y: number }, channelId: 
 }
 
 const room = (serverId: string) => `plaza:${serverId}`;
-const walkerJson = (userId: string, w: Walker) => ({ userId, scene: w.scene, x: w.x, y: w.y, avatar: w.avatar, activeAt: w.activeAt });
+const walkerJson = (userId: string, w: Walker) => ({
+  userId,
+  scene: w.scene,
+  x: w.x,
+  y: w.y,
+  avatar: w.avatar,
+  activeAt: w.activeAt,
+  drink: w.drink && w.drinkUntil > Date.now() ? w.drink : null,
+});
 
 let io: Server;
 
@@ -320,10 +331,10 @@ export function registerPlaza(socket: Socket, userId: string) {
     // numa call deste servidor: já chega lá dentro, na mesa dela (sem nascer na praça e ir andando)
     const spot = !w ? tableSpot(serverId, userId) : null;
     if (!w && spot) {
-      w = { scene: 'inside', ...spawnPoint(spot.layout, plaza, spot.front), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
+      w = { scene: 'inside', ...spawnPoint(spot.layout, plaza, spot.front), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now(), drink: null, drinkUntil: 0 };
       plaza.set(userId, w);
     } else if (!w) {
-      w = { scene: 'lobby', ...spawnPoint(lobbyLayout(serverId), plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
+      w = { scene: 'lobby', ...spawnPoint(lobbyLayout(serverId), plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now(), drink: null, drinkUntil: 0 };
       plaza.set(userId, w);
     } else {
       // o mapa pode ter mudado (sala criada ou apagada) desde a última vez
@@ -428,6 +439,23 @@ export function registerPlaza(socket: Socket, userId: string) {
     here.w.activeAt = Date.now();
     void sendToPlaza(here.serverId, 'plaza:say', { serverId: here.serverId, userId, text, at: Date.now() }, true);
     ack?.({ ok: true });
+  });
+
+  // pedir uma bebida no balcão (só estando na frente dele, lá dentro); null larga a bebida
+  const drinkRate = rate(10, 60_000);
+  socket.on('plaza:drink', (data: { serverId?: unknown; drink?: unknown }, ack?: (r: unknown) => void) => {
+    const here = walkerHere(data?.serverId);
+    if (!here || !drinkRate()) return typeof ack === 'function' && ack({ ok: false });
+    if (data.drink === null) {
+      here.w.drink = null;
+    } else {
+      if (!isDrink(data.drink) || !nearCounter(layoutOf(here.serverId, here.w.scene), here.w)) return typeof ack === 'function' && ack({ ok: false, error: 'Chegue no balcão para pedir.' });
+      here.w.drink = data.drink;
+      here.w.drinkUntil = Date.now() + DRINK_MS;
+    }
+    here.w.activeAt = Date.now();
+    io.to(room(here.serverId)).emit('plaza:drink', { serverId: here.serverId, userId, drink: here.w.drink });
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
   socket.on('plaza:emote', (data: { serverId?: unknown; emote?: unknown }) => {
