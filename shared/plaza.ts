@@ -153,6 +153,11 @@ export interface FurnitureDef {
   scenes: Scene[];
   /** dá para escolher a cor (ITEM_COLORS) */
   colors?: boolean;
+  /**
+   * Onde vai: 'shelf' = enfeite, só em cima de uma prateleira (uma casa dela cada); 'wall' = pendurado na parede
+   * (r 0 = parede do fundo, na fileira y = 0; r 1 = parede da esquerda, na coluna x = 0). Nenhum dos dois ocupa o chão.
+   */
+  place?: 'shelf' | 'wall';
 }
 
 const BOTH: Scene[] = ['lobby', 'inside', 'room'];
@@ -169,9 +174,13 @@ export const FURNITURE = {
   shelf: { label: 'Estante', w: 1, h: 1, block: true, scenes: ['inside', 'room'] },
   arcade: { label: 'Fliperama', w: 1, h: 1, block: true, scenes: BOTH, colors: true },
   fountain: { label: 'Fonte', w: 2, h: 2, block: true, scenes: ['lobby'] },
+  ledge: { label: 'Prateleira', w: 2, h: 1, block: true, scenes: ['inside', 'room'] },
+  trophyGold: { label: 'Troféu dourado', w: 1, h: 1, block: false, scenes: ['room'], place: 'shelf' },
+  trophyCup: { label: 'Taça prateada', w: 1, h: 1, block: false, scenes: ['room'], place: 'shelf' },
+  poster: { label: 'Pôster', w: 2, h: 1, block: false, scenes: ['room'], place: 'wall' },
 } satisfies Record<string, FurnitureDef>;
 export type FurnitureKind = keyof typeof FURNITURE;
-const furnitureDef = (k: FurnitureKind): FurnitureDef => FURNITURE[k];
+export const furnitureDef = (k: FurnitureKind): FurnitureDef => FURNITURE[k];
 export const isFurniture = (raw: unknown): raw is FurnitureKind => typeof raw === 'string' && Object.prototype.hasOwnProperty.call(FURNITURE, raw);
 
 export const ITEM_COLORS = ['#e8685a', '#2f62e6', '#2e9e6a', '#f5c451', '#8b5cf6', '#f08fb0', '#3fb8c9', '#ececec'];
@@ -522,11 +531,31 @@ function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
   const rug = new Uint8Array(w * h);
   const reserved = new Set(base.reserved.map((p) => p.y * w + p.x));
   const items: Furniture[] = [];
-  for (const it of style.items.slice(0, MAX_ITEMS)) {
-    if (!isFurniture(it.k)) continue;
+  const list = style.items.slice(0, MAX_ITEMS).filter((it) => isFurniture(it.k) && furnitureDef(it.k).scenes.includes(base.kind));
+  // os enfeites vão por último: precisam saber onde estão as prateleiras
+  const later = (it: Furniture) => (furnitureDef(it.k).place === 'shelf' ? 1 : 0);
+  const shelfTop = new Set<number>();
+  const shelfUsed = new Set<number>();
+  const wallUsed = new Set<string>();
+  for (const it of [...list].sort((a, b) => later(a) - later(b))) {
     const def = furnitureDef(it.k);
-    if (!def.scenes.includes(base.kind)) continue;
     const tiles = footprint(it);
+    const inside = (t: Point) => t.x >= 0 && t.y >= 0 && t.x < w && t.y < h;
+    if (def.place === 'wall') {
+      const keys = tiles.map((t) => `${it.r}:${t.x}:${t.y}`);
+      const onWall = tiles.every((t) => inside(t) && (it.r ? t.x === 0 : t.y === 0));
+      if (!onWall || keys.some((k) => wallUsed.has(k))) continue;
+      for (const k of keys) wallUsed.add(k);
+      items.push(it);
+      continue;
+    }
+    if (def.place === 'shelf') {
+      const idx = tiles.map((t) => t.y * w + t.x);
+      if (!tiles.every(inside) || idx.some((i) => !shelfTop.has(i) || shelfUsed.has(i))) continue;
+      for (const i of idx) shelfUsed.add(i);
+      items.push(it);
+      continue;
+    }
     const ok = tiles.every((t) => {
       if (t.x < 0 || t.y < 0 || t.x >= w || t.y >= h) return false;
       const i = t.y * w + t.x;
@@ -539,6 +568,7 @@ function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
     for (const t of tiles) {
       const i = t.y * w + t.x;
       (def.block ? blocked : rug).fill(1, i, i + 1);
+      if (it.k === 'ledge') shelfTop.add(i);
     }
     items.push(it);
   }
