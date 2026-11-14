@@ -27,7 +27,7 @@ import {
   type WorkshopConfig,
 } from '../../../shared/workshop.ts';
 import { ChannelsBlock, VoiceUserBlock } from '../components/ChannelSidebar';
-import { Composer, MessageFeed } from '../components/ChatView';
+import { ChatView, Composer, MessageFeed } from '../components/ChatView';
 import { MemberListBody } from '../components/MemberList';
 import { ServerStrip } from '../components/ServerRail';
 import { cx } from '../components/ui';
@@ -90,10 +90,43 @@ export function ServerScreen({ plan, main, theme }: { plan: ScreenPlan; main: Re
   // sala" no lugar da conversa); ao entrar na call, a tela desliza para a tela da sala e fica enquanto durar a call
   const activeServerId = useApp((s) => s.activeServerId);
   const inCallHere = useVoice((s) => s.status !== 'idle' && s.serverId === activeServerId);
+  const voiceRoom = useVoiceRoomOpen();
+  useRememberText();
   const widgets = plan.items.filter((i): i is WidgetPlacement => !isBlock(i));
   if (plan.mode === 'encaixes') return <SlotScreen slots={plan.config.slots ?? defaultSlots()} widgets={widgets} main={main} theme={theme} />;
   if (plan.mode === 'call' && inCallHere) return <RoomScreen room={plan.config.room ?? defaultRoom()} main={main} theme={theme} />;
-  return <GridScreen items={plan.items} main={main} theme={theme} animate={plan.mode === 'call'} />;
+  // modo 3 fora da call: a sala de voz é da tela da sala; no bloco da conversa fica sempre a conversa de texto
+  return <GridScreen items={plan.items} main={plan.mode === 'call' && voiceRoom ? <TextFallback /> : main} theme={theme} animate={plan.mode === 'call'} />;
+}
+
+/** Último canal de texto aberto em cada servidor (para o modo 3 mostrar a conversa fora da call). */
+const lastText = new Map<string, string>();
+
+function TextFallback() {
+  const serverId = useApp((s) => s.activeServerId)!;
+  const channel = useApp((s) => {
+    const chans = s.details[serverId]?.channels ?? [];
+    const last = lastText.get(serverId);
+    return chans.find((c) => c.id === last && c.type === 'text') ?? chans.find((c) => c.type === 'text');
+  });
+  if (!channel) return <main className="panel flex flex-1 items-center justify-center text-sm text-fg-muted">Este servidor não tem canal de texto.</main>;
+  return (
+    <main className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
+      <ChatView channel={channel} />
+    </main>
+  );
+}
+
+/** Lembra o canal de texto aberto (chamado pela tela montada a cada troca de canal). */
+function useRememberText() {
+  const serverId = useApp((s) => s.activeServerId);
+  const channel = useApp((s) => {
+    const cid = s.activeServerId ? s.activeChannels[s.activeServerId] : undefined;
+    return s.activeServerId ? s.details[s.activeServerId]?.channels.find((c) => c.id === cid) : undefined;
+  });
+  useEffect(() => {
+    if (serverId && channel?.type === 'text') lastText.set(serverId, channel.id);
+  }, [serverId, channel]);
 }
 
 // ---------------------------------------------------------------- modos 1 e 3: a grade com limites
