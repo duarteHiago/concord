@@ -314,6 +314,36 @@ describe('praça: andando e conversando', () => {
     void bia;
   });
 
+  it('ouvir de perto: só perto da mesa, sem microfone, com aviso, e renova enquanto continua perto', async () => {
+    const { ana, serverId, a, b } = await setup();
+    const detail = (await ana.get(`/servers/${serverId}`)).body as { channels: { id: string; type: string; name: string }[] };
+    const mesa = detail.channels.find((ch) => ch.name === 'mesa-1')!;
+    assert.equal(((await emitAck(b, 'voice:join', { channelId: mesa.id })) as { ok: boolean }).ok, true);
+    const r = await emitAck(a, 'plaza:enter', { serverId });
+    const lobby = buildLobby();
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(80);
+    a.emit('plaza:door', { serverId });
+    await sleep(200);
+    // longe da mesa (na porta de saída): não
+    assert.equal((await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id, near: true })).ok, false);
+    const inside = buildLayout((r.tables as unknown[]).length);
+    const t = inside.tables[(r.tables as (string | null)[]).indexOf(mesa.id)];
+    a.emit('plaza:move', { serverId, x: t.front.x, y: t.front.y });
+    await sleep(150);
+    const notices: { peeks: { userId: string; near: boolean }[] }[] = [];
+    b.on('voice:peeks', (m) => notices.push(m));
+    const ok = await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id, near: true });
+    assert.equal(ok.ok, true);
+    await sleep(150);
+    assert.ok(notices.some((n) => n.peeks.some((p) => p.userId === ana.id && p.near)));
+    assert.equal((await emitAck(a, 'plaza:peek-renew', { serverId, channelId: mesa.id })).ok, true);
+    // saiu de perto: a renovação recusa e a escuta acaba
+    a.emit('plaza:move', { serverId, x: inside.spawn.x, y: inside.spawn.y });
+    await sleep(150);
+    assert.equal((await emitAck(a, 'plaza:peek-renew', { serverId, channelId: mesa.id })).ok, false);
+  });
+
   it('quem sai do servidor sai da praça', async () => {
     const { bia, serverId, a, b } = await setup();
     await emitAck(a, 'plaza:enter', { serverId });
