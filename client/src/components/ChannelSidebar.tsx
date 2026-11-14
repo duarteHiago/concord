@@ -88,10 +88,14 @@ export function ChannelsBlock({ detail }: { detail: ServerDetail }) {
 }
 
 export function VoiceUserBlock() {
+  // mt-auto em vez de justify-end: com justify-end e pouca altura, o topo ("Na sala") era cortado sem dar para
+  // rolar até ele, e parecia invadir os canais
   return (
-    <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto pt-3">
-      <VoicePanel />
-      <UserCard />
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3">
+      <div className="mt-auto">
+        <VoicePanel />
+        <UserCard />
+      </div>
     </div>
   );
 }
@@ -376,7 +380,7 @@ function VoicePanel() {
 
   const round = 'flex h-9 w-9 items-center justify-center rounded-full transition-colors';
   return (
-    <div className="mx-3 mb-2 rounded-[20px] bg-surface-3 p-3">
+    <div className="lab-voice-panel mx-3 mb-2 rounded-[20px] bg-surface-3 p-3">
       <div className="flex items-center gap-2">
         <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', status === 'connected' ? 'bg-ok' : 'animate-pulse bg-warn')} />
         <button
@@ -387,7 +391,7 @@ function VoicePanel() {
           }}
         >
           <div className="text-[13px] font-bold">{status === 'connected' ? 'Na sala' : status === 'connecting' ? 'Conectando…' : 'Reconectando…'}</div>
-          <div className="truncate text-xs text-fg-muted">
+          <div className="lab-voice-sub truncate text-xs text-fg-muted">
             {channel?.name ?? 'Sala'} · {detail?.server.name}
           </div>
         </button>
@@ -444,7 +448,7 @@ function UserCard() {
   );
 
   return (
-    <div ref={menuRef} className="relative mx-3 mb-3 flex items-center gap-1 rounded-[20px] bg-surface-3 p-2.5">
+    <div ref={menuRef} className="lab-user-card relative mx-3 mb-3 flex items-center gap-1 rounded-[20px] bg-surface-3 p-2.5">
       {menu && (
         <div className="absolute right-0 bottom-full left-0 z-30 mb-2 animate-pop-in space-y-0.5 rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
           {option('online', 'Online', 'Recebe chamadas de atenção e avisos')}
@@ -487,7 +491,7 @@ function UserCard() {
       <button onClick={() => setMenu(!menu)} className="flex min-w-0 flex-1 items-center gap-2.5 pl-1.5 text-left" title="Status e perfil" aria-expanded={menu}>
         <div className="min-w-0 leading-tight">
           <div className="truncate text-sm font-bold">{me.displayName}</div>
-          <div className={cx('truncate text-xs', presence === 'dnd' ? 'text-danger' : 'text-fg-muted')}>
+          <div className={cx('lab-user-bio truncate text-xs', presence === 'dnd' ? 'text-danger' : 'text-fg-muted')}>
             {presence === 'dnd' ? 'Não perturbe' : me.bio || `@${me.username}`}
           </div>
         </div>
@@ -503,10 +507,10 @@ function UserCard() {
       <DeviceSplitButton kind="audiooutput" label={deafened ? 'Ativar áudio' : 'Ensurdecer'} danger={deafened} onClick={() => void toggleDeafen()}>
         {deafened ? <HeadphoneOff size={18} /> : <Headphones size={18} />}
       </DeviceSplitButton>
-      <IconButton label="Como o Concord funciona" className="h-9 w-8 shrink-0" onClick={() => openModal({ type: 'onboarding' })}>
+      <IconButton label="Como o Concord funciona" className="lab-user-extra h-9 w-8 shrink-0" onClick={() => openModal({ type: 'onboarding' })}>
         <HelpCircle size={18} />
       </IconButton>
-      <IconButton label="Configurações" className="h-9 w-8 shrink-0" onClick={() => openModal({ type: 'userSettings' })}>
+      <IconButton label="Configurações" className="lab-user-extra h-9 w-8 shrink-0" onClick={() => openModal({ type: 'userSettings' })}>
         <Settings size={18} />
       </IconButton>
     </div>
