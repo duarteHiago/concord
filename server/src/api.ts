@@ -77,6 +77,7 @@ import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, support
 import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
+import { plazaCount, plazaEnabled } from './plaza.ts';
 import {
   ART_OFFSET,
   ART_SCALE,
@@ -1443,6 +1444,8 @@ api.get('/servers/:id', (req, res) => {
     jams: jamsFor(server.id),
     // gravar a sala: liberado neste servidor? (ver config.recordingServers)
     recording: !config.recordingServers || config.recordingServers.has(server.id),
+    // Praça do servidor (ver plaza.ts): liberada aqui? e quantas pessoas estão andando por ela agora
+    plaza: plazaEnabled(server.id) ? { count: plazaCount(server.id) } : null,
     online: onlineUserIds().filter((id) => members.some((m) => m.id === id)),
   });
 });

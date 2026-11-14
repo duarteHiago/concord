@@ -39,6 +39,7 @@ export const HOME = '@me';
 export const needsEmail = (me: Me | null) => !!me?.emailRequired && !me.email;
 import { toast } from './toast';
 import { FORUM_STATUSES } from '../../../shared/forum.ts';
+import { bindPlazaSocket } from './plaza';
 import { useVoice } from './voice';
 import { useStickerPacks } from './stickerPacks';
 import { useContracts } from './contracts';
@@ -375,6 +376,7 @@ export const useApp = create<AppState>((set, get) => {
       set({ typing: { ...get().typing, [channelId]: { ...get().typing[channelId], [userId]: Date.now() + 6000 } } });
     });
     useVoice.getState().bindSocket(socket);
+    bindPlazaSocket(socket);
     startActivityReporter(socket);
     installShortcuts();
     syncGlobalShortcuts();

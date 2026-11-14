@@ -38,6 +38,14 @@ export const config = {
     const ids = (env.RECORDING_SERVERS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     return ids.length && !ids.includes('*') ? new Set(ids) : null;
   })(),
+  /**
+   * Servidores com a Praça (ver plaza.ts), ids separados por vírgula. Vazio: só no Concord de testes (em todos
+   * os servidores dele); na produção fica desligada até alguém pôr o id aqui.
+   */
+  plazaServers: (() => {
+    const ids = (env.PLAZA_SERVERS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    return ids.length ? new Set(ids) : null;
+  })(),
   // quem entra no portal da equipe (/admin): nomes de usuário separados por vírgula. Vazio desliga o portal.
   /** Mecenato de cortesia por nome de usuário (além do que a equipe libera no portal /admin) */
   mecenatoCourtesy: new Set(
