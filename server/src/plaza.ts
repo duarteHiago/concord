@@ -56,6 +56,11 @@ function voiceChannels(serverId: string) {
 
 const places = new Map<string, Partial<Record<Scene, PlaceStyle | null>>>(); // serverId -> lugar -> estilo (null = padrão)
 
+/** Copia os estilos de um servidor trocando o de um lugar (só 'lobby' ou 'inside', nunca outro nome). */
+function withScene(prev: Partial<Record<Scene, PlaceStyle | null>> | undefined, scene: Scene, style: PlaceStyle | null) {
+  return scene === 'lobby' ? { ...prev, lobby: style } : { ...prev, inside: style };
+}
+
 /** O estilo salvo de um lugar (null = o padrão). Lido do banco uma vez e guardado na memória. */
 export function placeOf(serverId: string, scene: Scene): PlaceStyle | null {
   const cached = places.get(serverId);
@@ -67,7 +72,7 @@ export function placeOf(serverId: string, scene: Scene): PlaceStyle | null {
   } catch {
     style = null;
   }
-  places.set(serverId, { ...cached, [scene]: style });
+  places.set(serverId, withScene(cached, scene, style));
   return style;
 }
 
@@ -118,7 +123,7 @@ export function savePlace(serverId: string, scene: Scene, raw: unknown): string 
   } else {
     run('DELETE FROM plaza_places WHERE server_id = ? AND scene = ?', serverId, scene);
   }
-  places.set(serverId, { ...places.get(serverId), [scene]: style });
+  places.set(serverId, withScene(places.get(serverId), scene, style));
   if (!io) return null;
   io.to(room(serverId)).emit('plaza:place', { serverId, scene, style });
   const layout = layoutOf(serverId, scene);

@@ -381,7 +381,11 @@ function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
       return !rug[i];
     });
     if (!ok) continue;
-    for (const t of tiles) (def.block ? blocked : rug)[t.y * w + t.x] = 1;
+    // índices numéricos já conferidos acima (dentro do mapa); fill evita escrever por nome de propriedade
+    for (const t of tiles) {
+      const i = t.y * w + t.x;
+      (def.block ? blocked : rug).fill(1, i, i + 1);
+    }
     items.push(it);
   }
   return { ...base, blocked, floor: style.floor, wall: style.wall, items };
