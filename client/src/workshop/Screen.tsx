@@ -86,12 +86,13 @@ export function useVoiceRoomOpen() {
 }
 
 export function ServerScreen({ plan, main, theme }: { plan: ScreenPlan; main: ReactNode; theme: ThemeScope | null }) {
-  const voiceRoom = useVoiceRoomOpen();
-  // estar na call (numa sala deste servidor) também vale: a tela da sala fica enquanto a pessoa está na call
-  const inCallHere = useVoice((s) => s.status !== 'idle' && s.serverId === useApp.getState().activeServerId);
+  // modo 3: a tela da sala é a da call. Só abrir a sala de voz continua na tela do servidor (com o "Entrar na
+  // sala" no lugar da conversa); ao entrar na call, a tela desliza para a tela da sala e fica enquanto durar a call
+  const activeServerId = useApp((s) => s.activeServerId);
+  const inCallHere = useVoice((s) => s.status !== 'idle' && s.serverId === activeServerId);
   const widgets = plan.items.filter((i): i is WidgetPlacement => !isBlock(i));
   if (plan.mode === 'encaixes') return <SlotScreen slots={plan.config.slots ?? defaultSlots()} widgets={widgets} main={main} theme={theme} />;
-  if (plan.mode === 'call' && (voiceRoom || inCallHere)) return <RoomScreen room={plan.config.room ?? defaultRoom()} main={main} theme={theme} />;
+  if (plan.mode === 'call' && inCallHere) return <RoomScreen room={plan.config.room ?? defaultRoom()} main={main} theme={theme} />;
   return <GridScreen items={plan.items} main={main} theme={theme} animate={plan.mode === 'call'} />;
 }
 

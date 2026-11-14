@@ -372,7 +372,7 @@ export function Studio({ serverId }: { serverId: string }) {
       setSaving('saved');
       toast.success(
         useLab.getState().mode === 'call'
-          ? 'Publicado! A tela da sala aparece quando você entra numa sala de voz.'
+          ? 'Publicado! A tela do servidor já vale; a tela da sala aparece quando você entrar na call.'
           : 'Publicado! A galera do servidor já vê a Oficina nova.',
       );
     } catch (err) {
@@ -590,7 +590,7 @@ export function Studio({ serverId }: { serverId: string }) {
               <div>
                 <ModeBadge />
                 <div className="mb-2 text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">Tela da sala</div>
-                <p className="mb-3 text-xs text-fg-muted">Quando alguém abre uma sala de voz, a tela do servidor desliza para esta. Vale para todo mundo do servidor depois de publicar.</p>
+                <p className="mb-3 text-xs text-fg-muted">Quando alguém entra na call, a tela do servidor desliza para esta (e volta ao sair da call). Vale para todo mundo do servidor depois de publicar.</p>
                 <RoomEditor room={config.room ?? defaultRoom()} detail={detail} readOnly={asMember} onChange={(room) => update((c) => ({ ...c, room }))} />
               </div>
             ) : area === 'screen' ? (
@@ -1419,7 +1419,7 @@ function ScreenArea({
         )}
       </div>
       {mode === 'call' && items && !asMember && (
-        <p className="mt-2 text-[11px] text-fg-muted">Modo 3: ao abrir uma sala de voz, esta tela desliza para a "Tela da sala" (aba ao lado).</p>
+        <p className="mt-2 text-[11px] text-fg-muted">Modo 3: ao entrar na call, esta tela desliza para a "Tela da sala" (aba ao lado). Só abrir a sala de voz não muda nada: o "Entrar na sala" aparece no lugar da conversa.</p>
       )}
       <p className="mt-2 text-[11px] text-fg-subtle">
         Vale em telas a partir de 1100 px de largura. No celular e em telas menores, todo mundo vê o layout padrão, e cada membro pode voltar ao padrão em Configurações › Aparência.

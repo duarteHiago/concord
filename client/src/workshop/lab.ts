@@ -33,7 +33,7 @@ export const LAB_MODES: { id: LabMode; n: number; label: string; short: string; 
     n: 3,
     label: 'Livre + tela de call',
     short: 'Tela de call',
-    hint: 'Fora da call, igual ao modo 1. Ao abrir uma sala de voz, a tela desliza para a tela da sala, que o dono monta na Oficina: as laterais e os botões da barra.',
+    hint: 'Fora da call, igual ao modo 1. Ao entrar na call, a tela desliza para a tela da sala, que o dono monta na Oficina: as laterais e os botões da barra. Ao sair da call, volta.',
     color: '#c2410c',
   },
 ];
