@@ -65,6 +65,7 @@ import { BlockMock, tooSmall, type MockSituation } from './Mocks';
 import { LabBar, TransitionDemo, type PreviewState } from './LabPanel';
 import { PREVIEW_WINDOWS, blockMinPx, cellsToPx, gridArea, minCells, useLab } from './lab';
 import { TemplateEditor, TemplatePicker } from './TemplateEditor';
+import { LivePreview, liveCaption } from './LivePreview';
 import { useMobile } from '../lib/mobile';
 import { pickImage, prepareImage, uploadImage } from '../lib/upload';
 import type { ServerDetail } from '../lib/types';
@@ -1240,8 +1241,14 @@ function GridEditor({
               <>
                 <BlockMock b={w} detail={detail} dragging={isDrag} compact={grid.fixed} sit={sitFor?.(w)} />
                 {sitFor && tooSmall(w.block, sitFor(w)) && (
-                  <span className="pointer-events-none absolute bottom-1.5 left-1.5 z-10 rounded-full bg-danger px-1.5 py-0.5 font-mono text-[9px] font-bold text-white">
+                  <span
+                    className={cx(
+                      'pointer-events-none absolute -top-2 left-2 z-10 rounded-full px-1.5 py-0.5 font-mono text-[9px] font-bold',
+                      sitFor(w).adaptive ? 'bg-warn text-black' : 'bg-danger text-white',
+                    )}
+                  >
                     {sitFor(w).real!.w}×{sitFor(w).real!.h} · precisa {blockMinPx(w.block, sitFor(w)).w}×{blockMinPx(w.block, sitFor(w)).h}
+                    {sitFor(w).adaptive && ' · rearrumado'}
                   </span>
                 )}
               </>
@@ -1431,6 +1438,17 @@ function ScreenArea({
           </div>
         )}
       </div>
+      {items && !asMember && !preview.dm && !voiceMorph && lab.mode !== 'moldes' && (
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <div className="text-[11px] font-extrabold tracking-wider text-fg-subtle uppercase">
+              Na tela de verdade · {preview.win.w} px{situation ? ` · ${situation}` : ''}
+            </div>
+          </div>
+          <LivePreview items={items} detail={detail} win={preview.win} sit={sitBase} mode={lab.mode} />
+          <p className="mt-1.5 text-[11px] text-fg-muted">{liveCaption(lab.mode, lab.adaptive)}</p>
+        </div>
+      )}
       <p className="mt-2 text-[11px] text-fg-subtle">
         Vale em telas a partir de 1100 px de largura. No celular e em telas menores, todo mundo vê o layout padrão, e cada membro pode voltar ao padrão em Configurações › Aparência.
       </p>

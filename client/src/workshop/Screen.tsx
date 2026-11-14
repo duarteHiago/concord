@@ -7,7 +7,7 @@
 // ('moldes', TemplateScreen.tsx) — e ligar os blocos que se adaptam, a arrumação de voz, a animação e o
 // contorno dos limites. Nada disso muda o servidor para os outros.
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { SCREEN_COLS, SCREEN_ROWS, isBlock, type ScreenItem, type WidgetPlacement } from '../../../shared/workshop.ts';
 import { ChannelsBlock, VoiceUserBlock } from '../components/ChannelSidebar';
 import { MemberListBody } from '../components/MemberList';
@@ -16,7 +16,7 @@ import { cx } from '../components/ui';
 import { HOME, useApp } from '../store/app';
 import { useVoice } from '../store/voice';
 import { WidgetCard } from './Card';
-import { blockMinPx, labActive, useLab, type CoreBlock, type LabMode } from './lab';
+import { blockMinPx, labActive, limitTracks, useLab, type CoreBlock, type LabMode } from './lab';
 import { WORKSHOP_ENABLED, useActiveConfig, workshopPrefs } from './store';
 import { TemplateScreen } from './TemplateScreen';
 import type { ThemeScope } from './theme';
@@ -80,13 +80,28 @@ export function ServerScreen({ plan, main, theme }: { plan: ScreenPlan; main: Re
 /** A grade 12×12. Em 'limites', cada bloco tem mínimo em pixels e a grade cresce (com rolagem) em vez de sobrepor. */
 function GridScreen({ plan, main, theme }: { plan: ScreenPlan; main: ReactNode; theme: ThemeScope | null }) {
   const limits = plan.mode === 'limites';
+  const inCall = useVoice((s) => s.status !== 'idle');
+  const voiceRoom = useVoiceRoomOpen();
+  // o tamanho da área da grade decide quais linhas e colunas precisam ficar fixas no mínimo
+  const box = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | undefined>(undefined);
+  useEffect(() => {
+    const el = box.current?.parentElement;
+    if (!el || !limits) return;
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [limits]);
+  const tracks = limits ? limitTracks(plan.items, { inCall, voiceRoom }, size) : null;
   return (
     <ScreenRoot theme={theme}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       <div
-        className={cx('grid min-h-0 flex-1 gap-4', limits && 'overflow-auto')}
+        ref={box}
+        className={cx('grid min-h-0 flex-1 gap-4', limits && 'shrink-0')}
         style={{
-          gridTemplateColumns: `repeat(${SCREEN_COLS}, ${limits ? 'minmax(auto, 1fr)' : 'minmax(0, 1fr)'})`,
-          gridTemplateRows: `repeat(${SCREEN_ROWS}, ${limits ? 'minmax(auto, 1fr)' : 'minmax(0, 1fr)'})`,
+          gridTemplateColumns: tracks?.cols ?? `repeat(${SCREEN_COLS}, minmax(0, 1fr))`,
+          gridTemplateRows: tracks?.rows ?? `repeat(${SCREEN_ROWS}, minmax(0, 1fr))`,
         }}
       >
         <AnimatePresence initial={false}>
@@ -95,13 +110,14 @@ function GridScreen({ plan, main, theme }: { plan: ScreenPlan; main: ReactNode; 
               key={it.id}
               id={isBlock(it) ? it.block : it.id}
               block={isBlock(it) ? it.block : null}
-              enforceMin={limits}
+              enforceMin={false}
               style={{ gridColumn: `${it.x + 1} / span ${it.w}`, gridRow: `${it.y + 1} / span ${it.h}` }}
             >
               {isBlock(it) ? <CoreBlockBody block={it.block} main={main} /> : <ScreenWidget w={it} />}
             </Slot>
           ))}
         </AnimatePresence>
+      </div>
       </div>
     </ScreenRoot>
   );

@@ -146,6 +146,54 @@ export function minCells(block: CoreBlock, ctx: { inCall: boolean; voiceRoom: bo
   return [Math.min(cols, Math.ceil((min.w + GAP) / (cw + GAP))), Math.min(rows, Math.ceil((min.h + GAP) / (ch + GAP)))];
 }
 
+/**
+ * Grade com limites: o mínimo (px) de cada coluna e linha da grade 12×12, para que cada bloco tenha pelo menos o
+ * mínimo da situação. Cada trilho vira minmax(mínimo, 1fr): a grade só passa da janela se a soma dos mínimos
+ * passar (aí a tela rola), e nunca por causa do conteúdo dos blocos.
+ */
+export function limitTracks(
+  items: { x: number; y: number; w: number; h: number; type: string; block?: string }[],
+  ctx: { inCall: boolean; voiceRoom: boolean },
+  /** tamanho da área da grade (px); sem ele, cai no minmax simples */
+  size?: { w: number; h: number },
+  cols = 12,
+  rows = 12,
+): { cols: string; rows: string } {
+  const c = new Array(cols).fill(0);
+  const r = new Array(rows).fill(0);
+  for (const it of items) {
+    if (it.type !== 'block' || !it.block) continue;
+    const min = blockMinPx(it.block as CoreBlock, ctx);
+    const perCol = Math.ceil((min.w - GAP * (it.w - 1)) / it.w);
+    const perRow = Math.ceil((min.h - GAP * (it.h - 1)) / it.h);
+    for (let i = it.x; i < it.x + it.w; i++) c[i] = Math.max(c[i], perCol);
+    for (let j = it.y; j < it.y + it.h; j++) r[j] = Math.max(r[j], perRow);
+  }
+  // com "minmax(mínimo, 1fr)" o navegador iguala todos os trilhos ao maior mínimo (é como o fr funciona): uma linha
+  // que precisa de 67 px deixava as 12 com 67. Então: quem precisa de mais que a parte igual fica fixo no mínimo,
+  // e os outros dividem o que sobra.
+  const fit = (need: number[], total: number | undefined) => {
+    if (total === undefined) return need.map((m) => `minmax(${Math.max(0, m)}px, 1fr)`).join(' ');
+    const free = total - GAP * (need.length - 1);
+    const fixed = new Set<number>();
+    for (let guard = 0; guard < need.length; guard++) {
+      const rest = need.length - fixed.size;
+      const left = free - [...fixed].reduce((a, i) => a + need[i], 0);
+      const share = rest > 0 ? left / rest : 0;
+      let changed = false;
+      need.forEach((m, i) => {
+        if (!fixed.has(i) && m > share) {
+          fixed.add(i);
+          changed = true;
+        }
+      });
+      if (!changed) break;
+    }
+    return need.map((m, i) => (fixed.has(i) ? `${m}px` : 'minmax(0, 1fr)')).join(' ');
+  };
+  return { cols: fit(c, size?.w), rows: fit(r, size?.h) };
+}
+
 // ---------------------------------------------------------------- moldes (caminho 3)
 
 export interface TemplateInfo {
