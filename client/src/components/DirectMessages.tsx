@@ -1,4 +1,5 @@
 import { Flag, Gamepad2, Headphones, Pencil, Reply, Search, Trash2, Users, Zap } from 'lucide-react';
+import { useDraft } from '../lib/drafts';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
@@ -356,11 +357,11 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
 }
 
 function DmComposer({ dm }: { dm: DirectChannel }) {
-  const [text, setText] = useState('');
+  // o rascunho de cada conversa fica guardado (trocar de conversa ou recarregar não apaga)
+  const [text, setText] = useDraft(dm.id);
   const files = useAttachmentDraft();
   const replying = useApp((s) => s.replying[dm.id]);
   useEffect(() => {
-    setText('');
     files.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dm.id]);

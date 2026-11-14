@@ -196,6 +196,10 @@ export interface ServerSummary {
   verified?: boolean;
   /** o servidor tem a Praça (só vem na lista de servidores da pessoa) */
   plaza?: boolean;
+  /** público: aparece em "Descobrir" e qualquer um entra sem convite */
+  public?: boolean;
+  /** descrição curta (mostrada em "Descobrir") */
+  description?: string;
 }
 
 export interface Role {

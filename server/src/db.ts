@@ -124,6 +124,9 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google ON users(google_sub)
 // (AUTHORITY_SERVER_ID) concede isso, em qualquer servidor ou pessoa — ver access.ts#isInstanceAuthority
 addColumn('users', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('servers', 'verified', 'INTEGER NOT NULL DEFAULT 0');
+// servidor público: aparece em "Descobrir" e qualquer um entra sem convite (quem gerencia liga), com uma descrição curta
+addColumn('servers', 'public', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('servers', 'description', "TEXT NOT NULL DEFAULT ''");
 // anexos das mensagens (lista em JSON) e os arquivos enviados, ainda sem mensagem ou já anexados
 addColumn('messages', 'attachments', 'TEXT');
 db.exec(`
@@ -831,6 +834,8 @@ export interface ServerRow {
   icon_color: string;
   icon_url: string | null;
   verified: number;
+  public: number;
+  description: string;
   created_at: number;
 }
 

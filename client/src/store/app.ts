@@ -46,6 +46,7 @@ import { useContracts } from './contracts';
 
 export type Modal =
   | { type: 'addServer'; tab?: 'create' | 'join'; code?: string }
+  | { type: 'discover' }
   | { type: 'invite'; serverId: string }
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
