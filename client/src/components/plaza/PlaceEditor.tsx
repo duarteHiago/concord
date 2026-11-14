@@ -81,7 +81,7 @@ export function PlaceEditor({
   return (
     <div className="animate-pop-in absolute top-16 left-3 z-[64] flex max-h-[calc(100%-10rem)] w-[min(92vw,300px)] flex-col rounded-2xl border border-white/10 bg-[#1b1430]/95 text-white shadow-2xl backdrop-blur">
       <div className="border-b border-white/10 px-4 py-3">
-        <div className="plaza-pixel text-base font-bold">{scene === 'lobby' ? 'Montando a praça' : 'Montando o prédio'}</div>
+        <div className="plaza-pixel text-base font-bold">{scene === 'lobby' ? 'Montando a praça' : scene === 'room' ? 'Montando o seu quarto' : 'Montando o prédio'}</div>
         <div className="text-[12px] text-white/55">Escolha um móvel e clique no chão para pôr. Com a setinha, clique num móvel para mexer nele.</div>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
@@ -173,7 +173,7 @@ export function PlaceEditor({
             ))}
           </div>,
         )}
-        {scene === 'inside' &&
+        {scene !== 'lobby' &&
           section(
             'Paredes',
             <div className="flex flex-wrap gap-1.5">
