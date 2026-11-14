@@ -212,6 +212,7 @@ function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHi
                 : 'sem medição',
             ],
             ['Estéreo → mono', snapshot.voice?.health?.mono ?? 'chegou em mono'],
+            ['Força automática (DFN3)', snapshot.voice?.health?.autoStrength != null ? `${snapshot.voice.health.autoStrength} dB` : 'fora do modo automático'],
             ['Remontagens pelo vigia', String(snapshot.voice?.health?.rebuilds ?? 0)],
             [
               'Último problema',

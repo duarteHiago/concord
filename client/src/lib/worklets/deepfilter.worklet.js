@@ -123,6 +123,11 @@
     function df_set_atten_lim(st, lim_db) {
         wasm.df_set_atten_lim(st, lim_db);
     }
+    // Concord: pós-filtro de Valin (beta 0 = desligado; até ~0,3). Atenua um pouco mais os bins ruidosos e
+    // devolve ganho aos limpos. O wasm já exportava, só faltava o embrulho.
+    function df_set_post_filter_beta(st, beta) {
+        wasm.df_set_post_filter_beta(st, beta);
+    }
     function __wbg_get_imports() {
         const import0 = {
             __proto__: null,
@@ -290,6 +295,7 @@
                 initSync(options.processorOptions.wasmModule);
                 const modelBytes = new Uint8Array(options.processorOptions.modelBytes);
                 const handle = df_create(modelBytes, options.processorOptions.suppressionLevel ?? 50);
+                if (typeof options.processorOptions.postFilterBeta === 'number') df_set_post_filter_beta(handle, options.processorOptions.postFilterBeta);
                 const frameLength = df_get_frame_length(handle);
                 this.dfModel = { handle, frameLength };
                 this.bufferSize = frameLength * 4;
@@ -310,6 +316,10 @@
             if (data === 'destroy' || (data && data.type === 'destroy')) {
                 this.dead = true;
                 this.dfModel = null;
+                return;
+            }
+            if (data.type === 'SET_POST_FILTER_BETA') {
+                if (this.dfModel && typeof data.value === 'number') df_set_post_filter_beta(this.dfModel.handle, Math.max(0, Math.min(0.5, data.value)));
                 return;
             }
             switch (data.type) {
