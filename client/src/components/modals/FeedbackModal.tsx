@@ -10,6 +10,7 @@ import {
   type FeedbackKind,
 } from '../../../../shared/feedback.ts';
 import { api } from '../../lib/api';
+import { FeedbackIcon } from '../../lib/feedbackIcons';
 import { desktop } from '../../lib/desktop';
 import { prepareImage, uploadImage } from '../../lib/upload';
 import { useApp } from '../../store/app';
@@ -118,9 +119,9 @@ export function FeedbackModal({ initialKind, initialBody, area }: { initialKind?
                 key={x.id}
                 onClick={() => setKind(x.id)}
                 aria-pressed={kind === x.id}
-                className={cx('flex flex-col items-center gap-0.5 rounded-xl py-2 text-xs font-semibold transition', kind === x.id ? 'bg-accent text-on-accent' : 'bg-surface-3 hover:bg-surface-4')}
+                className={cx('flex flex-col items-center gap-1 rounded-xl py-2.5 text-xs font-semibold transition', kind === x.id ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-fg')}
               >
-                <span className="text-lg">{x.emoji}</span>
+                <FeedbackIcon kind={x.id} size={18} />
                 {x.label}
               </button>
             ))}
@@ -212,8 +213,8 @@ function MyFeedback() {
         return (
           <div key={f.id} className="rounded-xl bg-surface-3 p-3">
             <div className="mb-1 flex items-center gap-2 text-xs">
-              <span>
-                {k?.emoji} {k?.label}
+              <span className="flex items-center gap-1 font-semibold">
+                <FeedbackIcon kind={f.kind} size={13} /> {k?.label}
               </span>
               <span className="text-fg-subtle">· {new Date(f.createdAt).toLocaleDateString('pt-BR')}</span>
               <span className={cx('ml-auto rounded-full px-2 py-0.5 font-semibold', tone[f.status] ?? tone.novo)}>{s?.label ?? f.status}</span>
