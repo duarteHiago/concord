@@ -19,6 +19,7 @@ import {
   defaultStyle,
   distance,
   footprint,
+  furnitureDef,
   layoutFor,
   proximityVolume,
   findPath,
@@ -46,10 +47,10 @@ import { cx } from '../ui';
 import { AvatarEditor } from './AvatarEditor';
 import { StreamPip } from './StreamPip';
 import { TvShareMenu } from './TvShareMenu';
-import { PlaceEditor, type EditorTool } from './PlaceEditor';
+import { PlaceEditor, pruneDecor, rotated, type EditorTool } from './PlaceEditor';
 import { api } from '../../lib/api';
 import { Globe } from './Globe';
-import { at, drawAvatar, drawCup, drawItem, lampLight, outlineTiles, PAL, renderStatic, sceneObjects, tileAt, type Pose } from './pixels';
+import { at, drawAvatar, drawCup, drawItem, lampLight, LEDGE_TOP, outlineTiles, PAL, renderStatic, sceneObjects, tileAt, type Pose } from './pixels';
 
 const SPEED = 3.6; // casas por segundo
 const IDLE_MS = 5 * 60_000;
@@ -189,6 +190,8 @@ export default function PlazaView() {
   const [itemColor, setItemColor] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [savingPlace, setSavingPlace] = useState(false);
+  /** Muda o rascunho tirando os enfeites que ficaram sem prateleira. */
+  const editDraft = (s: PlaceStyle) => setDraft(pruneDecor(s, myScene, tables.length));
   const layout = useMemo(() => {
     if (myScene === 'hall') return layoutFor('hall', hallDoors.length);
     if (myScene === 'room') return layoutFor('room', 0, draft ?? rooms[myRoom ?? ''] ?? null);
@@ -197,7 +200,7 @@ export default function PlazaView() {
   // a porta do quarto onde estou, no corredor (para sair dele de volta na frente dela)
   const backX = myRoom ? (layoutFor('hall', hallDoors.length).doors[hallDoors.indexOf(myRoom)]?.x ?? undefined) : undefined;
   const doorRefs = useRef(new Map<number, HTMLDivElement>());
-  const editRef = useRef({ draft, tool, rot, itemColor, selected, hover: null as Point | null, tableCount: tables.length });
+  const editRef = useRef({ draft, tool, rot, itemColor, selected, hover: null as (Point & { r?: 0 | 1 }) | null, tableCount: tables.length });
   editRef.current = { ...editRef.current, draft, tool, rot, itemColor, selected, tableCount: tables.length };
   // mini TV flutuante com a transmissão de alguém (id de quem transmite)
   const [pip, setPip] = useState<string | null>(null);
@@ -611,7 +614,7 @@ export default function PlazaView() {
       items.sort((p, q) => p.depth - q.depth);
       for (const it of items) it.draw(lctx);
       if (ed.draft && ed.tool !== 'select' && ed.hover) {
-        const ghost: Furniture = { k: ed.tool, x: ed.hover.x, y: ed.hover.y, r: ed.rot, c: ed.itemColor };
+        const ghost: Furniture = { k: ed.tool, x: ed.hover.x, y: ed.hover.y, r: ed.hover.r ?? ed.rot, c: ed.itemColor };
         const ok = canPlace(ed.draft, ghost, layout.kind, ed.tableCount);
         outlineTiles(lctx, footprint(ghost), ok ? 'rgba(58, 208, 122, 0.4)' : 'rgba(255, 77, 94, 0.4)');
         if (ok) {
@@ -756,8 +759,36 @@ export default function PlazaView() {
     const { x: vx, y: vy, scale, dpr } = world.current.view;
     return tileAt(((e.clientX - rect.left) * dpr) / scale + vx, ((e.clientY - rect.top) * dpr) / scale + vy + lift);
   };
+  /** Ponto do mapa debaixo do ponteiro, em pixels nativos (a casa 0,0 na origem). */
+  const nativeAt = (e: React.PointerEvent | PointerEvent) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const { x: vx, y: vy, scale, dpr } = world.current.view;
+    return { x: ((e.clientX - rect.left) * dpr) / scale + vx, y: ((e.clientY - rect.top) * dpr) / scale + vy };
+  };
+  /**
+   * Onde o móvel escolhido vai: enfeite = a casa da prateleira debaixo do ponteiro (no alto do tampo); pôster = na
+   * parede do fundo se o ponteiro está à direita do canto, na da esquerda se está à esquerda, centrado no ponteiro.
+   */
+  const editorTile = (e: React.PointerEvent | PointerEvent, k: EditorTool): Point & { r?: 0 | 1 } => {
+    const place = k === 'select' ? undefined : furnitureDef(k).place;
+    if (place === 'shelf') return tileUnder(e, LEDGE_TOP);
+    if (place === 'wall') {
+      const n = nativeAt(e);
+      const along = Math.round(Math.abs(n.x) / 16 - 1);
+      return n.x >= 0 ? { x: Math.max(0, Math.min(layout.w - 2, along)), y: 0, r: 0 } : { x: 0, y: Math.max(0, Math.min(layout.h - 2, along)), r: 1 };
+    }
+    return tileUnder(e);
+  };
+  /** Pôster da parede debaixo do ponteiro (para selecionar), ou -1. */
+  const posterUnder = (e: React.PointerEvent | PointerEvent, items: Furniture[]) => {
+    const n = nativeAt(e);
+    const along = Math.abs(n.x) / 16;
+    const base = along * 8; // pé da parede nesse ponto
+    if (n.y > base - 22 || n.y < base - 58) return -1;
+    return items.findIndex((it) => it.k === 'poster' && (n.x >= 0 ? !it.r && along >= it.x && along <= it.x + 2 : it.r && along >= it.y && along <= it.y + 2));
+  };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (draft) editRef.current.hover = tileUnder(e);
+    if (draft) editRef.current.hover = editorTile(e, tool);
     const d = down.current;
     if (!d) return;
     const dx = e.clientX - d.x;
@@ -779,18 +810,25 @@ export default function PlazaView() {
     // editor: põe o móvel escolhido ou seleciona o que está ali
     if (draft) {
       if (tool === 'select') {
+        const onWall = posterUnder(e, draft.items);
+        if (onWall >= 0) return setSelected(onWall);
+        // enfeite em cima de uma prateleira antes da prateleira
+        const up = tileUnder(e, LEDGE_TOP + 6);
+        const deco = draft.items.findIndex((it) => furnitureDef(it.k).place === 'shelf' && it.x === up.x && it.y === up.y);
+        if (deco >= 0) return setSelected(deco);
         for (const lift of [0, 12, 24]) {
           const t = tileUnder(e, lift);
           let idx = -1;
           draft.items.forEach((it, i) => {
+            if (furnitureDef(it.k).place) return;
             if (footprint(it).some((f) => f.x === t.x && f.y === t.y) && (idx < 0 || draft.items[idx].k === 'rug')) idx = i;
           });
           if (idx >= 0) return setSelected(idx);
         }
         return setSelected(null);
       }
-      const t = tileUnder(e);
-      const it: Furniture = { k: tool, x: t.x, y: t.y, r: rot, c: itemColor };
+      const t = editorTile(e, tool);
+      const it: Furniture = { k: tool, x: t.x, y: t.y, r: t.r ?? rot, c: itemColor };
       if (!canPlace(draft, it, layout.kind, tables.length)) return toast.info('Não cabe aí.');
       setDraft({ ...draft, items: [...draft.items, it] });
       return;
@@ -896,10 +934,10 @@ export default function PlazaView() {
           if (selected !== null) setSelected(null);
           else setTool('select');
         } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected !== null) {
-          setDraft({ ...draft, items: draft.items.filter((_, j) => j !== selected) });
+          editDraft({ ...draft, items: draft.items.filter((_, j) => j !== selected) });
           setSelected(null);
         } else if (e.key === 'r' || e.key === 'R') {
-          if (selected !== null) setDraft({ ...draft, items: draft.items.map((it, j) => (j === selected ? { ...it, r: it.r ? 0 : 1 } : it)) });
+          if (selected !== null) editDraft({ ...draft, items: draft.items.map((it, j) => (j === selected ? rotated(it) : it)) });
           else setRot(rot ? 0 : 1);
         }
         return;
@@ -1282,7 +1320,7 @@ export default function PlazaView() {
         <PlaceEditor
           scene={myScene}
           draft={draft}
-          setDraft={setDraft}
+          setDraft={editDraft}
           tool={tool}
           setTool={setTool}
           rot={rot}

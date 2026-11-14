@@ -1,20 +1,43 @@
 // Editor da Praça (para quem gerencia o servidor): chão, paredes e móveis do lugar onde a pessoa está.
 // O desenho e os cliques no mapa ficam em PlazaView; aqui o painel com o catálogo, as cores e os botões.
 import { MousePointer2, RotateCw, Trash2, Undo2 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
-import { FLOORS, FURNITURE, ITEM_COLORS, WALLS, footprint, type FurnitureKind, type PlaceStyle, type Scene } from '../../../../shared/plaza.ts';
+import { useEffect, useRef, useState } from 'react';
+import { FLOORS, FURNITURE, ITEM_COLORS, WALLS, footprint, furnitureDef, layoutFor, type Furniture, type FurnitureKind, type PlaceStyle, type Scene } from '../../../../shared/plaza.ts';
 import { cx } from '../ui';
-import { drawItem, iso } from './pixels';
+import { LEDGE_TOP, decorReady, drawItem, drawWallThumb, iso } from './pixels';
 
 export type EditorTool = FurnitureKind | 'select';
+
+/** Girar: os enfeites de prateleira e de parede não giram (o lado da parede vem de onde ele foi posto). */
+export const rotated = (it: Furniture): Furniture => (furnitureDef(it.k).place ? it : { ...it, r: it.r ? 0 : 1 });
+
+/** Tira os enfeites que ficaram sem prateleira (ela saiu ou girou), para o lugar continuar salvável. */
+export function pruneDecor(style: PlaceStyle, scene: Scene, tableCount: number): PlaceStyle {
+  const kept = new Set(layoutFor(scene, tableCount, style).items);
+  const items = style.items.filter((it) => furnitureDef(it.k).place !== 'shelf' || kept.has(it));
+  return items.length === style.items.length ? style : { ...style, items };
+}
 
 /** Miniatura de um móvel, desenhada com o mesmo código do mapa. */
 function ItemThumb({ k, scene, c }: { k: FurnitureKind; scene: Scene; c: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [, setReady] = useState(false);
+  useEffect(() => {
+    let on = true;
+    void decorReady.then(() => on && setReady(true));
+    return () => {
+      on = false;
+    };
+  }, []);
   useEffect(() => {
     const canvas = ref.current!;
     const ctx = canvas.getContext('2d')!;
     const it = { k, x: 0, y: 0, r: 0 as const, c };
+    const place = furnitureDef(k).place;
+    if (place === 'wall') {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return drawWallThumb(ctx, canvas.width, canvas.height);
+    }
     const pts = footprint(it).flatMap((t) => [iso(t.x, t.y), iso(t.x + 1, t.y + 1), iso(t.x + 1, t.y), iso(t.x, t.y + 1)]);
     const minX = Math.min(...pts.map((p) => p.x));
     const maxX = Math.max(...pts.map((p) => p.x));
@@ -24,10 +47,10 @@ function ItemThumb({ k, scene, c }: { k: FurnitureKind; scene: Scene; c: number 
     const scale = Math.min(1, canvas.width / (maxX - minX + 8));
     ctx.translate(canvas.width / 2, canvas.height - 4);
     ctx.scale(scale, scale);
-    ctx.translate(-(minX + maxX) / 2, -maxY);
+    ctx.translate(-(minX + maxX) / 2, -maxY + (place === 'shelf' ? LEDGE_TOP : 0));
     drawItem(ctx, it, scene, 0);
     ctx.restore();
-  }, [k, scene, c]);
+  });
   return <canvas ref={ref} width={64} height={56} className="plaza-canvas h-[42px] w-[48px]" />;
 }
 
@@ -117,6 +140,9 @@ export function PlaceEditor({
         {(sel || tool !== 'select') && (
           <div className="space-y-2 rounded-xl bg-white/5 p-2.5">
             <div className="text-[12px] font-semibold">{sel ? `${FURNITURE[sel.k].label} selecionado` : `Pondo: ${FURNITURE[tool as FurnitureKind].label}`}</div>
+            {!sel && tool !== 'select' && furnitureDef(tool).place && (
+              <div className="text-[11px] text-white/55">{furnitureDef(tool).place === 'shelf' ? 'Clique em cima de uma prateleira (cabe um enfeite em cada metade).' : 'Clique numa das paredes.'}</div>
+            )}
             {colorTarget && (
               <div className="flex flex-wrap gap-1.5">
                 {ITEM_COLORS.map((c, i) => (
@@ -136,7 +162,7 @@ export function PlaceEditor({
             <div className="flex gap-1.5">
               <button
                 onClick={() => {
-                  if (sel && selected !== null) setDraft({ ...draft, items: draft.items.map((it, j) => (j === selected ? { ...it, r: it.r ? 0 : 1 } : it)) });
+                  if (sel && selected !== null) setDraft({ ...draft, items: draft.items.map((it, j) => (j === selected ? rotated(it) : it)) });
                   else setRot(rot ? 0 : 1);
                 }}
                 className="flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/15"
