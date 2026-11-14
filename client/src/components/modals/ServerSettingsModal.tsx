@@ -90,6 +90,8 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
 function Overview({ detail }: { detail: ServerDetail }) {
   const [name, setName] = useState(detail.server.name);
   const [color, setColor] = useState(detail.server.iconColor);
+  const [isPublic, setIsPublic] = useState(!!detail.server.public);
+  const [description, setDescription] = useState(detail.server.description ?? '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const isAuthority = useApp((s) => s.me?.isAuthority);
@@ -135,11 +137,23 @@ function Overview({ detail }: { detail: ServerDetail }) {
             <span className="mb-2 block text-xs font-bold tracking-wide text-fg-muted uppercase">Cor do ícone</span>
             <ColorPicker value={color} onChange={(c) => c && setColor(c)} />
           </div>
+          <div className="space-y-3 rounded-2xl bg-surface-3 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold">Servidor público</div>
+                <div className="text-xs text-fg-muted">Aparece em "Descobrir" e qualquer pessoa entra sem convite. Quem foi banido continua de fora.</div>
+              </div>
+              <Toggle checked={isPublic} onChange={setIsPublic} />
+            </div>
+            {isPublic && (
+              <Input label="Descrição (aparece em Descobrir)" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={200} placeholder="Do que é o servidor?" />
+            )}
+          </div>
           <Button
             loading={saving}
             onClick={async () => {
               setSaving(true);
-              await api.patch(`/servers/${detail.server.id}`, { name, iconColor: color }).then(() => toast.success('Servidor atualizado'), toast.error);
+              await api.patch(`/servers/${detail.server.id}`, { name, iconColor: color, public: isPublic, description }).then(() => toast.success('Servidor atualizado'), toast.error);
               setSaving(false);
             }}
           >

@@ -1,4 +1,5 @@
 import { ClipCard } from './Clip';
+import { useDraft } from '../lib/drafts';
 import { Hash, Pencil, Reply, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
@@ -336,7 +337,8 @@ interface Suggestion {
 
 /** Campo de mensagem em pílula, com comandos (/), menções (@) e aviso de quem está digitando. */
 export function Composer({ channel, compact = false }: { channel: Channel; compact?: boolean }) {
-  const [text, setText] = useState('');
+  // o rascunho de cada canal fica guardado (trocar de canal ou recarregar não apaga)
+  const [text, setText] = useDraft(channel.id);
   const [selected, setSelected] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const lastTyping = useRef(0);
@@ -372,7 +374,6 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   }, []);
 
   useEffect(() => {
-    setText('');
     files.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel.id]);
