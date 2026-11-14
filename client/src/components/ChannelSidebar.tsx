@@ -92,7 +92,7 @@ export function VoiceUserBlock() {
   // rolar até ele, e parecia invadir os canais
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3">
-      <div className="mt-auto">
+      <div className="lab-voice-stack mt-auto">
         <VoicePanel />
         <UserCard />
       </div>

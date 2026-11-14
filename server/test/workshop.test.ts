@@ -2,7 +2,7 @@
 // publica, membros só veem o publicado, e fora do Concord de testes as rotas nem existem.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { defaultProps, defaultScreen, defaultTheme, emptyWorkshop, installPack, parseWorkshop, type WorkshopConfig } from '../../shared/workshop.ts';
+import { defaultProps, defaultRoom, defaultScreen, defaultSlots, defaultTheme, emptyWorkshop, installPack, parseWorkshop, type WorkshopConfig } from '../../shared/workshop.ts';
 import { signUp, startServer, type TestServer } from './helpers.ts';
 
 const NOW = Date.UTC(2026, 10, 10);
@@ -125,6 +125,25 @@ describe('validador da Oficina', () => {
     const cd = (at: number) => placed('countdown', { props: { title: 'E', at, doneText: '' } });
     assert.equal(parseWorkshop(withWidgets(cd(NOW + 86400_000)), NOW).ok, true);
     assert.equal(parseWorkshop(withWidgets(cd(NOW + 10 * 365 * 86400_000)), NOW).ok, false);
+  });
+});
+
+describe('modos da tela (laboratório de layout)', () => {
+  it('aceita os encaixes e a tela da sala padrão, e um arranjo trocado', () => {
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), slots: defaultSlots(), room: defaultRoom() }, NOW).ok, true);
+    const r = parseWorkshop(
+      { ...emptyWorkshop(), slots: { channels: 'right', voicebar: 'bottom', members: 'hidden', widgets: { w1: 'top' } }, room: { left: 'chat', right: 'nav', dock: ['share', 'mic', 'deafen', 'leave'] } },
+      NOW,
+    );
+    assert.equal(r.ok, true);
+  });
+
+  it('recusa conversa fora do lugar, lateral repetida e barra sem microfone, fone ou sair', () => {
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), slots: { ...defaultSlots(), channels: 'center' } }, NOW).ok, false);
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), room: { left: 'chat', right: 'chat', dock: defaultRoom().dock } }, NOW).ok, false);
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), room: { left: 'nav', right: 'chat', dock: ['mic', 'deafen'] } }, NOW).ok, false);
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), room: { left: 'nav', right: 'chat', dock: ['mic', 'mic', 'deafen', 'leave'] } }, NOW).ok, false);
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), slots: { ...defaultSlots(), widgets: { w1: 'center' } } }, NOW).ok, false);
   });
 });
 
