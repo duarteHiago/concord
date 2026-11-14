@@ -1,22 +1,18 @@
-// Botão flutuante do globo, na tela do servidor: abre a Praça. Mostra quantas pessoas estão lá agora.
+// Botão do globo, numa faixa própria embaixo da tela do servidor (ver App.tsx): abre a Praça e mostra quantas
+// pessoas estão lá agora. Fica fora dos painéis, então não cobre os botões da call nem some quando o papo abre.
 import { useEffect } from 'react';
 import { useApp } from '../../store/app';
 import { usePlaza } from '../../store/plaza';
-import { useMobile } from '../../lib/mobile';
-import { cx } from '../ui';
 import { Globe } from './Globe';
 
 export function PlazaButton({ serverId, initialCount }: { serverId: string; initialCount: number }) {
   const count = usePlaza((s) => s.counts[serverId] ?? initialCount);
   const open = usePlaza((s) => s.open);
-  const isOpen = usePlaza((s) => s.serverId !== null);
-  const mobile = useMobile();
   const name = useApp((s) => s.details[serverId]?.server.name);
   // já baixa a praça enquanto o globo está na tela: o clique abre sem tela de carregamento
   useEffect(() => {
     void import('./PlazaView');
   }, []);
-  if (isOpen) return null;
   const label = `Ir para a Praça${name ? ` de ${name}` : ''}${count ? ` · ${count} ${count === 1 ? 'pessoa' : 'pessoas'} lá` : ''}`;
   return (
     <button
@@ -24,20 +20,11 @@ export function PlazaButton({ serverId, initialCount }: { serverId: string; init
       onClick={() => open(serverId)}
       title={label}
       aria-label={label}
-      className={cx(
-        'plaza-fab group fixed z-40 grid h-14 w-14 place-items-center rounded-full bg-[#1b1430] shadow-[0_8px_24px_-6px_rgba(27,20,48,0.7)] ring-2 ring-white/70 transition hover:scale-110 active:scale-95',
-        mobile ? 'right-4 bottom-[156px]' : 'right-8 bottom-32',
-      )}
+      className="group flex h-9 items-center gap-2 rounded-full bg-[#1b1430] py-1 pr-3.5 pl-1 text-white shadow-[0_4px_14px_-6px_rgba(27,20,48,0.6)] ring-1 ring-white/20 transition hover:scale-[1.03] hover:bg-[#2b2350] active:scale-95"
     >
-      <Globe size={44} />
-      {count > 0 && (
-        <span className="absolute -top-1 -right-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#e8685a] px-1 text-[11px] font-bold text-white ring-2 ring-white">
-          {count}
-        </span>
-      )}
-      <span className="pointer-events-none absolute right-full mr-3 hidden whitespace-nowrap rounded-lg bg-[#1b1430] px-2.5 py-1 text-xs font-semibold text-white shadow-lg group-hover:block">
-        Praça{count ? ` · ${count} lá` : ''}
-      </span>
+      <Globe size={28} />
+      <span className="font-display text-[13px] font-bold">Praça</span>
+      {count > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#e8685a] px-1.5 text-[11px] font-bold">{count}</span>}
     </button>
   );
 }
