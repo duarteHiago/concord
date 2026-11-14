@@ -6,6 +6,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { P, has } from '../../../../shared/permissions.ts';
 import {
   DRINKS,
+  FLOOR_TABLES,
+  GROUND_TABLES,
+  MAX_FLOORS,
+  floorName,
+  planFloors,
   EMOTES,
   NEAR_RADIUS,
   nearCounter,
@@ -42,7 +47,7 @@ import { TvShareMenu } from './TvShareMenu';
 import { PlaceEditor, type EditorTool } from './PlaceEditor';
 import { api } from '../../lib/api';
 import { Globe } from './Globe';
-import { at, drawAvatar, drawItem, lampLight, outlineTiles, PAL, renderStatic, sceneObjects, tileAt, type Pose } from './pixels';
+import { at, drawAvatar, drawCup, drawItem, lampLight, outlineTiles, PAL, renderStatic, sceneObjects, tileAt, type Pose } from './pixels';
 
 const SPEED = 3.6; // casas por segundo
 const IDLE_MS = 5 * 60_000;
@@ -55,6 +60,8 @@ interface Anim {
   path: Point[];
   facing: Facing;
   walked: number;
+  /** onde o boneco estava (lugar e andar): mudou, ele aparece direto no lugar novo, sem atravessar a sala */
+  where: string;
 }
 
 interface Figure {
@@ -70,6 +77,8 @@ interface Figure {
   /** pés na tela, em pixels nativos */
   fx: number;
   fy: number;
+  /** sentado numa cadeira: o meio da mesa (para pôr a bebida em cima dela) */
+  table?: { x: number; y: number };
 }
 
 const NO_SEATS = new Map<string, { table: number; seat: number }>();
@@ -104,14 +113,13 @@ function loadPixelFont() {
 export default function PlazaView() {
   const serverId = usePlaza((s) => s.serverId)!;
   const phase = usePlaza((s) => s.phase);
-  const tables = usePlaza((s) => s.tables);
+  const floorsAll = usePlaza((s) => s.floors);
   const walkers = usePlaza((s) => s.walkers);
   const bubbles = usePlaza((s) => s.bubbles);
   const emotes = usePlaza((s) => s.emotes);
   const detail = useApp((s) => s.details[serverId]);
   const me = useApp((s) => s.me)!;
   const voiceStates = useApp((s) => s.voiceStates[serverId]);
-  const online = useApp((s) => s.online);
   const voiceChannelId = useVoice((s) => (s.serverId === serverId && s.status !== 'idle' ? s.channelId : null));
 
   const [leaving, setLeaving] = useState(false);
@@ -141,6 +149,12 @@ export default function PlazaView() {
   // onde eu estou: na praça (lobby) ou dentro do estabelecimento
   const myScene = walkers[me.id]?.scene ?? 'lobby';
   const inside = myScene === 'inside';
+  // andar onde eu estou (lá dentro) e as mesas dele
+  const myFloor = inside ? (walkers[me.id]?.floor ?? 0) : 0;
+  const hasFloors = floorsAll.length > 1;
+  const tables = useMemo(() => floorsAll[myFloor] ?? [], [floorsAll, myFloor]);
+  const [floorMenu, setFloorMenu] = useState(false);
+  const setFloorMenuRef = useRef(setFloorMenu);
   // editor da Praça (quem gerencia o servidor): o rascunho de como este lugar vai ficar
   const places = usePlaza((s) => s.places);
   const canManage = has(detail?.permissions ?? 0, P.MANAGE_SERVER);
@@ -150,7 +164,10 @@ export default function PlazaView() {
   const [itemColor, setItemColor] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [savingPlace, setSavingPlace] = useState(false);
-  const layout = useMemo(() => layoutFor(myScene, tables.length, draft ?? places[myScene]), [myScene, tables.length, draft, places]);
+  const layout = useMemo(
+    () => layoutFor(myScene, tables.length, draft ?? places[myScene], myFloor, hasFloors),
+    [myScene, tables.length, draft, places, myFloor, hasFloors],
+  );
   const editRef = useRef({ draft, tool, rot, itemColor, selected, hover: null as Point | null, tableCount: tables.length });
   editRef.current = { ...editRef.current, draft, tool, rot, itemColor, selected, tableCount: tables.length };
   // mini TV flutuante com a transmissão de alguém (id de quem transmite)
@@ -158,6 +175,7 @@ export default function PlazaView() {
   const [tvMenu, setTvMenu] = useState(false);
   // cardápio do balcão (a coluna do balcão clicada, para ir até ali)
   const [barMenu, setBarMenu] = useState<number | null>(null);
+  const setBarMenuRef = useRef(setBarMenu);
   // mesa clicada (fora de call): sentar ou espiar
   const [tableMenu, setTableMenu] = useState<number | null>(null);
   const peeking = usePlazaPeek((s) => s.channelId);
@@ -185,6 +203,10 @@ export default function PlazaView() {
     pendingDoor: false,
     /** pedi uma bebida longe do balcão: ao chegar nele, pede */
     pendingDrink: null as string | null,
+    /** fui andando até o elevador: ao chegar, abre a escolha do andar */
+    pendingElevator: false,
+    /** fui andando até o balcão: ao chegar, abre o cardápio (a coluna do balcão clicada) */
+    pendingBar: null as number | null,
     /** quando o volume da voz do lobby foi recalculado pela última vez */
     volumesAt: 0,
     /** ouvir de perto: última checagem, última renovação, tentativa em andamento, falhas recentes por mesa */
@@ -270,14 +292,19 @@ export default function PlazaView() {
       const meId = useApp.getState().me?.id;
       const scene = layout.kind;
       for (const [id, wk] of Object.entries(plaza.walkers)) {
-        if (wk.scene !== scene) {
+        if (wk.scene !== scene || (scene === 'inside' && (wk.floor ?? 0) !== layout.level)) {
           w.anims.delete(id);
           continue;
         }
         let a = w.anims.get(id);
         if (!a) {
-          a = { x: wk.x, y: wk.y, goal: { x: wk.x, y: wk.y }, path: [], facing: 1, walked: 0 };
+          a = { x: wk.x, y: wk.y, goal: { x: wk.x, y: wk.y }, path: [], facing: 1, walked: 0, where: `${wk.scene}:${wk.floor ?? 0}` };
           w.anims.set(id, a);
+        }
+        const where = `${wk.scene}:${wk.floor ?? 0}`;
+        if (a.where !== where) {
+          // trocou de lugar (porta, elevador): aparece na chegada, sem caminhar desde a posição antiga
+          Object.assign(a, { x: wk.x, y: wk.y, goal: { x: wk.x, y: wk.y }, path: [], where });
         }
         if (a.goal.x !== wk.x || a.goal.y !== wk.y) {
           const from = nearestWalkable(layout, { x: Math.round(a.x), y: Math.round(a.y) });
@@ -369,6 +396,18 @@ export default function PlazaView() {
         peek.stop();
       }
 
+      // cheguei no elevador: escolhe o andar
+      if (w.pendingElevator && meAnim && !meAnim.path.length && layout.elevator && meAnim.x === layout.elevator.x && meAnim.y === layout.elevator.y) {
+        w.pendingElevator = false;
+        setFloorMenuRef.current(true);
+      }
+
+      // cheguei no balcão: abre o cardápio
+      if (w.pendingBar !== null && meAnim && !meAnim.path.length && nearCounter(layout, { x: Math.round(meAnim.x), y: Math.round(meAnim.y) })) {
+        setBarMenuRef.current(w.pendingBar);
+        w.pendingBar = null;
+      }
+
       // cheguei no balcão com um pedido: pede a bebida
       if (w.pendingDrink && meAnim && !meAnim.path.length && nearCounter(layout, { x: Math.round(meAnim.x), y: Math.round(meAnim.y) })) {
         plaza.drink(w.pendingDrink);
@@ -404,7 +443,7 @@ export default function PlazaView() {
         if (seat < tb.seats.length) {
           const s = tb.seats[seat];
           const p = at(s.x + 0.5, s.y + 0.5, SEAT_Z);
-          figs.push({ userId, avatar, x: s.x + 0.5, y: s.y + 0.5, facing: s.facing, pose: 'sit', seated: true, bob: 0, fx: p.x, fy: p.y + 2 });
+          figs.push({ userId, avatar, x: s.x + 0.5, y: s.y + 0.5, facing: s.facing, pose: 'sit', seated: true, bob: 0, fx: p.x, fy: p.y + 2, table: { x: tb.x + 1, y: tb.y + 1 } });
         } else {
           const o = STANDING[(seat - tb.seats.length) % STANDING.length];
           const sx = tb.x + o.dx;
@@ -495,10 +534,19 @@ export default function PlazaView() {
         const playing = f.seated && !!useApp.getState().online[f.userId]?.activities?.some((a) => a.type === 'playing');
         const wk = plaza.walkers[f.userId];
         const drinkColor = wk?.drink ? (DRINKS.find((d) => d.id === wk.drink)?.color ?? null) : null;
+        // sentado numa cadeira, a bebida fica em cima da mesa (na frente de quem pediu), não na mão
+        const onTable = !!f.table && !!drinkColor;
         items.push({
           depth: f.x + f.y + (f.seated ? 0.05 : 0),
-          draw: (ctx) => drawAvatar(ctx, f.avatar, f.facing, f.pose, f.fx, f.fy, { speaking: speaking && !sleeping, bob: f.bob, t: now, sleeping, console: playing, drink: drinkColor }),
+          draw: (ctx) => drawAvatar(ctx, f.avatar, f.facing, f.pose, f.fx, f.fy, { speaking: speaking && !sleeping, bob: f.bob, t: now, sleeping, console: playing, drink: onTable ? null : drinkColor }),
         });
+        if (onTable) {
+          const tbl = f.table!;
+          const cx = f.x + (tbl.x - f.x) * 0.45;
+          const cy = f.y + (tbl.y - f.y) * 0.45;
+          const pt = at(cx, cy, 14);
+          items.push({ depth: tbl.x + tbl.y + 0.2, draw: (ctx) => drawCup(ctx, pt.x, pt.y, drinkColor!) });
+        }
       }
       items.sort((p, q) => p.depth - q.depth);
       for (const it of items) it.draw(lctx);
@@ -699,13 +747,36 @@ export default function PlazaView() {
         return clickTable(i);
       }
     }
+    // lá dentro, clicar no elevador (a porta na parede ou a casa dele) leva até ele
+    if (layout.elevator) {
+      const ev = layout.elevator;
+      for (const off of [0, 12, 24, 36]) {
+        const b = tileAt(nx, ny + off);
+        if ((b.x === ev.x && b.y === ev.y) || (b.x === ev.x && b.y === ev.y - 1)) {
+          const mine = usePlaza.getState().walkers[me.id];
+          if (mine && mine.x === ev.x && mine.y === ev.y) setFloorMenu(true);
+          else {
+            moveMe(ev);
+            world.current.pendingElevator = true;
+          }
+          return;
+        }
+      }
+    }
     // 3) lá dentro, clicar no balcão abre o cardápio de bebidas
-    if (layout.kind === 'inside') {
+    if (layout.kind === 'inside' && layout.level === 0) {
       const { x0, x1 } = layout.building;
       for (const off of [0, 10, 20, 30, 40]) {
         const b = tileAt(nx, ny + off);
         if (b.x >= x0 && b.x <= x1 && b.y >= 0 && b.y <= 2) {
-          setBarMenu(Math.min(x1, Math.max(x0, b.x)));
+          // o cardápio só abre no balcão: longe dele, o boneco vai até lá primeiro
+          const col = Math.min(x1, Math.max(x0, b.x));
+          const mine = usePlaza.getState().walkers[me.id];
+          if (mine && nearCounter(layout, mine)) setBarMenu(col);
+          else {
+            moveMe(nearestWalkable(layout, { x: col, y: 3 }));
+            world.current.pendingBar = col;
+          }
           return;
         }
       }
@@ -802,10 +873,10 @@ export default function PlazaView() {
 
   // ---- quem aparece (rótulos em HTML) ----
   const people = useMemo(() => {
-    const ids = new Set<string>(Object.values(walkers).filter((w) => w.scene === myScene).map((w) => w.userId));
+    const ids = new Set<string>(Object.values(walkers).filter((w) => w.scene === myScene && (!inside || (w.floor ?? 0) === myFloor)).map((w) => w.userId));
     if (inside) for (const id of seating.keys()) ids.add(id);
     return [...ids];
-  }, [walkers, seating, myScene, inside]);
+  }, [walkers, seating, myScene, inside, myFloor]);
 
   // troquei de lugar: câmera de novo em mim e uma transição de blocos
   const firstScene = useRef(true);
@@ -818,7 +889,8 @@ export default function PlazaView() {
     world.current.pan = { x: 0, y: 0 };
     world.current.pendingJoin = null;
     setWipe((k) => k + 1);
-  }, [myScene]);
+    setFloorMenu(false);
+  }, [myScene, myFloor]);
 
   // entrei na call pela TV: abre a mini TV assim que eu estiver na mesa
   useEffect(() => {
@@ -852,9 +924,10 @@ export default function PlazaView() {
   // entrei numa call com a praça aberta (pela lista, por exemplo): o boneco vai direto para a mesa, lá dentro
   const prevCall = useRef(voiceChannelId);
   useEffect(() => {
-    if (voiceChannelId && voiceChannelId !== prevCall.current && myScene === 'lobby') usePlaza.getState().table();
+    // (na praça, ou lá dentro mas em outro andar)
+    if (voiceChannelId && voiceChannelId !== prevCall.current && (myScene === 'lobby' || !tables.includes(voiceChannelId))) usePlaza.getState().table();
     prevCall.current = voiceChannelId;
-  }, [voiceChannelId, myScene]);
+  }, [voiceChannelId, myScene, tables]);
   useEffect(() => {
     if (lobbyVoice) void usePlazaVoice.getState().connect(serverId);
     else usePlazaVoice.getState().disconnect();
@@ -905,7 +978,7 @@ export default function PlazaView() {
 
   const myVoice = voiceStates?.find((v) => v.userId === me.id);
   const myChannel = voiceChannelId ? channelById.get(voiceChannelId) : undefined;
-  const count = Object.values(walkers).filter((w) => w.scene === myScene).length;
+  const count = Object.values(walkers).filter((w) => w.scene === myScene && (!inside || (w.floor ?? 0) === myFloor)).length;
 
   return (
     <div className="plaza-root fixed inset-0 z-[60] overflow-hidden select-none" style={{ background: PAL.night }}>
@@ -947,7 +1020,7 @@ export default function PlazaView() {
               (!seating.has(id) && !!walkers[id] && Date.now() - walkers[id].activeAt > IDLE_MS) ||
               (inside && seating.has(id) && !!(voiceStates ?? []).find((v) => v.userId === id && (v.muted || v.deafened)))
             }
-            playing={inside && seating.has(id) ? online[id]?.activities?.find((a) => a.type === 'playing')?.name : undefined}
+
             bubbles={bubbles.filter((b) => b.userId === id)}
             peeking={(allPeeks ?? []).find((p) => p.userId === id && p.until > Date.now())?.near ? 'near' : (allPeeks ?? []).some((p) => p.userId === id && p.until > Date.now()) ? 'peek' : undefined}
             emote={emotes[id]}
@@ -960,7 +1033,7 @@ export default function PlazaView() {
       <div className="absolute top-3 left-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1430]/80 py-1.5 pr-3.5 pl-1.5 text-white shadow-lg backdrop-blur">
         <Globe size={30} />
         <div className="leading-tight">
-          <div className="plaza-pixel text-[15px] font-bold">{inside ? `Dentro de ${detail?.server.name ?? ''}` : `Praça · ${detail?.server.name ?? ''}`}</div>
+          <div className="plaza-pixel text-[15px] font-bold">{inside ? `Dentro de ${detail?.server.name ?? ''}${hasFloors ? ` · ${floorName(myFloor)}` : ''}` : `Praça · ${detail?.server.name ?? ''}`}</div>
           <div className="text-[11px] text-white/60">
             {count} {count === 1 ? 'pessoa' : 'pessoas'} {inside ? 'aqui dentro' : 'na praça'}
             {inside && ` · ${seating.size} na${seating.size === 1 ? '' : 's'} mesa${seating.size === 1 ? '' : 's'}`}
@@ -974,7 +1047,7 @@ export default function PlazaView() {
         <HudButton label="Aproximar" onClick={() => setZoom((z) => Math.min(5, z + 1))}>
           <Plus size={16} />
         </HudButton>
-        {canManage && !draft && (
+        {canManage && !draft && myFloor === 0 && (
           <button onClick={startEdit} title={inside ? 'Montar o prédio' : 'Montar a praça'} className="flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-[#1b1430]/85 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-[#2b2350]">
             <Hammer size={15} /> Montar
           </button>
@@ -1072,9 +1145,23 @@ export default function PlazaView() {
             setDraft(defaultStyle(myScene, tables.length));
             setSelected(null);
           }}
-        />
+        >
+          {inside && <FloorAssign serverId={serverId} channels={(detail?.channels ?? []).filter((c) => c.type === 'voice').sort((a, b) => a.position - b.position)} />}
+        </PlaceEditor>
       )}
       {tvMenu && <TvShareMenu onClose={() => setTvMenu(false)} />}
+      {floorMenu && hasFloors && (
+        <FloorMenu
+          floors={floorsAll}
+          current={myFloor}
+          channelName={(id) => (id ? channelById.get(id)?.name : undefined)}
+          onPick={(f) => {
+            setFloorMenu(false);
+            usePlaza.getState().goFloor(f);
+          }}
+          onClose={() => setFloorMenu(false)}
+        />
+      )}
       {barMenu !== null && (
         <BarMenu
           holding={walkers[me.id]?.drink ?? null}
@@ -1084,9 +1171,8 @@ export default function PlazaView() {
             if (drink === null) return usePlaza.getState().drink(null);
             const cur = walkers[me.id];
             if (cur && nearCounter(layout, cur)) return usePlaza.getState().drink(drink);
-            // vai até o balcão e pede ao chegar
-            const target = nearestWalkable(layout, { x: col, y: 3 });
-            moveMe(target);
+            // saiu de perto com o cardápio aberto: volta ao balcão e pede ao chegar
+            moveMe(nearestWalkable(layout, { x: col, y: 3 }));
             world.current.pendingDrink = drink;
           }}
           onClose={() => setBarMenu(null)}
@@ -1182,6 +1268,105 @@ function PeekBar({ channel, until, whispering, near }: { channel?: Channel; unti
       <button onClick={() => peek.stop()} aria-label="Parar de espiar" className="grid h-7 w-7 place-items-center rounded-full text-white/70 hover:bg-white/10">
         <X size={13} />
       </button>
+    </div>
+  );
+}
+
+/** Editor: em que andar fica cada sala (térreo até 6, os outros 2 cada; "Automático" deixa o Concord decidir). */
+function FloorAssign({ serverId, channels }: { serverId: string; channels: Channel[] }) {
+  const saved = usePlaza((s) => s.floorAssign);
+  const [assign, setAssign] = useState<Record<string, number>>(saved);
+  const [saving, setSaving] = useState(false);
+  const preview = planFloors(
+    channels.map((c) => c.id),
+    assign,
+  );
+  const levelOf = (id: string) => preview.findIndex((f) => f.includes(id));
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/servers/${serverId}/plaza/floors`, { assign });
+      toast.success('Andares salvos.');
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-bold tracking-wider text-white/50 uppercase">Andares</div>
+      <p className="mb-2 text-[11px] text-white/45">
+        O térreo cabe {GROUND_TABLES} salas e cada andar {FLOOR_TABLES}. Escolha onde fica cada uma; em Automático, o Concord encaixa.
+      </p>
+      <div className="space-y-1">
+        {channels.map((c) => (
+          <label key={c.id} className="flex items-center gap-2 text-xs">
+            <span className="min-w-0 flex-1 truncate">#{c.name}</span>
+            <select
+              value={assign[c.id] ?? -1}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                const next = { ...assign };
+                if (v < 0) delete next[c.id];
+                else next[c.id] = v;
+                setAssign(next);
+              }}
+              className="rounded-md bg-white/10 px-1.5 py-1 text-xs outline-none"
+            >
+              <option value={-1}>Automático ({floorName(Math.max(0, levelOf(c.id)))})</option>
+              {Array.from({ length: MAX_FLOORS + 1 }, (_, i) => (
+                <option key={i} value={i}>
+                  {floorName(i)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+      <button onClick={() => void save()} disabled={saving} className="mt-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold hover:bg-white/15 disabled:opacity-50">
+        {saving ? 'Salvando…' : 'Salvar andares'}
+      </button>
+    </div>
+  );
+}
+
+/** Elevador: escolhe o andar (mostra as salas de cada um). */
+function FloorMenu({
+  floors,
+  current,
+  channelName,
+  onPick,
+  onClose,
+}: {
+  floors: (string | null)[][];
+  current: number;
+  channelName: (id: string | null) => string | undefined;
+  onPick: (floor: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] w-[min(92vw,360px)] -translate-x-1/2 rounded-xl border border-white/10 bg-[#1b1430]/95 p-2 text-white shadow-xl">
+      <div className="mb-1.5 flex items-center justify-between px-1">
+        <span className="plaza-pixel text-[13px] font-bold">Elevador</span>
+        <button onClick={onClose} aria-label="Fechar" className="rounded-lg p-1 text-white/60 hover:bg-white/10">
+          <X size={13} />
+        </button>
+      </div>
+      <div className="max-h-[40vh] space-y-1 overflow-y-auto">
+        {floors.map((f, i) => (
+          <button
+            key={i}
+            disabled={i === current}
+            onClick={() => onPick(i)}
+            className={cx('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs', i === current ? 'bg-white/15' : 'hover:bg-white/10')}
+          >
+            <span className="w-16 shrink-0 font-bold">{floorName(i)}</span>
+            <span className="min-w-0 flex-1 truncate text-white/60">{f.map((id) => (id ? `#${channelName(id) ?? 'sala'}` : 'reservada')).join(' · ') || 'sem salas'}</span>
+            {i === current && <span className="text-[10px] text-white/50">você está aqui</span>}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1375,9 +1560,7 @@ function PersonTag({
           </span>
         </div>
       )}
-      {playing && !idle && (
-        <div className="absolute top-full left-1/2 mt-0.5 -translate-x-1/2 rounded bg-[#1b1430]/80 px-1 text-[9px] whitespace-nowrap text-[#9fe7b5]">🎮 {playing.slice(0, 24)}</div>
-      )}
+
       <div className={cx('plaza-pixel flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-bold leading-[16px]', isMe ? 'bg-[#e8685a] text-white' : 'bg-[#1b1430]/75 text-white')}>
         {voice?.streaming && <span className="rounded-sm bg-[#ff5c7a] px-0.5 text-[9px] leading-[12px]">AO VIVO</span>}
         {peeking && <span title={peeking === 'near' ? 'Ouvindo uma mesa de perto' : 'Espiando uma mesa'}>{peeking === 'near' ? '👂' : '👀'}</span>}
@@ -1419,6 +1602,8 @@ function PlazaLog({ members, onClose }: { members: Map<string, Member>; onClose:
 
 function PersonCard({ userId, member, isMe, onEdit, onClose, serverId }: { userId: string; member?: Member; isMe: boolean; onEdit: () => void; onClose: () => void; serverId: string }) {
   const name = member ? memberName(member) : 'Alguém';
+  // o que a pessoa está jogando (o app desktop detecta): só aparece aqui, no cartão
+  const playingNow = useApp((st) => st.online[userId]?.activities?.find((a) => a.type === 'playing')?.name);
   const go = (fn: () => void) => {
     usePlaza.getState().close();
     fn();
@@ -1436,6 +1621,7 @@ function PersonCard({ userId, member, isMe, onEdit, onClose, serverId }: { userI
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold">{name}</div>
           {member && <div className="truncate text-xs text-white/50">@{member.username}</div>}
+          {playingNow && <div className="truncate text-xs text-[#9fe7b5]">🎮 Jogando {playingNow}</div>}
         </div>
         <button onClick={onClose} aria-label="Fechar" className="rounded p-1 hover:bg-white/10">
           <X size={14} />
