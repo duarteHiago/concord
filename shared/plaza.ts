@@ -131,7 +131,7 @@ export const DRINK_MS = 30 * 60_000;
 /** Está perto o bastante do balcão para pedir (a fila logo na frente dele, lá dentro). */
 export function nearCounter(layout: PlazaLayout, p: Point) {
   const { x0, x1 } = layout.building;
-  return layout.kind === 'inside' && p.y >= 3 && p.y <= 4 && p.x >= x0 - 1 && p.x <= x1 + 1;
+  return layout.kind === 'inside' && layout.level === 0 && p.y >= 3 && p.y <= 4 && p.x >= x0 - 1 && p.x <= x1 + 1;
 }
 
 /** A praça (lobby, ao ar livre) ou o estabelecimento do servidor (por dentro, com as mesas das calls). */
@@ -279,9 +279,15 @@ export interface PlazaLayout {
   wall: number;
   /** móveis que valeram (os que caíram em lugar proibido ficam de fora) */
   items: Furniture[];
+  /** andar do estabelecimento (0 = térreo) */
+  level: number;
+  /** o elevador (só quando o prédio tem mais de um andar): pisar nele abre a escolha do andar */
+  elevator: Point | null;
 }
 
 type Base = Omit<PlazaLayout, 'blocked' | 'floor' | 'wall' | 'items'>;
+
+const OFF_MAP = { x: -10, y: -10 };
 
 function baseLobby(): Base {
   const w = 22;
@@ -291,11 +297,15 @@ function baseLobby(): Base {
   for (let x = building.x0; x <= building.x1; x++) for (let y = 0; y <= 2; y++) fixed[y * w + x] = 1;
   const door = { x: Math.floor(w / 2), y: 3 };
   const spawn = { x: Math.floor(w / 2), y: h - 2 };
-  return { kind: 'lobby', w, h, door, tables: [], fixed, reserved: [door, { x: door.x, y: door.y + 1 }, spawn], spawn, building };
+  return { kind: 'lobby', w, h, door, tables: [], fixed, reserved: [door, { x: door.x, y: door.y + 1 }, spawn], spawn, building, level: 0, elevator: null };
 }
 
-function baseInside(tableCount: number): Base {
-  const n = Math.max(0, Math.min(MAX_TABLES, Math.floor(tableCount)));
+/**
+ * O estabelecimento por dentro. O térreo tem o balcão e a saída; os andares de cima, só as mesas. Com mais de um
+ * andar, o elevador fica na parede do fundo, à direita do balcão.
+ */
+function baseInside(tableCount: number, level = 0, hasFloors = false): Base {
+  const n = Math.max(0, Math.min(level ? FLOOR_TABLES : GROUND_TABLES, Math.floor(tableCount)));
   const rows = Math.max(1, Math.ceil(n / COLS));
   const w = 2 + COLS * CELL + 1;
   const h = TOP + rows * CELL + 4;
@@ -304,7 +314,8 @@ function baseInside(tableCount: number): Base {
     if (x >= 0 && y >= 0 && x < w && y < h) fixed[y * w + x] = 1;
   };
   const building = { x0: Math.floor(w / 2) - 4, x1: Math.floor(w / 2) + 3 };
-  for (let x = building.x0; x <= building.x1; x++) for (let y = 0; y <= 2; y++) block(x, y);
+  if (!level) for (let x = building.x0; x <= building.x1; x++) for (let y = 0; y <= 2; y++) block(x, y);
+  const elevator = hasFloors || level ? { x: building.x1 + 2, y: 0 } : null;
   const tables: PlazaTable[] = [];
   for (let i = 0; i < n; i++) {
     const col = i % COLS;
@@ -328,9 +339,50 @@ function baseInside(tableCount: number): Base {
     block(tv.x + 1, tv.y);
     tables.push({ x, y, seats, tv, front: { x: x + 1, y: y + 3 } });
   }
-  const spawn = { x: Math.floor(w / 2), y: h - 2 };
-  const door = { x: spawn.x, y: h - 1 };
-  return { kind: 'inside', w, h, door, tables, fixed, reserved: [door, spawn, ...tables.map((t) => t.front)], spawn, building };
+  // lá em cima não tem saída: chega e sai pelo elevador
+  const spawn = level && elevator ? { x: elevator.x, y: elevator.y + 1 } : { x: Math.floor(w / 2), y: h - 2 };
+  const door = level ? OFF_MAP : { x: spawn.x, y: h - 1 };
+  const reserved = [door, spawn, ...tables.map((t) => t.front)];
+  if (elevator) reserved.push(elevator, { x: elevator.x, y: elevator.y + 1 });
+  return { kind: 'inside', w, h, door, tables, fixed, reserved, spawn, building, level, elevator };
+}
+
+// ---- andares do estabelecimento ----
+
+/** Mesas no térreo (as salas principais). */
+export const GROUND_TABLES = 6;
+/** Mesas em cada andar de cima. */
+export const FLOOR_TABLES = 2;
+/** Andares de cima, no máximo. */
+export const MAX_FLOORS = 10;
+
+export const floorName = (level: number) => (level === 0 ? 'Térreo' : `${level}º andar`);
+
+/**
+ * Em que andar fica cada sala de voz (na ordem da lista de canais). Primeiro as salas que o admin escolheu (se
+ * ainda cabe no andar), depois as outras: térreo até GROUND_TABLES, e o resto de FLOOR_TABLES em FLOOR_TABLES.
+ */
+export function planFloors(channelIds: string[], assign: Record<string, number> = {}): string[][] {
+  const floors: string[][] = [[]];
+  const cap = (level: number) => (level === 0 ? GROUND_TABLES : FLOOR_TABLES);
+  const room = (level: number) => {
+    while (floors.length <= level) floors.push([]);
+    return floors[level].length < cap(level);
+  };
+  const rest: string[] = [];
+  for (const id of channelIds) {
+    const want = assign[id];
+    if (Number.isInteger(want) && want >= 0 && want <= MAX_FLOORS && room(want)) floors[want].push(id);
+    else rest.push(id);
+  }
+  for (const id of rest) {
+    let level = 0;
+    while (level <= MAX_FLOORS && !room(level)) level++;
+    if (level > MAX_FLOORS) break; // sem espaço: a sala fica fora do prédio
+    floors[level].push(id);
+  }
+  // sem andares vazios no meio (o admin pode ter escolhido o 3º sem nada no 2º)
+  return [floors[0], ...floors.slice(1).filter((f) => f.length)];
 }
 
 const item = (k: FurnitureKind, x: number, y: number, c = 0): Furniture => ({ k, x, y, r: 0, c });
@@ -426,10 +478,15 @@ function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
   return { ...base, blocked, floor: style.floor, wall: style.wall, items };
 }
 
-/** O mapa de um lugar: o lobby tem tamanho fixo; o estabelecimento tem uma mesa por sala de voz. */
-export function layoutFor(scene: Scene, tableCount: number, style?: PlaceStyle | null): PlazaLayout {
-  const base = scene === 'lobby' ? baseLobby() : baseInside(tableCount);
-  return applyStyle(base, style ?? defaultStyle(scene, tableCount));
+/**
+ * O mapa de um lugar: o lobby tem tamanho fixo; o estabelecimento tem uma mesa por sala de voz no andar. Os andares
+ * de cima usam as cores do térreo e os enfeites de sempre (o editor mexe no térreo).
+ */
+export function layoutFor(scene: Scene, tableCount: number, style?: PlaceStyle | null, level = 0, hasFloors = false): PlazaLayout {
+  if (scene === 'lobby') return applyStyle(baseLobby(), style ?? defaultStyle('lobby'));
+  const base = baseInside(tableCount, level, hasFloors);
+  if (!level) return applyStyle(base, style ?? defaultStyle('inside', tableCount));
+  return applyStyle(base, { floor: style?.floor ?? 0, wall: style?.wall ?? 0, items: defaultStyle('inside', tableCount).items });
 }
 
 export const buildLobby = (style?: PlaceStyle | null) => layoutFor('lobby', 0, style);
@@ -439,7 +496,7 @@ export const buildLayout = (tableCount: number, style?: PlaceStyle | null) => la
  * Confere o que o editor mandou salvar: índices válidos, móveis do lugar certo, nada em cima de nada, e a
  * passagem livre do portal até a porta e a frente de todas as mesas.
  */
-export function validateStyle(raw: unknown, scene: Scene, tableCount: number): { ok: true; style: PlaceStyle } | { ok: false; error: string } {
+export function validateStyle(raw: unknown, scene: Scene, tableCount: number, hasFloors = false): { ok: true; style: PlaceStyle } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'Nada para salvar.' };
   const r = raw as Record<string, unknown>;
   const int = (v: unknown, max: number) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < max ? v : -1);
@@ -459,7 +516,7 @@ export function validateStyle(raw: unknown, scene: Scene, tableCount: number): {
     items.push({ k: it.k, x, y, r: it.r, c });
   }
   const style = { floor, wall, items };
-  const layout = layoutFor(scene, tableCount, style);
+  const layout = layoutFor(scene, tableCount, style, 0, hasFloors);
   if (layout.items.length !== items.length) return { ok: false, error: 'Algum móvel ficou fora do mapa, em cima de outro ou na passagem.' };
   const must = scene === 'lobby' ? [layout.door] : [layout.door, ...layout.tables.map((t) => t.front)];
   for (const p of must) {

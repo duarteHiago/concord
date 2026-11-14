@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { buildLayout, buildLobby, cleanSay, defaultStyle, findPath, sanitizeAvatar, validateStyle, walkable } from '../../shared/plaza.ts';
+import { buildLayout, buildLobby, cleanSay, defaultStyle, findPath, layoutFor, planFloors, sanitizeAvatar, validateStyle, walkable } from '../../shared/plaza.ts';
 import { signUp, startServer, type Client, type TestServer } from './helpers.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -65,6 +65,25 @@ describe('praça: editor (shared)', () => {
     assert.equal(validateStyle({ ...base, items: [{ k: 'shelf', x: 3, y: 5, r: 0, c: 0 }] }, 'lobby', 0).ok, false);
     const rug = validateStyle({ floor: 2, wall: 0, items: [{ k: 'rug', x: d.x - 1, y: d.y + 2, r: 0, c: 3 }] }, 'lobby', 0);
     assert.equal(rug.ok, true);
+  });
+});
+
+describe('praça: andares (shared)', () => {
+  it('térreo até 6, depois 2 por andar; a escolha do admin vale se couber; sem andar vazio no meio', () => {
+    const ids = Array.from({ length: 9 }, (_, i) => `c${i}`);
+    assert.deepEqual(planFloors(ids).map((f) => f.length), [6, 2, 1]);
+    const plan = planFloors(ids, { c0: 3, c1: 3, c2: 3 });
+    // c0 e c1 ficam juntos no andar escolhido (que sobe para logo depois dos outros, sem andar vazio);
+    // c2 não cabe e volta para o fluxo automático
+    assert.ok(plan.some((f) => f.length === 2 && f.includes('c0') && f.includes('c1')));
+    assert.ok(plan[0].includes('c2'));
+    assert.ok(plan.every((f, i) => i === 0 || f.length > 0));
+    // andar de cima tem elevador e não tem saída; o térreo com andares também tem elevador
+    const up = layoutFor('inside', 2, null, 1, true);
+    assert.ok(up.elevator && walkable(up, up.elevator.x, up.elevator.y));
+    assert.equal(up.door.x < 0, true);
+    assert.ok(layoutFor('inside', 6, null, 0, true).elevator);
+    assert.equal(layoutFor('inside', 3, null, 0, false).elevator, null);
   });
 });
 
@@ -137,7 +156,7 @@ describe('praça: andando e conversando', () => {
     a.emit('plaza:move', { serverId, x: 999, y: 0 });
     a.emit('plaza:move', { serverId, x: cafe.x, y: cafe.y + 1 });
     await sleep(300);
-    assert.deepEqual(moves, [{ serverId, userId: ana.id, scene: 'lobby', x: cafe.x, y: cafe.y + 1 }]);
+    assert.deepEqual(moves, [{ serverId, userId: ana.id, scene: 'lobby', floor: 0, x: cafe.x, y: cafe.y + 1 }]);
   });
 
   it('só entra no estabelecimento quem está na porta; lá dentro valem as mesas', async () => {
@@ -363,6 +382,40 @@ describe('praça: andando e conversando', () => {
     assert.equal((await emitAck(a, 'plaza:drink', { serverId, drink: 'refri' })).ok, true);
     await sleep(150);
     assert.deepEqual(seen.map((x) => [x.userId, x.drink]), [[ana.id, 'refri']]);
+  });
+
+  it('andares: elevador leva ao andar de cima; o admin escolhe o andar de cada sala, respeitando a lotação', async () => {
+    const { ana, bia, serverId, a } = await setup();
+    for (let i = 0; i < 6; i++) await ana.post(`/servers/${serverId}/channels`, { name: `sala-${i}`, type: 'voice' });
+    const r = await emitAck(a, 'plaza:enter', { serverId });
+    const floors = r.floors as (string | null)[][];
+    assert.ok(floors.length >= 2);
+    assert.equal(floors[0].length, 6);
+    const lobby = buildLobby();
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(80);
+    a.emit('plaza:door', { serverId });
+    await sleep(150);
+    const ground = layoutFor('inside', 6, null, 0, true);
+    const scenes: { floor: number }[] = [];
+    a.on('plaza:scene', (m) => scenes.push(m));
+    a.emit('plaza:floor', { serverId, floor: 1 }); // longe do elevador: nada
+    await sleep(120);
+    a.emit('plaza:move', { serverId, x: ground.elevator!.x, y: ground.elevator!.y });
+    await sleep(120);
+    a.emit('plaza:floor', { serverId, floor: 1 });
+    await sleep(200);
+    assert.equal(scenes.length, 1);
+    assert.equal(scenes[0].floor, 1);
+    // escolha do admin
+    const detail = (await ana.get(`/servers/${serverId}`)).body as { channels: { id: string; type: string }[] };
+    const voice = detail.channels.filter((c) => c.type === 'voice').map((c) => c.id);
+    assert.equal((await bia.put(`/servers/${serverId}/plaza/floors`, { assign: { [voice[0]]: 2 } })).status, 403);
+    assert.equal((await ana.put(`/servers/${serverId}/plaza/floors`, { assign: { [voice[0]]: 2, [voice[1]]: 2, [voice[2]]: 2 } })).status, 400);
+    const got = new Promise<{ floors: (string | null)[][] }>((res) => a.once('plaza:floors', res));
+    assert.equal((await ana.put(`/servers/${serverId}/plaza/floors`, { assign: { [voice[0]]: 1 } })).status, 200);
+    const next = await got;
+    assert.ok(next.floors[1].includes(voice[0]));
   });
 
   it('quem sai do servidor sai da praça', async () => {

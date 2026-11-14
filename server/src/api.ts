@@ -78,7 +78,7 @@ import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, support
 import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
-import { inPlaza, plazaCount, plazaEnabled, savePlace } from './plaza.ts';
+import { inPlaza, plazaCount, plazaEnabled, saveFloors, savePlace } from './plaza.ts';
 import { isScene, lobbyRoom } from '../../shared/plaza.ts';
 import {
   ART_OFFSET,
@@ -2384,6 +2384,16 @@ api.put('/servers/:id/plaza/place', (req, res) => {
   if (!isScene(scene)) fail(400, 'Lugar inválido');
   if (!plazaEditRate(server.id)) fail(429, 'Muitas mudanças na praça em pouco tempo. Espere um pouco.');
   const error = savePlace(server.id, scene, req.body?.style ?? null);
+  if (error) fail(400, error);
+  res.json({ ok: true });
+});
+
+// Andares do estabelecimento: quem gerencia escolhe em que andar fica cada sala (o resto vai sozinho).
+api.put('/servers/:id/plaza/floors', (req, res) => {
+  const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
+  if (!plazaEnabled(server.id)) fail(404, 'A praça não abriu neste servidor');
+  if (!plazaEditRate(server.id)) fail(429, 'Muitas mudanças na praça em pouco tempo. Espere um pouco.');
+  const error = saveFloors(server.id, req.body?.assign ?? {});
   if (error) fail(400, error);
   res.json({ ok: true });
 });
