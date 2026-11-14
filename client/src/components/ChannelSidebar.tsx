@@ -24,6 +24,7 @@ import {
   Circle,
   Square,
 } from 'lucide-react';
+import { PlazaButton } from './plaza/PlazaButton';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
@@ -162,6 +163,8 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
         </div>
         <ChevronDown size={20} className={cx('shrink-0 transition-transform', banner.ink ? 'opacity-80' : 'text-fg-muted group-hover:text-fg', open && 'rotate-180')} />
       </button>
+      {/* a Praça do servidor (quando ele tem): sempre à vista, logo abaixo do nome */}
+      {detail.plaza && <PlazaButton serverId={detail.server.id} initialCount={detail.plaza.count} />}
       {open && (
         <div className="absolute top-full right-3 left-3 z-30 animate-pop-in space-y-0.5 rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
           {has(perms, P.CREATE_INVITE) && item('Convidar amigos', <UserPlus size={16} />, () => openModal({ type: 'invite', serverId: detail.server.id }))}

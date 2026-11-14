@@ -37,7 +37,6 @@ import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { reduceMotion, setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import { usePlaza } from './store/plaza';
-import { PlazaButton } from './components/plaza/PlazaButton';
 import './lib/visibility';
 // Oficina (só no Concord de testes): o Mural e os avisos usam Motion, carregados só quando aparecem
 const WorkshopHosts = lazy(() => import('./workshop/Hosts').then((m) => ({ default: m.WorkshopHosts })));
@@ -229,10 +228,6 @@ function Shell() {
   const theme = useServerThemeScope();
   const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}|${mural ?? ''}`;
 
-  // na tela de uma call em andamento o globo vai na linha dos botões da call (VoiceView); nas outras, na faixa de baixo
-  const inThisCall = useVoice((s) => s.status !== 'idle' && !!channelId && s.channelId === channelId);
-  const showPlaza =
-    !!activeServerId && activeServerId !== HOME && !!detail?.plaza && !settingsOpen && !profileOpen && !releasesOpen && !(channel?.type === 'voice' && inThisCall);
   const showSidebar = !mobile || mobileView === 'sidebar';
   const showContent = !mobile || mobileView === 'chat';
 
@@ -279,18 +274,9 @@ function Shell() {
     <>
       <LabFrame>
         {screen ? (
-          <div className="flex h-full flex-col">
-            <div className="min-h-0 flex-1">
-              <ServerScreen plan={screen} main={content} theme={theme} />
-            </div>
-            {showPlaza && (
-            <div className={cx('flex shrink-0 justify-end', mobile ? 'px-3 py-1.5' : 'pt-2 pr-1')}>
-              <PlazaButton serverId={activeServerId!} initialCount={detail!.plaza!.count} />
-            </div>
-            )}
-          </div>
+          <ServerScreen plan={screen} main={content} theme={theme} />
         ) : (
-          <div className={cx('flex h-full flex-col bg-surface-1', !mobile && (showPlaza ? 'px-4 pt-4 pb-2' : 'p-4'))} style={theme?.style} data-ws-shape={theme?.shape}>
+          <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')} style={theme?.style} data-ws-shape={theme?.shape}>
             <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
               {showSidebar && (
                 <LabMove id="channels" className="flex shrink-0">
@@ -303,12 +289,6 @@ function Shell() {
                 </LabMove>
               )}
             </div>
-            {/* faixa própria do globo da Praça, embaixo dos painéis: não cobre nada e não some */}
-            {showPlaza && (
-              <div className={cx('flex shrink-0 justify-end', mobile ? 'px-3 py-1.5' : 'pt-2 pr-1')}>
-                <PlazaButton serverId={activeServerId!} initialCount={detail!.plaza!.count} />
-              </div>
-            )}
             <MobileBottomNav />
           </div>
         )}

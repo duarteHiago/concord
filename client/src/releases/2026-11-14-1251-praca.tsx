@@ -20,7 +20,7 @@ function PracaArt() {
       <Spot className="absolute top-3 right-3 h-12 w-12 bg-[#1b1430]">
         <Globe size={38} />
       </Spot>
-      <Tag className="top-3 left-3">Clique no globo</Tag>
+      <Tag className="top-3 left-3">Clique em Praça</Tag>
     </Frame>
   );
 }
@@ -33,13 +33,13 @@ export default {
     {
       kicker: 'Servidor',
       title: 'Seu servidor virou um lugar',
-      text: 'Clique no globo no canto da tela do servidor e você chega na Praça. Cada sala de voz é uma mesa: clicar numa mesa leva o seu boneco até ela e entra na call, e a TV acende quando alguém transmite. O que você escreve vira balão para quem está na praça e não fica salvo. Por enquanto, só no servidor Founders.',
+      text: 'Clique em Praça, na barra lateral logo abaixo do nome do servidor, e você chega lá. Cada sala de voz é uma mesa: clicar numa mesa leva o seu boneco até ela e entra na call, e a TV acende quando alguém transmite. O que você escreve vira balão para quem está na praça e não fica salvo. Por enquanto, só no servidor Founders.',
       art: PracaArt,
       spotlight: {
         target: 'plaza',
         title: 'A Praça',
         tip: 'Clique aqui para ir até a Praça do servidor.',
-        fallback: 'Abra o servidor Founders: o globo fica no canto de baixo da tela.',
+        fallback: 'Abra o servidor Founders: a Praça fica na barra lateral, logo abaixo do nome do servidor.',
       },
     },
   ],
