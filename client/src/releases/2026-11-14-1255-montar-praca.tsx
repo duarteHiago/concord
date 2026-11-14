@@ -51,9 +51,9 @@ export default {
         target: 'plaza',
         title: 'A Praça',
         tip: 'Entre na Praça e use o botão "Montar", no canto de cima.',
-        fallback: 'Abra o servidor Founders: o botão da Praça fica embaixo, à direita.',
+        fallback: 'Abra o servidor Founders: a Praça fica na barra lateral, logo abaixo do nome do servidor.',
       },
     },
   ],
-  fixes: ['O globo da Praça não cobre mais os botões da call: ele ganhou uma faixa própria embaixo da tela do servidor.'],
+  fixes: ['A Praça ganhou um lugar fixo na barra lateral, logo abaixo do nome do servidor: não cobre mais os botões da call.'],
 } satisfies Release;
