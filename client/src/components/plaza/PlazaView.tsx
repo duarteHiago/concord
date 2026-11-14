@@ -776,7 +776,7 @@ export default function PlazaView() {
   const count = Object.values(walkers).filter((w) => w.scene === myScene).length;
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-hidden select-none" style={{ background: PAL.night }}>
+    <div className="plaza-root fixed inset-0 z-[60] overflow-hidden select-none" style={{ background: PAL.night }}>
       <canvas
         ref={canvasRef}
         className="plaza-canvas absolute inset-0 h-full w-full cursor-pointer touch-none"

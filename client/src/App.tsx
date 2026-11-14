@@ -190,7 +190,7 @@ function MainApp() {
       )}
       {me && WORKSHOP_ENABLED && !remote && <LabPanel />}
       {me && plazaOpen && (
-        <div className="fixed inset-0 z-[60] flex bg-[#231a3a]">
+        <div className="plaza-root fixed inset-0 z-[60] flex bg-[#231a3a]">
           <ErrorBoundary area="painel" resetKey="praca">
             <Suspense fallback={<div className="flex flex-1 items-center justify-center"><Spinner size={36} /></div>}>
               <PlazaView />
