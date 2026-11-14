@@ -77,8 +77,8 @@ import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, support
 import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
-import { inLobby, plazaCount, plazaEnabled } from './plaza.ts';
-import { lobbyRoom } from '../../shared/plaza.ts';
+import { inLobby, plazaCount, plazaEnabled, savePlace } from './plaza.ts';
+import { isScene, lobbyRoom } from '../../shared/plaza.ts';
 import {
   ART_OFFSET,
   ART_SCALE,
@@ -2314,6 +2314,20 @@ api.post('/channels/:id/voice-token', humansOnly, async (req, res) => {
     serverDeafened: isServerDeafened(channel.server_id, me),
   });
   res.json({ token, url: config.livekit.publicUrl || null, permissions: perms });
+});
+
+// Editor da Praça: quem gerencia o servidor monta o chão, as paredes e os móveis do lobby e do estabelecimento.
+// `style: null` volta o lugar ao padrão. O servidor confere tudo (shared/plaza.ts#validateStyle).
+const plazaEditRate = limiter(30, 10 * 60_000);
+api.put('/servers/:id/plaza/place', (req, res) => {
+  const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
+  if (!plazaEnabled(server.id)) fail(404, 'A praça não abriu neste servidor');
+  const scene = req.body?.scene;
+  if (!isScene(scene)) fail(400, 'Lugar inválido');
+  if (!plazaEditRate(server.id)) fail(429, 'Muitas mudanças na praça em pouco tempo. Espere um pouco.');
+  const error = savePlace(server.id, scene, req.body?.style ?? null);
+  if (error) fail(400, error);
+  res.json({ ok: true });
 });
 
 // Voz por proximidade no lobby da Praça (ver plaza.ts): só para quem está andando no lobby agora. Só microfone
