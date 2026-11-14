@@ -200,7 +200,7 @@ describe('praça: andando e conversando', () => {
     assert.equal(gotB.length, 0);
   });
 
-  it('a voz do lobby só libera para quem está no lobby', async () => {
+  it('a voz da Praça vale no lobby e dentro do prédio, e só para quem está nela', async () => {
     const { ana, serverId, a } = await setup();
     assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 409);
     await emitAck(a, 'plaza:enter', { serverId });
@@ -212,7 +212,25 @@ describe('praça: andando e conversando', () => {
     await sleep(100);
     a.emit('plaza:door', { serverId });
     await sleep(200);
+    assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 200);
+    a.emit('plaza:leave', { serverId });
+    await sleep(150);
     assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 409);
+  });
+
+  it('quem está numa call já chega lá dentro, na mesa dela', async () => {
+    const { ana, serverId, a } = await setup();
+    const detail = (await ana.get(`/servers/${serverId}`)).body as { channels: { id: string; type: string; name: string }[] };
+    const voice = detail.channels.filter((c) => c.type === 'voice');
+    const target = voice.find((c) => c.name === 'mesa-1')!;
+    assert.equal(((await emitAck(a, 'voice:join', { channelId: target.id })) as { ok: boolean }).ok, true);
+    const r = await emitAck(a, 'plaza:enter', { serverId });
+    const me = (r.walkers as { userId: string; scene: string; x: number; y: number }[]).find((w) => w.userId === ana.id)!;
+    assert.equal(me.scene, 'inside');
+    const inside = buildLayout((r.tables as unknown[]).length);
+    const idx = (r.tables as (string | null)[]).indexOf(target.id);
+    const front = inside.tables[idx].front;
+    assert.ok(Math.abs(me.x - front.x) <= 2 && Math.abs(me.y - front.y) <= 2);
   });
 
   it('balão sai limpo, e quem bloqueou não recebe', async () => {

@@ -50,6 +50,8 @@ interface PlazaState {
   move: (x: number, y: number) => void;
   /** pisei na porta: o servidor confere e troca de lugar */
   door: () => void;
+  /** entrei numa call com a praça aberta: o boneco vai para a mesa dela, lá dentro */
+  table: () => void;
   say: (text: string) => Promise<boolean>;
   emote: (emote: EmoteId) => void;
   avatarChanged: () => void;
@@ -116,6 +118,10 @@ export const usePlaza = create<PlazaState>((set, get) => {
     door: () => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:door', { serverId });
+    },
+    table: () => {
+      const serverId = get().serverId;
+      if (serverId) getSocket()?.emit('plaza:table', { serverId });
     },
     say: (text) =>
       new Promise((resolve) => {
