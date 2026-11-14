@@ -89,7 +89,7 @@ export const useLab = create<LabStore>((set, get) => ({
 }));
 
 /** Algum caminho ligado (a tela do servidor passa a ser montada pelo laboratório, mesmo sem tela da Oficina). */
-export const labActive = (s: LabState) => s.mode !== 'atual' || s.adaptive || s.voiceLayout || s.animate || s.showLimits || s.simulate !== null;
+export const labActive = (s: LabState) => s.mode !== 'atual' || s.adaptive || s.voiceLayout || s.animate;
 
 // ---------------------------------------------------------------- mínimos em pixels (caminhos 2 e 6)
 
@@ -109,6 +109,41 @@ export function blockMinPx(block: CoreBlock, ctx: { inCall: boolean; voiceRoom: 
       // a sala de voz tem palco, dez botões e o papo ao lado; o chat cabe bem mais estreito
       return ctx.voiceRoom ? { w: 640, h: 380 } : { w: 380, h: 300 };
   }
+}
+
+// ---------------------------------------------------------------- tamanho real na prévia do editor (caminho 6)
+
+/** Janelas para a prévia do editor: o mesmo layout muda muito entre um notebook e um monitor grande. */
+export const PREVIEW_WINDOWS = [
+  { id: 'note', w: 1100, h: 680, label: 'Notebook pequeno · 1100 px' },
+  { id: 'hd', w: 1366, h: 768, label: 'Notebook · 1366 px' },
+  { id: 'fhd', w: 1920, h: 1080, label: 'Monitor · 1920 px' },
+] as const;
+export type PreviewWindow = (typeof PREVIEW_WINDOWS)[number];
+
+// a tela montada de verdade: 16 px de margem, barra de servidores (~96 px) e 16 px entre tudo
+const PAD = 16;
+const GAP = 16;
+const STRIP = 96;
+
+/** Área da grade (px) numa janela. */
+export const gridArea = (win: { w: number; h: number }) => ({ w: win.w - PAD * 2, h: win.h - PAD * 2 - STRIP - GAP });
+
+/** Tamanho real (px) de um item de grade 12×12 numa janela. */
+export function cellsToPx(item: { w: number; h: number }, win: { w: number; h: number }, cols = 12, rows = 12) {
+  const a = gridArea(win);
+  const cw = (a.w - GAP * (cols - 1)) / cols;
+  const ch = (a.h - GAP * (rows - 1)) / rows;
+  return { w: Math.round(item.w * cw + (item.w - 1) * GAP), h: Math.round(item.h * ch + (item.h - 1) * GAP) };
+}
+
+/** Quantas casas um bloco precisa, no mínimo, para caber em pixels numa janela. */
+export function minCells(block: CoreBlock, ctx: { inCall: boolean; voiceRoom: boolean }, win: { w: number; h: number }, cols = 12, rows = 12): [number, number] {
+  const min = blockMinPx(block, ctx);
+  const a = gridArea(win);
+  const cw = (a.w - GAP * (cols - 1)) / cols;
+  const ch = (a.h - GAP * (rows - 1)) / rows;
+  return [Math.min(cols, Math.ceil((min.w + GAP) / (cw + GAP))), Math.min(rows, Math.ceil((min.h + GAP) / (ch + GAP)))];
 }
 
 // ---------------------------------------------------------------- moldes (caminho 3)

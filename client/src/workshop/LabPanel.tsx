@@ -1,16 +1,28 @@
-// Botão flutuante e painel do laboratório de layout (só no Concord de testes). Cada caminho de
-// docs "ideias de layout" vira uma chave: dá para ligar, desligar e combinar na hora, e comparar.
-import { FlaskConical, RotateCcw, X } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+// Laboratório de layout dentro do editor da Oficina (só no Concord de testes): a barra em cima da "Tela do
+// servidor" com o modo de montagem, a situação da prévia (janela, em call, sala de voz) e as chaves dos blocos
+// que se adaptam, da arrumação de voz e da animação. Mais a demonstração da transição para as conversas.
 import { Track } from 'livekit-client';
+import { FlaskConical, MessageCircle } from 'lucide-react';
+import { motion } from 'motion/react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { isBlock, type ScreenItem } from '../../../shared/workshop.ts';
 import { Toggle, cx } from '../components/ui';
 import { useVoice } from '../store/voice';
-import { TEMPLATES, labActive, useLab, type LabMode, type LabRoom } from './lab';
+import { PREVIEW_WINDOWS, templateInfo, useLab, type LabMode, type LabRoom, type LabTemplate, type PreviewWindow } from './lab';
+import { springs } from './motion';
+
+export interface PreviewState {
+  win: PreviewWindow;
+  inCall: boolean;
+  voiceRoom: boolean;
+  /** demonstração da transição: mostrando as conversas privadas no lugar do servidor */
+  dm: boolean;
+}
 
 const MODES: { id: LabMode; label: string; hint: string }[] = [
-  { id: 'atual', label: 'Grade de hoje', hint: 'A grade livre 12×12 sem regras. É a que quebra nos prints.' },
-  { id: 'limites', label: 'Grade com limites', hint: 'Mesma grade, mas cada bloco tem mínimo em pixels. Se não couber, a tela rola em vez de um bloco invadir o outro.' },
-  { id: 'moldes', label: 'Moldes', hint: 'Esqueleto fixo para o essencial, divisórias arrastáveis com limite, widgets só nas zonas livres.' },
+  { id: 'atual', label: 'Grade livre', hint: 'Como é hoje: qualquer tamanho e lugar. O contorno vermelho mostra o que quebraria na janela da prévia.' },
+  { id: 'limites', label: 'Grade com limites', hint: 'Cada bloco tem um mínimo em pixels para a janela e a situação escolhidas: não dá para diminuir além dele. Se não couber, a tela rola em vez de sobrepor.' },
+  { id: 'moldes', label: 'Moldes', hint: 'Esqueleto fixo para o essencial. Você escolhe o molde, arrasta as divisórias (com limite) e põe widgets só nas zonas livres.' },
 ];
 
 const ROOMS: { id: LabRoom; label: string }[] = [
@@ -19,195 +31,211 @@ const ROOMS: { id: LabRoom; label: string }[] = [
   { id: 'grade', label: 'Grade de câmeras' },
 ];
 
-const SIMS: { v: number | null; label: string }[] = [
-  { v: null, label: 'Janela real' },
-  { v: 1100, label: '1100 px' },
-  { v: 1366, label: '1366 px' },
-  { v: 1600, label: '1600 px' },
-];
-
-export function LabPanel() {
+export function LabBar({ preview, onPreview, problems }: { preview: PreviewState; onPreview: (p: Partial<PreviewState>) => void; problems: string[] }) {
   const lab = useLab();
-  useRoomArrangement();
-  const on = labActive(lab);
-
-  if (!lab.open) {
-    return (
-      <button
-        type="button"
-        onClick={() => lab.setOpen(true)}
-        title="Laboratório de layout (só no Concord de testes)"
-        aria-label="Laboratório de layout"
-        // no canto direito da barra de servidores; só o ícone, para não cobrir cabeçalhos
-        className={cx(
-          'fixed top-[34px] right-8 z-[55] flex h-10 w-10 items-center justify-center rounded-full shadow-xl ring-1 ring-line transition-transform hover:scale-110',
-          on ? 'bg-accent text-on-accent' : 'bg-surface-2 text-fg',
-        )}
-      >
-        <FlaskConical size={18} />
-      </button>
-    );
-  }
-
+  const mode = MODES.find((m) => m.id === lab.mode)!;
   return (
-    <aside
-      aria-label="Laboratório de layout"
-      className="fixed top-4 right-4 z-[55] flex max-h-[calc(100vh-2rem)] w-[360px] animate-pop-in flex-col overflow-hidden rounded-[24px] bg-popover shadow-2xl ring-1 ring-line"
-    >
-      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-        <FlaskConical size={18} className="text-accent" />
-        <div className="min-w-0 flex-1">
-          <div className="font-display text-sm font-extrabold">Laboratório de layout</div>
-          <div className="text-[11px] text-fg-muted">Só no seu navegador. Vale só em servidor com tela montada na Oficina.</div>
-        </div>
-        <button type="button" onClick={() => lab.reset()} title="Desligar tudo" className="rounded-full p-1.5 text-fg-muted hover:bg-surface-3 hover:text-fg">
-          <RotateCcw size={16} />
-        </button>
-        <button type="button" onClick={() => lab.setOpen(false)} aria-label="Fechar" className="rounded-full p-1.5 text-fg-muted hover:bg-surface-3 hover:text-fg">
-          <X size={16} />
-        </button>
+    <div className="mb-3 rounded-3xl bg-surface-2 p-3 ring-1 ring-line">
+      <div className="mb-2 flex items-center gap-2">
+        <FlaskConical size={15} className="text-accent" />
+        <span className="text-xs font-extrabold tracking-wide uppercase">Laboratório de layout</span>
+        <span className="rounded-full bg-warn/20 px-2 py-0.5 text-[10px] font-bold">em teste · só no seu navegador</span>
       </div>
 
-      <div className="space-y-3 overflow-y-auto p-4 text-sm">
-        <Section n="2·3" title="Como a tela é montada">
-          <div className="space-y-1.5">
-            {MODES.map((m) => (
-              <Choice key={m.id} active={lab.mode === m.id} onClick={() => lab.set({ mode: m.id })} title={m.label} hint={m.hint} />
-            ))}
-          </div>
-          {lab.mode === 'moldes' && (
-            <div className="mt-2 grid grid-cols-2 gap-1.5">
-              {TEMPLATES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  title={t.hint}
-                  onClick={() => lab.set({ template: t.id })}
-                  className={cx('rounded-xl px-2.5 py-2 text-left text-xs font-bold ring-1', lab.template === t.id ? 'bg-accent/12 ring-accent' : 'ring-line hover:bg-surface-3')}
-                >
-                  {t.label}
-                </button>
-              ))}
-              <p className="col-span-2 text-[11px] text-fg-subtle">{TEMPLATES.find((t) => t.id === lab.template)?.hint} Arraste as divisórias entre as colunas; duplo clique volta ao padrão.</p>
-            </div>
-          )}
-        </Section>
-
-        <Section n="1" title="Blocos que se adaptam">
-          <Switch
-            checked={lab.adaptive}
-            onChange={(adaptive) => lab.set({ adaptive })}
-            label="Ligado"
-            hint="Cada bloco muda pelo próprio tamanho: voz baixa vira linha compacta, perfil estreito esconde ajuda/configurações, papo da sala só aparece com espaço, botões da sala quebram em duas linhas."
-          />
-        </Section>
-
-        <Section n="4" title="Arrumação de voz">
-          <Switch
-            checked={lab.voiceLayout}
-            onChange={(voiceLayout) => lab.set({ voiceLayout })}
-            label="Mudar a tela ao abrir uma sala"
-            hint="Ao abrir uma sala de voz, a tela vira o molde Palco: a sala cresce e os widgets saem. Ao sair, volta."
-          />
-          <div className="mt-2 text-[11px] font-bold text-fg-subtle">Arranjo da sala (só para você)</div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {ROOMS.map((r) => (
-              <Pill key={r.id} active={lab.room === r.id} onClick={() => lab.set({ room: r.id })}>
-                {r.label}
-              </Pill>
-            ))}
-          </div>
-        </Section>
-
-        <Section n="5" title="Animação entre telas">
-          <Switch
-            checked={lab.animate}
-            onChange={(animate) => lab.set({ animate })}
-            label="Ligada"
-            hint="Os blocos deslizam de uma arrumação para outra: servidor ↔ conversas privadas, texto ↔ voz, troca de molde. Com 'reduzir movimento' do sistema vira fade."
-          />
-        </Section>
-
-        <Section n="6" title="Ferramentas de quem monta">
-          <Switch
-            checked={lab.showLimits}
-            onChange={(showLimits) => lab.set({ showLimits })}
-            label="Mostrar os limites"
-            hint="Contorna cada bloco com o tamanho atual e o mínimo da situação (em call o bloco de voz precisa de mais). Verde cabe, vermelho não."
-          />
-          <div className="mt-2 text-[11px] font-bold text-fg-subtle">Simular janela</div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {SIMS.map((s) => (
-              <Pill key={String(s.v)} active={lab.simulate === s.v} onClick={() => lab.set({ simulate: s.v })}>
-                {s.label}
-              </Pill>
-            ))}
-          </div>
-        </Section>
+      {/* caminhos 2 e 3: como a tela é montada */}
+      <div className="flex gap-1 rounded-full bg-surface-0 p-1" role="radiogroup" aria-label="Modo de montagem">
+        {MODES.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            role="radio"
+            aria-checked={lab.mode === m.id}
+            onClick={() => lab.set({ mode: m.id })}
+            className={cx('relative flex-1 rounded-full py-1.5 text-xs font-bold', lab.mode === m.id ? 'text-on-accent' : 'text-fg-muted hover:text-fg')}
+          >
+            {lab.mode === m.id && <motion.span layoutId="lab-mode" className="absolute inset-0 rounded-full bg-accent" transition={springs.snappy} />}
+            <span className="relative">{m.label}</span>
+          </button>
+        ))}
       </div>
-    </aside>
+      <p className="mt-1.5 text-[11px] text-fg-muted">{mode.hint}</p>
+
+      {/* caminho 6: a situação da prévia */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[11px] font-bold text-fg-subtle">Prévia:</span>
+        {PREVIEW_WINDOWS.map((w) => (
+          <Chip key={w.id} active={preview.win.id === w.id} onClick={() => onPreview({ win: w })}>
+            {w.w} px
+          </Chip>
+        ))}
+        <span className="mx-1 h-4 w-px bg-line" />
+        <Chip active={preview.inCall} onClick={() => onPreview({ inCall: !preview.inCall })}>
+          Em call
+        </Chip>
+        <Chip active={preview.voiceRoom} onClick={() => onPreview({ voiceRoom: !preview.voiceRoom })}>
+          Sala de voz aberta
+        </Chip>
+        <span className="mx-1 h-4 w-px bg-line" />
+        <Chip active={preview.dm} onClick={() => onPreview({ dm: !preview.dm })}>
+          <MessageCircle size={12} />
+          {preview.dm ? 'Fechar a transição' : 'Ver a transição para as conversas'}
+        </Chip>
+      </div>
+
+      {problems.length > 0 && (
+        <ul className="mt-2 space-y-0.5 rounded-2xl bg-danger/10 px-3 py-2 text-[11px]">
+          {problems.map((p) => (
+            <li key={p} className="flex gap-1.5">
+              <span className="font-bold text-danger">•</span>
+              {p}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* caminhos 1, 4 e 5 */}
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <Switch
+          checked={lab.adaptive}
+          onChange={(adaptive) => lab.set({ adaptive })}
+          label="Blocos que se adaptam"
+          hint="Apertado, o bloco se rearruma em vez de cortar: 'Na sala' vira uma linha, os botões da sala quebram em duas linhas."
+        />
+        <Switch
+          checked={lab.voiceLayout}
+          onChange={(voiceLayout) => lab.set({ voiceLayout })}
+          label="Mudar a tela na sala de voz"
+          hint="Ao abrir uma sala, a tela vira o molde Palco (a sala cresce, widgets saem). Veja com 'Sala de voz aberta'."
+        />
+        <Switch
+          checked={lab.animate}
+          onChange={(animate) => lab.set({ animate })}
+          label="Animação entre telas"
+          hint="Os blocos deslizam em vez de trocar seco. Veja com 'Abrir as conversas'."
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[11px] font-bold text-fg-subtle">Arranjo da sala de voz (só para você):</span>
+        {ROOMS.map((r) => (
+          <Chip key={r.id} active={lab.room === r.id} onClick={() => lab.set({ room: r.id })}>
+            {r.label}
+          </Chip>
+        ))}
+      </div>
+    </div>
   );
 }
 
-function Section({ n, title, children }: { n: string; title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-2xl bg-surface-2 p-3 ring-1 ring-line">
-      <h3 className="mb-2 flex items-center gap-2 text-xs font-extrabold tracking-wide uppercase">
-        <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">{n}</span>
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-function Choice({ active, onClick, title, hint }: { active: boolean; onClick: () => void; title: string; hint: string }) {
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
-      role="radio"
-      aria-checked={active}
+      aria-pressed={active}
       onClick={onClick}
-      className={cx('flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left ring-1', active ? 'bg-accent/10 ring-accent' : 'ring-line hover:bg-surface-3')}
+      className={cx('flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold', active ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
     >
-      <span className={cx('mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2', active ? 'border-[4px] border-accent' : 'border-line-strong')} />
-      <span>
-        <span className="block text-[13px] font-bold">{title}</span>
-        <span className="block text-[11px] text-fg-muted">{hint}</span>
-      </span>
+      {children}
     </button>
   );
 }
 
 function Switch({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string }) {
   return (
-    <label className="flex items-start gap-3">
+    <label className="flex items-start gap-2 rounded-2xl bg-surface-0 p-2.5">
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-semibold">{label}</span>
-        <span className="block text-[11px] text-fg-muted">{hint}</span>
+        <span className="block text-xs font-bold">{label}</span>
+        <span className="block text-[10.5px] leading-snug text-fg-muted">{hint}</span>
       </span>
       <Toggle checked={checked} onChange={onChange} />
     </label>
   );
 }
 
-function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+// ---------------------------------------------------------------- caminho 5: demonstração da transição
+
+type Box = { left: number; top: number; width: number; height: number };
+const pct = (x: number, total: number) => (x / total) * 100;
+
+/** As caixas da tela do servidor (em %), a partir da grade ou do molde. */
+function serverBoxes(items: ScreenItem[], mode: LabMode, template: LabTemplate): Record<string, Box> {
+  const out: Record<string, Box> = {};
+  if (mode === 'moldes') {
+    const t = templateInfo(template);
+    const total = 1000;
+    const nav = t.nav.def * 0.75;
+    const side = t.side === 'none' ? 0 : t.sideW.def * 0.75;
+    out.channels = { left: 0, top: 0, width: pct(nav, total), height: 84 };
+    out.voicebar = { left: 0, top: 86, width: pct(nav, total), height: 14 };
+    out.main = { left: pct(nav + 16, total), top: t.topStrip ? 18 : 0, width: pct(total - nav - 16 - (side ? side + 16 : 0), total), height: t.topStrip ? 82 : 100 };
+    if (t.topStrip) out.widgets = { left: out.main.left, top: 0, width: out.main.width, height: 16 };
+    if (side) out.members = { left: pct(total - side, total), top: 0, width: pct(side, total), height: 100 };
+    return out;
+  }
+  for (const it of items) {
+    const key = isBlock(it) ? it.block : `w-${it.id}`;
+    out[key] = { left: pct(it.x, 12), top: pct(it.y, 12), width: pct(it.w, 12) - 1, height: pct(it.h, 12) - 1.5 };
+  }
+  return out;
+}
+
+/** As caixas do layout das conversas privadas (o layout padrão do Concord). */
+const DM_BOXES: Record<string, Box> = {
+  channels: { left: 0, top: 0, width: 22, height: 85 },
+  voicebar: { left: 0, top: 87, width: 22, height: 13 },
+  main: { left: 23.5, top: 0, width: 76.5, height: 100 },
+};
+
+const LABEL: Record<string, string> = { channels: 'Canais', voicebar: 'Voz e perfil', main: 'Conversa', members: 'Membros', widgets: 'Widgets' };
+
+/** Mostra a tela do servidor indo para as conversas privadas (e voltando), com ou sem a animação. */
+export function TransitionDemo({ items }: { items: ScreenItem[] }) {
+  const lab = useLab();
+  // começa na tela do servidor e vai sozinha para as conversas; o botão vai e volta
+  const [dm, setDm] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setDm(true), 500);
+    return () => clearTimeout(t);
+  }, []);
+  const from = serverBoxes(items, lab.mode, lab.template);
+  const keys = Object.keys(from);
+  const transition = lab.animate ? { type: 'spring' as const, stiffness: 260, damping: 30 } : { duration: 0 };
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx('rounded-full px-3 py-1 text-xs font-bold', active ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg')}
-    >
-      {children}
-    </button>
+    <div className="relative aspect-[16/9] w-full rounded-2xl bg-surface-0">
+      {keys.map((k) => {
+        const inDm = DM_BOXES[k];
+        const box = dm ? (inDm ?? from[k]) : from[k];
+        const visible = !dm || !!inDm;
+        const label = dm && k === 'channels' ? 'Conversas privadas' : dm && k === 'main' ? 'Amigos / conversa' : (LABEL[k] ?? 'Widget');
+        return (
+          <motion.div
+            key={k}
+            className={cx('absolute flex items-center justify-center overflow-hidden rounded-xl text-[11px] font-bold ring-1 ring-line', k === 'main' ? 'bg-accent/15' : k.startsWith('w-') || k === 'widgets' ? 'bg-accent/35' : 'bg-surface-3')}
+            initial={false}
+            animate={{ left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%`, opacity: visible ? 1 : 0, scale: visible ? 1 : 0.9 }}
+            transition={transition}
+          >
+            {label}
+          </motion.div>
+        );
+      })}
+      <div className="absolute right-2 bottom-2 flex items-center gap-2">
+        <span className="rounded-full bg-surface-2/90 px-2 py-0.5 text-[10px] font-bold text-fg-muted">{lab.animate ? 'com animação' : 'sem animação (troca seca)'}</span>
+        <button type="button" onClick={() => setDm(!dm)} className="flex items-center gap-1 rounded-full bg-accent px-3 py-1 text-[11px] font-bold text-on-accent">
+          <MessageCircle size={12} />
+          {dm ? 'Voltar ao servidor' : 'Abrir as conversas'}
+        </button>
+      </div>
+    </div>
   );
 }
 
+// ---------------------------------------------------------------- arranjo da sala (caminho 4), na tela real
+
 /**
- * Arranjo da sala escolhido no laboratório: "grade" tira o foco (todos em grade); "palco" põe em foco a primeira
- * transmissão (o CSS esconde o papo ao lado). Só reage quando o arranjo muda ou alguém começa a transmitir.
+ * "grade" tira o foco (todos em grade); "palco" põe em foco a primeira transmissão (o CSS esconde o papo ao lado).
+ * Roda no app inteiro (não só no editor): é a preferência de quem vê.
  */
-function useRoomArrangement() {
+export function useRoomArrangement() {
   const room = useLab((s) => s.room);
   const voiceRoom = useVoice((s) => s.room);
   useVoice((s) => s.tick);
