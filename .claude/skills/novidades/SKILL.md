@@ -43,6 +43,12 @@ Na dúvida, escreva a nota: uma linha em "Também chegou" custa pouco.
 
 Exemplos completos: `client/src/releases/2026-10-21.tsx` e `2026-10-23.tsx`.
 
+## Recurso que só parte das pessoas tem
+
+Se o recurso ainda está liberado só para alguns (ex.: a Praça, só no servidor Founders), ponha `audience` na nota
+para ela não aparecer para quem não tem o recurso. Hoje existe `audience: 'plaza'` (quem está num servidor com a
+Praça); para outro caso, acrescente a regra em `client/src/releases/index.ts#releaseVisible`.
+
 ## Como escrever
 
 - Português do Brasil, falando com a pessoa ("você"), tom de conversa. Nada de termo técnico: "a tela vai

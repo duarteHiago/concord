@@ -1331,7 +1331,8 @@ api.get('/servers', (_req, res) => {
     'SELECT s.* FROM servers s JOIN members m ON m.server_id = s.id WHERE m.user_id = ? ORDER BY m.joined_at',
     uid(res),
   );
-  res.json(rows.map(serverJson));
+  // plaza: o servidor tem a Praça (o app mostra as notas de Novidades da Praça só para quem está num desses)
+  res.json(rows.map((r) => ({ ...serverJson(r), ...(plazaEnabled(r.id) ? { plaza: true } : {}) })));
 });
 
 const MAX_OWNED_SERVERS = 5;

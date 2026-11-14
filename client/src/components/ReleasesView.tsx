@@ -1,6 +1,6 @@
 import { ArrowRight, Newspaper, Play, Plus, Target, Wrench, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { RELEASE_DAYS, markReleasesSeen, releaseDate, unseenReleases, type Highlight, type Release } from '../releases';
+import { RELEASE_DAYS, markReleasesSeen, releaseDate, releaseVisible, unseenReleases, type Highlight, type Release } from '../releases';
 import { useApp } from '../store/app';
 import { RecapList } from './modals/WhatsNewModal';
 import { showSpotlight } from './Spotlight';
@@ -11,6 +11,9 @@ import { Button, IconButton } from './ui';
 export function ReleasesView() {
   const closeReleases = useApp((s) => s.closeReleases);
   // guarda o "já vi" de quando a página abriu, para marcar as edições novas mesmo depois de salvar como vistas
+  // notas só para parte das pessoas (as da Praça, por enquanto) somem para quem não é do público delas
+  useApp((st) => st.servers);
+  const days = RELEASE_DAYS.map((d) => ({ ...d, releases: d.releases.filter(releaseVisible) })).filter((d) => d.releases.length > 0);
   const [fresh] = useState(() => new Set(unseenReleases(useApp.getState().me?.settings.lastSeenRelease).map((r) => r.id)));
 
   useEffect(() => markReleasesSeen(), []);
@@ -32,8 +35,8 @@ export function ReleasesView() {
       </header>
       <div className="flex-1 overflow-y-auto">
         <ol className="mx-auto max-w-3xl px-4 py-5 md:px-8 md:py-8">
-          {RELEASE_DAYS.map((d, i) => (
-            <Edition key={d.day} day={d.day} releases={d.releases} fresh={d.releases.some((r) => fresh.has(r.id))} last={i === RELEASE_DAYS.length - 1} />
+          {days.map((d, i) => (
+            <Edition key={d.day} day={d.day} releases={d.releases} fresh={d.releases.some((r) => fresh.has(r.id))} last={i === days.length - 1} />
           ))}
         </ol>
       </div>

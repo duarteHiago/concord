@@ -32,6 +32,7 @@ import { DOCK_ITEMS, type DockItem } from '../../../shared/workshop.ts';
 import { P, has } from '../../../shared/permissions.ts';
 import { memberName, type Channel, type ServerDetail } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
+import { PlazaButton } from './plaza/PlazaButton';
 import { armPopoverToggle, toggleOrOpenPopover, usePopover } from '../store/popover';
 import { useVoice } from '../store/voice';
 import { Composer, MessageFeed } from './ChatView';
@@ -909,6 +910,9 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
 function ControlDock({ channel, order }: { channel: Channel; order?: readonly DockItem[] }) {
   const { micOn, deafened, cameraOn, sharing, serverMuted, toggleMic, toggleDeafen, toggleCamera, stopShare, leave } = useVoice();
   const openModal = useApp((s) => s.openModal);
+  // globo da Praça na linha dos botões da call (no espaço vazio da direita), se o servidor tem Praça
+  const detail = useActiveDetail();
+  const plaza = detail?.plaza ? { serverId: detail.server.id, count: detail.plaza.count } : null;
 
   const round = (label: string, onClick: () => void, icon: ReactNode, tone: 'default' | 'off' | 'danger' = 'default') => (
     <button
@@ -955,12 +959,15 @@ function ControlDock({ channel, order }: { channel: Channel; order?: readonly Do
   };
 
   return (
-    <div className="control-dock flex shrink-0 justify-center">
+    <div className="control-dock flex shrink-0 items-center">
+      {/* espaçadores dos dois lados: os botões ficam no meio e o globo da Praça no canto direito, sem cobrir nada */}
+      <div className="min-w-0 flex-1" />
       <div className="dock-row flex items-center gap-2.5 rounded-full bg-surface-2 p-2.5">
         {(order ?? DOCK_ITEMS).map((id) => (
           <Fragment key={id}>{items[id]}</Fragment>
         ))}
       </div>
+      <div className="flex min-w-0 flex-1 justify-end pl-3">{plaza && <PlazaButton serverId={plaza.serverId} initialCount={plaza.count} />}</div>
     </div>
   );
 }

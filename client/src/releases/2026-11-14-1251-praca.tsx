@@ -27,6 +27,7 @@ function PracaArt() {
 
 export default {
   id: '2026-11-14-1251',
+  audience: 'plaza',
   title: 'A Praça do servidor',
   highlights: [
     {
