@@ -7,6 +7,7 @@
 // 2 · Encaixes: lugares fixos (SlotLayout do dono): conversa no centro, canais/membros/voz nos lugares deles.
 // 3 · Livre + tela de call: a grade do 1 e, com uma sala de voz aberta, a tela da sala (RoomLayout do dono),
 //     com a mesma animação de layout da troca para as conversas privadas.
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -16,6 +17,8 @@ import {
   defaultScreen,
   defaultSlots,
   isBlock,
+  ROOM_LIMITS,
+  SLOT_LIMITS,
   type RoomLayout,
   type RoomSide,
   type ScreenItem,
@@ -84,9 +87,11 @@ export function useVoiceRoomOpen() {
 
 export function ServerScreen({ plan, main, theme }: { plan: ScreenPlan; main: ReactNode; theme: ThemeScope | null }) {
   const voiceRoom = useVoiceRoomOpen();
+  // estar na call (numa sala deste servidor) também vale: a tela da sala fica enquanto a pessoa está na call
+  const inCallHere = useVoice((s) => s.status !== 'idle' && s.serverId === useApp.getState().activeServerId);
   const widgets = plan.items.filter((i): i is WidgetPlacement => !isBlock(i));
   if (plan.mode === 'encaixes') return <SlotScreen slots={plan.config.slots ?? defaultSlots()} widgets={widgets} main={main} theme={theme} />;
-  if (plan.mode === 'call' && voiceRoom) return <RoomScreen room={plan.config.room ?? defaultRoom()} theme={theme} />;
+  if (plan.mode === 'call' && (voiceRoom || inCallHere)) return <RoomScreen room={plan.config.room ?? defaultRoom()} main={main} theme={theme} />;
   return <GridScreen items={plan.items} main={main} theme={theme} animate={plan.mode === 'call'} />;
 }
 
@@ -127,20 +132,25 @@ function GridScreen({ items, main, theme, animate }: { items: ScreenItem[]; main
 
 function SlotScreen({ slots, widgets, main, theme }: { slots: SlotLayout; widgets: WidgetPlacement[]; main: ReactNode; theme: ThemeScope | null }) {
   const inZone = (z: 'top' | 'left' | 'right') => widgets.filter((w) => slots.widgets[w.id] === z);
+  const sizes = slots.sizes ?? {};
   const column = (side: 'left' | 'right') => {
     const channels = slots.channels === side;
     const members = slots.members === side;
     const ws = inZone(side);
     if (!channels && !members && !ws.length) return null;
+    // tamanhos do dono, com os mesmos mínimos do modo 1 (coluna 240, canais 240 de altura, membros 200)
+    const width = sizes[side] ?? SLOT_LIMITS.colDefault;
+    const split = (side === 'left' ? sizes.leftSplit : sizes.rightSplit) ?? 60;
     return (
-      <div className="flex w-[280px] shrink-0 flex-col gap-4">
+      // canais 240 e membros 200 de altura no mínimo: se a janela for baixa, a coluna rola (como o modo 1)
+      <div className="flex shrink-0 flex-col gap-4 overflow-y-auto" style={{ width }}>
         {channels && (
-          <Slot id="channels" block="channels" className="min-h-[240px] flex-[3]">
+          <Slot id="channels" block="channels" className="min-h-[240px]" style={{ flex: members ? split : 1 }}>
             <CoreBlockBody block="channels" main={null} />
           </Slot>
         )}
         {members && (
-          <Slot id="members" block="members" className="min-h-[200px] flex-[2]">
+          <Slot id="members" block="members" className="min-h-[200px]" style={{ flex: channels ? 100 - split : 1 }}>
             <CoreBlockBody block="members" main={null} />
           </Slot>
         )}
@@ -162,7 +172,7 @@ function SlotScreen({ slots, widgets, main, theme }: { slots: SlotLayout; widget
     <ScreenRoot theme={theme}>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-auto">
         {top.length > 0 && (
-          <div className="flex h-[132px] shrink-0 gap-4 overflow-x-auto">
+          <div className="flex shrink-0 gap-4 overflow-x-auto" style={{ height: sizes.top ?? SLOT_LIMITS.topDefault }}>
             {top.map((w) => (
               <div key={w.id} className="flex h-full w-[260px] shrink-0">
                 <ScreenWidget w={w} />
@@ -172,7 +182,7 @@ function SlotScreen({ slots, widgets, main, theme }: { slots: SlotLayout; widget
         )}
         <div className="flex min-h-0 flex-1 gap-4">
           {column('left')}
-          <Slot id="main" block="main" className="min-w-[480px] flex-1">
+          <Slot id="main" block="main" className="min-w-[380px] flex-1">
             <CoreBlockBody block="main" main={main} />
           </Slot>
           {column('right')}
@@ -189,18 +199,40 @@ function SlotScreen({ slots, widgets, main, theme }: { slots: SlotLayout; widget
 
 // ---------------------------------------------------------------- modo 3: a tela da sala
 
-function RoomScreen({ room, theme }: { room: RoomLayout; theme: ThemeScope | null }) {
+function RoomScreen({ room, main, theme }: { room: RoomLayout; main: ReactNode; theme: ThemeScope | null }) {
   const serverId = useApp((s) => s.activeServerId)!;
-  const channel = useApp((s) => {
+  const viewed = useApp((s) => {
     const cid = s.activeChannels[serverId];
     return s.details[serverId]?.channels.find((c) => c.id === cid);
   });
-  if (!channel) return null;
-  const side = (what: RoomSide, where: 'left' | 'right') => {
-    if (what === 'none') return null;
+  // a sala da call (para o palco e o papo): a que está aberta, ou aquela em que a pessoa está conectada
+  const callChannelId = useVoice((s) => (s.serverId === serverId ? s.channelId : null));
+  const callChannel = useApp((s) => s.details[serverId]?.channels.find((c) => c.id === callChannelId));
+  const voiceChannel = viewed?.type === 'voice' ? viewed : callChannel;
+  // cada pessoa pode recolher as laterais (só no navegador dela)
+  const [collapsed, setCollapsed] = useState<{ left?: boolean; right?: boolean }>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('concord.roomCollapsed') ?? '{}');
+    } catch {
+      return {};
+    }
+  });
+  const toggle = (where: 'left' | 'right') => {
+    const next = { ...collapsed, [where]: !collapsed[where] };
+    setCollapsed(next);
+    try {
+      localStorage.setItem('concord.roomCollapsed', JSON.stringify(next));
+    } catch {
+      // ignorado
+    }
+  };
+  if (!voiceChannel) return null;
+  const width = (where: 'left' | 'right') => room.sizes?.[where] ?? ROOM_LIMITS.sideDefault;
+
+  const sideContent = (what: RoomSide, where: 'left' | 'right') => {
     if (what === 'nav')
       return (
-        <div key={`${where}-nav`} className="flex w-[280px] shrink-0 flex-col gap-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
           <Slot id="channels" block="channels" animate className="min-h-0 flex-1">
             <CoreBlockBody block="channels" main={null} />
           </Slot>
@@ -211,32 +243,70 @@ function RoomScreen({ room, theme }: { room: RoomLayout; theme: ThemeScope | nul
       );
     if (what === 'members')
       return (
-        <Slot key={`${where}-members`} id="members" block="members" animate className="w-[280px] shrink-0">
+        <Slot id="members" block="members" animate className="min-h-0 flex-1">
           <CoreBlockBody block="members" main={null} />
         </Slot>
       );
     return (
-      <Slot key={`${where}-chat`} id="room-chat" block={null} animate className="w-[320px] shrink-0">
+      <Slot id={`room-chat-${where}`} block={null} animate className="min-h-0 flex-1">
         <aside aria-label="Papo da sala" className="panel flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="px-4 pt-4 pb-1 text-xs font-extrabold tracking-wider text-fg-subtle uppercase">Papo da sala</div>
-          <MessageFeed channel={channel} compact />
-          <Composer channel={channel} compact />
+          <MessageFeed channel={voiceChannel} compact />
+          <Composer channel={voiceChannel} compact />
         </aside>
       </Slot>
     );
   };
+
+  const side = (what: RoomSide, where: 'left' | 'right') => {
+    if (what === 'none') return null;
+    const closed = !!collapsed[where];
+    return (
+      <motion.div key={`${where}-${what}`} layout transition={LAB_SPRING} className="relative flex shrink-0 flex-col" style={{ width: closed ? 52 : width(where) }}>
+        {closed ? (
+          <button
+            type="button"
+            onClick={() => toggle(where)}
+            title={`Abrir ${ROOM_SIDE_LABEL[what]}`}
+            className="panel flex flex-1 flex-col items-center gap-2 pt-4 text-fg-muted hover:text-fg"
+          >
+            {where === 'left' ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            <span className="text-[11px] font-bold [writing-mode:vertical-rl]">{ROOM_SIDE_LABEL[what]}</span>
+          </button>
+        ) : (
+          <>
+            {sideContent(what, where)}
+            <button
+              type="button"
+              onClick={() => toggle(where)}
+              title={`Recolher ${ROOM_SIDE_LABEL[what]}`}
+              aria-label={`Recolher ${ROOM_SIDE_LABEL[what]}`}
+              // na borda virada para o palco, no meio da altura: não cobre o cabeçalho do painel
+              className={cx('absolute top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-surface-3 text-fg-muted shadow ring-1 ring-line hover:text-fg', where === 'left' ? '-right-3.5' : '-left-3.5')}
+            >
+              {where === 'left' ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+            </button>
+          </>
+        )}
+      </motion.div>
+    );
+  };
+
   return (
     <ScreenRoot theme={theme}>
       <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto">
         {side(room.left, 'left')}
         <Slot id="main" block="main" animate className="min-w-[480px] flex-1">
-          <VoiceView channel={channel} dock={room.dock} />
+          {/* na call: o palco da sala; abriu um canal de texto durante a call, a conversa vai para o centro */}
+          {viewed?.type === 'voice' ? <VoiceView channel={viewed} dock={room.dock} /> : main}
         </Slot>
         {side(room.right, 'right')}
       </div>
     </ScreenRoot>
   );
 }
+
+const ROOM_SIDE_LABEL: Record<RoomSide, string> = { nav: 'servidores e salas', chat: 'papo da sala', members: 'membros', none: '' };
 
 // ---------------------------------------------------------------- peças comuns
 

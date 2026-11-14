@@ -145,6 +145,17 @@ describe('modos da tela (laboratório de layout)', () => {
     assert.equal(parseWorkshop({ ...emptyWorkshop(), room: { left: 'nav', right: 'chat', dock: ['mic', 'mic', 'deafen', 'leave'] } }, NOW).ok, false);
     assert.equal(parseWorkshop({ ...emptyWorkshop(), slots: { ...defaultSlots(), widgets: { w1: 'center' } } }, NOW).ok, false);
   });
+
+  it('tela da sala: largura das laterais com limite', () => {
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), room: { ...defaultRoom(), sizes: { left: 300, right: 240 } } }, NOW).ok, true);
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), room: { ...defaultRoom(), sizes: { left: 200 } } }, NOW).ok, false);
+  });
+
+  it('encaixes: tamanhos dentro dos limites do modo 1', () => {
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), slots: { ...defaultSlots(), sizes: { left: 300, right: 240, top: 120, leftSplit: 60 } } }, NOW).ok, true);
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), slots: { ...defaultSlots(), sizes: { left: 180 } } }, NOW).ok, false);
+    assert.equal(parseWorkshop({ ...emptyWorkshop(), slots: { ...defaultSlots(), sizes: { leftSplit: 90 } } }, NOW).ok, false);
+  });
 });
 
 describe('rotas da Oficina', () => {

@@ -370,7 +370,11 @@ export function Studio({ serverId }: { serverId: string }) {
       useWorkshop.getState().setConfig(serverId, r.published);
       setLoaded((l) => (l ? { ...l, published: r.published, publishedAt: Date.now() } : l));
       setSaving('saved');
-      toast.success('Publicado! A galera do servidor já vê a Oficina nova.');
+      toast.success(
+        useLab.getState().mode === 'call'
+          ? 'Publicado! A tela da sala aparece quando você entra numa sala de voz.'
+          : 'Publicado! A galera do servidor já vê a Oficina nova.',
+      );
     } catch (err) {
       toast.error(err);
     } finally {
