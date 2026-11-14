@@ -107,6 +107,8 @@ export default function PlazaView() {
   const labelRefs = useRef(new Map<string, HTMLDivElement>());
   const tableRefs = useRef(new Map<number, HTMLDivElement>());
   const signRef = useRef<HTMLDivElement>(null);
+  // o meu boneco cai do céu no portal quando a praça se abre
+  const openedAt = useRef(performance.now());
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
 
@@ -290,6 +292,13 @@ export default function PlazaView() {
             pose = beat ? 'up' : 'stand';
             bob = beat ? -2 : 0;
           } else if (em.emote === 'clap') pose = beat ? 'clap' : 'stand';
+        }
+        if (userId === meId && !reduceMotion()) {
+          const tt = now - openedAt.current;
+          const land = REVEAL_FROM + 120;
+          if (tt < land) bob = -400;
+          else if (tt < land + 380) bob = -170 * (1 - ((tt - land) / 380) ** 2);
+          else if (tt < land + 600) bob = -7 * Math.sin((Math.PI * (tt - land - 380)) / 220);
         }
         figs.push({ userId, avatar: wk.avatar, x: a.x + 0.5, y: a.y + 0.5, facing: a.facing, pose, seated: false, bob, fx: p.x, fy: p.y });
       }
@@ -894,47 +903,90 @@ function PersonCard({ userId, member, isMe, onEdit, onClose, serverId }: { userI
   );
 }
 
-/** Chegada (o globo cresce e os azulejos viram) e saída (os azulejos voltam). */
+const ARRIVE_MS = 1750;
+const REVEAL_FROM = 1050;
+const LEAVE_MS = 560;
+const BLOCK = 28;
+
+/**
+ * Chegada: céu estrelado, o globo surge girando, um pino cai no servidor e a câmera mergulha; a tela se desfaz
+ * em blocos de pixel (do meio para as bordas) revelando a praça. Saída: os blocos voltam e cobrem a tela.
+ */
 function Arrival({ leaving }: { leaving: boolean }) {
   const phase = usePlaza((s) => s.phase);
   const arrived = usePlaza((s) => s.arrived);
   const fast = reduceMotion();
+  const ref = useRef<HTMLCanvasElement>(null);
+  const active = phase === 'arriving' || leaving;
+
   useEffect(() => {
     if (phase !== 'arriving') return;
-    const t = setTimeout(arrived, fast ? 150 : 1500);
+    const t = setTimeout(arrived, fast ? 150 : ARRIVE_MS);
     return () => clearTimeout(t);
   }, [phase, arrived, fast]);
-  if (phase !== 'arriving' && !leaving) return null;
-  const cols = 10;
-  const rows = 7;
-  const cells = Array.from({ length: cols * rows }, (_, i) => {
-    const cx = (i % cols) - (cols - 1) / 2;
-    const cy = Math.floor(i / cols) - (rows - 1) / 2;
-    return { i, dist: Math.hypot(cx, cy * 1.3) };
-  });
+
+  useEffect(() => {
+    if (!active) return;
+    const canvas = ref.current!;
+    const ctx = canvas.getContext('2d')!;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = Math.ceil(w / BLOCK);
+    canvas.height = Math.ceil(h / BLOCK);
+    const cols = canvas.width;
+    const rows = canvas.height;
+    // ordem dos blocos: do centro para fora, com um pouco de sorte no meio
+    const order = new Float32Array(cols * rows);
+    const maxD = Math.hypot(cols / 2, rows / 2);
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const d = Math.hypot(x + 0.5 - cols / 2, (y + 0.5 - rows / 2) * 1.2) / maxD;
+        order[y * cols + x] = Math.min(1, d * 0.75 + Math.random() * 0.3);
+      }
+    }
+    const start = performance.now();
+    let raf = 0;
+    const draw = (now: number) => {
+      const t = now - start;
+      // quanto da tela ainda está coberta pelos blocos (0..1 de "aberto")
+      let open: number;
+      if (leaving) open = fast ? 0 : 1 - Math.min(1, t / LEAVE_MS);
+      else open = fast ? Math.min(1, t / 150) : Math.max(0, Math.min(1, (t - REVEAL_FROM) / (ARRIVE_MS - REVEAL_FROM - 60)));
+      ctx.clearRect(0, 0, cols, rows);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const o = order[y * cols + x];
+          if (o < open) continue;
+          // bloco quase saindo fica um tom mais claro: a "borda" da onda de pixels
+          ctx.fillStyle = o - open < 0.05 ? '#3d3166' : PAL.night;
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+      if ((leaving && t < LEAVE_MS + 50) || (!leaving && open < 1)) raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [active, leaving, fast]);
+
+  if (!active) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-[80]">
-      <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)` }}>
-        {cells.map(({ i, dist }) => (
-          <div
-            key={i}
-            className={cx('plaza-tile', leaving ? 'plaza-tile-in' : 'plaza-tile-out')}
-            style={{
-              animationDelay: fast ? '0ms' : leaving ? `${Math.round(240 - dist * 40)}ms` : `${Math.round(780 + dist * 70)}ms`,
-              background: (i + Math.floor(i / cols)) % 2 ? '#2f62e6' : '#3b6ef0',
-              backgroundImage:
-                'radial-gradient(circle at 50% 50%, #e9ecff 0 7%, transparent 8%), linear-gradient(45deg, transparent 46%, rgba(233,236,255,0.55) 47% 53%, transparent 54%), linear-gradient(-45deg, transparent 46%, rgba(233,236,255,0.55) 47% 53%, transparent 54%)',
-              boxShadow: 'inset 0 0 0 2px rgba(27,20,48,0.35)',
-            }}
-          />
-        ))}
-      </div>
+    <div className="pointer-events-none absolute inset-0 z-[80] overflow-hidden">
+      <canvas ref={ref} className="plaza-canvas absolute inset-0 h-full w-full" />
       {!leaving && !fast && (
-        <div className="absolute inset-0 grid place-items-center">
-          <div className="plaza-arrive-globe">
-            <Globe size={160} />
+        <>
+          <div className="plaza-intro-stars absolute inset-0" />
+          <div className="absolute inset-0 grid place-items-center">
+            <div className="plaza-intro-globe relative">
+              <Globe size={150} />
+              <div className="plaza-intro-ping absolute top-[30%] left-1/2 h-10 w-10 rounded-full border-4 border-[#ffe6a0]" />
+              <svg className="plaza-intro-pin absolute top-[30%] left-1/2" width="24" height="30" viewBox="0 0 8 10" shapeRendering="crispEdges" style={{ marginLeft: -12, marginTop: -30 }} aria-hidden="true">
+                <path d="M2 0h4v1h1v1h1v3h-1v1h-1v1h-1v1h-1v2h-0v-2h-1v-1h-1v-1h-1v-1h-1v-3h1v-1h1z" fill="#1b1430" />
+                <path d="M2 1h4v1h1v3h-1v1h-1v1h-2v-1h-1v-1h-1v-3h1z" fill="#e8685a" />
+                <path d="M3 2h2v2h-2z" fill="#ffe6a0" />
+              </svg>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
