@@ -76,7 +76,7 @@ function slow(kind: 'http' | 'socket' | 'db', name: string, seconds: number) {
   const ms = seconds * 1000;
   if (ms < config.slowMs) return;
   slowOps.inc({ kind });
-  console.warn(`[lento] ${kind} ${ms.toFixed(0)} ms: ${name.replace(/\n|\r/g, ' ').slice(0, 200)}`);
+  console.warn(`[lento] ${kind} ${ms.toFixed(0)} ms: ${name.replace(/\n|\r/g, '').slice(0, 200)}`);
 }
 
 const socketDuration = new client.Histogram({
