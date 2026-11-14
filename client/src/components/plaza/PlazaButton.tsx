@@ -1,4 +1,5 @@
 // Botão flutuante do globo, na tela do servidor: abre a Praça. Mostra quantas pessoas estão lá agora.
+import { useEffect } from 'react';
 import { useApp } from '../../store/app';
 import { usePlaza } from '../../store/plaza';
 import { useMobile } from '../../lib/mobile';
@@ -11,6 +12,10 @@ export function PlazaButton({ serverId, initialCount }: { serverId: string; init
   const isOpen = usePlaza((s) => s.serverId !== null);
   const mobile = useMobile();
   const name = useApp((s) => s.details[serverId]?.server.name);
+  // já baixa a praça enquanto o globo está na tela: o clique abre sem tela de carregamento
+  useEffect(() => {
+    void import('./PlazaView');
+  }, []);
   if (isOpen) return null;
   const label = `Ir para a Praça${name ? ` de ${name}` : ''}${count ? ` · ${count} ${count === 1 ? 'pessoa' : 'pessoas'} lá` : ''}`;
   return (
