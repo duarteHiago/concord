@@ -8,7 +8,7 @@
 // contorno dos limites. Nada disso muda o servidor para os outros.
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { SCREEN_COLS, SCREEN_ROWS, defaultScreen, isBlock, type ScreenItem, type WidgetPlacement } from '../../../shared/workshop.ts';
+import { SCREEN_COLS, SCREEN_ROWS, isBlock, type ScreenItem, type WidgetPlacement } from '../../../shared/workshop.ts';
 import { ChannelsBlock, VoiceUserBlock } from '../components/ChannelSidebar';
 import { MemberListBody } from '../components/MemberList';
 import { ServerStrip } from '../components/ServerRail';
@@ -52,10 +52,10 @@ export function useServerScreen(): ScreenPlan | null {
   const lab = useLab();
   const wide = useWide();
   if (!WORKSHOP_ENABLED || !wide || systemOpen || !serverId || serverId === HOME) return null;
-  // laboratório ligado: monta a tela mesmo em servidor sem tela da Oficina (com o layout padrão de blocos)
-  if (labActive(lab)) return { items: config?.screen?.items ?? defaultScreen(), mode: lab.mode };
+  // só servidor com tela montada na Oficina: os outros ficam sempre com o layout normal do Concord,
+  // com ou sem o laboratório ligado
   if (!config?.screen || !workshopPrefs().layouts) return null;
-  return { items: config.screen.items, mode: 'atual' };
+  return { items: config.screen.items, mode: labActive(lab) ? lab.mode : 'atual' };
 }
 
 /** A sala aberta agora é de voz? (a arrumação de voz e os mínimos do bloco principal dependem disso) */

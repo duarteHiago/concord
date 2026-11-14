@@ -58,7 +58,7 @@ export function LabPanel() {
         <FlaskConical size={18} className="text-accent" />
         <div className="min-w-0 flex-1">
           <div className="font-display text-sm font-extrabold">Laboratório de layout</div>
-          <div className="text-[11px] text-fg-muted">Só no seu navegador. Ninguém mais vê o que você liga aqui.</div>
+          <div className="text-[11px] text-fg-muted">Só no seu navegador. Vale só em servidor com tela montada na Oficina.</div>
         </div>
         <button type="button" onClick={() => lab.reset()} title="Desligar tudo" className="rounded-full p-1.5 text-fg-muted hover:bg-surface-3 hover:text-fg">
           <RotateCcw size={16} />
