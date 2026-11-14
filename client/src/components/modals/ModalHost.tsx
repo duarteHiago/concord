@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FeedbackModal } from './FeedbackModal';
 import { DiscoverModal } from './DiscoverModal';
 import { useApp, type Modal as ModalState } from '../../store/app';
 import { toast } from '../../store/toast';
@@ -38,6 +39,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <AddServerModal initialTab={modal.tab} code={modal.code} />;
     case 'discover':
       return <DiscoverModal />;
+    case 'feedback':
+      return <FeedbackModal initialKind={modal.kind} initialBody={modal.body} area={modal.area} />;
     case 'invite':
       return <InviteModal serverId={modal.serverId} />;
     case 'serverSettings':

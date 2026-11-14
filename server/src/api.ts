@@ -69,6 +69,7 @@ import {
 import { registerClientErrorRoutes } from './clientErrors.ts';
 import { registerCspReportRoutes } from './security.ts';
 import { registerDiagnosticRoutes } from './diagnostics.ts';
+import { registerFeedbackRoutes } from './feedback.ts';
 import { signFileUrl } from './fileLinks.ts';
 import { registerForumRoutes } from './forum.ts';
 import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
@@ -3205,6 +3206,7 @@ registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);
 registerSupportRoutes(api);
 registerDiagnosticRoutes(api);
+registerFeedbackRoutes(api);
 registerAdminRoutes(api);
 // depois do admin: as rotas /admin/contracts* ficam atrás do requireAdmin
 registerContractRoutes(api);
