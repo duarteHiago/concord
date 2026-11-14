@@ -297,7 +297,21 @@ export interface SlotLayout {
   members: 'left' | 'right' | 'hidden';
   /** zona de cada widget da tela (pelo id); sem zona, o widget fica guardado e não aparece */
   widgets: Record<string, SlotZone>;
+  /** tamanhos ajustados pelo dono (px numa janela de 1100); sem eles, o padrão */
+  sizes?: SlotSizes;
 }
+export interface SlotSizes {
+  /** largura das colunas */
+  left?: number;
+  right?: number;
+  /** altura da faixa de widgets de cima */
+  top?: number;
+  /** % da coluna para os canais quando divide com os membros */
+  leftSplit?: number;
+  rightSplit?: number;
+}
+/** Os mesmos mínimos do modo 1: coluna com voz e perfil (240 px), canais 240 de altura, membros 200. */
+export const SLOT_LIMITS = { col: [240, 480], top: [96, 240], split: [25, 75], colDefault: 280, topDefault: 132 } as const;
 export const SLOT_ZONES = ['top', 'left', 'right'] as const;
 export type SlotZone = (typeof SLOT_ZONES)[number];
 export const defaultSlots = (): SlotLayout => ({ channels: 'left', voicebar: 'column', members: 'right', widgets: {} });
@@ -314,7 +328,11 @@ export interface RoomLayout {
   right: RoomSide;
   /** botões que aparecem, na ordem */
   dock: DockItem[];
+  /** largura das laterais (px numa janela de 1100); sem ela, o padrão */
+  sizes?: { left?: number; right?: number };
 }
+/** laterais da tela da sala: mínimo 240 (voz e perfil), e o palco nunca abaixo de 480 */
+export const ROOM_LIMITS = { side: [240, 420], sideDefault: 280, stageMin: 480 } as const;
 export const defaultRoom = (): RoomLayout => ({ left: 'nav', right: 'chat', dock: [...DOCK_ITEMS] });
 
 export interface WorkshopConfig {
@@ -544,7 +562,7 @@ function screen(v: unknown, now: number): { items: ScreenItem[] } {
 
 /** Valida uma configuração vinda de fora. Nunca confia no cliente. */
 function slots(v: unknown): SlotLayout {
-  const o = obj(v, 'slots', ['channels', 'voicebar', 'members', 'widgets']);
+  const o = obj(v, 'slots', ['channels', 'voicebar', 'members', 'widgets', 'sizes']);
   const w = obj(o.widgets, 'slots.widgets', Object.keys(isObj(o.widgets) ? o.widgets : {}));
   if (Object.keys(w).length > MAX_SCREEN_WIDGETS) bad('slots.widgets: widgets demais');
   const widgets: Record<string, SlotZone> = {};
@@ -554,18 +572,38 @@ function slots(v: unknown): SlotLayout {
     voicebar: oneOf(o.voicebar, 'slots.voicebar', ['column', 'bottom'] as const),
     members: oneOf(o.members, 'slots.members', ['left', 'right', 'hidden'] as const),
     widgets,
+    ...(o.sizes !== undefined ? { sizes: slotSizes(o.sizes) } : {}),
   };
 }
 
+function slotSizes(v: unknown): SlotSizes {
+  const o = obj(v, 'slots.sizes', ['left', 'right', 'top', 'leftSplit', 'rightSplit']);
+  const out: SlotSizes = {};
+  const [cmin, cmax] = SLOT_LIMITS.col;
+  if (o.left !== undefined) out.left = intIn(o.left, 'slots.sizes.left', cmin, cmax);
+  if (o.right !== undefined) out.right = intIn(o.right, 'slots.sizes.right', cmin, cmax);
+  if (o.top !== undefined) out.top = intIn(o.top, 'slots.sizes.top', SLOT_LIMITS.top[0], SLOT_LIMITS.top[1]);
+  if (o.leftSplit !== undefined) out.leftSplit = intIn(o.leftSplit, 'slots.sizes.leftSplit', SLOT_LIMITS.split[0], SLOT_LIMITS.split[1]);
+  if (o.rightSplit !== undefined) out.rightSplit = intIn(o.rightSplit, 'slots.sizes.rightSplit', SLOT_LIMITS.split[0], SLOT_LIMITS.split[1]);
+  return out;
+}
+
 function room(v: unknown): RoomLayout {
-  const o = obj(v, 'room', ['left', 'right', 'dock']);
+  const o = obj(v, 'room', ['left', 'right', 'dock', 'sizes']);
   const left = oneOf(o.left, 'room.left', ROOM_SIDES);
   const right = oneOf(o.right, 'room.right', ROOM_SIDES);
   if (left !== 'none' && left === right) bad('room: as duas laterais com a mesma coisa');
   const dock = list(o.dock, 'room.dock', DOCK_ITEMS.length, (x, i) => oneOf(x, `room.dock[${i}]`, DOCK_ITEMS));
   if (new Set(dock).size !== dock.length) bad('room.dock: botão repetido');
   for (const f of DOCK_FIXED) if (!dock.includes(f)) bad(`room.dock: "${f}" não pode sair da barra`);
-  return { left, right, dock };
+  const out: RoomLayout = { left, right, dock };
+  if (o.sizes !== undefined) {
+    const z = obj(o.sizes, 'room.sizes', ['left', 'right']);
+    out.sizes = {};
+    if (z.left !== undefined) out.sizes.left = intIn(z.left, 'room.sizes.left', ROOM_LIMITS.side[0], ROOM_LIMITS.side[1]);
+    if (z.right !== undefined) out.sizes.right = intIn(z.right, 'room.sizes.right', ROOM_LIMITS.side[0], ROOM_LIMITS.side[1]);
+  }
+  return out;
 }
 
 export function parseWorkshop(input: unknown, now = Date.now()): ParseResult {
