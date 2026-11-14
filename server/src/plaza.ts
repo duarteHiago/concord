@@ -5,6 +5,7 @@ import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
 import { SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
 import { removeFromRoom } from './livekit.ts';
+import { getVoiceState } from './realtime.ts';
 import { channelPermissions, isMember } from './access.ts';
 import { config } from './config.ts';
 import { all, get, run, type ChannelRow } from './db.ts';
@@ -29,9 +30,9 @@ export function plazaEnabled(serverId: string) {
   return config.staging;
 }
 
-/** Está no lobby (a praça) deste servidor agora? Só assim vale estar na sala de voz do lobby. */
-export function inLobby(serverId: string, userId: string) {
-  return plazas.get(serverId)?.get(userId)?.scene === 'lobby';
+/** Está andando pela Praça deste servidor (no lobby ou dentro)? Só assim vale estar na voz da Praça. */
+export function inPlaza(serverId: string, userId: string) {
+  return !!plazas.get(serverId)?.get(userId);
 }
 
 /** Nome de sala do LiveKit que é o lobby de algum servidor: devolve o servidor (senão, null). */
@@ -39,7 +40,7 @@ export function lobbyServerOf(roomName: string) {
   return roomName.startsWith('plaza_') ? roomName.slice('plaza_'.length) : null;
 }
 
-/** Saiu do lobby (entrou no prédio ou fechou a praça): sai da voz do lobby na hora, não só na próxima faxina. */
+/** Fechou a praça: sai da voz da Praça na hora, não só na próxima faxina. */
 function dropLobbyVoice(serverId: string, userId: string) {
   void removeFromRoom(lobbyRoom(serverId), userId).catch(() => {});
 }
@@ -173,6 +174,16 @@ function spawnPoint(layout: PlazaLayout, plaza: Map<string, Walker>, center = la
   return nearestWalkable(layout, center);
 }
 
+/** Quem está numa call deste servidor: a frente da mesa dela, lá dentro (para já aparecer sentado lá). */
+function tableSpot(serverId: string, userId: string) {
+  const v = getVoiceState(userId);
+  if (!v || v.serverId !== serverId) return null;
+  const channels = voiceChannels(serverId);
+  const layout = insideLayout(serverId, channels);
+  const t = layout.tables[channels.findIndex((c) => c.id === v.channelId)];
+  return t ? { layout, front: t.front } : null;
+}
+
 const room = (serverId: string) => `plaza:${serverId}`;
 const walkerJson = (userId: string, w: Walker) => ({ userId, scene: w.scene, x: w.x, y: w.y, avatar: w.avatar, activeAt: w.activeAt });
 
@@ -190,7 +201,7 @@ function removeSocket(serverId: string, userId: string, socketId: string) {
   io.sockets.sockets.get(socketId)?.leave(room(serverId));
   if (w.sockets.size) return;
   plaza.delete(userId);
-  if (w.scene === 'lobby') dropLobbyVoice(serverId, userId);
+  dropLobbyVoice(serverId, userId);
   if (!plaza.size) plazas.delete(serverId);
   io.to(room(serverId)).emit('plaza:left', { serverId, userId });
   broadcastCount(serverId);
@@ -238,7 +249,12 @@ export function registerPlaza(socket: Socket, userId: string) {
     plazas.set(serverId, plaza);
     let w = plaza.get(userId);
     const isNew = !w;
-    if (!w) {
+    // numa call deste servidor: já chega lá dentro, na mesa dela (sem nascer na praça e ir andando)
+    const spot = !w ? tableSpot(serverId, userId) : null;
+    if (!w && spot) {
+      w = { scene: 'inside', ...spawnPoint(spot.layout, plaza, spot.front), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
+      plaza.set(userId, w);
+    } else if (!w) {
       w = { scene: 'lobby', ...spawnPoint(lobbyLayout(serverId), plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
       plaza.set(userId, w);
     } else {
@@ -289,6 +305,17 @@ export function registerPlaza(socket: Socket, userId: string) {
     io.to(room(here.serverId)).emit('plaza:move', { serverId: here.serverId, userId, scene: here.w.scene, x, y });
   });
 
+  // entrou numa call (pela lista, com a praça aberta): o boneco vai para a mesa dela, lá dentro
+  socket.on('plaza:table', (data: { serverId?: unknown }) => {
+    const here = walkerHere(data?.serverId);
+    if (!here || !moveRate()) return;
+    const spot = tableSpot(here.serverId, userId);
+    if (!spot) return;
+    const others = new Map([...plazas.get(here.serverId)!].filter(([id]) => id !== userId));
+    Object.assign(here.w, { scene: 'inside', ...spawnPoint(spot.layout, others, spot.front), activeAt: Date.now() });
+    io.to(room(here.serverId)).emit('plaza:scene', { serverId: here.serverId, userId, scene: 'inside', x: here.w.x, y: here.w.y });
+  });
+
   // pisou na porta: entra no estabelecimento (ou sai para a praça). Só vale estando de fato na porta.
   socket.on('plaza:door', (data: { serverId?: unknown }) => {
     const here = walkerHere(data?.serverId);
@@ -301,7 +328,6 @@ export function registerPlaza(socket: Socket, userId: string) {
     const arrive = scene === 'lobby' ? { x: to.door.x, y: to.door.y + 1 } : to.spawn;
     const others = new Map([...plazas.get(here.serverId)!].filter(([id]) => id !== userId));
     Object.assign(w, { scene, ...spawnPoint(to, others, arrive), activeAt: Date.now() });
-    if (scene === 'inside') dropLobbyVoice(here.serverId, userId);
     io.to(room(here.serverId)).emit('plaza:scene', { serverId: here.serverId, userId, scene, x: w.x, y: w.y });
   });
 

@@ -79,7 +79,7 @@ import * as twoFactor from './twoFactor.ts';
 import { registerReportRoutes } from './reports.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
 import { registerWorkshopRoutes } from './workshop.ts';
-import { inLobby, plazaCount, plazaEnabled, savePlace } from './plaza.ts';
+import { inPlaza, plazaCount, plazaEnabled, savePlace } from './plaza.ts';
 import { isScene, lobbyRoom } from '../../shared/plaza.ts';
 import {
   ART_OFFSET,
@@ -2366,14 +2366,14 @@ api.put('/servers/:id/plaza/place', (req, res) => {
   res.json({ ok: true });
 });
 
-// Voz por proximidade no lobby da Praça (ver plaza.ts): só para quem está andando no lobby agora. Só microfone
+// Voz por proximidade na Praça (ver plaza.ts): só para quem está andando por ela agora (lobby ou dentro). Só microfone
 // (nada de tela ou câmera), e quem foi silenciado no servidor entra só ouvindo.
 api.post('/servers/:id/plaza/voice-token', humansOnly, async (req, res) => {
   const me = uid(res);
   const server = getServer(req.params.id);
   if (!server || !isMember(server.id, me)) fail(404, 'Servidor não encontrado');
   if (!plazaEnabled(server.id)) fail(404, 'A praça não abriu neste servidor');
-  if (!inLobby(server.id, me)) fail(409, 'Você não está na praça');
+  if (!inPlaza(server.id, me)) fail(409, 'Você não está na praça');
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
   const perms = has(serverPermissions(server.id, me), P.SPEAK) ? P.SPEAK : 0;
   const token = await createVoiceToken({

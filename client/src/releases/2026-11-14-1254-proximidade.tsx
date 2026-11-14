@@ -34,7 +34,7 @@ export default {
     {
       kicker: 'Servidor',
       title: 'Chegue perto para conversar',
-      text: 'Na Praça, aperte "Falar" e quem estiver perto do seu boneco te ouve: a voz vai sumindo conforme as pessoas se afastam. Os balões também só chegam a quem está perto. O microfone começa desligado, e a voz da Praça desliga sozinha quando você entra no prédio ou numa call.',
+      text: 'Na Praça, aperte "Falar" e quem estiver perto do seu boneco te ouve: a voz vai sumindo conforme as pessoas se afastam. Os balões também só chegam a quem está perto. O microfone começa desligado, e a voz da Praça desliga sozinha quando você entra numa call.',
       art: ProximidadeArt,
     },
   ],
