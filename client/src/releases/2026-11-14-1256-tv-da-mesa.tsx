@@ -25,16 +25,38 @@ function TvArt() {
   );
 }
 
+function EspiarArt() {
+  return (
+    <Frame className="h-[170px] bg-[#231a3a]">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_90%,#9a6a4f_0,#5b4a8a_45%,#231a3a_80%)]" />
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 rounded-full bg-[#1b1430] px-3 py-1.5 text-[11px] font-semibold text-white ring-1 ring-white/20">
+        👀 Ana está espiando a sua mesa
+      </div>
+      <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-xl bg-[#1b1430] p-1 pl-2.5 text-[11px] font-semibold text-white">
+        👀 Espiando #jogatina · 7s
+        <span className="rounded-lg bg-[#2e9e6a] px-2 py-1">Segure para cochichar</span>
+      </div>
+      <Tag className="right-3 bottom-3">Todo mundo da mesa vê</Tag>
+    </Frame>
+  );
+}
+
 export default {
   id: '2026-11-14-1256',
   audience: 'plaza',
-  title: 'TV da mesa e voz em toda a Praça',
+  title: 'TV da mesa, espiar e voz em toda a Praça',
   highlights: [
     {
       kicker: 'Servidor',
       title: 'Transmita pela TV da mesa',
       text: 'Sentado numa mesa, clique na TV dela (ou no botão da TV, embaixo) para mostrar a sua tela para quem está na call. O menu é curto: escolha a tela ou janela, a qualidade e se vai com som.',
       art: TvArt,
+    },
+    {
+      kicker: 'Servidor',
+      title: 'Espie uma mesa por alguns segundos',
+      text: 'Dentro do prédio, clique numa mesa e escolha "Espiar": você ouve a conversa por 10 segundos (mais baixo quanto mais longe da mesa) e pode cochichar segurando um botão. Quem está na mesa vê que você está espiando, e pode fechar a mesa para espiadas.',
+      art: EspiarArt,
     },
   ],
   also: [
