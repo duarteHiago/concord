@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { buildLayout, cleanSay, findPath, sanitizeAvatar, walkable } from '../../shared/plaza.ts';
+import { buildLayout, buildLobby, cleanSay, findPath, sanitizeAvatar, walkable } from '../../shared/plaza.ts';
 import { signUp, startServer, type Client, type TestServer } from './helpers.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -84,8 +84,10 @@ describe('praça: andando e conversando', () => {
     assert.equal(r.ok, true);
     const tables = r.tables as (string | null)[];
     assert.ok(tables.length >= 1);
-    const layout = buildLayout(tables.length);
-    const self = (r.walkers as { userId: string; x: number; y: number }[]).find((w) => w.userId === ana.id)!;
+    // chega na praça (o lobby), não dentro do estabelecimento
+    const layout = buildLobby();
+    const self = (r.walkers as { userId: string; scene: string; x: number; y: number }[]).find((w) => w.userId === ana.id)!;
+    assert.equal(self.scene, 'lobby');
     // chega no portal ou numa casa livre em volta dele
     assert.ok(Math.abs(self.x - layout.spawn.x) <= 2 && Math.abs(self.y - layout.spawn.y) <= 2);
     assert.equal(walkable(layout, self.x, self.y), true);
@@ -94,17 +96,59 @@ describe('praça: andando e conversando', () => {
 
   it('passo para casa bloqueada é ignorado; passo válido chega aos outros', async () => {
     const { ana, serverId, a, b } = await setup();
-    const r = await emitAck(a, 'plaza:enter', { serverId });
+    await emitAck(a, 'plaza:enter', { serverId });
     await emitAck(b, 'plaza:enter', { serverId });
-    const layout = buildLayout((r.tables as unknown[]).length);
+    const lobby = buildLobby();
     const moves: { userId: string; x: number; y: number }[] = [];
     b.on('plaza:move', (m) => moves.push(m));
-    const table = layout.tables[0];
-    a.emit('plaza:move', { serverId, x: table.x, y: table.y });
+    const cafe = lobby.cafes[0];
+    a.emit('plaza:move', { serverId, x: cafe.x, y: cafe.y });
     a.emit('plaza:move', { serverId, x: 999, y: 0 });
-    a.emit('plaza:move', { serverId, x: table.front.x, y: table.front.y });
+    a.emit('plaza:move', { serverId, x: cafe.x, y: cafe.y + 1 });
     await sleep(300);
-    assert.deepEqual(moves, [{ serverId, userId: ana.id, x: table.front.x, y: table.front.y }]);
+    assert.deepEqual(moves, [{ serverId, userId: ana.id, scene: 'lobby', x: cafe.x, y: cafe.y + 1 }]);
+  });
+
+  it('só entra no estabelecimento quem está na porta; lá dentro valem as mesas', async () => {
+    const { ana, serverId, a, b } = await setup();
+    const r = await emitAck(a, 'plaza:enter', { serverId });
+    await emitAck(b, 'plaza:enter', { serverId });
+    const lobby = buildLobby();
+    const inside = buildLayout((r.tables as unknown[]).length);
+    const scenes: { userId: string; scene: string; x: number; y: number }[] = [];
+    b.on('plaza:scene', (m) => scenes.push(m));
+    a.emit('plaza:door', { serverId }); // longe da porta: nada acontece
+    await sleep(150);
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(100);
+    a.emit('plaza:door', { serverId });
+    await sleep(250);
+    assert.equal(scenes.length, 1);
+    assert.equal(scenes[0].scene, 'inside');
+    assert.equal(scenes[0].userId, ana.id);
+    assert.ok(Math.abs(scenes[0].x - inside.spawn.x) <= 2 && Math.abs(scenes[0].y - inside.spawn.y) <= 2);
+    const moves: unknown[] = [];
+    b.on('plaza:move', (m) => moves.push(m));
+    const t = inside.tables[0];
+    a.emit('plaza:move', { serverId, x: t.front.x, y: t.front.y });
+    await sleep(250);
+    assert.equal(moves.length, 1);
+  });
+
+  it('balão só chega a quem está no mesmo lugar', async () => {
+    const { serverId, a, b } = await setup();
+    await emitAck(a, 'plaza:enter', { serverId });
+    await emitAck(b, 'plaza:enter', { serverId });
+    const lobby = buildLobby();
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(100);
+    a.emit('plaza:door', { serverId });
+    await sleep(200);
+    const got: unknown[] = [];
+    b.on('plaza:say', (m) => got.push(m));
+    assert.equal((await emitAck(a, 'plaza:say', { serverId, text: 'tem alguém aí fora?' })).ok, true);
+    await sleep(250);
+    assert.equal(got.length, 0);
   });
 
   it('balão sai limpo, e quem bloqueou não recebe', async () => {
