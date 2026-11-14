@@ -1,6 +1,9 @@
 // Processamento do microfone como um processador do LiveKit (WebAudio):
-// mono → supressão de ruído por IA (DeepFilterNet3, GTCRN ou RNNoise) → portão de voz → efeito de voz.
-// O processador sobrevive a trocas de microfone: o LiveKit chama restart() quando a faixa reinicia.
+// mono (sem cancelar fase) → medidor → supressão de ruído por IA (DeepFilterNet3, GTCRN ou RNNoise) → portão de
+// voz → nivelador → medidor → efeito de voz. O processador sobrevive a trocas de microfone (o LiveKit chama
+// restart() quando a faixa reinicia) e a si mesmo: um vigia compara o que entra com o que sai e, se o som sumiu
+// no meio do caminho (modelo que quebrou, contexto suspenso), remonta a cadeia e avisa. Tudo o que muda a cadeia
+// passa por uma fila, uma mudança de cada vez.
 import { GtcrnWorkletNode, RnnoiseWorkletNode, loadGtcrn, loadRnnoise } from '@sapphi-red/web-noise-suppressor';
 import gtcrnWasmUrl from '@sapphi-red/web-noise-suppressor/gtcrn.wasm?url';
 import gtcrnWorkletUrl from '@sapphi-red/web-noise-suppressor/gtcrnWorklet.js?url';
@@ -8,6 +11,9 @@ import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseSimdWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
 import type { AudioProcessorOptions, LocalAudioTrack, Track, TrackProcessor } from 'livekit-client';
+import dfnWorkletUrl from './worklets/deepfilter.worklet.js?url';
+import meterWorkletUrl from './worklets/meter.worklet.js?url';
+import monoWorkletUrl from './worklets/mono.worklet.js?url';
 
 /** off: nenhum; browser: filtro do navegador; dfn / rnnoise / gtcrn: redes neurais (rodam no seu PC). */
 export type NoiseMode = 'off' | 'browser' | 'rnnoise' | 'gtcrn' | 'dfn';
@@ -28,18 +34,30 @@ export const NOISE_MODES: { id: NoiseMode; label: string; hint: string }[] = [
   { id: 'off', label: 'Desligada', hint: 'Som cru do microfone (bom para música).' },
 ];
 
+export const NOISE_LABEL: Record<NoiseMode, string> = { dfn: 'IA máxima', gtcrn: 'IA natural', rnnoise: 'IA básica', browser: 'do navegador', off: 'desligada' };
+
+export const isAiMode = (m: NoiseMode) => m === 'dfn' || m === 'gtcrn' || m === 'rnnoise';
+
+/** Se um modelo falha, cai para o seguinte (e avisa): dfn → gtcrn → rnnoise → nenhum. */
+const FALLBACK: Record<NoiseMode, NoiseMode | null> = { dfn: 'gtcrn', gtcrn: 'rnnoise', rnnoise: 'off', browser: null, off: null };
+
+// ---------------------------------------------------------------- carregamento (wasm, modelos, worklets)
+
 const binaries = new Map<string, Promise<ArrayBuffer>>();
 const wasm = (key: string, load: () => Promise<ArrayBuffer>) => {
   let p = binaries.get(key);
   if (!p) {
-    p = load();
+    p = load().catch((err) => {
+      binaries.delete(key); // tenta de novo na próxima
+      throw err;
+    });
     binaries.set(key, p);
   }
   return p;
 };
 
 const modulesLoaded = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
-function addModule(ctx: AudioContext, url: string) {
+function addModule(ctx: BaseAudioContext, url: string) {
   let map = modulesLoaded.get(ctx);
   if (!map) {
     map = new Map();
@@ -47,43 +65,66 @@ function addModule(ctx: AudioContext, url: string) {
   }
   let p = map.get(url);
   if (!p) {
-    p = ctx.audioWorklet.addModule(url);
+    p = ctx.audioWorklet.addModule(url).catch((err) => {
+      map!.delete(url);
+      throw err;
+    });
     map.set(url, p);
   }
   return p;
 }
 
-// DeepFilterNet3: arquivos servidos pelo próprio Concord (client/public/vendor/deepfilternet3)
-type DfnCore = InstanceType<typeof import('deepfilternet3-noise-filter').DeepFilterNet3Core>;
-let dfnCore: Promise<DfnCore> | null = null;
-function loadDfn(): Promise<DfnCore> {
-  dfnCore ??= (async () => {
-    const { DeepFilterNet3Core } = await import('deepfilternet3-noise-filter');
-    // limite de atenuação em dB (ajustado depois pela intensidade escolhida)
-    const core = new DeepFilterNet3Core({
-      sampleRate: 48000,
-      noiseReductionLevel: DEFAULT_NOISE_STRENGTH,
-      assetConfig: { cdnUrl: `${location.origin}/vendor/deepfilternet3` },
-    });
-    await core.initialize();
-    return core;
-  })().catch((err) => {
-    dfnCore = null; // tenta de novo na próxima vez
-    throw err;
-  });
-  return dfnCore;
+/** Baixa com até 3 tentativas (espera 0,5 s e 1,5 s): o wasm do DFN3 tem 16 MB e uma falha de rede passageira é comum. */
+async function fetchRetry(url: string, tries = 3): Promise<Response> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(url, { credentials: 'same-origin' });
+      if (r.ok) return r;
+      last = new Error(`${r.status} ao baixar ${url}`);
+    } catch (err) {
+      last = err;
+    }
+    if (i < tries - 1) await new Promise((r) => setTimeout(r, 500 * (i * 2 + 1)));
+  }
+  throw last instanceof Error ? last : new Error(String(last));
 }
 
-/** Muda a intensidade do DeepFilterNet3 na hora (sem reiniciar o microfone). */
-export function updateNoiseStrength(level: number) {
-  void dfnCore?.then((core) => core.setSuppressionLevel(level)).catch(() => {});
+// DeepFilterNet3: arquivos servidos pelo próprio Concord (client/public/vendor/deepfilternet3)
+export const DFN_BASE = '/vendor/deepfilternet3/v3';
+
+/**
+ * O modelo tem que chegar ao wasm como tar.gz. Alguns servidores (o Vite em desenvolvimento, proxies) mandam o
+ * .tar.gz com "Content-Encoding: gzip" e o navegador entrega o tar já aberto: o wasm então falhava com
+ * "unreachable" e a IA máxima caía para a natural sem a pessoa saber por quê. Se não vier comprimido, comprime aqui.
+ */
+async function ensureGzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
+  const head = new Uint8Array(bytes, 0, 2);
+  if (head[0] === 0x1f && head[1] === 0x8b) return bytes;
+  if (typeof CompressionStream === 'undefined') throw new Error('modelo do DeepFilterNet3 chegou sem compressão');
+  return new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+}
+interface DfnAssets {
+  wasmModule: WebAssembly.Module;
+  modelBytes: ArrayBuffer;
+}
+let dfnAssets: Promise<DfnAssets> | null = null;
+function loadDfnAssets(): Promise<DfnAssets> {
+  dfnAssets ??= (async () => {
+    const [wasmModule, model] = await Promise.all([
+      fetchRetry(`${DFN_BASE}/pkg/df_bg.wasm`).then((r) => ('compileStreaming' in WebAssembly ? WebAssembly.compileStreaming(r) : r.arrayBuffer().then((b) => WebAssembly.compile(b)))),
+      fetchRetry(`${DFN_BASE}/models/DeepFilterNet3_onnx.tar.gz`).then((r) => r.arrayBuffer()).then(ensureGzip),
+    ]);
+    return { wasmModule, modelBytes: model };
+  })().catch((err) => {
+    dfnAssets = null; // tenta de novo na próxima vez
+    throw err;
+  });
+  return dfnAssets;
 }
 
 /** Baixa o modelo do DeepFilterNet3 com antecedência (ex.: ao entrar numa sala). */
-export const preloadDfn = () => void loadDfn().catch(() => {});
-
-/** Avisos do processamento (ex.: a IA máxima não carregou e caiu para a leve). */
-export const voiceNotices = new EventTarget();
+export const preloadDfn = () => void loadDfnAssets().catch(() => {});
 
 /**
  * Força da supressão (limite de atenuação em dB do DeepFilterNet3): mais alto = tira mais ruído, mas abafa a voz.
@@ -92,53 +133,144 @@ export const voiceNotices = new EventTarget();
  */
 export const DEFAULT_NOISE_STRENGTH = 45;
 
-// depois de uma falha do DeepFilterNet3, espera um pouco antes de tentar de novo nesta mesma
-// sessão: alguns programas de mixagem de áudio (ex.: VoiceMeeter) reiniciam o próprio motor de
-// áudio de vez em quando, o que reinicia a faixa do microfone e, com ela, essa montagem — tentar
-// de novo imediatamente a cada reinício tende a falhar pela mesma razão. Depois do intervalo,
-// volta a tentar sozinho (não precisa trocar de modelo manualmente pra "destravar").
-let dfnCooldownUntil = 0;
-const DFN_COOLDOWN_MS = 5 * 60_000;
+// depois de uma falha de um modelo, espera um pouco antes de tentar de novo nesta mesma sessão: alguns
+// programas de mixagem de áudio (ex.: VoiceMeeter) reiniciam o próprio motor de áudio de vez em quando, o que
+// reinicia a faixa do microfone e, com ela, essa montagem — tentar de novo imediatamente a cada reinício tende
+// a falhar pela mesma razão. Depois do intervalo, volta a tentar sozinho.
+const cooldownUntil: Partial<Record<NoiseMode, number>> = {};
+const COOLDOWN_MS = 5 * 60_000;
+const inCooldown = (m: NoiseMode) => (cooldownUntil[m] ?? 0) > Date.now();
 
-async function noiseNode(ctx: AudioContext, mode: NoiseMode, strength = DEFAULT_NOISE_STRENGTH): Promise<AudioWorkletNode | null> {
+/** Quanto tempo o modelo tem para dizer que carregou dentro do worklet (o DFN3 leva ~0,5 s numa máquina comum). */
+const READY_TIMEOUT_MS = 15_000;
+
+interface DenoiseNode {
+  node: AudioWorkletNode;
+  mode: NoiseMode;
+  destroy(): void;
+  setStrength?(db: number): void;
+}
+
+/** Monta o nó de um modelo. Lança se não deu (quem chama decide o plano B). */
+async function makeDenoise(ctx: BaseAudioContext, mode: NoiseMode, strength: number, onError: (err: Error) => void): Promise<DenoiseNode | null> {
   if (mode === 'dfn') {
-    if (Date.now() < dfnCooldownUntil) return noiseNode(ctx, 'gtcrn');
-    try {
-      const core = await loadDfn();
-      const node = await core.createAudioWorkletNode(ctx);
-      core.setSuppressionLevel(strength);
-      return node;
-    } catch (err) {
-      // o wasm do DFN3 tem 16 MB e, diferente do modelo, hoje não fica em cache de borda — uma
-      // falha de rede passageira é bem provável; tenta mais uma vez antes de desistir
-      console.warn('[voz] DeepFilterNet3 falhou, tentando de novo', err);
-      try {
-        const core = await loadDfn();
-        const node = await core.createAudioWorkletNode(ctx);
-        core.setSuppressionLevel(strength);
-        return node;
-      } catch (err2) {
-        // GTCRN mediu quase tão bem quanto o DFN3 e é leve: é o plano B
-        console.warn('[voz] DeepFilterNet3 indisponível, usando GTCRN', err2);
-        dfnCooldownUntil = Date.now() + DFN_COOLDOWN_MS;
-        voiceNotices.dispatchEvent(new CustomEvent('fallback', { detail: (err2 as Error).message }));
-        return noiseNode(ctx, 'gtcrn');
-      }
-    }
+    const [assets] = await Promise.all([loadDfnAssets(), addModule(ctx, dfnWorkletUrl)]);
+    const node = new AudioWorkletNode(ctx, 'deepfilter-audio-processor', {
+      channelCount: 1,
+      channelCountMode: 'explicit',
+      outputChannelCount: [1],
+      processorOptions: { wasmModule: assets.wasmModule, modelBytes: assets.modelBytes, suppressionLevel: strength },
+    });
+    // o worklet avisa quando o modelo ficou pronto; sem isso ele passaria o som cru em silêncio
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('DeepFilterNet3 não respondeu')), READY_TIMEOUT_MS);
+      node.port.onmessage = (e: MessageEvent<{ type: string; message?: string }>) => {
+        if (e.data?.type === 'ready') {
+          clearTimeout(timer);
+          node.port.onmessage = (ev: MessageEvent<{ type: string; message?: string }>) => {
+            if (ev.data?.type === 'error') onError(new Error(`DeepFilterNet3: ${ev.data.message ?? 'erro no processamento'}`));
+          };
+          resolve();
+        } else if (e.data?.type === 'error') {
+          clearTimeout(timer);
+          reject(new Error(`DeepFilterNet3: ${e.data.message ?? 'não carregou'}`));
+        }
+      };
+    }).catch((err) => {
+      node.port.postMessage('destroy');
+      throw err;
+    });
+    return {
+      node,
+      mode,
+      destroy: () => node.port.postMessage('destroy'),
+      setStrength: (db) => node.port.postMessage({ type: 'SET_SUPPRESSION_LEVEL', value: Math.round(db) }),
+    };
   }
   if (mode === 'gtcrn') {
     const [wasmBinary] = await Promise.all([wasm('gtcrn', () => loadGtcrn({ url: gtcrnWasmUrl })), addModule(ctx, gtcrnWorkletUrl)]);
-    return new GtcrnWorkletNode(ctx, { maxChannels: 1, wasmBinary });
+    const node = new GtcrnWorkletNode(ctx as AudioContext, { maxChannels: 1, wasmBinary });
+    return { node, mode, destroy: () => node.destroy() };
   }
   if (mode === 'rnnoise') {
     const [wasmBinary] = await Promise.all([
       wasm('rnnoise', () => loadRnnoise({ url: rnnoiseWasmUrl, simdUrl: rnnoiseSimdWasmUrl })),
       addModule(ctx, rnnoiseWorkletUrl),
     ]);
-    return new RnnoiseWorkletNode(ctx, { maxChannels: 1, wasmBinary });
+    const node = new RnnoiseWorkletNode(ctx as AudioContext, { maxChannels: 1, wasmBinary });
+    return { node, mode, destroy: () => node.destroy() };
   }
   return null;
 }
+
+/**
+ * O modelo pedido ou, se ele não carregou (rede, navegador antigo, modelo em pausa depois de uma falha), o próximo
+ * da fila. Devolve também qual ficou valendo e por quê.
+ */
+async function denoiseWithFallback(ctx: BaseAudioContext, wanted: NoiseMode, strength: number, onError: (err: Error) => void): Promise<{ denoise: DenoiseNode | null; active: NoiseMode; reason: string | null }> {
+  let mode: NoiseMode | null = wanted;
+  let reason: string | null = null;
+  while (mode) {
+    if (isAiMode(mode) && inCooldown(mode)) {
+      reason ??= `${NOISE_LABEL[mode]} falhou há pouco`;
+      mode = FALLBACK[mode];
+      continue;
+    }
+    try {
+      const denoise = await makeDenoise(ctx, mode, strength, onError);
+      return { denoise, active: mode, reason: mode === wanted ? null : reason };
+    } catch (err) {
+      console.warn(`[voz] ${mode} indisponível`, err);
+      cooldownUntil[mode] = Date.now() + COOLDOWN_MS;
+      reason ??= (err as Error).message;
+      mode = FALLBACK[mode];
+    }
+  }
+  return { denoise: null, active: wanted === 'browser' ? 'browser' : 'off', reason };
+}
+
+// ---------------------------------------------------------------- avisos e saúde (para a UI e o diagnóstico)
+
+/**
+ * Avisos do processamento:
+ * - 'active' { wanted, active, reason }: a cadeia foi montada; `active` é o que está valendo agora
+ * - 'fallback' detail: string: o modelo pedido não carregou e outro entrou no lugar
+ * - 'rebuilt' { reason, count }: o vigia remontou a cadeia
+ * - 'stuck' { reason }: remontou várias vezes e não resolveu; a pessoa precisa religar o microfone
+ * - 'suspended': o navegador suspendeu o áudio e só um clique destrava
+ */
+export const voiceNotices = new EventTarget();
+export interface ActiveNotice {
+  wanted: NoiseMode;
+  active: NoiseMode;
+  reason: string | null;
+}
+const notify = (type: string, detail?: unknown) => voiceNotices.dispatchEvent(new CustomEvent(type, { detail }));
+
+export interface VoiceHealth {
+  /** modelo valendo na chamada agora (null = sem processador montado) */
+  active: NoiseMode | null;
+  wanted: NoiseMode | null;
+  contextState: AudioContextState | null;
+  /** nível do que entra do microfone e do que sai da cadeia (dBFS, média de 200 ms) */
+  inDb: number | null;
+  outDb: number | null;
+  /** como o estéreo virou mono ('avg', 'left', 'right', 'inv'; null = chegou em mono) */
+  mono: string | null;
+  /** remontagens feitas pelo vigia nesta sessão */
+  rebuilds: number;
+  lastError: string | null;
+  lastErrorAt: number | null;
+}
+const health: VoiceHealth = { active: null, wanted: null, contextState: null, inDb: null, outDb: null, mono: null, rebuilds: 0, lastError: null, lastErrorAt: null };
+/** Fotografia do estado do processamento (para o diagnóstico e o modo desenvolvedor). */
+export const getVoiceHealth = (): VoiceHealth => ({ ...health, contextState: sharedContext?.state ?? health.contextState });
+const noteError = (err: Error) => {
+  health.lastError = err.message;
+  health.lastErrorAt = Date.now();
+};
+
+// ---------------------------------------------------------------- efeitos de voz
 
 export type EffectId = 'none' | 'robot' | 'radio' | 'echo' | 'cave' | 'megaphone' | 'deep' | 'chipmunk';
 
@@ -160,7 +292,8 @@ class ConcordPitch extends AudioWorkletProcessor {
   constructor() {
     super();
     this.size = 4096; this.buf = new Float32Array(this.size); this.w = 0;
-    this.win = 1200; this.phase = 0;
+    this.win = 1200; this.phase = 0; this.dead = false;
+    this.port.onmessage = (e) => { if (e.data === 'destroy') this.dead = true; };
   }
   read(pos) {
     const i = Math.floor(pos); const f = pos - i;
@@ -168,6 +301,7 @@ class ConcordPitch extends AudioWorkletProcessor {
     return a + (b - a) * f;
   }
   process(inputs, outputs, params) {
+    if (this.dead) return false;
     const input = inputs[0] && inputs[0][0];
     const out = outputs[0];
     if (!input) return true;
@@ -195,7 +329,7 @@ const GATE_WORKLET = `
 class ConcordGate extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.mode = 'auto'; this.threshold = -50;
+    this.mode = 'auto'; this.threshold = -50; this.dead = false;
     this.floor = -60; this.open = false; this.hold = 0; this.gain = 0;
     this.delay = new Float32Array(Math.round(sampleRate * 0.025)); this.w = 0;
     this.above = 0; this.needAbove = Math.round(sampleRate * 0.02 / 128);
@@ -208,11 +342,13 @@ class ConcordGate extends AudioWorkletProcessor {
     this.closedGain = 0.01;
     this.report = 0;
     this.port.onmessage = (e) => {
+      if (e.data === 'destroy') { this.dead = true; return; }
       if (e.data.mode) this.mode = e.data.mode;
       if (typeof e.data.threshold === 'number') this.threshold = e.data.threshold;
     };
   }
   process(inputs, outputs) {
+    if (this.dead) return false;
     const input = inputs[0] && inputs[0][0];
     const out = outputs[0];
     if (!input) return true;
@@ -275,30 +411,18 @@ export interface MicLevel {
 }
 export const micLevels = new EventTarget();
 
-const gateLoaded = new WeakMap<BaseAudioContext, Promise<void>>();
-function loadGateWorklet(ctx: AudioContext) {
-  let p = gateLoaded.get(ctx);
-  if (!p) {
-    const url = URL.createObjectURL(new Blob([GATE_WORKLET], { type: 'application/javascript' }));
-    p = ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url));
-    gateLoaded.set(ctx, p);
+const inlineModules = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
+function loadInlineWorklet(ctx: BaseAudioContext, name: string, code: string) {
+  let map = inlineModules.get(ctx);
+  if (!map) {
+    map = new Map();
+    inlineModules.set(ctx, map);
   }
-  return p;
-}
-
-let currentGate: AudioWorkletNode | null = null;
-/** Muda a sensibilidade na hora, sem reiniciar o microfone. */
-export function updateGate(gate: GateSettings) {
-  currentGate?.port.postMessage(gate);
-}
-
-const workletLoaded = new WeakMap<BaseAudioContext, Promise<void>>();
-function loadPitchWorklet(ctx: AudioContext) {
-  let p = workletLoaded.get(ctx);
+  let p = map.get(name);
   if (!p) {
-    const url = URL.createObjectURL(new Blob([PITCH_WORKLET], { type: 'application/javascript' }));
+    const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
     p = ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url));
-    workletLoaded.set(ctx, p);
+    map.set(name, p);
   }
   return p;
 }
@@ -313,7 +437,7 @@ function distortionCurve(amount: number) {
   return curve;
 }
 
-function impulse(ctx: AudioContext, seconds: number, decay: number) {
+function impulse(ctx: BaseAudioContext, seconds: number, decay: number) {
   const len = Math.floor(ctx.sampleRate * seconds);
   const buf = ctx.createBuffer(2, len, ctx.sampleRate);
   for (let c = 0; c < 2; c++) {
@@ -324,14 +448,14 @@ function impulse(ctx: AudioContext, seconds: number, decay: number) {
 }
 
 /** Monta o grafo do efeito entre a entrada e a saída. Devolve os nós para desligar depois. */
-async function build(ctx: AudioContext, effect: EffectId, src: AudioNode, dest: AudioNode): Promise<AudioNode[]> {
+async function buildEffect(ctx: BaseAudioContext, effect: EffectId, src: AudioNode, dest: AudioNode): Promise<AudioNode[]> {
   const nodes: AudioNode[] = [];
   const add = <T extends AudioNode>(n: T) => (nodes.push(n), n);
 
   switch (effect) {
     case 'deep':
     case 'chipmunk': {
-      await loadPitchWorklet(ctx);
+      await loadInlineWorklet(ctx, 'concord-pitch', PITCH_WORKLET);
       const pitch = add(new AudioWorkletNode(ctx, 'concord-pitch'));
       pitch.parameters.get('ratio')!.value = effect === 'deep' ? 0.72 : 1.55;
       src.connect(pitch).connect(dest);
@@ -393,100 +517,347 @@ async function build(ctx: AudioContext, effect: EffectId, src: AudioNode, dest: 
   return nodes;
 }
 
-class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
-  name = 'concord-voice';
-  processedTrack?: MediaStreamTrack;
-  private effect: EffectId;
-  private noise: NoiseMode;
-  private gate: GateSettings;
-  private level: boolean;
-  private strength: number;
-  private nodes: AudioNode[] = [];
-  private source?: MediaStreamAudioSourceNode;
-  private dest?: MediaStreamAudioDestinationNode;
+// ---------------------------------------------------------------- a cadeia
 
-  constructor(noise: NoiseMode, effect: EffectId, gate: GateSettings, level: boolean, strength: number) {
-    this.strength = strength;
-    this.noise = noise;
-    this.effect = effect;
-    this.gate = gate;
-    this.level = level;
+export interface ChainSettings {
+  noise: NoiseMode;
+  strength: number;
+  gate: GateSettings;
+  /** nivelador de volume depois da limpeza (só com IA) */
+  level: boolean;
+  effect: EffectId;
+}
+
+interface ChainHooks {
+  onLevel?: (level: MicLevel) => void;
+  /** o som entra e não sai, ou um nó quebrou: quem montou decide remontar */
+  onBroken?: (reason: string) => void;
+  /** só a cadeia do microfone da chamada alimenta a saúde global e os avisos */
+  primary?: boolean;
+}
+
+// o vigia: voz entrando (acima de -45 dBFS) por 4 s seguidos sem nada saindo (50 dB abaixo) = cadeia quebrada
+const WATCH_IN_DB = -45;
+const WATCH_GAP_DB = 50;
+const WATCH_SECONDS = 4;
+
+/**
+ * Uma montagem da cadeia entre a fonte e o destino. `build()` monta, `teardown()` desmonta de verdade (cada
+ * worklet recebe "destroy" e devolve false, senão o navegador o mantém vivo para sempre).
+ */
+export class Chain {
+  nodes: AudioNode[] = [];
+  denoise: DenoiseNode | null = null;
+  gate: AudioWorkletNode | null = null;
+  active: NoiseMode | null = null;
+  reason: string | null = null;
+  private inDb = -120;
+  private outDb = -120;
+  private silentSince: number | null = null;
+  private broken = false;
+  private gateOpen = true;
+  private done = false;
+
+  constructor(
+    private ctx: BaseAudioContext,
+    private src: AudioNode,
+    private dest: AudioNode,
+    private settings: ChainSettings,
+    private hooks: ChainHooks,
+  ) {}
+
+  private fail(reason: string) {
+    if (this.broken || this.done) return;
+    this.broken = true;
+    noteError(new Error(reason));
+    this.hooks.onBroken?.(reason);
   }
 
-  async init(opts: AudioProcessorOptions) {
-    const ctx = opts.audioContext;
-    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
-    this.source = ctx.createMediaStreamSource(new MediaStream([opts.track]));
-    // tudo em mono: a supressão de ruído só processa o 1º canal; se o microfone vier em estéreo,
-    // o 2º canal ficaria mudo e a voz chegaria só num lado do fone de quem ouve
-    const mono = ctx.createGain();
-    mono.channelCount = 1;
-    mono.channelCountMode = 'explicit';
-    mono.channelInterpretation = 'speakers'; // mistura esquerdo + direito
-    this.source.connect(mono);
-    this.nodes.push(mono);
-    this.dest = ctx.createMediaStreamDestination();
-    this.dest.channelCount = 1;
-    this.dest.channelCountMode = 'explicit';
-    let input: AudioNode = mono;
-    const denoise = await noiseNode(ctx, this.noise, this.strength);
-    if (denoise) {
-      mono.connect(denoise);
-      input = denoise;
-      this.nodes.push(denoise);
+  private watchWorklet(node: AudioWorkletNode, what: string) {
+    node.onprocessorerror = () => this.fail(`${what} parou de processar`);
+  }
+
+  async build() {
+    const { ctx, settings } = this;
+    const add = <T extends AudioNode>(n: T) => (this.nodes.push(n), n);
+    await Promise.all([addModule(ctx, monoWorkletUrl), addModule(ctx, meterWorkletUrl), loadInlineWorklet(ctx, 'concord-gate', GATE_WORKLET)]);
+    if (this.done) return;
+
+    // tudo em mono: a supressão de ruído só processa um canal; se o microfone vier em estéreo, o 2º canal ficaria
+    // mudo e a voz chegaria só num lado do fone de quem ouve. A mistura é segura contra canais em oposição de fase.
+    const mono = add(new AudioWorkletNode(ctx, 'concord-mono', { channelCount: 2, channelCountMode: 'clamped-max', outputChannelCount: [1] }));
+    mono.port.onmessage = (e: MessageEvent<{ mode: string }>) => {
+      if (this.hooks.primary) health.mono = e.data.mode;
+    };
+    this.watchWorklet(mono, 'a mistura para mono');
+    this.src.connect(mono);
+
+    const meterIn = add(new AudioWorkletNode(ctx, 'concord-meter', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] }));
+    meterIn.port.onmessage = (e: MessageEvent<{ db: number }>) => this.onIn(e.data.db);
+    mono.connect(meterIn);
+    let input: AudioNode = meterIn;
+
+    const { denoise, active, reason } = await denoiseWithFallback(ctx, settings.noise, settings.strength, (err) => this.fail(err.message));
+    if (this.done) {
+      denoise?.destroy();
+      return;
     }
+    this.active = active;
+    this.reason = reason;
+    if (denoise) {
+      this.denoise = denoise;
+      this.watchWorklet(denoise.node, NOISE_LABEL[denoise.mode]);
+      input.connect(denoise.node);
+      input = denoise.node;
+      this.nodes.push(denoise.node);
+    }
+
     // portão depois da IA (decide pelo som já limpo) e antes do efeito (não corta o eco/reverb)
-    await loadGateWorklet(ctx);
-    const gate = new AudioWorkletNode(ctx, 'concord-gate', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] });
-    gate.port.postMessage(this.gate);
-    gate.port.onmessage = (e: MessageEvent<MicLevel>) => micLevels.dispatchEvent(new CustomEvent<MicLevel>('level', { detail: e.data }));
+    const gate = add(new AudioWorkletNode(ctx, 'concord-gate', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] }));
+    gate.port.postMessage(settings.gate);
+    gate.port.onmessage = (e: MessageEvent<MicLevel>) => {
+      this.gateOpen = e.data.open;
+      this.hooks.onLevel?.(e.data);
+    };
+    this.watchWorklet(gate, 'o portão de voz');
     input.connect(gate);
     input = gate;
-    this.nodes.push(gate);
-    currentGate = gate;
-    if (this.level) {
+    this.gate = gate;
+
+    if (settings.level && isAiMode(settings.noise)) {
       // nivelador de volume depois da limpeza: deixa a voz uniforme sem "subir" o ruído
       // (o ganho automático do navegador fica desligado: ele aumentava o barulho nas pausas)
-      const comp = ctx.createDynamicsCompressor();
+      const comp = add(ctx.createDynamicsCompressor());
       comp.threshold.value = -28;
       comp.knee.value = 12;
       comp.ratio.value = 3.5;
       comp.attack.value = 0.004;
       comp.release.value = 0.25;
       // o compressor do navegador já aplica um ganho de compensação automático
-      const makeup = ctx.createGain();
+      const makeup = add(ctx.createGain());
       makeup.gain.value = 1;
       input.connect(comp);
       comp.connect(makeup);
       input = makeup;
-      this.nodes.push(comp, makeup);
     }
-    this.nodes.push(...(await build(ctx, this.effect, input, this.dest)));
-    this.processedTrack = this.dest.stream.getAudioTracks()[0];
+
+    const meterOut = add(new AudioWorkletNode(ctx, 'concord-meter', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] }));
+    meterOut.port.onmessage = (e: MessageEvent<{ db: number }>) => this.onOut(e.data.db);
+    input.connect(meterOut);
+    input = meterOut;
+
+    this.nodes.push(...(await buildEffect(ctx, settings.effect, input, this.dest)));
+    if (this.done) return this.teardown();
+
+    if (this.hooks.primary) {
+      health.active = active;
+      health.wanted = settings.noise;
+      health.mono = null;
+      notify('active', { wanted: settings.noise, active, reason } satisfies ActiveNotice);
+      if (reason) notify('fallback', reason);
+    }
   }
 
-  async restart(opts: AudioProcessorOptions) {
-    await this.destroy();
-    await this.init(opts);
+  private onIn(db: number) {
+    this.inDb = db;
+    if (this.hooks.primary) health.inDb = db;
   }
 
-  async destroy() {
+  private onOut(db: number) {
+    this.outDb = db;
+    if (this.hooks.primary) health.outDb = db;
+    // vigia: o portão fechado abaixa de propósito (não conta); efeito nenhum apaga o som
+    const voiceIn = this.inDb > WATCH_IN_DB;
+    const nothingOut = this.outDb < this.inDb - WATCH_GAP_DB;
+    const expectedOpen = this.settings.gate.mode === 'off' || this.gateOpen;
+    if (voiceIn && nothingOut && expectedOpen) {
+      this.silentSince ??= Date.now();
+      if (Date.now() - this.silentSince > WATCH_SECONDS * 1000) this.fail('o som entra no microfone e não sai da limpeza');
+    } else this.silentSince = null;
+  }
+
+  updateGate(gate: GateSettings) {
+    this.settings = { ...this.settings, gate };
+    this.gate?.port.postMessage(gate);
+  }
+
+  setStrength(db: number) {
+    this.settings = { ...this.settings, strength: db };
+    this.denoise?.setStrength?.(db);
+  }
+
+  teardown() {
+    this.done = true;
+    this.denoise?.destroy();
     for (const n of this.nodes) {
       try {
         if (n instanceof OscillatorNode) n.stop();
-        if (n instanceof GtcrnWorkletNode) n.destroy();
+        else if (n instanceof AudioWorkletNode && n !== this.denoise?.node) n.port.postMessage('destroy');
         n.disconnect();
       } catch {
         // já desligado
       }
     }
-    this.source?.disconnect();
-    if (currentGate && this.nodes.includes(currentGate)) currentGate = null;
+    try {
+      this.src.disconnect();
+    } catch {
+      // já desligado
+    }
     this.nodes = [];
+    this.denoise = null;
+    this.gate = null;
+  }
+}
+
+/** Uma operação de cada vez na cadeia (montar, desmontar, remontar): sem isso duas trocas rápidas se atropelam. */
+class Queue {
+  private tail: Promise<unknown> = Promise.resolve();
+  run<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.tail.then(fn, fn);
+    this.tail = next.catch(() => {});
+    return next;
+  }
+}
+
+/** Remontagens seguidas antes de desistir e pedir para a pessoa religar o microfone. */
+const MAX_REBUILDS = 3;
+const REBUILD_WINDOW_MS = 60_000;
+
+let liveChain: Chain | null = null;
+/** Muda a sensibilidade na hora, sem reiniciar o microfone. */
+export function updateGate(gate: GateSettings) {
+  liveChain?.updateGate(gate);
+}
+/** Muda a intensidade do DeepFilterNet3 na hora (sem reiniciar o microfone). */
+export function updateNoiseStrength(level: number) {
+  liveChain?.setStrength(level);
+}
+
+class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
+  name = 'concord-voice';
+  processedTrack?: MediaStreamTrack;
+  private queue = new Queue();
+  private chain: Chain | null = null;
+  private source?: MediaStreamAudioSourceNode;
+  private dest?: MediaStreamAudioDestinationNode;
+  private ctx?: AudioContext;
+  private track?: MediaStreamTrack;
+  private rebuilds: number[] = [];
+  private closed = false;
+
+  constructor(private settings: ChainSettings) {}
+
+  init(opts: AudioProcessorOptions) {
+    return this.queue.run(async () => {
+      const ctx = opts.audioContext;
+      this.ctx = ctx;
+      this.track = opts.track;
+      if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+      // o destino é um só para toda a vida do processador: remontar a cadeia por dentro não troca a faixa
+      // publicada (o LiveKit só troca quando ele mesmo pede um restart)
+      this.dest ??= ctx.createMediaStreamDestination();
+      this.dest.channelCount = 1;
+      this.dest.channelCountMode = 'explicit';
+      this.processedTrack = this.dest.stream.getAudioTracks()[0];
+      this.watchTrack(opts.track);
+      await this.mount();
+    });
+  }
+
+  private async mount() {
+    if (!this.ctx || !this.dest || !this.track || this.closed) return;
+    this.chain?.teardown();
+    this.source?.disconnect();
+    this.source = this.ctx.createMediaStreamSource(new MediaStream([this.track]));
+    const chain = new Chain(this.ctx, this.source, this.dest, this.settings, {
+      primary: true,
+      onLevel: (level) => micLevels.dispatchEvent(new CustomEvent<MicLevel>('level', { detail: level })),
+      onBroken: (reason) => void this.recover(reason),
+    });
+    this.chain = chain;
+    liveChain = chain;
+    await chain.build();
+  }
+
+  /** A cadeia quebrou: remonta (o modelo que falhou já está em pausa e o próximo entra). */
+  private recover(reason: string) {
+    if (this.closed) return;
+    const now = Date.now();
+    this.rebuilds = this.rebuilds.filter((t) => now - t < REBUILD_WINDOW_MS);
+    if (this.rebuilds.length >= MAX_REBUILDS) {
+      notify('stuck', { reason });
+      return;
+    }
+    this.rebuilds.push(now);
+    health.rebuilds++;
+    console.warn('[voz] remontando a cadeia do microfone:', reason);
+    void this.queue.run(async () => {
+      if (this.chain?.active && isAiMode(this.chain.active) && /parou|não sai|DeepFilterNet|GTCRN|RNNoise/i.test(reason)) {
+        cooldownUntil[this.chain.active] = Date.now() + COOLDOWN_MS;
+      }
+      await this.mount();
+      notify('rebuilt', { reason, count: this.rebuilds.length });
+    });
+  }
+
+  // a faixa do microfone acabou ou ficou muda (driver reiniciou, dispositivo saiu): o LiveKit reinicia a faixa e
+  // chama restart(); aqui só registramos, para o diagnóstico mostrar o porquê de um buraco no áudio
+  private watchTrack(track: MediaStreamTrack) {
+    track.addEventListener('ended', () => noteError(new Error('a faixa do microfone acabou')), { once: true });
+    track.addEventListener('mute', () => noteError(new Error('a faixa do microfone ficou muda (sem som do dispositivo)')));
+  }
+
+  restart(opts: AudioProcessorOptions) {
+    return this.queue.run(async () => {
+      this.ctx = opts.audioContext;
+      this.track = opts.track;
+      this.watchTrack(opts.track);
+      await this.mount();
+    });
+  }
+
+  destroy() {
+    this.closed = true;
+    return this.queue.run(async () => {
+      this.chain?.teardown();
+      if (liveChain === this.chain) {
+        liveChain = null;
+        health.active = null;
+        health.wanted = null;
+        health.inDb = null;
+        health.outDb = null;
+        health.mono = null;
+      }
+      this.chain = null;
+      this.source?.disconnect();
+      this.source = undefined;
+    });
   }
 }
 
 let sharedContext: AudioContext | null = null;
+function getSharedContext() {
+  if (!sharedContext) {
+    // RNNoise e GTCRN trabalham em 48 kHz
+    sharedContext = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
+    // o navegador pode suspender o contexto (aba em segundo plano no celular, política de autoplay depois de um
+    // reinício): sem isso o microfone publicaria silêncio sem ninguém saber
+    sharedContext.addEventListener('statechange', () => {
+      const ctx = sharedContext!;
+      health.contextState = ctx.state;
+      if (ctx.state !== 'suspended') return;
+      void ctx.resume().catch(() => {});
+      setTimeout(() => {
+        if (ctx.state !== 'suspended') return;
+        notify('suspended');
+        const resume = () => void ctx.resume().catch(() => {});
+        window.addEventListener('pointerdown', resume, { once: true, capture: true });
+        window.addEventListener('keydown', resume, { once: true, capture: true });
+      }, 1000);
+    });
+  }
+  return sharedContext;
+}
 
 export interface MicTestSettings {
   noise: NoiseMode;
@@ -508,7 +879,13 @@ export interface MicTestHandle {
  * de verdade (IA de ruído, portão, nivelador) e toca de volta, com um pequeno atraso natural —
  * assim dá pra ouvir exatamente o que as outras pessoas ouviriam, e comparar os modelos na hora.
  */
-export async function startMicTest(deviceId: string, outputId: string, initial: MicTestSettings, onLevel: (level: MicLevel) => void): Promise<MicTestHandle> {
+export async function startMicTest(
+  deviceId: string,
+  outputId: string,
+  initial: MicTestSettings,
+  onLevel: (level: MicLevel) => void,
+  onActive?: (notice: ActiveNotice) => void,
+): Promise<MicTestHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   });
@@ -518,82 +895,47 @@ export async function startMicTest(deviceId: string, outputId: string, initial: 
   if (outputId && ctxWithSink.setSinkId) void ctxWithSink.setSinkId(outputId).catch(() => {});
 
   const source = ctx.createMediaStreamSource(stream);
-  const mono = ctx.createGain();
-  mono.channelCount = 1;
-  mono.channelCountMode = 'explicit';
-  mono.channelInterpretation = 'speakers';
-  source.connect(mono);
   const monitor = ctx.createGain();
   monitor.connect(ctx.destination);
 
   let settings = initial;
-  let nodes: AudioNode[] = [];
+  let chain: Chain | null = null;
+  const queue = new Queue();
+  let stopped = false;
 
-  async function rebuild() {
-    for (const n of nodes) {
-      try {
-        if (n instanceof GtcrnWorkletNode) n.destroy();
-        n.disconnect();
-      } catch {
-        // já desligado
-      }
-    }
-    nodes = [];
-    let input: AudioNode = mono;
-    const denoise = await noiseNode(ctx, settings.noise, settings.strength);
-    if (denoise) {
-      mono.connect(denoise);
-      input = denoise;
-      nodes.push(denoise);
-    }
-    await loadGateWorklet(ctx);
-    const gateNode = new AudioWorkletNode(ctx, 'concord-gate', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] });
-    gateNode.port.postMessage(settings.gate);
-    gateNode.port.onmessage = (e: MessageEvent<MicLevel>) => onLevel(e.data);
-    input.connect(gateNode);
-    input = gateNode;
-    nodes.push(gateNode);
-    if (settings.level && settings.noise !== 'off') {
-      // mesmo nivelador da chamada de verdade: só depois da limpeza, pra não "subir" o ruído
-      const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -28;
-      comp.knee.value = 12;
-      comp.ratio.value = 3.5;
-      comp.attack.value = 0.004;
-      comp.release.value = 0.25;
-      const makeup = ctx.createGain();
-      makeup.gain.value = 1;
-      input.connect(comp);
-      comp.connect(makeup);
-      input = makeup;
-      nodes.push(comp, makeup);
-    }
-    input.connect(monitor);
-  }
+  const rebuild = () =>
+    queue.run(async () => {
+      chain?.teardown();
+      if (stopped) return;
+      chain = new Chain(ctx, source, monitor, { ...settings, effect: 'none', level: settings.level && settings.noise !== 'off' }, { onLevel, onBroken: () => void rebuild() });
+      await chain.build();
+      if (chain.active && onActive) onActive({ wanted: settings.noise, active: chain.active, reason: chain.reason });
+    });
   await rebuild();
 
   return {
     update(next) {
+      // só a sensibilidade e a força mudam sem remontar
+      const same = next.noise === settings.noise && next.level === settings.level;
       settings = next;
-      void rebuild();
+      if (same) {
+        chain?.updateGate(next.gate);
+        chain?.setStrength(next.strength);
+      } else void rebuild();
     },
     setMonitorVolume(v) {
       monitor.gain.value = v;
     },
     stop() {
-      for (const n of nodes) {
-        try {
-          if (n instanceof GtcrnWorkletNode) n.destroy();
-          n.disconnect();
-        } catch {
-          // já desligado
-        }
-      }
-      monitor.disconnect();
-      mono.disconnect();
-      source.disconnect();
-      stream.getTracks().forEach((t) => t.stop());
-      void ctx.close();
+      stopped = true;
+      void queue.run(async () => {
+        chain?.teardown();
+        chain = null;
+        monitor.disconnect();
+        source.disconnect();
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close();
+      });
     },
   };
 }
@@ -607,7 +949,7 @@ export async function applyVoiceProcessing(
   level = true,
   strength = DEFAULT_NOISE_STRENGTH,
 ) {
-  const usesAi = noise === 'rnnoise' || noise === 'gtcrn' || noise === 'dfn';
+  const usesAi = isAiMode(noise);
   // microfone que se apresenta em estéreo (alguns fones/placas USB, às vezes com um lado mudo):
   // passa pelo processador mesmo sem IA/efeito só para virar mono e chegar nos dois lados do fone
   const stereoMic = (track.mediaStreamTrack.getSettings().channelCount ?? 1) > 1;
@@ -615,8 +957,6 @@ export async function applyVoiceProcessing(
     if (track.getProcessor()) await track.stopProcessor();
     return;
   }
-  // RNNoise e GTCRN trabalham em 48 kHz
-  sharedContext ??= new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
-  track.setAudioContext(sharedContext);
-  await track.setProcessor(new VoiceProcessor(noise, effect, gate, level && usesAi, strength));
+  track.setAudioContext(getSharedContext());
+  await track.setProcessor(new VoiceProcessor({ noise, strength, gate, level: level && usesAi, effect }));
 }

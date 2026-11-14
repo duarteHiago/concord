@@ -1,7 +1,7 @@
 import { Check, ChevronUp } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { NOISE_MODES } from '../lib/voiceEffects';
+import { NOISE_LABEL, NOISE_MODES } from '../lib/voiceEffects';
 import { useVoice } from '../store/voice';
 import { cx } from './ui';
 
@@ -94,6 +94,7 @@ const MENU_WIDTH = 300;
 
 function DeviceList({ kind, anchor, onDone, ref }: { kind: Kind; anchor: DOMRect; onDone: () => void; ref: React.Ref<HTMLDivElement> }) {
   const settings = useVoice((s) => s.audioSettings);
+  const activeNoise = useVoice((s) => s.activeNoise);
   const setAudioSettings = useVoice((s) => s.setAudioSettings);
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
 
@@ -152,6 +153,11 @@ function DeviceList({ kind, anchor, onDone, ref }: { kind: Kind; anchor: DOMRect
               {settings.noiseMode === m.id && <Check size={15} className="shrink-0 text-accent" />}
             </button>
           ))}
+          {activeNoise && activeNoise !== settings.noiseMode && (
+            <p className="px-3 pt-1 pb-1.5 text-[11px] text-fg-muted">
+              Valendo agora: <b>{NOISE_LABEL[activeNoise]}</b> (a escolhida não carregou nesta chamada).
+            </p>
+          )}
         </>
       )}
     </div>

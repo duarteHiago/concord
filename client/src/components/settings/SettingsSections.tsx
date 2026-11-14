@@ -1,7 +1,7 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { clipSettings } from '../../lib/clip';
-import { NOISE_MODES, micLevels, preloadDfn, startMicTest, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
+import { NOISE_LABEL, NOISE_MODES, micLevels, preloadDfn, startMicTest, type ActiveNotice, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
 import { CardPreview, StyleTab } from '../modals/StyleTab';
 import { GoogleAccountSection } from '../GoogleLogin';
@@ -774,6 +774,7 @@ export function Audio() {
             </button>
           ))}
         </div>
+        <ActiveNoiseNote />
       </div>
       {settings.noiseMode === 'dfn' && <NoiseStrength />}
       <MicSensitivity />
@@ -797,6 +798,19 @@ export function Audio() {
   );
 }
 
+/** O que está valendo de fato no microfone agora, quando difere do escolhido (o modelo não carregou e outro entrou). */
+function ActiveNoiseNote() {
+  const chosen = useVoice((s) => s.audioSettings.noiseMode);
+  const active = useVoice((s) => s.activeNoise);
+  const micOn = useVoice((s) => s.micOn);
+  if (!micOn || !active || active === chosen) return null;
+  return (
+    <p className="mt-2 rounded-xl bg-warn/12 px-3 py-2 text-xs">
+      <b>Valendo agora: {NOISE_LABEL[active]}.</b> A opção "{NOISE_LABEL[chosen]}" não carregou nesta chamada; o Concord tenta de novo sozinho daqui a alguns minutos ou quando você religar o microfone.
+    </p>
+  );
+}
+
 /** Testa o microfone sem entrar em nenhuma sala — reage ao vivo aos ajustes desta aba (modelo, força, sensibilidade). */
 function MicTest() {
   const settings = useVoice((s) => s.audioSettings);
@@ -804,6 +818,7 @@ function MicTest() {
   const toggleMic = useVoice((s) => s.toggleMic);
   const toggleDeafen = useVoice((s) => s.toggleDeafen);
   const [testing, setTesting] = useState(false);
+  const [active, setActive] = useState<ActiveNotice | null>(null);
   const [level, setLevel] = useState<MicLevel | null>(null);
   const [monitorVolume, setMonitorVolume] = useState(1);
   const [error, setError] = useState('');
@@ -846,6 +861,7 @@ function MicTest() {
         settings.outputId,
         { noise: settings.noiseMode, strength: settings.noiseStrength, gate: settings.gate, level: settings.autoGain },
         setLevel,
+        setActive,
       );
       handle.setMonitorVolume(monitorVolume);
       handleRef.current = handle;
@@ -871,6 +887,11 @@ function MicTest() {
         </Button>
       </div>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+      {testing && active && active.active !== active.wanted && (
+        <p className="mt-2 text-xs text-fg-muted">
+          Você está ouvindo a supressão <b>{NOISE_LABEL[active.active]}</b>: a "{NOISE_LABEL[active.wanted]}" não carregou{active.reason ? ` (${active.reason})` : ''}.
+        </p>
+      )}
       {testing && (
         <div className="mt-3 space-y-2">
           <div className="h-2 overflow-hidden rounded-full bg-surface-3">

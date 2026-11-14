@@ -10,7 +10,7 @@ import { Track, type Participant, type Room } from 'livekit-client';
 import { desktop, desktopInfo, type DesktopAppMetric, type DesktopDevInfo, type DesktopDevInfoStatic, type DesktopInfo } from './desktop';
 import { useVoice } from '../store/voice';
 import { getSocket } from './socket';
-import { micLevels, voiceNotices, type MicLevel } from './voiceEffects';
+import { getVoiceHealth, micLevels, voiceNotices, type MicLevel, type VoiceHealth } from './voiceEffects';
 import { useDevRecording, type RecordingState } from './devRecording';
 
 export interface DevTrackStat {
@@ -91,7 +91,8 @@ export interface DevSnapshot {
   };
   cpuCores: number;
   desktopInfo?: DesktopDevInfo;
-  voice?: { noiseMode: string; gateOn: boolean };
+  /** escolhido em Configurações, e o que a cadeia do microfone está fazendo de fato (ver getVoiceHealth) */
+  voice?: { noiseMode: string; gateOn: boolean; health?: VoiceHealth };
   gpuAdapter: GpuAdapter | null;
 }
 
@@ -409,7 +410,7 @@ export function useDevStatsPublisher(room: Room | null) {
   const snapshot = useDevSnapshot(room, subscribed || recording);
   useEffect(() => {
     if (!snapshot) return;
-    const data: DevSnapshot = { ...snapshot, voice: { noiseMode: audioSettings.noiseMode, gateOn: audioSettings.gate.mode !== 'off' } };
+    const data: DevSnapshot = { ...snapshot, voice: { noiseMode: audioSettings.noiseMode, gateOn: audioSettings.gate.mode !== 'off', health: getVoiceHealth() } };
     useDevRecording.getState().add(data);
     channelRef.current?.postMessage({ kind: 'snapshot', data } satisfies ChannelMsg);
     // só a leitura nova entra na gravação; mudar o áudio sozinho não conta como leitura

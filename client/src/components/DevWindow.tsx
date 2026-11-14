@@ -195,7 +195,8 @@ function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHi
         <Caption>O nível é o volume que chega depois da supressão de ruído. "Aberto" quer dizer que o portão de voz está deixando o som passar.</Caption>
         <InfoGrid
           rows={[
-            ['Motor ativo', snapshot.voice?.noiseMode ?? '?'],
+            ['Motor escolhido', snapshot.voice?.noiseMode ?? '?'],
+            ['Motor valendo agora', snapshot.voice?.health?.active ?? (snapshot.voice?.health ? 'sem processador (microfone desligado ou som cru)' : '?')],
             [
               'Troca automática',
               snapshot.noiseFallback
@@ -203,6 +204,21 @@ function GeralTab({ snapshot, history }: { snapshot: DevSnapshot; history: DevHi
                 : 'não aconteceu',
             ],
             ['Portão de voz', snapshot.voice?.gateOn ? 'ligado' : 'desligado'],
+            ['Contexto de áudio', snapshot.voice?.health?.contextState ?? '?'],
+            [
+              'Entra → sai da cadeia',
+              snapshot.voice?.health?.inDb != null && snapshot.voice.health.outDb != null
+                ? `${Math.round(snapshot.voice.health.inDb)} dB → ${Math.round(snapshot.voice.health.outDb)} dB`
+                : 'sem medição',
+            ],
+            ['Estéreo → mono', snapshot.voice?.health?.mono ?? 'chegou em mono'],
+            ['Remontagens pelo vigia', String(snapshot.voice?.health?.rebuilds ?? 0)],
+            [
+              'Último problema',
+              snapshot.voice?.health?.lastError
+                ? `${snapshot.voice.health.lastError} (${new Date(snapshot.voice.health.lastErrorAt ?? 0).toLocaleTimeString('pt-BR')})`
+                : 'nenhum',
+            ],
             [
               'Nível agora',
               snapshot.mic ? `${Math.round(snapshot.mic.level)} dB (limite ${Math.round(snapshot.mic.threshold)} dB) · ${snapshot.mic.open ? 'aberto' : 'fechado'}` : 'sem microfone ativo',
