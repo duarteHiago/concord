@@ -1,3 +1,5 @@
+// primeiro de tudo: protege os efeitos antes de qualquer componente rodar (ver lib/effectGuard.ts)
+import './lib/effectGuard';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
