@@ -665,6 +665,72 @@ describe('praça: andando e conversando', () => {
     assert.equal((rc.walkers as Me[]).find((w) => w.userId === caio.id)!.scene, 'lobby');
   });
 
+  it('portas fixas: quem sai deixa a porta interditada (ninguém entra, ninguém é arrastado); volta e recupera a mesma; bloqueio e porta errada não entram', async () => {
+    const { ana, bia, caio, serverId, a, b, c } = await setup();
+    type Door = { userId: string | null; gone: boolean };
+    type Scene = { userId: string; scene: string; floor: number; roomOf: string | null; x: number; y: number };
+    const doorsOf = (r: Record<string, unknown>) => r.doors as Door[];
+    const r0 = await emitAck(a, 'plaza:enter', { serverId });
+    // na ordem em que entraram: ana (dona), bia, caio
+    assert.deepEqual(doorsOf(r0).map((d) => d.userId), [ana.id, bia.id, caio.id]);
+    await emitAck(c, 'plaza:enter', { serverId });
+    // os dois vão para o corredor pelo elevador do prédio
+    const lobby = buildLobby();
+    const ground = layoutFor('inside', 1, null, 0);
+    for (const s of [a, c]) {
+      s.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+      await sleep(80);
+      s.emit('plaza:door', { serverId });
+      await sleep(120);
+      s.emit('plaza:move', { serverId, x: ground.elevator!.x, y: ground.elevator!.y });
+      await sleep(80);
+      s.emit('plaza:hall', { serverId });
+      await sleep(150);
+    }
+    const scenes: Scene[] = [];
+    a.on('plaza:scene', (m: Scene) => scenes.push(m));
+    const door = (i: number) => hallSpot(i).at;
+    // porta errada: na frente da porta da bia, pedindo o quarto do caio, não entra
+    a.emit('plaza:move', { serverId, x: door(1).x, y: door(1).y });
+    await sleep(100);
+    a.emit('plaza:room', { serverId, owner: caio.id });
+    await sleep(120);
+    assert.equal(scenes.filter((m) => m.userId === ana.id).length, 0);
+    // o caio entra no quarto da bia (na porta dela)
+    c.emit('plaza:move', { serverId, x: door(1).x, y: door(1).y });
+    await sleep(100);
+    c.emit('plaza:room', { serverId, owner: bia.id });
+    await sleep(150);
+    assert.equal(scenes.find((m) => m.userId === caio.id)?.roomOf, bia.id);
+    // a bia sai do servidor: porta dela interditada no mesmo lugar (a do caio não anda), e o caio volta para o corredor
+    const doorsMsg = new Promise<Door[]>((res) => a.once('plaza:doors', (m: { doors: Door[] }) => res(m.doors)));
+    assert.equal((await bia.post(`/servers/${serverId}/leave`)).status, 200);
+    const after = await doorsMsg;
+    assert.deepEqual(after.map((d) => [d.userId, d.gone]), [[ana.id, false], [null, true], [caio.id, false]]);
+    await sleep(150);
+    const back = scenes.filter((m) => m.userId === caio.id).pop()!;
+    assert.deepEqual([back.scene, back.roomOf], ['hall', null]);
+    // ninguém entra na porta interditada
+    const before = scenes.length;
+    a.emit('plaza:room', { serverId, owner: bia.id });
+    await sleep(150);
+    assert.equal(scenes.length, before);
+    // a bia volta: recupera a mesma porta
+    const code = (await ana.post(`/servers/${serverId}/invites`, {})).body.code as string;
+    const again = new Promise<Door[]>((res) => a.once('plaza:doors', (m: { doors: Door[] }) => res(m.doors)));
+    assert.equal((await bia.post(`/invites/${code}`)).status, 200);
+    assert.deepEqual((await again).map((d) => d.userId), [ana.id, bia.id, caio.id]);
+    // o caio bloqueia a ana: ela não entra no quarto dele, nem na porta certa
+    assert.equal((await caio.post(`/friends/${ana.id}/block`)).status, 200);
+    a.emit('plaza:move', { serverId, x: door(2).x, y: door(2).y });
+    await sleep(100);
+    const n = scenes.length;
+    a.emit('plaza:room', { serverId, owner: caio.id });
+    await sleep(150);
+    assert.equal(scenes.length, n);
+    void b;
+  });
+
   it('quem sai do servidor sai da praça', async () => {
     const { bia, serverId, a, b } = await setup();
     await emitAck(a, 'plaza:enter', { serverId });

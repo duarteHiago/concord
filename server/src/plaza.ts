@@ -3,7 +3,7 @@
 // Quem está sentado (na call) vem do estado de voz, não daqui.
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
-import { DRINK_MS, FLOOR_TABLES, GROUND_TABLES, MAX_FLOORS, MAX_HALL_DOORS, hallFloorCount, isDrink, nearCounter, planFloors, NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceScene, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
+import { DRINK_MS, FLOOR_TABLES, GROUND_TABLES, MAX_FLOORS, MAX_HALL_DOORS, hallFloorCount, hallSpot, isDrink, nearCounter, planFloors, NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceScene, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
 import { createVoiceToken, removeFromRoom } from './livekit.ts';
 import { getVoiceState, isServerDeafened, isServerMuted, voiceStatesFor } from './realtime.ts';
 import { channelPermissions, getChannel, isMember } from './access.ts';
@@ -90,6 +90,24 @@ function endPeek(serverId: string, channelId: string, userId: string) {
 /** Folga antes de tirar da sala quem parou de espiar ou de ouvir (dá tempo de o "entrei na call" chegar). */
 const PEEK_LEAVE_GRACE_MS = 4000;
 
+// faxina dos mapas que só cresciam: o lugar guardado de quem caiu (vale RESUME_MS) e o intervalo entre espiadas;
+// e mesa fechada para espiadas que esvaziou volta a ficar aberta (antes ficava fechada até o app reiniciar)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, p] of lastPlace) if (now - p.at > RESUME_MS) lastPlace.delete(key);
+  for (const [key, until] of peekCooldown) if (until < now) peekCooldown.delete(key);
+  for (const channelId of [...closedTables]) {
+    try {
+      const ch = getChannel(channelId);
+      if (voiceStatesFor(ch.server_id).some((v) => v.channelId === channelId)) continue;
+      closedTables.delete(channelId);
+      io?.to(`server:${ch.server_id}`).emit('plaza:closed', { serverId: ch.server_id, closed: closedOf(ch.server_id) });
+    } catch {
+      closedTables.delete(channelId); // sala apagada
+    }
+  }
+}, 30_000).unref();
+
 // faxina das espiadas vencidas (uma vez por segundo)
 setInterval(() => {
   const now = Date.now();
@@ -126,8 +144,16 @@ export function plazaCount(serverId: string) {
   return plazas.get(serverId)?.size ?? 0;
 }
 
+// as salas de voz de cada servidor, guardadas por alguns segundos: cada passo lá dentro confere o mapa do andar, que
+// sai delas, e antes isso era uma consulta ao banco por passo
+const channelsCache = new Map<string, { at: number; rows: ChannelRow[] }>();
+const CHANNELS_TTL = 3000;
 function voiceChannels(serverId: string) {
-  return all<ChannelRow>("SELECT * FROM channels WHERE server_id = ? AND type = 'voice' ORDER BY position, name", serverId);
+  const hit = channelsCache.get(serverId);
+  if (hit && Date.now() - hit.at < CHANNELS_TTL) return hit.rows;
+  const rows = all<ChannelRow>("SELECT * FROM channels WHERE server_id = ? AND type = 'voice' ORDER BY position, name", serverId);
+  channelsCache.set(serverId, { at: Date.now(), rows });
+  return rows;
 }
 
 // ---- como cada lugar está montado (editor da Praça) ----
@@ -172,10 +198,68 @@ const samePlace = (a: Walker, b: Walker) => a.scene === b.scene && a.floor === b
 // (escada no fim para o de cima). O quarto é da pessoa (o mesmo em toda Praça) e só ela monta.
 
 const hallCache = new Map<string, PlazaLayout>(); // "quartos:andar" -> mapa
-const memberCount = (serverId: string) => (get<{ n: number }>('SELECT COUNT(*) AS n FROM members WHERE server_id = ?', serverId)?.n ?? 0);
-/** Um andar do corredor do servidor (o número de andares sai de quantas pessoas há nele). */
+
+/** Uma porta do corredor: de quem é, e se está interditada (a pessoa saiu, foi expulsa ou apagou a conta). */
+export interface HallDoor {
+  userId: string | null;
+  gone: boolean;
+}
+/** Porta interditada há mais que isso pode ir para quem chegar no servidor (senão o corredor só cresce). */
+const DOOR_REUSE_MS = 30 * 86_400_000;
+const doorsCache = new Map<string, HallDoor[]>(); // serverId -> portas na ordem (o índice é o slot)
+
+/**
+ * As portas do corredor de um servidor, na ordem. Acerta com quem é membro agora: quem entrou ganha porta (uma
+ * interditada há mais de DOOR_REUSE_MS, ou uma nova no fim); quem saiu deixa a sua interditada; quem voltou
+ * recupera a mesma. Fica em memória até alguém entrar ou sair do servidor (ver plazaMembersChanged).
+ */
+function doorsOf(serverId: string): HallDoor[] {
+  const hit = doorsCache.get(serverId);
+  if (hit) return hit;
+  const members = all<{ user_id: string }>('SELECT user_id FROM members WHERE server_id = ? ORDER BY joined_at, user_id', serverId).map((m) => m.user_id);
+  const isMemberNow = new Set(members);
+  const rows = all<{ slot: number; user_id: string | null; gone_at: number | null }>('SELECT slot, user_id, gone_at FROM plaza_doors WHERE server_id = ? ORDER BY slot', serverId);
+  const now = Date.now();
+  const hasDoor = new Set<string>();
+  for (const r of rows) {
+    const here = !!r.user_id && isMemberNow.has(r.user_id);
+    if (here) hasDoor.add(r.user_id!);
+    if (here && r.gone_at !== null) {
+      run('UPDATE plaza_doors SET gone_at = NULL WHERE server_id = ? AND slot = ?', serverId, r.slot);
+      r.gone_at = null;
+    } else if (!here && r.gone_at === null) {
+      run('UPDATE plaza_doors SET gone_at = ? WHERE server_id = ? AND slot = ?', now, serverId, r.slot);
+      r.gone_at = now;
+    }
+  }
+  let next = rows.length ? rows[rows.length - 1].slot + 1 : 0;
+  for (const userId of members) {
+    if (hasDoor.has(userId)) continue;
+    const reuse = rows.find((r) => r.gone_at !== null && now - r.gone_at > DOOR_REUSE_MS);
+    if (reuse) {
+      run('UPDATE plaza_doors SET user_id = ?, gone_at = NULL WHERE server_id = ? AND slot = ?', userId, serverId, reuse.slot);
+      Object.assign(reuse, { user_id: userId, gone_at: null });
+    } else {
+      run('INSERT INTO plaza_doors (server_id, slot, user_id, gone_at) VALUES (?, ?, ?, NULL)', serverId, next, userId);
+      rows.push({ slot: next++, user_id: userId, gone_at: null });
+    }
+  }
+  const doors: HallDoor[] = [];
+  for (const r of rows.sort((a, b) => a.slot - b.slot)) {
+    while (doors.length < r.slot) doors.push({ userId: null, gone: true }); // buraco (não deveria acontecer)
+    doors.push({ userId: r.gone_at === null ? r.user_id : null, gone: r.gone_at !== null });
+  }
+  const out = doors.slice(0, MAX_HALL_DOORS);
+  doorsCache.set(serverId, out);
+  return out;
+}
+
+/** Quantos quartos (portas) o corredor tem, contando as interditadas. */
+const doorCount = (serverId: string) => doorsOf(serverId).length;
+
+/** Um andar do corredor do servidor (o número de andares sai de quantas portas ele tem). */
 function hallLayout(serverId: string, level: number) {
-  const total = Math.min(MAX_HALL_DOORS, memberCount(serverId));
+  const total = Math.min(MAX_HALL_DOORS, doorCount(serverId));
   const key = `${total}:${level}`;
   let layout = hallCache.get(key);
   if (!layout) {
@@ -480,8 +564,8 @@ function resumeSpot(serverId: string, plaza: Map<string, Walker>, raw: unknown):
   const floor = Number.isInteger(r.floor) ? (r.floor as number) : 0;
   const roomOf = typeof r.roomOf === 'string' ? r.roomOf : null;
   if (scene === 'inside' && (floor < 0 || floor >= floorPlan(serverId).length)) return null;
-  if (scene === 'hall' && (floor < 0 || floor >= hallFloorCount(memberCount(serverId)))) return null;
-  if (scene === 'room' && (!roomOf || !isMember(serverId, roomOf))) return null;
+  if (scene === 'hall' && (floor < 0 || floor >= hallFloorCount(doorCount(serverId)))) return null;
+  if (scene === 'room' && (!roomOf || !canVisit(serverId, String(r.visitor ?? ''), roomOf))) return null;
   const level = scene === 'inside' || scene === 'hall' ? floor : 0;
   const layout = layoutOf(serverId, scene, level, scene === 'room' ? roomOf : null);
   const x = Number(r.x);
@@ -512,6 +596,10 @@ function removeSocket(serverId: string, userId: string, socketId: string) {
  */
 export function plazaForgetRoom(owner: string) {
   rooms.delete(owner);
+  // as portas dela ficam interditadas e sem nome (nada da conta apagada fica guardado aqui)
+  const servers = all<{ server_id: string }>('SELECT DISTINCT server_id FROM plaza_doors WHERE user_id = ?', owner).map((r) => r.server_id);
+  run('UPDATE plaza_doors SET user_id = NULL, gone_at = COALESCE(gone_at, ?) WHERE user_id = ?', Date.now(), owner);
+  for (const serverId of servers) plazaMembersChanged(serverId);
   if (!io) return;
   for (const [serverId, plaza] of plazas) {
     for (const [userId, w] of plaza) {
@@ -523,11 +611,44 @@ export function plazaForgetRoom(owner: string) {
   }
 }
 
-/** Saiu (ou foi tirado) do servidor: sai da praça junto, em todos os aparelhos. */
+/** Saiu (ou foi tirado) do servidor: sai da praça junto, em todos os aparelhos, e a porta dele fica interditada. */
 export function plazaLeaveServer(userId: string, serverId: string) {
   const w = plazas.get(serverId)?.get(userId);
-  if (!w) return;
-  for (const id of [...w.sockets]) removeSocket(serverId, userId, id);
+  if (w) for (const id of [...w.sockets]) removeSocket(serverId, userId, id);
+  plazaMembersChanged(serverId);
+  evictFromRoom(serverId, userId);
+}
+
+/**
+ * Alguém entrou ou saiu do servidor: as portas do corredor são acertadas de novo (quem entrou ganha porta, quem saiu
+ * deixa a sua interditada) e quem está na praça recebe a lista nova.
+ */
+export function plazaMembersChanged(serverId: string) {
+  doorsCache.delete(serverId);
+  if (!io || !plazas.has(serverId)) return;
+  io.to(room(serverId)).emit('plaza:doors', { serverId, doors: doorsOf(serverId) });
+}
+
+/** Quem está no quarto de `owner` nesta praça (o dono saiu, foi expulso ou apagou a conta) volta para o corredor. */
+function evictFromRoom(serverId: string, owner: string) {
+  const plaza = plazas.get(serverId);
+  if (!io || !plaza) return;
+  // na frente da porta dele, se ainda existe; senão, no começo do primeiro andar
+  const slot = all<{ slot: number }>('SELECT slot FROM plaza_doors WHERE server_id = ? AND user_id = ?', serverId, owner)[0]?.slot;
+  const spot = slot !== undefined ? hallSpot(slot) : null;
+  for (const [userId, w] of plaza) {
+    if (w.scene !== 'room' || w.roomOf !== owner) continue;
+    const hall = hallLayout(serverId, spot?.level ?? 0);
+    const near = spot && walkable(hall, spot.at.x, spot.at.y) ? spot.at : hall.spawn;
+    Object.assign(w, { scene: 'hall', floor: spot?.level ?? 0, roomOf: null, ...spawnPoint(hall, plaza, near), activeAt: Date.now() });
+    io.to(room(serverId)).emit('plaza:scene', { serverId, userId, scene: w.scene, floor: w.floor, roomOf: null, x: w.x, y: w.y });
+  }
+}
+
+/** Dá para entrar no quarto de `owner` vindo de `visitor`? (dono ainda no servidor, e nenhum dos dois bloqueou o outro) */
+function canVisit(serverId: string, visitor: string, owner: string) {
+  if (!isMember(serverId, owner)) return false;
+  return owner === visitor || !blockedPairs(visitor).has(owner);
 }
 
 export function setupPlaza(server: Server) {
@@ -573,7 +694,8 @@ export function registerPlaza(socket: Socket, userId: string) {
       const key = `${serverId}:${userId}`;
       const kept = lastPlace.get(key);
       lastPlace.delete(key);
-      const back = (kept && Date.now() - kept.at < RESUME_MS ? resumeSpot(serverId, plaza, kept) : null) ?? resumeSpot(serverId, plaza, data?.resume);
+      const withMe = (p: unknown) => (p && typeof p === 'object' ? { ...(p as object), visitor: userId } : null);
+      const back = (kept && Date.now() - kept.at < RESUME_MS ? resumeSpot(serverId, plaza, withMe(kept)) : null) ?? resumeSpot(serverId, plaza, withMe(data?.resume));
       const at = back ? { scene: back.scene, floor: back.floor, roomOf: back.roomOf, x: back.x, y: back.y } : { scene: 'lobby' as Scene, floor: 0, roomOf: null, ...spawnPoint(lobbyLayout(serverId), plaza) };
       w = { ...at, avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now(), drink: null, drinkUntil: 0 };
       plaza.set(userId, w);
@@ -599,6 +721,8 @@ export function registerPlaza(socket: Socket, userId: string) {
       rooms: Object.fromEntries([...new Set([...plaza.values()].map((x) => x.roomOf).filter((id): id is string => !!id))].map((id) => [id, roomStyleOf(id)])),
       peeks: peeksOf(serverId),
       closed: closedOf(serverId),
+      // as portas do corredor, na ordem (as interditadas vêm sem dono)
+      doors: doorsOf(serverId),
     });
     if (isNew) {
       socket.to(room(serverId)).emit('plaza:joined', { serverId, walker: walkerJson(userId, w) });
@@ -661,7 +785,7 @@ export function registerPlaza(socket: Socket, userId: string) {
     const here = walkerHere(data?.serverId);
     if (!here || !moveRate() || !onElevator(here.serverId, here.w)) return;
     const asked = data.floor === undefined ? 0 : Number(data.floor);
-    if (!Number.isInteger(asked) || asked < 0 || asked >= hallFloorCount(memberCount(here.serverId))) return;
+    if (!Number.isInteger(asked) || asked < 0 || asked >= hallFloorCount(doorCount(here.serverId))) return;
     if (here.w.scene === 'hall' && here.w.floor === asked) return;
     const to = hallLayout(here.serverId, asked);
     const arrive = to.elevator ? { x: to.elevator.x, y: to.elevator.y + 1 } : to.spawn;
@@ -678,7 +802,7 @@ export function registerPlaza(socket: Socket, userId: string) {
     const on = (p: { x: number; y: number } | null | undefined) => !!p && w.x === p.x && w.y === p.y;
     const dir = on(from.stairs?.up) ? 1 : on(from.stairs?.down) ? -1 : 0;
     const level = w.floor + dir;
-    if (!dir || level < 0 || level >= hallFloorCount(memberCount(here.serverId))) return;
+    if (!dir || level < 0 || level >= hallFloorCount(doorCount(here.serverId))) return;
     const to = hallLayout(here.serverId, level);
     const back = dir > 0 ? to.stairs?.down : to.stairs?.up;
     Object.assign(w, { scene: 'hall', floor: level, roomOf: null, ...spawnPoint(to, others(here.serverId), back ? { x: back.x, y: back.y + 1 } : to.spawn), activeAt: Date.now() });
@@ -690,8 +814,11 @@ export function registerPlaza(socket: Socket, userId: string) {
     const here = walkerHere(data?.serverId);
     if (!here || !moveRate() || here.w.scene !== 'hall') return;
     const owner = typeof data.owner === 'string' ? data.owner : '';
-    // encostado na parede do fundo, onde ficam as portas
-    if (here.w.y !== 0 || !owner || !isMember(here.serverId, owner)) return;
+    // de fato na frente da porta desse quarto (não de qualquer porta), dono ainda no servidor e sem bloqueio
+    const slot = doorsOf(here.serverId).findIndex((d) => !d.gone && d.userId === owner);
+    const spot = slot >= 0 ? hallSpot(slot) : null;
+    if (!owner || !spot || spot.level !== here.w.floor || here.w.x !== spot.at.x || here.w.y !== spot.at.y) return;
+    if (!canVisit(here.serverId, userId, owner)) return;
     const to = roomLayout(owner);
     Object.assign(here.w, { scene: 'room', floor: 0, roomOf: owner, ...spawnPoint(to, others(here.serverId), to.spawn, owner), activeAt: Date.now() });
     sceneChanged(here.serverId, here.w);
@@ -719,7 +846,7 @@ export function registerPlaza(socket: Socket, userId: string) {
       if (w.x !== from.door.x || w.y !== from.door.y) return;
       // volta para o andar do corredor onde fica a porta desse quarto, na frente dela
       const asked = Number(data.floor);
-      const level = Number.isInteger(asked) && asked >= 0 && asked < hallFloorCount(memberCount(here.serverId)) ? asked : 0;
+      const level = Number.isInteger(asked) && asked >= 0 && asked < hallFloorCount(doorCount(here.serverId)) ? asked : 0;
       const hall = hallLayout(here.serverId, level);
       const x = Number(data.x);
       const back = Number.isInteger(x) && walkable(hall, x, 0) ? { x, y: 0 } : hall.spawn;
