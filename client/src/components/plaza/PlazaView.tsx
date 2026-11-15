@@ -176,6 +176,12 @@ export default function PlazaView() {
   // cardápio do balcão (a coluna do balcão clicada, para ir até ali)
   const [barMenu, setBarMenu] = useState<number | null>(null);
   const setBarMenuRef = useRef(setBarMenu);
+  // o cardápio fica em cima do balcão (o laço de desenho posiciona e fecha se o boneco sair de perto)
+  const barRef = useRef<HTMLDivElement>(null);
+  const barColRef = useRef<number | null>(null);
+  useEffect(() => {
+    barColRef.current = barMenu;
+  }, [barMenu]);
   // mesa clicada (fora de call): sentar ou espiar
   const [tableMenu, setTableMenu] = useState<number | null>(null);
   const peeking = usePlazaPeek((s) => s.channelId);
@@ -590,6 +596,17 @@ export default function PlazaView() {
         const p = toCss(at(tb.x + 1, tb.y + 1).x, at(tb.x + 1, tb.y + 1).y + 18);
         el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
       });
+      if (barRef.current && barColRef.current !== null) {
+        const meA = meId ? w.anims.get(meId) : undefined;
+        if (layout.kind !== 'inside' || layout.level !== 0 || (meA && !meA.path.length && !nearCounter(layout, { x: Math.round(meA.x), y: Math.round(meA.y) }))) {
+          barColRef.current = null;
+          setBarMenuRef.current(null);
+        } else {
+          const s = at(barColRef.current + 0.5, 1.5, 34);
+          const p = toCss(s.x, s.y);
+          barRef.current.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+        }
+      }
       if (signRef.current) {
         const { x0, x1 } = layout.building;
         const a = x1 - x0 + 1;
@@ -1163,20 +1180,16 @@ export default function PlazaView() {
         />
       )}
       {barMenu !== null && (
-        <BarMenu
-          holding={walkers[me.id]?.drink ?? null}
-          onPick={(drink) => {
-            const col = barMenu;
-            setBarMenu(null);
-            if (drink === null) return usePlaza.getState().drink(null);
-            const cur = walkers[me.id];
-            if (cur && nearCounter(layout, cur)) return usePlaza.getState().drink(drink);
-            // saiu de perto com o cardápio aberto: volta ao balcão e pede ao chegar
-            moveMe(nearestWalkable(layout, { x: col, y: 3 }));
-            world.current.pendingDrink = drink;
-          }}
-          onClose={() => setBarMenu(null)}
-        />
+        <div ref={barRef} className="absolute top-0 left-0 z-[64]">
+          <BarMenu
+            holding={walkers[me.id]?.drink ?? null}
+            onPick={(drink) => {
+              setBarMenu(null);
+              usePlaza.getState().drink(drink);
+            }}
+            onClose={() => setBarMenu(null)}
+          />
+        </div>
       )}
       {tableMenu !== null && tables[tableMenu] && (
         <TableMenu
@@ -1212,7 +1225,7 @@ export default function PlazaView() {
 function TableMenu({ channel, people, closed, onSit, onPeek, onClose }: { channel?: Channel; people: number; closed: boolean; onSit: () => void; onPeek: () => void; onClose: () => void }) {
   const peekBlock = closed ? 'A mesa fechou para espiadas' : people === 0 ? 'Ninguém na mesa' : null;
   return (
-    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 text-white shadow-xl">
+    <div className="animate-pop-in flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 whitespace-nowrap text-white shadow-xl">
       <span className="plaza-pixel max-w-[140px] truncate text-[13px] font-bold">#{channel?.name ?? 'mesa'}</span>
       {people > 0 && <span className="text-[11px] text-white/50">· {people}</span>}
       <button onClick={onSit} className="ml-1 rounded-lg bg-[#e8685a] px-2.5 py-1 text-xs font-bold hover:brightness-110">
@@ -1371,7 +1384,7 @@ function FloorMenu({
   );
 }
 
-/** Cardápio do balcão: escolhe a bebida (o boneco vai até o balcão e pede). */
+/** Cardápio do balcão: aparece em cima do balcão, quando o boneco chega lá. */
 function BarMenu({ holding, onPick, onClose }: { holding: string | null; onPick: (drink: string | null) => void; onClose: () => void }) {
   return (
     <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 text-white shadow-xl">
