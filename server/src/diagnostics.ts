@@ -34,7 +34,11 @@ export function readDiagnostic(id: string): Buffer | null {
 export function deleteDiagnostic(id: string) {
   if (!UUID.test(id)) return;
   run('DELETE FROM diagnostics WHERE id = ?', id);
-  rmSync(fileOf(id), { force: true });
+  try {
+    rmSync(fileOf(id), { force: true });
+  } catch {
+    // id que nem é de diagnóstico: não há arquivo para apagar
+  }
 }
 
 function cleanup() {
