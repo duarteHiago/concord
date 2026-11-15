@@ -11,6 +11,8 @@ export interface Walker {
   userId: string;
   /** na praça (lobby) ou dentro do estabelecimento */
   scene: Scene;
+  /** andar, lá dentro (0 = térreo) */
+  floor?: number;
   /** bebida na mão (pedida no balcão) */
   drink?: string | null;
   x: number;
@@ -42,6 +44,8 @@ type Ack = {
   places?: Partial<Record<Scene, PlaceStyle | null>>;
   peeks?: Peek[];
   closed?: string[];
+  floors?: (string | null)[][];
+  floorAssign?: Record<string, number>;
 };
 
 interface PlazaState {
@@ -51,6 +55,10 @@ interface PlazaState {
   phase: 'arriving' | 'ready' | null;
   /** canal de cada mesa, na ordem do mapa (null = sala que eu não vejo) */
   tables: (string | null)[];
+  /** as mesas de cada andar do estabelecimento (térreo primeiro) */
+  floors: (string | null)[][];
+  /** em que andar o admin pôs cada sala (o resto vai sozinho) */
+  floorAssign: Record<string, number>;
   /** como cada lugar está montado (null = o padrão), pelo editor de quem gerencia o servidor */
   places: Partial<Record<Scene, PlaceStyle | null>>;
   /** quem está espiando cada mesa agora, por servidor (chega também para quem está na call sem abrir a praça) */
@@ -75,6 +83,8 @@ interface PlazaState {
   door: () => void;
   /** entrei numa call com a praça aberta: o boneco vai para a mesa dela, lá dentro */
   table: () => void;
+  /** no elevador: ir para um andar */
+  goFloor: (floor: number) => void;
   /** pedir (ou largar, com null) uma bebida no balcão */
   drink: (drink: string | null) => void;
   say: (text: string) => Promise<boolean>;
@@ -100,6 +110,8 @@ export const usePlaza = create<PlazaState>((set, get) => {
       for (const w of r.walkers ?? []) walkers[w.userId] = w;
       set({
         tables: r.tables ?? [],
+        floors: r.floors ?? [r.tables ?? []],
+        floorAssign: r.floorAssign ?? {},
         walkers,
         places: r.places ?? {},
         peeks: { ...get().peeks, [serverId]: r.peeks ?? [] },
@@ -112,6 +124,8 @@ export const usePlaza = create<PlazaState>((set, get) => {
     serverId: null,
     phase: null,
     tables: [],
+    floors: [],
+    floorAssign: {},
     places: {},
     peeks: {},
     closed: {},
@@ -155,6 +169,10 @@ export const usePlaza = create<PlazaState>((set, get) => {
     table: () => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:table', { serverId });
+    },
+    goFloor: (floor) => {
+      const serverId = get().serverId;
+      if (serverId) getSocket()?.emit('plaza:floor', { serverId, floor });
     },
     drink: (drink) => {
       const serverId = get().serverId;
@@ -231,8 +249,12 @@ export function bindPlazaSocket(socket: Socket) {
     const { [userId]: _gone, ...rest } = s().walkers;
     usePlaza.setState({ walkers: rest });
   });
-  socket.on('plaza:move', ({ serverId, userId, scene, x, y }: { serverId: string; userId: string; scene: Scene; x: number; y: number }) => {
-    if (here(serverId)) patchWalker(userId, { scene, x, y, activeAt: Date.now() });
+  type Where = { serverId: string; userId: string; scene: Scene; floor?: number; x: number; y: number };
+  socket.on('plaza:move', ({ serverId, userId, scene, floor, x, y }: Where) => {
+    if (here(serverId)) patchWalker(userId, { scene, floor: floor ?? 0, x, y, activeAt: Date.now() });
+  });
+  socket.on('plaza:floors', ({ serverId, floors, assign }: { serverId: string; floors: (string | null)[][]; assign?: Record<string, number> }) => {
+    if (here(serverId)) usePlaza.setState({ floors, tables: floors[0] ?? [], ...(assign ? { floorAssign: assign } : {}) });
   });
   socket.on('plaza:drink', ({ serverId, userId, drink }: { serverId: string; userId: string; drink: string | null }) => {
     if (!here(serverId)) return;
@@ -244,8 +266,8 @@ export function bindPlazaSocket(socket: Socket) {
       }, DRINK_MS);
     }
   });
-  socket.on('plaza:scene', ({ serverId, userId, scene, x, y }: { serverId: string; userId: string; scene: Scene; x: number; y: number }) => {
-    if (here(serverId)) patchWalker(userId, { scene, x, y, activeAt: Date.now() });
+  socket.on('plaza:scene', ({ serverId, userId, scene, floor, x, y }: Where) => {
+    if (here(serverId)) patchWalker(userId, { scene, floor: floor ?? 0, x, y, activeAt: Date.now() });
   });
   socket.on('plaza:avatar', ({ serverId, userId, avatar }: { serverId: string; userId: string; avatar: PlazaAvatar }) => {
     if (!here(serverId)) return;

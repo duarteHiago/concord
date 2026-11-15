@@ -47,7 +47,10 @@ export function PlaceEditor({
   onSave,
   onCancel,
   onReset,
+  children,
 }: {
+  /** seções a mais no fim do painel (os andares, lá dentro) */
+  children?: React.ReactNode;
   scene: Scene;
   draft: PlaceStyle;
   setDraft: (s: PlaceStyle) => void;
@@ -186,6 +189,7 @@ export function PlaceEditor({
               ))}
             </div>,
           )}
+        {children}
         <div className="text-[11px] text-white/40">{draft.items.length} móveis neste lugar</div>
       </div>
       <div className="flex items-center gap-2 border-t border-white/10 px-4 py-3">

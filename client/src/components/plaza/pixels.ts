@@ -479,6 +479,25 @@ function counter(ctx: Ctx, layout: PlazaLayout, accent: string) {
   }
 }
 
+/** Porta do elevador na parede do fundo, em cima da casa (x, y), com o andar no visor. */
+function elevator(ctx: Ctx, x: number, y: number, level: number) {
+  const q = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(x + u0, y, z0), at(x + u1, y, z0), at(x + u1, y, z1), at(x + u0, y, z1)], c);
+  q(-0.15, 1.15, 0, 46, PAL.outline);
+  q(-0.08, 1.08, 0, 44, '#77709e');
+  q(0.02, 0.48, 0, 38, '#b9b5cc');
+  q(0.52, 0.98, 0, 38, '#a9a5c0');
+  q(0.48, 0.52, 0, 38, PAL.outline);
+  // visor com setas e o andar
+  q(0.2, 0.8, 39, 43.5, '#141127');
+  const v = at(x + 0.5, y, 41.5);
+  ctx.fillStyle = '#ff9d4d';
+  ctx.fillRect(Math.round(v.x) - 1, Math.round(v.y) - 1, 3, 2);
+  void level;
+  // capacho na frente
+  const p = iso(x, y + 1);
+  fillPoly(ctx, [{ x: p.x, y: p.y + 3 }, { x: p.x + 12, y: p.y + 8 }, { x: p.x, y: p.y + 13 }, { x: p.x - 12, y: p.y + 8 }], '#4b4470');
+}
+
 function exitMat(ctx: Ctx, x: number, y: number) {
   const p = iso(x, y);
   fillPoly(ctx, [{ x: p.x, y: p.y + 2 }, { x: p.x + 13, y: p.y + 8 }, { x: p.x, y: p.y + 14 }, { x: p.x - 13, y: p.y + 8 }], '#2b2350');
@@ -708,7 +727,8 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
     platformEdge(ctx, layout, true);
     const f = FLOORS.inside[layout.floor] ?? FLOORS.inside[0];
     for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) woodTile(ctx, x, y, f.a, f.b);
-    exitMat(ctx, layout.door.x, layout.door.y);
+    if (layout.level === 0) exitMat(ctx, layout.door.x, layout.door.y);
+    if (layout.elevator) elevator(ctx, layout.elevator.x, layout.elevator.y, layout.level);
   } else {
     platformEdge(ctx, layout);
     const f = FLOORS.lobby[layout.floor] ?? FLOORS.lobby[0];
@@ -723,8 +743,9 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
   }
   // tapetes ficam no chão (dá para pisar em cima)
   for (const it of layout.items) if (it.k === 'rug') drawItem(ctx, it, layout.kind, 0);
-  if (layout.kind === 'inside') counter(ctx, layout, accent);
-  else building(ctx, layout, accent);
+  // o prédio só existe na praça; lá dentro, o balcão fica no térreo (os andares de cima não têm nenhum dos dois)
+  if (layout.kind === 'lobby') building(ctx, layout, accent);
+  else if (layout.level === 0) counter(ctx, layout, accent);
   return { canvas, originX: Math.round(-left), originY: -top };
 }
 
@@ -949,6 +970,23 @@ export function avatarSprite(av: PlazaAvatar, facing: Facing, pose: Pose): HTMLC
   return canvas;
 }
 
+/** Copo em cima da mesa, perto de quem sentou (centro do fundo do copo em x, y). */
+export function drawCup(ctx: Ctx, x: number, y: number, color: string) {
+  const cx = Math.round(x);
+  const cy = Math.round(y);
+  fillEllipse(ctx, cx, cy + 1, 3, 1.5, 'rgba(0,0,0,0.25)');
+  ctx.fillStyle = PAL.outline;
+  ctx.fillRect(cx - 2, cy - 6, 5, 7);
+  ctx.fillStyle = 'rgba(220, 235, 255, 0.9)';
+  ctx.fillRect(cx - 1, cy - 5, 3, 5);
+  ctx.fillStyle = color;
+  ctx.fillRect(cx - 1, cy - 3, 3, 3);
+  if (color === '#f0b429') {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 1, cy - 5, 3, 1);
+  }
+}
+
 /** Desenha o boneco com os pés em (fx, fy), já arredondado para o pixel. */
 export function drawAvatar(
   ctx: Ctx,
@@ -978,18 +1016,38 @@ export function drawAvatar(
   // nas mãos (mais ou menos na altura da barriga do boneco)
   const handY = top + 19;
   if (opts.console && !opts.sleeping) {
-    // console portátil: corpo escuro, tela piscando em cores, dois botões
+    // console portátil: balança um pouquinho nas mãos, a tela tem um "jogo" rodando (um bichinho pulando
+    // obstáculos) e os botões acendem quando o polegar aperta
+    const t = opts.t;
+    const lift = Math.floor(t / 420) % 4 === 0 ? -1 : 0;
+    const cy = handY + lift;
     ctx.fillStyle = PAL.outline;
-    ctx.fillRect(x - 6, handY - 1, 12, 7);
-    ctx.fillStyle = '#4b4470';
-    ctx.fillRect(x - 5, handY, 10, 5);
-    const hue = Math.floor(opts.t / 250) % 4;
-    ctx.fillStyle = ['#3fb8c9', '#8b5cf6', '#2e9e6a', '#f5c451'][hue];
-    ctx.fillRect(x - 2, handY + 1, 4, 3);
-    ctx.fillStyle = '#e8685a';
-    ctx.fillRect(x + 3, handY + 2, 1, 1);
+    ctx.fillRect(x - 7, cy - 1, 14, 8);
+    ctx.fillStyle = '#5a5288';
+    ctx.fillRect(x - 6, cy, 12, 6);
+    ctx.fillStyle = '#433c6e';
+    ctx.fillRect(x - 6, cy + 5, 12, 1);
+    // tela
+    ctx.fillStyle = '#1d2b3a';
+    ctx.fillRect(x - 3, cy + 1, 6, 4);
+    ctx.fillStyle = '#7ad18a';
+    ctx.fillRect(x - 3, cy + 4, 6, 1); // chão do joguinho
+    const run = Math.floor(t / 120) % 6;
+    const jump = run === 2 || run === 3 ? 1 : 0;
     ctx.fillStyle = '#ffe6a0';
-    ctx.fillRect(x - 4, handY + 2, 1, 1);
+    ctx.fillRect(x - 2, cy + 3 - jump, 1, 1); // o bichinho
+    ctx.fillStyle = '#e8685a';
+    ctx.fillRect(x + 2 - (run % 3), cy + 3, 1, 1); // o obstáculo vindo
+    // botões (o da direita pisca com o apertar)
+    const press = Math.floor(t / 180) % 3 === 0;
+    ctx.fillStyle = PAL.outline;
+    ctx.fillRect(x - 5, cy + 2, 1, 1);
+    ctx.fillRect(x - 6, cy + 2, 3, 1);
+    ctx.fillRect(x - 5, cy + 1, 1, 3);
+    ctx.fillStyle = press ? '#ffffff' : '#e8685a';
+    ctx.fillRect(x + 4, cy + 1, 1, 1);
+    ctx.fillStyle = press ? '#e8685a' : '#f5c451';
+    ctx.fillRect(x + 5, cy + 3, 1, 1);
   } else if (opts.drink && !opts.sleeping) {
     // copo na mão direita (de quem olha): vidro claro com a bebida e, às vezes, levado à boca
     const sip = Math.floor(opts.t / 3000) % 6 === 0;
