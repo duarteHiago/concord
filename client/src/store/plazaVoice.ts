@@ -29,8 +29,16 @@ let micBeforeDeafen = false;
 const audioEls = new Map<string, HTMLMediaElement>();
 const lastVolume = new Map<string, number>();
 
+/** Tira o elemento de áudio de alguém da página (a faixa pode ter parado antes, e aí o detach não acha mais nada). */
+function dropAudio(identity: string) {
+  audioEls.get(identity)?.remove();
+  audioEls.delete(identity);
+}
+
 function attachAudio(track: RemoteTrack, p: RemoteParticipant) {
   if (track.kind !== Track.Kind.Audio) return;
+  // um elemento por pessoa: depois de uma reconexão a faixa chega de novo, e o elemento velho ficava para trás
+  dropAudio(p.identity);
   const el = track.attach();
   el.dataset.plaza = '1';
   document.body.appendChild(el);
@@ -63,8 +71,15 @@ export const usePlazaVoice = create<PlazaVoiceState>((set, get) => ({
       r.on(RoomEvent.TrackSubscribed, (track, _pub, p) => attachAudio(track, p));
       r.on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => {
         track.detach().forEach((el) => el.remove());
-        audioEls.delete(p.identity);
+        dropAudio(p.identity);
       });
+      r.on(RoomEvent.ParticipantDisconnected, (p) => {
+        dropAudio(p.identity);
+        lastVolume.delete(p.identity);
+      });
+      // voltou de uma queda: esquece os volumes guardados para a próxima volta (10 por segundo) reassinar quem está
+      // perto e reaplicar o volume de cada um, em vez de achar que já está tudo certo
+      r.on(RoomEvent.Reconnected, () => lastVolume.clear());
       r.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
         const speaking: Record<string, true> = {};
         for (const s of speakers) speaking[s.identity] = true;
