@@ -1,7 +1,7 @@
 import type { Release } from './index';
 
 export default {
-  id: '2026-11-15-0757',
+  id: '2026-11-15-1201',
   audience: 'plaza',
   title: 'Elevador direto para o andar do seu quarto',
   highlights: [],
