@@ -1,6 +1,7 @@
 // E-mails do Concord (código do cadastro, confirmar o endereço e recuperar a senha), enviados pela API
 // transacional do Brevo. Sem BREVO_API_KEY e MAIL_FROM, o e-mail some do app e o cadastro não pede e-mail.
 import { config } from './config.ts';
+import { all, run } from './db.ts';
 
 // (o endereço só muda nos testes, para não mandar e-mail de verdade)
 const API_URL = process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email';
@@ -44,7 +45,70 @@ ${btn}
 
 const text = ({ lines, button, footer }: Mail) => [...lines, ...(button ? [`${button.label}: ${button.url}`] : []), '', footer].join('\n\n');
 
-async function send(to: string, mail: Mail) {
+/** Tipo de cada e-mail, para a contagem por dia (o painel mostra o que mais gasta o limite). */
+export type MailKind = 'signup' | 'verify' | 'reset' | 'password' | 'email-changed';
+
+const utcDay = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10);
+
+function count(kind: MailKind, ok: boolean) {
+  try {
+    run(
+      `INSERT INTO mail_stats (day, kind, sent, failed) VALUES (?, ?, ?, ?)
+       ON CONFLICT(day, kind) DO UPDATE SET sent = sent + excluded.sent, failed = failed + excluded.failed`,
+      utcDay(),
+      kind,
+      ok ? 1 : 0,
+      ok ? 0 : 1,
+    );
+  } catch {
+    // contagem é só para o painel: nunca atrapalha o envio
+  }
+}
+
+/** Os últimos `days` dias (UTC), do mais antigo para hoje: enviados e falhas de cada tipo. */
+export function mailStats(days = 30) {
+  const since = utcDay(Date.now() - (days - 1) * 86_400_000);
+  const rows = all<{ day: string; kind: MailKind; sent: number; failed: number }>('SELECT day, kind, sent, failed FROM mail_stats WHERE day >= ? ORDER BY day', since);
+  return Array.from({ length: days }, (_, i) => {
+    const day = utcDay(Date.now() - (days - 1 - i) * 86_400_000);
+    const of = rows.filter((r) => r.day === day);
+    const byKind: Partial<Record<MailKind, number>> = {};
+    for (const r of of) byKind[r.kind] = r.sent;
+    return { day, sent: of.reduce((n, r) => n + r.sent, 0), failed: of.reduce((n, r) => n + r.failed, 0), byKind };
+  });
+}
+
+// O que o próprio Brevo diz do plano (créditos que sobram). Consultado no máximo a cada 10 minutos.
+// (com BREVO_API_URL trocado, como nos testes, só consulta se BREVO_ACCOUNT_URL também for dado: nunca manda a
+// chave de mentira para o Brevo de verdade)
+const ACCOUNT_URL = process.env.BREVO_ACCOUNT_URL || (process.env.BREVO_API_URL ? '' : 'https://api.brevo.com/v3/account');
+let account: { at: number; data: { plan: string; credits: number | null; creditsType: string | null } | null } = { at: 0, data: null };
+export async function brevoPlan() {
+  if (!config.mail.brevoKey || !ACCOUNT_URL) return null;
+  if (Date.now() - account.at < 10 * 60_000) return account.data;
+  try {
+    const res = await fetch(ACCOUNT_URL, { signal: AbortSignal.timeout(5000), headers: { 'api-key': config.mail.brevoKey, Accept: 'application/json' } });
+    if (!res.ok) throw new Error(String(res.status));
+    const body = (await res.json()) as { plan?: { type?: string; credits?: number; creditsType?: string }[] };
+    const p = body.plan?.find((x) => x.creditsType === 'sendLimit') ?? body.plan?.[0];
+    account = { at: Date.now(), data: p ? { plan: p.type ?? '?', credits: typeof p.credits === 'number' ? p.credits : null, creditsType: p.creditsType ?? null } : null };
+  } catch {
+    account = { at: Date.now(), data: null };
+  }
+  return account.data;
+}
+
+async function send(to: string, mail: Mail, kind: MailKind) {
+  try {
+    await deliver(to, mail);
+    count(kind, true);
+  } catch (err) {
+    count(kind, false);
+    throw err;
+  }
+}
+
+async function deliver(to: string, mail: Mail) {
   const res = await fetch(API_URL, {
     signal: AbortSignal.timeout(10_000),
     method: 'POST',
@@ -68,7 +132,7 @@ export const sendVerifyEmail = (to: string, username: string, url: string) =>
     lines: [`Oi, @${username}! Este e-mail foi cadastrado na sua conta do Concord para recuperar a senha se você esquecer.`, 'Confirme clicando no botão abaixo. O link vale por 24 horas.'],
     button: { label: 'Confirmar e-mail', url },
     footer: NOT_YOU,
-  });
+  }, 'verify');
 
 /** Código de 6 dígitos para terminar o cadastro (a conta só é criada depois dele). */
 export const sendSignupCode = (to: string, username: string, code: string) =>
@@ -80,7 +144,7 @@ export const sendSignupCode = (to: string, username: string, code: string) =>
       'O código vale por 15 minutos.',
     ],
     footer: 'Se não foi você, ignore este e-mail: nenhuma conta é criada sem o código.',
-  });
+  }, 'signup');
 
 export const sendResetEmail = (to: string, username: string, url: string) =>
   send(to, {
@@ -88,7 +152,7 @@ export const sendResetEmail = (to: string, username: string, url: string) =>
     lines: [`Oi, @${username}! Pediram para redefinir a senha da sua conta do Concord.`, 'Para escolher uma senha nova, clique no botão abaixo. O link vale por 30 minutos e só funciona uma vez.'],
     button: { label: 'Escolher nova senha', url },
     footer: 'Se não foi você, ignore este e-mail: sua senha continua a mesma.',
-  });
+  }, 'reset');
 
 export const sendPasswordChanged = (to: string, username: string) =>
   send(to, {
@@ -96,7 +160,7 @@ export const sendPasswordChanged = (to: string, username: string) =>
     lines: [`Oi, @${username}! A senha da sua conta do Concord acabou de ser trocada, e os outros aparelhos conectados foram desconectados.`],
     button: { label: 'Abrir o Concord', url: config.publicUrl },
     footer: 'Se não foi você, use "Esqueci minha senha" na tela de login agora mesmo para recuperar a conta.',
-  });
+  }, 'password');
 
 export const sendEmailChanged = (to: string, username: string, newEmail: string | null) =>
   send(to, {
@@ -107,4 +171,4 @@ export const sendEmailChanged = (to: string, username: string, newEmail: string 
         : `Oi, @${username}! Este e-mail foi removido da sua conta do Concord e não recebe mais os links de recuperação.`,
     ],
     footer: 'Se não foi você, entre na conta, troque a senha e cadastre o e-mail de novo em Configurações > Conta.',
-  });
+  }, 'email-changed');

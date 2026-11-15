@@ -184,6 +184,15 @@ if [ -n "${PLAZA_SERVERS:-}" ]; then
   fi
 fi
 
+# Limite de e-mails por dia do plano do Brevo (o painel /admin avisa quando estiver perto). Vazio = 300 (o grátis).
+if [ -n "${MAIL_DAILY_LIMIT:-}" ]; then
+  if printf '%s' "$MAIL_DAILY_LIMIT" | grep -qE '^[0-9]{1,9}$'; then
+    upsert_env MAIL_DAILY_LIMIT "$MAIL_DAILY_LIMIT"
+  else
+    echo "!! MAIL_DAILY_LIMIT tem que ser um número; ignorado." >&2
+  fi
+fi
+
 # senha do Grafana: gerada aqui na VPS e nunca impressa (os logs do CI são públicos)
 if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' .env; then
   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)" >> .env

@@ -23,6 +23,8 @@ export const config = {
   // conta com senha precisa de um e-mail confirmado (Gmail, Outlook, Yahoo, iCloud; ver shared/email.ts).
   // Só vale com o e-mail configurado acima; REQUIRE_EMAIL=false desliga (instalações pequenas, testes).
   requireEmail: env.REQUIRE_EMAIL !== 'false',
+  // quantos e-mails o plano do Brevo deixa mandar por dia (o grátis: 300). Só para o painel avisar quando estiver perto.
+  mailDailyLimit: Math.max(1, Number(env.MAIL_DAILY_LIMIT) || 300),
   // captcha do cadastro e do "esqueci a senha" (Cloudflare Turnstile). Sem as duas chaves, fica desligado.
   turnstile: { siteKey: (env.TURNSTILE_SITE_KEY ?? '').trim(), secret: (env.TURNSTILE_SECRET ?? '').trim() },
   // código de um convite permanente: o app mostra "Entrar na comunidade" e a landing page ganha o botão

@@ -657,6 +657,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS feedback_user ON feedback(user_id);
 `);
 // Quarto de cada pessoa na Praça (ver plaza.ts): chão, paredes e móveis, montados só pelo dono. É da pessoa, não do
+// E-mails enviados por dia (em UTC, o dia do Brevo) e por tipo, para a equipe acompanhar o limite diário do plano
+// de envio (ver mail.ts e /admin, aba E-mails). Só contagens: nenhum endereço fica guardado aqui.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS mail_stats (
+    day TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    sent INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, kind)
+  );
+`);
 // servidor: o mesmo quarto em toda Praça. Sem linha, vale o padrão (shared/plaza.ts#defaultStyle('room')).
 db.exec(`
   CREATE TABLE IF NOT EXISTS plaza_rooms (
