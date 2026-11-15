@@ -421,8 +421,8 @@ export const hallSpot = (i: number) => ({ level: Math.floor(i / HALL_DOORS_PER_F
 const hallWidth = (doors: number) => Math.max(10, hallDoor(doors - 1).x + 4);
 
 /**
- * Um andar do corredor dos quartos: até HALL_DOORS_PER_FLOOR portas, uma a cada 3 casas na parede do fundo. No
- * primeiro, o elevador na ponta da esquerda; nos de cima, a escada para descer no lugar dele. Se tem andar acima,
+ * Um andar do corredor dos quartos: até HALL_DOORS_PER_FLOOR portas, uma a cada 3 casas na parede do fundo. O
+ * elevador fica na ponta da esquerda (nos andares de cima, com a escada para descer do lado). Se tem andar acima,
  * a escada para subir fica no fim. `total` = quartos somando todos os andares.
  */
 function baseHall(total: number, level = 0): Base {
@@ -432,7 +432,9 @@ function baseHall(total: number, level = 0): Base {
   const n = Math.max(0, Math.min(HALL_DOORS_PER_FLOOR, all - lv * HALL_DOORS_PER_FLOOR));
   const w = hallWidth(n);
   const h = 5;
-  const elevator = lv === 0 ? { x: 1, y: 0 } : null;
+  // o elevador existe em todo andar (leva direto a qualquer andar do prédio ou do corredor); nos de cima, do lado
+  // da escada de descer
+  const elevator = lv === 0 ? { x: 1, y: 0 } : { x: 2, y: 0 };
   const down = lv > 0 ? { x: 1, y: 0 } : null;
   const up = lv < floors - 1 ? { x: w - 2, y: 0 } : null;
   const spawn = { x: 1, y: 1 };
