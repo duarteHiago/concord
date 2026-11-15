@@ -30,7 +30,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { memberName, type Channel, type ServerDetail } from '../lib/types';
 import { useActiveDetail, useApp } from '../store/app';
-import { PlazaButton } from './plaza/PlazaButton';
 import { armPopoverToggle, toggleOrOpenPopover, usePopover } from '../store/popover';
 import { useVoice } from '../store/voice';
 import { Composer, MessageFeed } from './ChatView';
@@ -896,9 +895,6 @@ function StatsBadge({ track, targetFps }: { track: LocalTrack | RemoteTrack; tar
 function ControlDock({ channel }: { channel: Channel }) {
   const { micOn, deafened, cameraOn, sharing, serverMuted, toggleMic, toggleDeafen, toggleCamera, stopShare, leave } = useVoice();
   const openModal = useApp((s) => s.openModal);
-  // globo da Praça na linha dos botões da call (no espaço vazio da direita), se o servidor tem Praça
-  const detail = useActiveDetail();
-  const plaza = detail?.plaza ? { serverId: detail.server.id, count: detail.plaza.count } : null;
 
   const round = (label: string, onClick: () => void, icon: ReactNode, tone: 'default' | 'off' | 'danger' = 'default') => (
     <button
@@ -917,9 +913,7 @@ function ControlDock({ channel }: { channel: Channel }) {
   );
 
   return (
-    <div className="control-dock flex shrink-0 items-center">
-      {/* espaçadores dos dois lados: os botões ficam no meio e o globo da Praça no canto direito, sem cobrir nada */}
-      <div className="min-w-0 flex-1" />
+    <div className="control-dock flex shrink-0 justify-center">
       <div className="dock-row flex items-center gap-2.5 rounded-full bg-surface-2 p-2.5">
         {round(serverMuted ? 'Silenciado por um moderador' : micOn ? 'Silenciar' : 'Ativar microfone', () => void toggleMic(), micOn ? <Mic size={20} /> : <MicOff size={20} />, micOn ? 'default' : 'off')}
         {round(deafened ? 'Ativar áudio' : 'Ensurdecer', () => void toggleDeafen(), deafened ? <HeadphoneOff size={20} /> : <Headphones size={20} />, deafened ? 'off' : 'default')}
@@ -943,7 +937,6 @@ function ControlDock({ channel }: { channel: Channel }) {
         {sharing && round('Trocar qualidade ou fonte', () => openModal({ type: 'shareScreen' }), <Settings2 size={20} />)}
         {round('Sair da sala', () => void leave(), <PhoneOff size={20} />, 'danger')}
       </div>
-      <div className="flex min-w-0 flex-1 justify-end pl-3">{plaza && <PlazaButton serverId={plaza.serverId} initialCount={plaza.count} />}</div>
     </div>
   );
 }
