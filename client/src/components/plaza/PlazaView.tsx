@@ -8,7 +8,9 @@ import {
   EMOTES,
   SAY_MAX,
   defaultAvatar,
+  distance,
   layoutFor,
+  proximityVolume,
   findPath,
   nearestWalkable,
   walkable,
@@ -21,6 +23,7 @@ import { memberName, type Channel, type Member, type VoiceState } from '../../li
 import { reduceMotion } from '../../lib/motion';
 import { useApp } from '../../store/app';
 import { usePlaza } from '../../store/plaza';
+import { usePlazaVoice } from '../../store/plazaVoice';
 import { toast } from '../../store/toast';
 import { useVoice } from '../../store/voice';
 import { cx } from '../ui';
@@ -140,6 +143,8 @@ export default function PlazaView() {
     pendingJoin: null as { channelId: string; table: number } | null,
     /** fui andando até a porta: ao chegar, troca de lugar */
     pendingDoor: false,
+    /** quando o volume da voz do lobby foi recalculado pela última vez */
+    volumesAt: 0,
     staticKey: '',
     staticLayer: null as ReturnType<typeof renderStatic> | null,
     view: { x: 0, y: 0, scale: 1, dpr: 1 },
@@ -262,6 +267,16 @@ export default function PlazaView() {
       }
       for (const id of [...w.anims.keys()]) if (!plaza.walkers[id]) w.anims.delete(id);
 
+      // voz do lobby: volume de cada pessoa pela distância até o meu boneco (umas 10 vezes por segundo)
+      const pv = usePlazaVoice.getState();
+      if (!L.inside && pv.status === 'connected' && now - w.volumesAt > 100) {
+        w.volumesAt = now;
+        const mine2 = meId ? w.anims.get(meId) : undefined;
+        const volumes = new Map<string, number>();
+        if (mine2) for (const [id, a] of w.anims) if (id !== meId) volumes.set(id, proximityVolume(distance(a, mine2)));
+        pv.setVolumes(volumes);
+      }
+
       // cheguei na porta: troca de lugar (o servidor confere)
       const atDoor = meId ? w.anims.get(meId) : undefined;
       if (w.pendingDoor && atDoor && !atDoor.path.length && atDoor.x === layout.door.x && atDoor.y === layout.door.y) {
@@ -367,7 +382,8 @@ export default function PlazaView() {
       });
       const items = sceneObjects(layout, looks, PAL.coral, now);
       for (const f of figs) {
-        const speaking = !!voice.speaking[f.userId] && seats.has(f.userId);
+        // lá dentro, quem fala na call da mesa; no lobby, quem fala na voz da praça
+        const speaking = L.inside ? !!voice.speaking[f.userId] && seats.has(f.userId) : !!pv.speaking[f.userId];
         items.push({
           depth: f.x + f.y + (f.seated ? 0.05 : 0),
           draw: (ctx) => drawAvatar(ctx, f.avatar, f.facing, f.pose, f.fx, f.fy, { speaking, bob: f.bob, t: now }),
@@ -627,6 +643,19 @@ export default function PlazaView() {
     if (!v || !v.streaming || v.channelId !== voiceChannelId) setPip(null);
   }, [pip, voiceStates, voiceChannelId]);
 
+  // voz por proximidade: liga no lobby (fora de call, para não ouvir duas conversas), desliga lá dentro
+  const lobbyVoice = phase === 'ready' && !inside && !voiceChannelId;
+  useEffect(() => {
+    if (lobbyVoice) void usePlazaVoice.getState().connect(serverId);
+    else usePlazaVoice.getState().disconnect();
+  }, [lobbyVoice, serverId]);
+  useEffect(
+    () => () => {
+      usePlazaVoice.getState().disconnect();
+    },
+    [],
+  );
+
   const goDoor = () => moveMe(layout.door);
 
   const myVoice = voiceStates?.find((v) => v.userId === me.id);
@@ -706,7 +735,7 @@ export default function PlazaView() {
       {hint && phase === 'ready' && (
         <div className="absolute top-20 left-1/2 w-[min(92vw,420px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#1b1430]/90 p-4 text-sm text-white/90 shadow-xl backdrop-blur">
           <div className="plaza-pixel mb-1 text-base font-bold text-[#ffe6a0]">Bem-vindo à praça!</div>
-          Clique no chão para andar (ou use as setas). As calls ficam <b>dentro do prédio</b>: entre pela porta e clique numa mesa para sentar. Clique na TV de uma mesa para assistir a transmissão numa telinha. O que você escreve vira balão e <b>não fica salvo</b>.
+          Clique no chão para andar (ou use as setas). Aqui fora a conversa é <b>por proximidade</b>: ligue o microfone e quem estiver perto te ouve, e os balões só chegam a quem está perto. As calls ficam <b>dentro do prédio</b>: entre pela porta e clique numa mesa para sentar. Clique na TV de uma mesa para assistir a transmissão numa telinha. O que você escreve vira balão e <b>não fica salvo</b>.
           <button onClick={dismissHint} className="mt-3 block rounded-lg bg-[#e8685a] px-3 py-1.5 font-semibold text-white hover:brightness-110">
             Entendi
           </button>
@@ -732,6 +761,7 @@ export default function PlazaView() {
           <HudButton label="Meu boneco" flat onClick={() => setEditing(true)}>
             <Shirt size={17} />
           </HudButton>
+          {!inside && <LobbyMic inCall={!!voiceChannelId} />}
           <span className="mx-0.5 h-6 w-px bg-white/15" />
           <button onClick={goDoor} className="flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold text-white hover:bg-white/10">
             <DoorOpen size={16} /> {inside ? 'Voltar à praça' : 'Entrar no prédio'}
@@ -788,6 +818,32 @@ function HudButton({ label, onClick, children, flat, active }: { label: string; 
       )}
     >
       {children}
+    </button>
+  );
+}
+
+/** Microfone da voz por proximidade do lobby. */
+function LobbyMic({ inCall }: { inCall: boolean }) {
+  const status = usePlazaVoice((s) => s.status);
+  const micOn = usePlazaVoice((s) => s.micOn);
+  if (inCall) {
+    return (
+      <span title="Você está numa call: a voz da praça fica desligada" className="grid h-9 w-9 place-items-center text-white/35">
+        <MicOff size={17} />
+      </span>
+    );
+  }
+  if (status !== 'connected') return null;
+  return (
+    <button
+      onClick={() => void usePlazaVoice.getState().toggleMic()}
+      title={micOn ? 'Desligar o microfone da praça' : 'Falar na praça (quem estiver perto te ouve)'}
+      aria-label={micOn ? 'Desligar o microfone da praça' : 'Falar na praça'}
+      aria-pressed={micOn}
+      className={cx('flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold text-white transition', micOn ? 'bg-[#2e9e6a] hover:brightness-110' : 'hover:bg-white/10')}
+    >
+      {micOn ? <Mic size={16} /> : <MicOff size={16} className="text-[#ff8a7e]" />}
+      <span className="hidden sm:inline">{micOn ? 'Falando' : 'Falar'}</span>
     </button>
   );
 }

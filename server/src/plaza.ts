@@ -3,7 +3,8 @@
 // Quem está sentado (na call) vem do estado de voz, não daqui.
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
-import { buildLobby, buildLayout, cleanSay, isEmote, nearestWalkable, sanitizeAvatar, walkable, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
+import { SAY_RADIUS, buildLobby, buildLayout, cleanSay, distance, isEmote, lobbyRoom, nearestWalkable, sanitizeAvatar, walkable, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
+import { removeFromRoom } from './livekit.ts';
 import { channelPermissions, isMember } from './access.ts';
 import { config } from './config.ts';
 import { all, get, type ChannelRow } from './db.ts';
@@ -26,6 +27,21 @@ const layouts = new Map<string, { key: string; layout: PlazaLayout }>();
 export function plazaEnabled(serverId: string) {
   if (config.plazaServers) return config.plazaServers.has('*') || config.plazaServers.has(serverId);
   return config.staging;
+}
+
+/** Está no lobby (a praça) deste servidor agora? Só assim vale estar na sala de voz do lobby. */
+export function inLobby(serverId: string, userId: string) {
+  return plazas.get(serverId)?.get(userId)?.scene === 'lobby';
+}
+
+/** Nome de sala do LiveKit que é o lobby de algum servidor: devolve o servidor (senão, null). */
+export function lobbyServerOf(roomName: string) {
+  return roomName.startsWith('plaza_') ? roomName.slice('plaza_'.length) : null;
+}
+
+/** Saiu do lobby (entrou no prédio ou fechou a praça): sai da voz do lobby na hora, não só na próxima faxina. */
+function dropLobbyVoice(serverId: string, userId: string) {
+  void removeFromRoom(lobbyRoom(serverId), userId).catch(() => {});
 }
 
 export function plazaCount(serverId: string) {
@@ -108,6 +124,7 @@ function removeSocket(serverId: string, userId: string, socketId: string) {
   io.sockets.sockets.get(socketId)?.leave(room(serverId));
   if (w.sockets.size) return;
   plaza.delete(userId);
+  if (w.scene === 'lobby') dropLobbyVoice(serverId, userId);
   if (!plaza.size) plazas.delete(serverId);
   io.to(room(serverId)).emit('plaza:left', { serverId, userId });
   broadcastCount(serverId);
@@ -216,17 +233,24 @@ export function registerPlaza(socket: Socket, userId: string) {
     const arrive = scene === 'lobby' ? { x: to.door.x, y: to.door.y + 1 } : to.spawn;
     const others = new Map([...plazas.get(here.serverId)!].filter(([id]) => id !== userId));
     Object.assign(w, { scene, ...spawnPoint(to, others, arrive), activeAt: Date.now() });
+    if (scene === 'inside') dropLobbyVoice(here.serverId, userId);
     io.to(room(here.serverId)).emit('plaza:scene', { serverId: here.serverId, userId, scene, x: w.x, y: w.y });
   });
 
-  /** Manda para quem está no mesmo lugar (lobby ou dentro), menos quem bloqueou a pessoa (ou foi bloqueado por ela). */
-  async function sendToPlaza(serverId: string, event: string, payload: unknown) {
+  /**
+   * Manda para quem está no mesmo lugar (lobby ou dentro), menos quem bloqueou a pessoa (ou foi bloqueado por ela).
+   * `near`: no lobby, só para quem está a até SAY_RADIUS casas (a conversa por proximidade).
+   */
+  async function sendToPlaza(serverId: string, event: string, payload: unknown, near = false) {
     const blocked = blockedPairs(userId);
     const plaza = plazas.get(serverId);
-    const scene = plaza?.get(userId)?.scene;
+    const me = plaza?.get(userId);
+    if (!me) return;
     for (const s of await io.in(room(serverId)).fetchSockets()) {
       const other = s.data.userId as string;
-      if (blocked.has(other) || plaza?.get(other)?.scene !== scene) continue;
+      const o = plaza?.get(other);
+      if (blocked.has(other) || !o || o.scene !== me.scene) continue;
+      if (near && me.scene === 'lobby' && other !== userId && distance(o, me) > SAY_RADIUS) continue;
       s.emit(event, payload);
     }
   }
@@ -238,7 +262,7 @@ export function registerPlaza(socket: Socket, userId: string) {
     if (!text) return ack?.({ ok: false, error: 'Escreva alguma coisa.' });
     if (!sayRate()) return ack?.({ ok: false, error: 'Calma: muitos balões em pouco tempo.' });
     here.w.activeAt = Date.now();
-    void sendToPlaza(here.serverId, 'plaza:say', { serverId: here.serverId, userId, text, at: Date.now() });
+    void sendToPlaza(here.serverId, 'plaza:say', { serverId: here.serverId, userId, text, at: Date.now() }, true);
     ack?.({ ok: true });
   });
 

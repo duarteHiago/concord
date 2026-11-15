@@ -151,6 +151,39 @@ describe('praça: andando e conversando', () => {
     assert.equal(got.length, 0);
   });
 
+  it('no lobby, o balão só chega a quem está perto', async () => {
+    const { serverId, a, b, c } = await setup();
+    for (const s of [a, b, c]) await emitAck(s, 'plaza:enter', { serverId });
+    const lobby = buildLobby();
+    // b vai para o canto de cima (longe do portal); c fica perto de a, no portal
+    b.emit('plaza:move', { serverId, x: 2, y: 2 });
+    await sleep(200);
+    const gotB: unknown[] = [];
+    const gotC: unknown[] = [];
+    b.on('plaza:say', (m) => gotB.push(m));
+    c.on('plaza:say', (m) => gotC.push(m));
+    assert.ok(lobby.spawn.y - 2 > 8);
+    assert.equal((await emitAck(a, 'plaza:say', { serverId, text: 'oi, vizinho' })).ok, true);
+    await sleep(250);
+    assert.equal(gotC.length, 1);
+    assert.equal(gotB.length, 0);
+  });
+
+  it('a voz do lobby só libera para quem está no lobby', async () => {
+    const { ana, serverId, a } = await setup();
+    assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 409);
+    await emitAck(a, 'plaza:enter', { serverId });
+    const ok = await ana.post(`/servers/${serverId}/plaza/voice-token`);
+    assert.equal(ok.status, 200);
+    assert.equal(typeof ok.body.token, 'string');
+    const lobby = buildLobby();
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(100);
+    a.emit('plaza:door', { serverId });
+    await sleep(200);
+    assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 409);
+  });
+
   it('balão sai limpo, e quem bloqueou não recebe', async () => {
     const { ana, caio, serverId, a, b, c } = await setup();
     for (const s of [a, b, c]) await emitAck(s, 'plaza:enter', { serverId });

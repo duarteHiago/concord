@@ -65,6 +65,23 @@ export function sanitizeAvatar(raw: unknown, userId: string): PlazaAvatar {
 
 export const SAY_MAX = 120;
 
+// ---- proximidade (só no lobby; lá dentro vale o lugar inteiro) ----
+
+/** Até quantas casas um balão do lobby chega. */
+export const SAY_RADIUS = 8;
+/** Até quantas casas se ouve alguém no lobby (perto disso, o volume vai a zero). */
+export const HEAR_RADIUS = 7;
+/** Volume de quem está a `d` casas: cheio até 2 casas, caindo até sumir em HEAR_RADIUS. */
+export function proximityVolume(d: number) {
+  if (d <= 2) return 1;
+  if (d >= HEAR_RADIUS) return 0;
+  const k = 1 - (d - 2) / (HEAR_RADIUS - 2);
+  return k * k;
+}
+export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+/** Sala de voz do lobby de um servidor, no LiveKit. */
+export const lobbyRoom = (serverId: string) => `plaza_${serverId}`;
+
 /** Limpa o texto de um balão: uma linha só, sem caracteres de controle, até SAY_MAX. Vazio = descartar. */
 export function cleanSay(raw: unknown): string {
   if (typeof raw !== 'string') return '';

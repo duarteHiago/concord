@@ -7,7 +7,7 @@ import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, touchSession, verifySession } from './http.ts';
 import { removeFromRoom, updateVoicePermission, voiceParticipants } from './livekit.ts';
 import { socketEvents, timedSocket } from './metrics.ts';
-import { plazaLeaveServer, registerPlaza, setupPlaza } from './plaza.ts';
+import { inLobby, lobbyServerOf, plazaLeaveServer, registerPlaza, setupPlaza } from './plaza.ts';
 
 export interface VoiceState {
   userId: string;
@@ -404,8 +404,10 @@ async function sweepVoiceRooms() {
   }
   const next = new Set<string>();
   for (const p of list) {
-    let ok = voice.get(p.identity)?.channelId === p.room;
-    if (ok) {
+    // sala de voz do lobby da Praça: vale para quem está andando no lobby daquele servidor
+    const lobbyOf = lobbyServerOf(p.room);
+    let ok = lobbyOf ? inLobby(lobbyOf, p.identity) : voice.get(p.identity)?.channelId === p.room;
+    if (ok && !lobbyOf) {
       try {
         ok = has(channelPermissions(getChannel(p.room), p.identity), P.CONNECT);
       } catch {
