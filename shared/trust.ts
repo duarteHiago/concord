@@ -56,10 +56,11 @@ export const TRUST_WEIGHTS = {
   helpfulReport: 2,
   helpfulMax: 10,
   /** por denúncia confirmada contra a pessoa (abuso infantil já zera a nota) */
-  confirmed: { csam: 100, violence: 30, nudity: 25, harassment: 20, spam: 12, other: 8 } as Record<ReportCategory, number>,
+  // graves (abuso infantil, violência, nudez, assédio/ódio) pesam mais que um ban; as leves (spam, outro), menos
+  confirmed: { csam: 100, violence: 30, nudity: 25, harassment: 20, spam: 10, other: 6 } as Record<ReportCategory, number>,
   /** por servidor que baniu a pessoa, até o teto */
-  serverBan: 8,
-  serverBanMax: 32,
+  serverBan: 12,
+  serverBanMax: 36,
   /** problema com mais de tantos dias pesa a metade */
   halfAfterDays: 180,
 };
