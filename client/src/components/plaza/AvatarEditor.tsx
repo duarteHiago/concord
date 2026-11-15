@@ -15,6 +15,7 @@ import {
 } from '../../../../shared/plaza.ts';
 import { useApp } from '../../store/app';
 import { usePlaza } from '../../store/plaza';
+import { hud, primarySm, soft } from './hud';
 import { cx } from '../ui';
 import { avatarSprite, type Pose } from './pixels';
 
@@ -65,7 +66,7 @@ function Swatches({ colors, value, onChange, label }: { colors: string[]; value:
           aria-checked={value === i}
           aria-label={`${label} ${i + 1}`}
           onClick={() => onChange(i)}
-          className={cx('h-7 w-7 rounded-lg border-2 transition active:scale-90', value === i ? 'scale-110 border-white' : 'border-white/10 hover:border-white/40')}
+          className={cx('h-8 w-8 rounded-full border-2 transition active:scale-90', value === i ? 'scale-110 border-fg' : 'border-line-strong hover:border-fg-subtle')}
           style={{ background: c }}
         />
       ))}
@@ -82,7 +83,7 @@ function Chips({ options, value, onChange, label }: { options: string[]; value: 
           role="radio"
           aria-checked={value === i}
           onClick={() => onChange(i)}
-          className={cx('rounded-lg px-2.5 py-1 text-[13px] font-semibold transition active:scale-95', value === i ? 'bg-[#e8685a] text-white' : 'bg-white/10 text-white/80 hover:bg-white/15')}
+          className={cx('rounded-full px-3 py-1.5 text-[13px] font-bold transition active:scale-95', value === i ? 'bg-accent text-on-accent' : 'bg-surface-2 text-fg hover:bg-surface-4')}
         >
           {o}
         </button>
@@ -118,27 +119,27 @@ export function AvatarEditor({ onClose }: { onClose: () => void }) {
 
   const row = (title: string, body: React.ReactNode) => (
     <div>
-      <div className="mb-1.5 text-[11px] font-bold tracking-wider text-white/50 uppercase">{title}</div>
+      <div className={cx(hud.label, 'mb-1.5')}>{title}</div>
       {body}
     </div>
   );
 
   return (
     <div className="absolute inset-0 z-[70] grid place-items-center bg-black/50 p-4 backdrop-blur-sm" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-label="Meu boneco" className="animate-pop-in flex max-h-[92vh] w-[min(96vw,640px)] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#1b1430] text-white shadow-2xl sm:flex-row">
+      <div role="dialog" aria-label="Meu boneco" className={cx(hud.panel, 'animate-pop-in flex max-h-[92vh] w-[min(96vw,640px)] flex-col overflow-hidden rounded-[28px] sm:flex-row')}>
         <div className="flex flex-col items-center justify-center gap-2 bg-[radial-gradient(circle_at_50%_70%,#3b3166,#231a3a)] p-5 sm:w-[220px]">
           <AvatarPreview avatar={av} />
           <div className="flex gap-1.5">
-            <button onClick={random} className="flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/15">
+            <button onClick={random} className={soft()}>
               <Dices size={13} /> Sortear
             </button>
-            <span className="flex items-center gap-1 px-1 text-[11px] text-white/40">
+            <span className="flex items-center gap-1 px-1 text-[11px] text-fg-subtle">
               <RotateCw size={11} /> clique para girar
             </span>
           </div>
         </div>
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="plaza-pixel px-5 pt-4 text-lg font-bold">Meu boneco</div>
+          <div className={cx(hud.title, 'px-5 pt-5 text-lg')}>Meu boneco</div>
           <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-5 py-3">
             {row('Pele', <Swatches label="Pele" colors={SKIN_TONES} value={av.skin} onChange={(skin) => set({ skin })} />)}
             {row('Cabelo', <Chips label="Cabelo" options={HAIR_STYLES} value={av.hair} onChange={(hair) => set({ hair })} />)}
@@ -148,11 +149,11 @@ export function AvatarEditor({ onClose }: { onClose: () => void }) {
             {row('Calça', <Swatches label="Calça" colors={CLOTH_COLORS} value={av.bottomColor} onChange={(bottomColor) => set({ bottomColor })} />)}
             {row('Acessório', <Chips label="Acessório" options={ACCESSORIES} value={av.accessory} onChange={(accessory) => set({ accessory })} />)}
           </div>
-          <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
-            <button onClick={onClose} className="rounded-xl px-4 py-2 text-sm font-semibold text-white/70 hover:bg-white/10">
+          <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+            <button onClick={onClose} className={soft('md', 'raised')}>
               Cancelar
             </button>
-            <button onClick={() => void save()} disabled={saving} className="rounded-xl bg-[#e8685a] px-4 py-2 text-sm font-semibold hover:brightness-110 disabled:opacity-50">
+            <button onClick={() => void save()} disabled={saving} className={primarySm('md')}>
               {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>

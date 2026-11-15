@@ -3,6 +3,7 @@
 import { MousePointer2, RotateCw, Trash2, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { FLOORS, FURNITURE, ITEM_COLORS, WALLS, footprint, furnitureDef, layoutFor, type Furniture, type FurnitureKind, type PlaceStyle, type Scene } from '../../../../shared/plaza.ts';
+import { hud, primarySm, soft } from './hud';
 import { cx } from '../ui';
 import { LEDGE_TOP, at, decorReady, drawItem, drawWallThumb, iso } from './pixels';
 
@@ -136,16 +137,16 @@ export function PlaceEditor({
 
   const section = (title: string, body: React.ReactNode) => (
     <div>
-      <div className="mb-1.5 text-[11px] font-bold tracking-wider text-white/50 uppercase">{title}</div>
+      <div className={cx(hud.label, 'mb-1.5')}>{title}</div>
       {body}
     </div>
   );
 
   return (
-    <div className="animate-pop-in absolute top-16 left-3 z-[64] flex max-h-[calc(100%-10rem)] w-[min(92vw,300px)] flex-col rounded-2xl border border-white/10 bg-[#1b1430]/95 text-white shadow-2xl backdrop-blur">
-      <div className="border-b border-white/10 px-4 py-3">
-        <div className="plaza-pixel text-base font-bold">{scene === 'lobby' ? 'Montando a praça' : scene === 'room' ? 'Montando o seu quarto' : 'Montando o prédio'}</div>
-        <div className="text-[12px] text-white/55">Escolha um móvel e clique no chão para pôr. Com a setinha, clique num móvel para mexer nele.</div>
+    <div className={cx(hud.panel, 'animate-pop-in absolute top-[72px] left-3 z-[64] flex max-h-[calc(100%-11rem)] w-[min(92vw,316px)] flex-col overflow-hidden')}>
+      <div className="border-b border-line px-4 py-3.5">
+        <div className={cx(hud.title, 'text-[16px]')}>{scene === 'lobby' ? 'Montando a praça' : scene === 'room' ? 'Montando o seu quarto' : 'Montando o prédio'}</div>
+        <div className="mt-0.5 text-[12px] text-fg-muted">Escolha um móvel e clique no chão para pôr. Com a setinha, clique num móvel para mexer nele.</div>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
         {section(
@@ -155,7 +156,7 @@ export function PlaceEditor({
               onClick={() => setTool('select')}
               title="Selecionar"
               aria-pressed={tool === 'select'}
-              className={cx('flex h-[62px] flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold', tool === 'select' ? 'bg-[#e8685a]' : 'bg-white/5 hover:bg-white/10')}
+              className={cx('flex h-[62px] flex-col items-center justify-center gap-1 rounded-2xl text-[10.5px] font-bold transition', tool === 'select' ? 'bg-accent text-on-accent' : 'bg-surface-2 text-fg hover:bg-surface-4')}
             >
               <MousePointer2 size={18} /> Mexer
             </button>
@@ -168,7 +169,7 @@ export function PlaceEditor({
                 }}
                 title={FURNITURE[k].label}
                 aria-pressed={tool === k}
-                className={cx('flex h-[62px] flex-col items-center justify-end rounded-xl pb-1 text-[10px] font-semibold', tool === k ? 'bg-[#e8685a]' : 'bg-white/5 hover:bg-white/10')}
+                className={cx('flex h-[62px] flex-col items-center justify-end rounded-2xl pb-1 text-[10.5px] font-bold transition', tool === k ? 'bg-accent text-on-accent' : 'bg-surface-2 text-fg hover:bg-surface-4')}
               >
                 <ItemThumb k={k} scene={scene} c={color} />
                 <span className="leading-none">{FURNITURE[k].label}</span>
@@ -178,10 +179,10 @@ export function PlaceEditor({
         )}
 
         {(sel || tool !== 'select') && (
-          <div className="space-y-2 rounded-xl bg-white/5 p-2.5">
+          <div className="space-y-2 rounded-2xl bg-surface-2 p-3">
             <div className="text-[12px] font-semibold">{sel ? `Mexendo em: ${FURNITURE[sel.k].label}` : `Pondo: ${FURNITURE[tool as FurnitureKind].label}`}</div>
             {!sel && tool !== 'select' && furnitureDef(tool).place && (
-              <div className="text-[11px] text-white/55">{furnitureDef(tool).place === 'shelf' ? 'Clique em cima de uma prateleira (cabe um enfeite em cada metade).' : 'Clique numa das paredes.'}</div>
+              <div className="text-[11.5px] text-fg-muted">{furnitureDef(tool).place === 'shelf' ? 'Clique em cima de uma prateleira (cabe um enfeite em cada metade).' : 'Clique numa das paredes.'}</div>
             )}
             {colorTarget && (
               <div className="flex flex-wrap gap-1.5">
@@ -194,13 +195,13 @@ export function PlaceEditor({
                       setColor(i);
                       if (sel && selected !== null) setDraft({ ...draft, items: draft.items.map((it, j) => (j === selected ? { ...it, c: i } : it)) });
                     }}
-                    className={cx('h-6 w-6 rounded-md border-2', (sel ? sel.c : color) === i ? 'border-white' : 'border-white/10')}
+                    className={cx('h-7 w-7 rounded-full border-2 transition hover:scale-110', (sel ? sel.c : color) === i ? 'border-fg' : 'border-line-strong')}
                     style={{ background: swatch(target, i) }}
                   />
                 ))}
               </div>
             )}
-            {sel && <div className="text-[11px] text-white/55">Arraste para mudar de lugar.</div>}
+            {sel && <div className="text-[11.5px] text-fg-muted">Arraste para mudar de lugar.</div>}
             <div className="flex gap-1.5">
               {target && turns(target) && (
                 <button
@@ -211,9 +212,9 @@ export function PlaceEditor({
                       else onBlocked('Girado, ele não cabe aí.');
                     } else setRot(rot ? 0 : 1);
                   }}
-                  className="flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/15"
+                  className={soft()}
                 >
-                  <RotateCw size={13} /> Girar
+                  <RotateCw size={14} /> Girar
                 </button>
               )}
               {sel && !furnitureDef(sel.k).unique && (
@@ -222,9 +223,9 @@ export function PlaceEditor({
                     setDraft({ ...draft, items: draft.items.filter((_, j) => j !== selected) });
                     setSelected(null);
                   }}
-                  className="flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-[#ff8a7e] hover:bg-white/15"
+                  className={cx(soft(), 'text-danger')}
                 >
-                  <Trash2 size={13} /> Remover
+                  <Trash2 size={14} /> Remover
                 </button>
               )}
             </div>
@@ -240,7 +241,7 @@ export function PlaceEditor({
                 title={f.name}
                 aria-label={`Chão ${f.name}`}
                 onClick={() => setDraft({ ...draft, floor: i })}
-                className={cx('h-8 w-8 rounded-lg border-2', draft.floor === i ? 'border-white' : 'border-white/10')}
+                className={cx('h-9 w-9 rounded-xl border-2 transition hover:scale-105', draft.floor === i ? 'border-fg' : 'border-line-strong')}
                 style={{ background: `repeating-conic-gradient(${f.a} 0 25%, ${f.b} 0 50%) 0 0 / 12px 12px` }}
               />
             ))}
@@ -256,24 +257,24 @@ export function PlaceEditor({
                   title={w.name}
                   aria-label={`Paredes ${w.name}`}
                   onClick={() => setDraft({ ...draft, wall: i })}
-                  className={cx('h-8 w-8 rounded-lg border-2', draft.wall === i ? 'border-white' : 'border-white/10')}
+                  className={cx('h-9 w-9 rounded-xl border-2 transition hover:scale-105', draft.wall === i ? 'border-fg' : 'border-line-strong')}
                   style={{ background: `linear-gradient(135deg, ${w.left} 50%, ${w.back} 50%)` }}
                 />
               ))}
             </div>,
           )}
         {children}
-        <div className="text-[11px] text-white/40">{draft.items.length} móveis neste lugar</div>
+        <div className="text-[11.5px] text-fg-subtle">{draft.items.length} móveis neste lugar</div>
       </div>
-      <div className="flex items-center gap-2 border-t border-white/10 px-4 py-3">
-        <button onClick={onReset} title="Voltar ao padrão" className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-white/60 hover:bg-white/10">
+      <div className="flex items-center gap-2 border-t border-line px-4 py-3">
+        <button onClick={onReset} title="Voltar ao padrão" className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-bold text-fg-muted transition hover:bg-surface-4 hover:text-fg">
           <Undo2 size={13} /> Padrão
         </button>
         <span className="flex-1" />
-        <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white/70 hover:bg-white/10">
+        <button onClick={onCancel} className={soft('sm', 'raised')}>
           Cancelar
         </button>
-        <button onClick={onSave} disabled={saving} className="rounded-lg bg-[#e8685a] px-3 py-1.5 text-sm font-semibold hover:brightness-110 disabled:opacity-50">
+        <button onClick={onSave} disabled={saving} className={primarySm()}>
           {saving ? 'Salvando…' : 'Salvar'}
         </button>
       </div>

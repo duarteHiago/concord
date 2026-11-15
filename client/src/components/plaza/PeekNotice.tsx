@@ -30,12 +30,12 @@ export function PeekNotice() {
   return (
     <div role="status" className="pointer-events-none fixed top-14 left-1/2 z-[90] flex -translate-x-1/2 animate-pop-in flex-col items-center gap-1">
       {spying.length > 0 && (
-        <div className="rounded-full bg-[#1b1430] px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-xl ring-1 ring-white/20">
-          👀 {line(spying, 'espiando a sua mesa')} <span className="font-normal text-white/60">· cochichos chegam baixinho</span>
+        <div className="rounded-full bg-surface-2 px-4 py-2 text-[13px] font-bold text-fg shadow-[0_12px_30px_-12px_rgba(0,0,0,0.6)]">
+          👀 {line(spying, 'espiando a sua mesa')} <span className="font-normal text-fg-muted">· cochichos chegam baixinho</span>
         </div>
       )}
       {near.length > 0 && (
-        <div className="rounded-full bg-[#1b1430]/90 px-3 py-1 text-[12px] font-semibold text-white shadow-lg ring-1 ring-white/15">
+        <div className="rounded-full bg-surface-2 px-3.5 py-1.5 text-[12.5px] font-bold text-fg shadow-[0_10px_26px_-12px_rgba(0,0,0,0.6)]">
           👂 {line(near, 'ouvindo de perto pela Praça')}
         </div>
       )}
