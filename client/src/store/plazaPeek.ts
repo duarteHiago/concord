@@ -18,6 +18,8 @@ interface PeekState {
   start: (serverId: string, channelId: string, near?: boolean) => Promise<boolean>;
   renew: () => void;
   stop: () => void;
+  /** para e espera a conexão da escuta fechar (antes de sentar na mesma mesa, para não ter duas com a mesma identidade) */
+  stopAndWait: () => Promise<void>;
   setWhisper: (on: boolean) => Promise<void>;
   /** volume da mesa (0..1), pela distância até ela */
   setVolume: (v: number) => void;
@@ -76,6 +78,12 @@ export const usePlazaPeek = create<PeekState>((set, get) => ({
       if (r?.ok && r.until) set({ until: r.until });
       else get().stop();
     });
+  },
+
+  stopAndWait: async () => {
+    const r = room;
+    get().stop();
+    if (r) await r.disconnect().catch(() => {});
   },
 
   stop: () => {

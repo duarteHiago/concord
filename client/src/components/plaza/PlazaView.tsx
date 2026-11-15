@@ -546,7 +546,12 @@ export default function PlazaView() {
         if (tb && Math.abs(mine.x - tb.front.x) + Math.abs(mine.y - tb.front.y) < 0.01) {
           const { channelId } = w.pendingJoin;
           w.pendingJoin = null;
-          void voice.join(serverId, channelId);
+          // quem vinha ouvindo a mesa de perto: fecha essa escuta antes de entrar na call (as duas usam a mesma
+          // identidade na sala de voz, e a escuta sendo derrubada no meio derrubava a call junto)
+          void usePlazaPeek
+            .getState()
+            .stopAndWait()
+            .then(() => voice.join(serverId, channelId));
         }
       }
 
