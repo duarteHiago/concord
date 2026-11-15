@@ -1,4 +1,5 @@
 import { useStickers } from './stickers';
+import type { FeedbackKind } from '../../../shared/feedback.ts';
 import { receiveClip, type ClipEvent } from '../lib/clip';
 import type { PlacedSticker } from '../lib/types';
 import { create } from 'zustand';
@@ -47,6 +48,7 @@ import { useContracts } from './contracts';
 export type Modal =
   | { type: 'addServer'; tab?: 'create' | 'join'; code?: string }
   | { type: 'discover' }
+  | { type: 'feedback'; kind?: FeedbackKind; body?: string; area?: string }
   | { type: 'invite'; serverId: string }
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
@@ -370,6 +372,10 @@ export const useApp = create<AppState>((set, get) => {
       upsertDm(dm);
     });
     socket.on('relationships:changed', () => void get().loadRelationships());
+    // a equipe mudou a situação de um feedback meu
+    socket.on('feedback:updated', ({ statusLabel, excerpt, teamNote }: { statusLabel: string; excerpt: string; teamNote: string }) => {
+      toast.info(`Seu feedback "${excerpt.length >= 80 ? `${excerpt}…` : excerpt}" agora está: ${statusLabel}.${teamNote ? ` Equipe: ${teamNote}` : ''}`);
+    });
     socket.on('friend:request', ({ from }: { from: User }) => receiveFriendRequest(from));
     socket.on('friend:accepted', ({ user }: { user: User }) => toast.success(`${user.displayName} aceitou seu pedido de amizade.`));
     socket.on('typing', ({ channelId, userId }: { channelId: string; userId: string }) => {

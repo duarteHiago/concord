@@ -1,7 +1,7 @@
 // Portal da equipe (/admin): diagnósticos que as pessoas mandaram e uma visão geral só de leitura da
 // instalação. Quem entra é decidido no servidor (ADMIN_USERS, ver server/src/admin.ts); para os outros,
 // as rotas nem existem. Navegação pelo #hash para cada tela ter um link (ex.: #diagnosticos/<id>).
-import { FileText, LayoutDashboard, Server, Stethoscope, Users, Wallet } from 'lucide-react';
+import { FileText, LayoutDashboard, MessageSquareHeart, Server, Stethoscope, Users, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { applyTheme, normalizeTheme } from '../../lib/theme';
@@ -10,14 +10,16 @@ import { Spinner, cx } from '../ui';
 import { ContractDetail, ContractsList } from './Contracts';
 import { CostsPage } from './Costs';
 import { DiagnosticDetail, DiagnosticsList } from './Diagnostics';
+import { FeedbackDetail, FeedbackList } from './Feedback';
 import { ServerDetail, ServersList, UserDetail, UsersList } from './Directory';
 import { BarDays, Loading, Page, Stat, useAdminData } from './parts';
 
-type Tab = 'visao' | 'custos' | 'diagnosticos' | 'contas' | 'servidores' | 'contratos';
+type Tab = 'visao' | 'custos' | 'feedback' | 'diagnosticos' | 'contas' | 'servidores' | 'contratos';
 
 const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
   { id: 'visao', label: 'Visão geral', icon: LayoutDashboard },
   { id: 'custos', label: 'Custos', icon: Wallet },
+  { id: 'feedback', label: 'Feedback', icon: MessageSquareHeart },
   { id: 'diagnosticos', label: 'Diagnósticos', icon: Stethoscope },
   { id: 'contas', label: 'Contas', icon: Users },
   { id: 'servidores', label: 'Servidores', icon: Server },
@@ -107,6 +109,7 @@ export default function AdminPortal() {
         <div className="mx-auto max-w-6xl p-6 md:p-8">
           {tab === 'visao' && <Overview />}
           {tab === 'custos' && <CostsPage />}
+          {tab === 'feedback' && (id ? <FeedbackDetail id={id} /> : <FeedbackList />)}
           {tab === 'diagnosticos' && (id ? <DiagnosticDetail id={id} /> : <DiagnosticsList />)}
           {tab === 'contas' && (id ? <UserDetail id={id} /> : <UsersList />)}
           {tab === 'servidores' && (id ? <ServerDetail id={id} /> : <ServersList />)}

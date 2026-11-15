@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react';
 import { Button } from './ui';
+import { useApp } from '../store/app';
 
 type Area = 'app' | 'painel';
 
@@ -89,6 +90,23 @@ export class ErrorBoundary extends Component<Props, { error: Error | null; copie
           <Button variant={whole ? 'primary' : 'secondary'} onClick={() => location.reload()}>
             <RefreshCw size={16} /> Recarregar{whole ? '' : ' o app'}
           </Button>
+          {!whole && (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                useApp.getState().openModal({
+                  type: 'feedback',
+                  kind: 'bug',
+                  area: this.props.area,
+                  body: `Deu erro numa parte do app: ${String(error?.message ?? error).slice(0, 300)}
+
+O que eu estava fazendo: `,
+                })
+              }
+            >
+              Contar o que aconteceu
+            </Button>
+          )}
           <Button variant="ghost" onClick={this.copy}>
             {copied ? 'Copiado!' : 'Copiar detalhes'}
           </Button>

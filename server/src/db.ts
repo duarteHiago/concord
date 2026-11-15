@@ -597,6 +597,23 @@ db.exec(`
     PRIMARY KEY (server_id, user_id)
   );
 `);
+// Feedback das pessoas para a equipe (ver feedback.ts): bug, sugestão, melhoria. Os prints ficam em arquivos,
+// fora de /uploads; aqui só o texto, o contexto técnico e a situação.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS feedback (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '{}',
+    images INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'novo',
+    team_note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS feedback_user ON feedback(user_id);
+`);
 // Praça do servidor (ver plaza.ts): chão, paredes e móveis de cada lugar (lobby e estabelecimento), montados
 // por quem gerencia o servidor. Sem linha, vale o padrão (shared/plaza.ts#defaultStyle).
 db.exec(`

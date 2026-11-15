@@ -1,4 +1,4 @@
-import { Download, Minus, Newspaper, MessageCircle, Plus, Compass } from 'lucide-react';
+import { Download, Minus, Newspaper, MessageCircle, Plus, Compass, MessageSquareHeart } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
@@ -167,6 +167,15 @@ export function ServerStrip() {
         className={cx(tile, 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-accent')}
       >
         <Compass size={20} />
+      </button>
+      <button
+        title="Feedback: relatar bug, sugerir ou pedir melhoria"
+        aria-label="Feedback: relatar bug, sugerir ou pedir melhoria"
+        data-tour="feedback"
+        onClick={() => openModal({ type: 'feedback' })}
+        className={cx(tile, 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-accent')}
+      >
+        <MessageSquareHeart size={20} />
       </button>
       <button
         title="Novidades"

@@ -8,6 +8,7 @@ import { config } from './config.ts';
 import { registerCostRoutes } from './costs.ts';
 import { all, get, run, tx, type UserRow } from './db.ts';
 import { DIAGNOSTIC_RETENTION_DAYS, deleteDiagnostic, readDiagnostic } from './diagnostics.ts';
+import { registerFeedbackAdminRoutes } from './feedback.ts';
 import { fail, uid } from './http.ts';
 import { removeFromRoom } from './livekit.ts';
 import { dropVoice, getVoiceState, liveStats, onlineUserIds, revokeSockets } from './realtime.ts';
@@ -393,6 +394,9 @@ export function registerAdminRoutes(api: Router) {
       })),
     });
   });
+
+  // ---- feedback das pessoas (bug, sugestão, melhoria)
+  registerFeedbackAdminRoutes(api, page, PAGE);
 
   // ---- diagnósticos
   api.get('/admin/diagnostics', (req, res) => {
