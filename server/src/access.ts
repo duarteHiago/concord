@@ -2,6 +2,7 @@ import { ALL_PERMISSIONS, P, computeChannelPermissions, has } from '../../shared
 import { config } from './config.ts';
 import { all, get, type ChannelRow, type OverwriteRow, type RoleRow, type ServerRow } from './db.ts';
 import { fail } from './http.ts';
+import { trustMask } from './trust.ts';
 
 export function getServer(serverId: string): ServerRow {
   return get<ServerRow>('SELECT * FROM servers WHERE id = ?', serverId) ?? fail(404, 'Servidor não encontrado');
@@ -55,12 +56,14 @@ export function channelPermissions(channel: ChannelRow, userId: string): number 
   if (!base) return 0;
   const server = getServer(channel.server_id);
   if (server.owner_id === userId) return ALL_PERMISSIONS;
-  return computeChannelPermissions(
+  const perms = computeChannelPermissions(
     base,
     channelOverwrites(channel.id),
     everyoneRole(channel.server_id).id,
     memberRoles(channel.server_id, userId).map((r) => r.id),
   );
+  // exigências de confiança do servidor/canal (ver trust.ts): tira falar/transmitir de quem não alcança o mínimo
+  return trustMask(channel.server_id, channel.id, userId, base, perms);
 }
 
 /** Posição do cargo mais alto do membro (dono = infinito). */

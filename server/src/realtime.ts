@@ -188,6 +188,11 @@ function syncVoicePermission(v: VoiceState) {
   void updateVoicePermission(v.channelId, v.userId, { perms, serverMuted: v.serverMuted, serverDeafened: v.serverDeafened });
 }
 
+/** As permissões de quem está nas salas do servidor mudaram (exigências de confiança): o LiveKit acompanha. */
+export function resyncServerVoice(serverId: string) {
+  for (const v of voice.values()) if (v.serverId === serverId) syncVoicePermission(v);
+}
+
 export function setServerMute(serverId: string, userId: string, muted: boolean) {
   const key = `${serverId}:${userId}`;
   if (muted) serverMutes.add(key);

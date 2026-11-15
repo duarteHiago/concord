@@ -1,6 +1,6 @@
 import { ClipCard } from './Clip';
 import { useDraft } from '../lib/drafts';
-import { Hash, Pencil, Reply, Trash2, Users } from 'lucide-react';
+import { Flag, Hash, Pencil, Reply, Trash2, Users } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
 import { P, has } from '../../../shared/permissions.ts';
@@ -19,6 +19,7 @@ import { StickerButton, StickerMessage } from './StickerPicker';
 import { JamCard, useJamInMessage } from './Jam';
 import { ReplyBar, ReplyQuote, startReply } from './Replies';
 import { MobileBackButton } from './MobileNav';
+import { trustBlockMessage } from '../lib/trust';
 
 const EMPTY: Message[] = [];
 
@@ -188,7 +189,8 @@ function Bubble({
     return m ? memberName(m) : fallback;
   };
 
-  const actions = !editing && (canReply || mine || canDelete) && (
+  const canReport = !mine;
+  const actions = !editing && (canReply || mine || canDelete || canReport) && (
     // barrinha flutuante no canto direito da linha: não ocupa espaço, não fica espremida no chat estreito
     // da sala e não cobre o nome nem a citação de mensagens curtas
     <div className="absolute -top-4 right-2 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100">
@@ -205,6 +207,15 @@ function Bubble({
       {canDelete && (
         <IconButton label="Apagar" danger className="h-8 w-8" onClick={() => void api.del(`/messages/${message.id}`).catch(toast.error)}>
           <Trash2 size={14} />
+        </IconButton>
+      )}
+      {canReport && (
+        <IconButton
+          label="Denunciar"
+          className="h-8 w-8"
+          onClick={() => useApp.getState().openModal({ type: 'report', target: { kind: 'message', id: message.id, authorName: name } })}
+        >
+          <Flag size={14} />
         </IconButton>
       )}
     </div>
@@ -491,10 +502,14 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   }
 
   // no chat estreito da sala o texto tem que caber numa linha ao lado dos botões
+  // sem permissão por causa da exigência de confiança do canal: o texto diz o que falta (ver lib/trust.ts)
+  const trustNotice = !canSend ? trustBlockMessage(channel, 'speak') : null;
   const placeholder = !canSend
     ? compact
-      ? 'Você não pode escrever aqui'
-      : 'Você não pode enviar mensagens aqui'
+      ? trustNotice
+        ? 'Este canal pede uma conta mais confiável'
+        : 'Você não pode escrever aqui'
+      : (trustNotice ?? 'Você não pode enviar mensagens aqui')
     : compact
       ? 'Mensagem…'
       : channel.type === 'voice'
