@@ -75,8 +75,16 @@ function ownerMode(presence: Presence | undefined): 'game' | 'desk' | 'bed' {
   if (!presence) return 'bed';
   return presence.activities?.some((a) => a.type === 'playing') ? 'game' : 'desk';
 }
-const MODE_ICON = { game: '🎮', desk: '💻', bed: '💤' } as const;
-const MODE_TEXT = { game: 'jogando', desk: 'no computador', bed: 'dormindo' } as const;
+/**
+ * Onde o dono do quarto aparece: andando pela Praça (o quarto fica vazio), no próprio quarto (o boneco dele mesmo),
+ * ou, fora da Praça, pelo que está fazendo no Concord.
+ */
+function roomMode(owner: string, walker: { scene: string; roomOf?: string | null } | undefined, presence: Presence | undefined): 'out' | 'home' | 'game' | 'desk' | 'bed' {
+  if (walker) return walker.scene === 'room' && walker.roomOf === owner ? 'home' : 'out';
+  return ownerMode(presence);
+}
+const MODE_ICON = { game: '🎮', desk: '💻', bed: '💤', out: '🚶', home: '🏠' } as const;
+const MODE_TEXT = { game: 'jogando', desk: 'no computador', bed: 'dormindo', out: 'passeando na Praça', home: 'no quarto' } as const;
 
 interface Figure {
   userId: string;
@@ -503,9 +511,10 @@ export default function PlazaView() {
           figs.push({ userId, avatar, x: sx + 0.5, y: sy + 0.5, facing: 3, pose: 'stand', seated: true, bob: 0, fx: p.x, fy: p.y });
         }
       }
-      // no quarto: o dono aparece no computador ou no videogame (se não estiver andando por ali); longe, na cama
+      // no quarto: o dono aparece no computador ou no videogame; longe do Concord, na cama. Se ele está na Praça
+      // (andando por aí, ou ali mesmo), o boneco dele é o que anda: o quarto não mostra outro
       const nookLook = { desk: false, game: false, sleeper: null as PlazaAvatar | null };
-      if (layout.nook && L.room && !w.anims.has(L.room)) {
+      if (layout.nook && L.room && !w.anims.has(L.room) && !plaza.walkers[L.room]) {
         const n = layout.nook;
         const owner = L.room;
         const avatar = plaza.walkers[owner]?.avatar ?? plaza.avatars[owner] ?? defaultAvatar(owner);
@@ -1004,7 +1013,7 @@ export default function PlazaView() {
     const mine = walkers[me.id];
     const ids = new Set<string>(Object.values(walkers).filter((w) => mine && placeKey(w) === placeKey(mine)).map((w) => w.userId));
     if (inside) for (const id of seating.keys()) ids.add(id);
-    if (myRoom && ownerMode(online[myRoom]) !== 'bed') ids.add(myRoom);
+    if (myRoom && !walkers[myRoom] && ownerMode(online[myRoom]) !== 'bed') ids.add(myRoom);
     return [...ids];
   }, [walkers, seating, inside, me.id, myRoom, online]);
 
@@ -1184,7 +1193,7 @@ export default function PlazaView() {
         const id = hallDoors[i];
         const m = id ? memberById.get(id) : undefined;
         if (!id) return null;
-        const mode = ownerMode(online[id]);
+        const mode = roomMode(id, walkers[id], online[id]);
         return (
           <div key={id} ref={(el) => void (el ? doorRefs.current.set(i, el) : doorRefs.current.delete(i))} className="absolute top-0 left-0">
             <button
@@ -1229,7 +1238,7 @@ export default function PlazaView() {
           <div className="plaza-pixel text-[15px] font-bold">{title}</div>
           <div className="text-[11px] text-white/60">
             {count} {count === 1 ? 'pessoa' : 'pessoas'} {myScene === 'lobby' ? 'na praça' : 'aqui'}
-            {myRoom && myRoom !== me.id && ` · dono ${MODE_TEXT[ownerMode(online[myRoom])]}`}
+            {myRoom && myRoom !== me.id && ` · dono ${MODE_TEXT[roomMode(myRoom, walkers[myRoom], online[myRoom])]}`}
             {inside && ` · ${seating.size} na${seating.size === 1 ? '' : 's'} mesa${seating.size === 1 ? '' : 's'}`}
           </div>
         </div>
