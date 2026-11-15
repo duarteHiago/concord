@@ -445,7 +445,7 @@ function interiorWalls(ctx: Ctx, layout: PlazaLayout, accent: string) {
   // quadros na parede do fundo, longe do balcão
   const { x0, x1 } = layout.building;
   const qb = (a: number, b: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(a, 0, z0), at(b, 0, z0), at(b, 0, z1), at(a, 0, z1)], c);
-  for (const u of [1.5, x1 + 2.5]) {
+  for (const u of layout.kind === 'hall' ? [] : [1.5, x1 + 2.5]) {
     if (u + 1.6 > w || (u > x0 - 2 && u < x1 + 1)) continue;
     qb(u, u + 1.6, 28, 48, PAL.outline);
     qb(u + 0.1, u + 1.5, 29, 47, u < x0 ? accent : '#3fb8c9');
@@ -496,6 +496,120 @@ function elevator(ctx: Ctx, x: number, y: number, level: number) {
   // capacho na frente
   const p = iso(x, y + 1);
   fillPoly(ctx, [{ x: p.x, y: p.y + 3 }, { x: p.x + 12, y: p.y + 8 }, { x: p.x, y: p.y + 13 }, { x: p.x - 12, y: p.y + 8 }], '#4b4470');
+}
+
+/** Porta de um quarto na parede do fundo do corredor (a sua tem a moldura na cor do servidor). */
+function roomDoor(ctx: Ctx, x: number, y: number, frame: string) {
+  const q = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(x + u0, y, z0), at(x + u1, y, z0), at(x + u1, y, z1), at(x + u0, y, z1)], c);
+  q(0.04, 0.96, 0, 45, PAL.outline);
+  q(0.08, 0.92, 0, 43, frame);
+  q(0.14, 0.86, 0, 40, '#8a5a3b');
+  q(0.22, 0.78, 23, 36, '#9c6a48');
+  q(0.22, 0.78, 5, 19, '#9c6a48');
+  const k = at(x + 0.74, y, 20);
+  ctx.fillStyle = '#f5c451';
+  ctx.fillRect(Math.round(k.x) - 1, Math.round(k.y) - 1, 2, 2);
+  const p = iso(x, y + 1);
+  fillPoly(ctx, [{ x: p.x, y: p.y + 4 }, { x: p.x + 10, y: p.y + 8 }, { x: p.x, y: p.y + 12 }, { x: p.x - 10, y: p.y + 8 }], '#4b4470');
+}
+
+// ---- quarto ----
+
+/** Escrivaninha com o computador, encostada na parede do fundo (2 casas a partir de x). Ligado, a tela rola código. */
+function deskPC(ctx: Ctx, x: number, y: number, on: boolean, t: number) {
+  const wood = { top: '#c99069', left: '#9a6143', right: '#7a4a33' };
+  for (const [u, v] of [
+    [0.2, 0.2],
+    [1.7, 0.2],
+    [0.2, 0.75],
+    [1.7, 0.75],
+  ])
+    box(ctx, x + u, y + v, 0.1, 0.1, 0, 14, { top: '#6e4834', left: '#6e4834', right: '#5a3a2a' });
+  box(ctx, x + 0.1, y + 0.1, 1.8, 0.8, 14, 2, wood);
+  // monitor (a tela olha para o quarto, +y)
+  box(ctx, x + 0.9, y + 0.3, 0.2, 0.12, 16, 4, { top: PAL.metal, left: PAL.metalLight, right: PAL.metal });
+  box(ctx, x + 0.35, y + 0.22, 1.3, 0.1, 19, 13, { top: '#2a2546', left: '#2a2546', right: '#1f1b38' });
+  const f = (u: number, z: number) => at(x + 0.35 + u, y + 0.32, 19 + z);
+  const quad = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [f(u0, z0), f(u1, z0), f(u1, z1), f(u0, z1)], c);
+  if (on) {
+    quad(0.06, 1.24, 1, 12, '#15233a');
+    const colors = ['#7ad18a', '#f5c451', '#8fb3ff', '#f08fb0'];
+    const scroll = Math.floor(t / 450);
+    for (let i = 0; i < 4; i++) {
+      const n = (i + scroll) * 7;
+      const len = 0.3 + ((n * 13) % 7) / 10;
+      const indent = ((n * 5) % 3) * 0.1;
+      quad(0.12 + indent, Math.min(1.18, 0.12 + indent + len), 9.5 - i * 2.3, 10.5 - i * 2.3, colors[n % colors.length]);
+    }
+  } else {
+    quad(0.06, 1.24, 1, 12, PAL.screen);
+  }
+  // teclado e caneca
+  box(ctx, x + 0.6, y + 0.58, 0.8, 0.22, 16, 0.8, { top: '#d9d6e6', left: '#a9a5c0', right: '#8e8aa3' });
+  box(ctx, x + 1.6, y + 0.5, 0.16, 0.16, 16, 2.5, { top: '#e8685a', left: '#e8685a', right: '#b9473d' });
+}
+
+/** Rack baixo com a TV e o videogame (2 casas na parede do fundo). Ligada, a tela tem um joguinho rodando. */
+function tvGame(ctx: Ctx, x: number, y: number, on: boolean, t: number) {
+  box(ctx, x + 0.1, y + 0.15, 1.8, 0.65, 0, 9, { top: '#4a3f6b', left: '#3a3158', right: '#2d2648' });
+  box(ctx, x + 1.35, y + 0.45, 0.4, 0.25, 9, 2, { top: '#ececec', left: '#c4c0d6', right: '#a9a5c0' });
+  box(ctx, x + 0.2, y + 0.25, 1.6, 0.12, 9, 18, { top: '#2a2546', left: '#2a2546', right: '#1f1b38' });
+  const f = (u: number, z: number) => at(x + 0.2 + u, y + 0.37, 9 + z);
+  const quad = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [f(u0, z0), f(u1, z0), f(u1, z1), f(u0, z1)], c);
+  if (!on) return quad(0.06, 1.54, 1.5, 16.5, PAL.screen);
+  // céu, chão andando e o bonequinho pulando os blocos
+  quad(0.06, 1.54, 1.5, 16.5, '#4f7dff');
+  quad(0.06, 1.54, 1.5, 5, '#2e9e6a');
+  const run = (t / 90) % 15;
+  for (let i = 0; i < 2; i++) {
+    const u = 1.45 - (((run + i * 7.5) % 15) / 15) * 1.35;
+    quad(u, u + 0.12, 5, 8, '#f5c451');
+  }
+  const jump = Math.max(0, Math.sin((t / 600) * Math.PI * 2)) * 5;
+  quad(0.35, 0.47, 5 + jump, 9 + jump, '#e8685a');
+}
+
+/** Cadeira da escrivaninha (o assento em cx, cy). */
+function deskChair(ctx: Ctx, cx: number, cy: number) {
+  const c = at(cx, cy);
+  fillEllipse(ctx, c.x, c.y + 1, 7, 3.5, 'rgba(0,0,0,0.25)');
+  box(ctx, cx - 0.05, cy - 0.05, 0.1, 0.1, 0, 6, { top: PAL.metal, left: PAL.metalLight, right: PAL.metal });
+  box(ctx, cx - 0.28, cy - 0.28, 0.56, 0.56, 6, 2, { top: '#e8685a', left: '#c9554a', right: '#a8443b' });
+}
+
+function pouf(ctx: Ctx, x: number, y: number) {
+  const c = at(x + 0.5, y + 0.5);
+  fillEllipse(ctx, c.x, c.y + 1, 9, 4.5, 'rgba(0,0,0,0.25)');
+  box(ctx, x + 0.2, y + 0.2, 0.6, 0.6, 0, 6, { top: '#a77bf0', left: '#8b5cf6', right: '#6d43c9' });
+}
+
+/** Cama com a cabeceira na parede da esquerda (2 casas ao longo de x). Com alguém dormindo, a cabeça fica no travesseiro. */
+function bed(ctx: Ctx, x: number, y: number, sleeper: PlazaAvatar | null, t: number) {
+  const wood = { top: '#a87454', left: '#8a5a3b', right: '#6e4834' };
+  box(ctx, x + 0.05, y + 0.1, 1.9, 0.8, 0, 6, wood);
+  box(ctx, x + 0.05, y + 0.1, 0.15, 0.8, 0, 20, wood);
+  box(ctx, x + 0.2, y + 0.14, 1.72, 0.72, 6, 3, { top: '#f3f0fa', left: '#d9d6e6', right: '#c4c0d6' });
+  box(ctx, x + 0.26, y + 0.24, 0.42, 0.52, 9, 2, { top: '#ffffff', left: '#e9e6f2', right: '#d9d6e6' });
+  if (sleeper) {
+    const head = avatarSprite(sleeper, 0, 'stand');
+    const p = at(x + 0.5, y + 0.5, 11);
+    ctx.drawImage(head, 0, 0, SPRITE_W, 13, Math.round(p.x) - SPRITE_W / 2, Math.round(p.y) - 12, SPRITE_W, 13);
+  }
+  box(ctx, x + 0.66, y + 0.12, 1.28, 0.76, 9, sleeper ? 3.5 : 1.5, { top: '#5a7fd9', left: '#4a6cc4', right: '#3d5aa8' });
+  if (sleeper) {
+    const z = at(x + 0.6, y + 0.3, 30 + ((t / 90) % 10));
+    ctx.fillStyle = `rgba(233, 236, 255, ${0.9 - ((t / 90) % 10) / 12})`;
+    ctx.font = 'bold 7px monospace';
+    ctx.fillText('z', Math.round(z.x), Math.round(z.y));
+    ctx.fillText('z', Math.round(z.x) + 5, Math.round(z.y) - 6);
+  }
+}
+
+/** O que o dono do quarto está fazendo (para acender o computador, a TV ou deitar na cama). */
+export interface NookLook {
+  desk: boolean;
+  game: boolean;
+  sleeper: PlazaAvatar | null;
 }
 
 function exitMat(ctx: Ctx, x: number, y: number) {
@@ -674,7 +788,7 @@ export function drawItem(ctx: Ctx, it: Furniture, scene: Scene, t: number) {
     case 'flowers':
       return flowers(ctx, it.x, it.y, itemColor(it));
     case 'lamp':
-      return scene === 'inside' ? floorLamp(ctx, it.x, it.y, t) : lampPost(ctx, it.x, it.y, t);
+      return scene !== 'lobby' ? floorLamp(ctx, it.x, it.y, t) : lampPost(ctx, it.x, it.y, t);
     case 'bench':
       return bench(ctx, it.x, it.y);
     case 'cafe':
@@ -722,13 +836,16 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
   canvas.height = Math.ceil(bottom - top);
   const ctx = canvas.getContext('2d')!;
   ctx.translate(-Math.round(left), -top);
-  if (layout.kind === 'inside') {
+  if (layout.kind !== 'lobby') {
     interiorWalls(ctx, layout, accent);
     platformEdge(ctx, layout, true);
-    const f = FLOORS.inside[layout.floor] ?? FLOORS.inside[0];
+    const floors = FLOORS[layout.kind];
+    const f = floors[layout.floor] ?? floors[0];
     for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) woodTile(ctx, x, y, f.a, f.b);
-    if (layout.level === 0) exitMat(ctx, layout.door.x, layout.door.y);
+    if (layout.door.x >= 0) exitMat(ctx, layout.door.x, layout.door.y);
     if (layout.elevator) elevator(ctx, layout.elevator.x, layout.elevator.y, layout.level);
+    // a primeira porta do corredor é a sua
+    layout.doors.forEach((d, i) => roomDoor(ctx, d.x, d.y, i === 0 ? accent : '#5e3826'));
   } else {
     platformEdge(ctx, layout);
     const f = FLOORS.lobby[layout.floor] ?? FLOORS.lobby[0];
@@ -745,7 +862,7 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
   for (const it of layout.items) if (it.k === 'rug') drawItem(ctx, it, layout.kind, 0);
   // o prédio só existe na praça; lá dentro, o balcão fica no térreo (os andares de cima não têm nenhum dos dois)
   if (layout.kind === 'lobby') building(ctx, layout, accent);
-  else if (layout.level === 0) counter(ctx, layout, accent);
+  else if (layout.kind === 'inside' && layout.level === 0) counter(ctx, layout, accent);
   return { canvas, originX: Math.round(-left), originY: -top };
 }
 
@@ -761,16 +878,24 @@ export interface TableLook {
 }
 
 /** Objetos com profundidade (mesas, bancos, TVs, postes, plantas), para misturar com os bonecos. */
-export function sceneObjects(layout: PlazaLayout, tables: TableLook[], accent: string, t: number): Drawable[] {
+export function sceneObjects(layout: PlazaLayout, tables: TableLook[], accent: string, t: number, nook: NookLook = { desk: false, game: false, sleeper: null }): Drawable[] {
   const out: Drawable[] = [];
   const d = (x: number, y: number) => x + y;
+  const n = layout.nook;
+  if (n) {
+    out.push({ depth: d(n.desk.x + 1, n.desk.y + 0.5), draw: (ctx) => deskPC(ctx, n.desk.x, n.desk.y, nook.desk, t) });
+    out.push({ depth: d(n.tv.x + 1, n.tv.y + 0.5), draw: (ctx) => tvGame(ctx, n.tv.x, n.tv.y, nook.game, t) });
+    out.push({ depth: d(n.pouf.x + 0.5, n.pouf.y + 0.4), draw: (ctx) => pouf(ctx, n.pouf.x, n.pouf.y) });
+    out.push({ depth: d(n.desk.x + 1, n.desk.y + 1.45) - 0.01, draw: (ctx) => deskChair(ctx, n.desk.x + 1, n.desk.y + 1.45) });
+    out.push({ depth: d(n.bed.x + 1, n.bed.y + 0.5), draw: (ctx) => bed(ctx, n.bed.x, n.bed.y, nook.sleeper, t) });
+  }
   layout.tables.forEach((tb, i) => {
     const look = tables[i] ?? { locked: false, live: false };
     out.push({ depth: d(tb.tv.x + 1, tb.tv.y + 0.5), draw: (ctx) => tv(ctx, tb.tv.x, tb.tv.y, look.live, t) });
     out.push({ depth: d(tb.x + 1, tb.y + 1), draw: (ctx) => table(ctx, tb.x, tb.y, look.locked, accent) });
     for (const s of tb.seats) out.push({ depth: d(s.x + 0.4, s.y + 0.4), draw: (ctx) => stool(ctx, s.x, s.y, accent) });
   });
-  const indoor = layout.kind === 'inside';
+  const indoor = layout.kind !== 'lobby';
   for (const it of layout.items) {
     if (it.k === 'rug') continue;
     out.push({ depth: itemDepth(it), draw: (ctx) => drawItem(ctx, it, layout.kind, t) });

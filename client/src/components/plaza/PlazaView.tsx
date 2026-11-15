@@ -30,8 +30,10 @@ import {
   type PlazaAvatar,
   type PlazaLayout,
   type Point,
+  MAX_HALL_DOORS,
+  type Scene,
 } from '../../../../shared/plaza.ts';
-import { memberName, type Channel, type Member, type VoiceState } from '../../lib/types';
+import { memberName, type Channel, type Member, type Presence, type VoiceState } from '../../lib/types';
 import { reduceMotion } from '../../lib/motion';
 import { useApp } from '../../store/app';
 import { getSocket } from '../../lib/socket';
@@ -64,6 +66,17 @@ interface Anim {
   where: string;
 }
 
+/** O lugar onde o boneco está (lugar, andar e quarto): só quem está no mesmo lugar aparece e se ouve. */
+const placeKey = (wk: { scene: string; floor?: number; roomOf?: string | null }) => `${wk.scene}:${wk.floor ?? 0}:${wk.roomOf ?? ''}`;
+
+/** O que o dono do quarto está fazendo agora, pelo Concord aberto: jogando, no computador, ou longe (dormindo). */
+function ownerMode(presence: Presence | undefined): 'game' | 'desk' | 'bed' {
+  if (!presence) return 'bed';
+  return presence.activities?.some((a) => a.type === 'playing') ? 'game' : 'desk';
+}
+const MODE_ICON = { game: '🎮', desk: '💻', bed: '💤' } as const;
+const MODE_TEXT = { game: 'jogando', desk: 'no computador', bed: 'dormindo' } as const;
+
 interface Figure {
   userId: string;
   avatar: PlazaAvatar;
@@ -79,12 +92,14 @@ interface Figure {
   fy: number;
   /** sentado numa cadeira: o meio da mesa (para pôr a bebida em cima dela) */
   table?: { x: number; y: number };
+  /** o dono do quarto, aparecendo onde está (no computador ou no videogame) */
+  nook?: 'desk' | 'game';
 }
 
 const NO_SEATS = new Map<string, { table: number; seat: number }>();
 
 /** O móvel cabe ali? (o mesmo teste do servidor, menos a passagem, que é conferida ao salvar) */
-function canPlace(draft: PlaceStyle, it: Furniture, scene: 'lobby' | 'inside', tableCount: number) {
+function canPlace(draft: PlaceStyle, it: Furniture, scene: Scene, tableCount: number) {
   return layoutFor(scene, tableCount, { ...draft, items: [...draft.items, it] }).items.length === draft.items.length + 1;
 }
 
@@ -149,6 +164,16 @@ export default function PlazaView() {
   // onde eu estou: na praça (lobby) ou dentro do estabelecimento
   const myScene = walkers[me.id]?.scene ?? 'lobby';
   const inside = myScene === 'inside';
+  // no corredor dos quartos ou no quarto de alguém (o id do dono)
+  const myRoom = myScene === 'room' ? (walkers[me.id]?.roomOf ?? null) : null;
+  const online = useApp((s) => s.online);
+  const rooms = usePlaza((s) => s.rooms);
+  // as portas do corredor: a minha primeiro, depois quem está online, depois o resto (até MAX_HALL_DOORS)
+  const hallDoors = useMemo(() => {
+    const others = (detail?.members ?? []).filter((m) => m.id !== me.id);
+    others.sort((a, b) => Number(!!online[b.id]) - Number(!!online[a.id]) || memberName(a).localeCompare(memberName(b)));
+    return [me.id, ...others.map((m) => m.id)].slice(0, MAX_HALL_DOORS);
+  }, [detail?.members, online, me.id]);
   // andar onde eu estou (lá dentro) e as mesas dele
   const myFloor = inside ? (walkers[me.id]?.floor ?? 0) : 0;
   const hasFloors = floorsAll.length > 1;
@@ -164,10 +189,14 @@ export default function PlazaView() {
   const [itemColor, setItemColor] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [savingPlace, setSavingPlace] = useState(false);
-  const layout = useMemo(
-    () => layoutFor(myScene, tables.length, draft ?? places[myScene], myFloor, hasFloors),
-    [myScene, tables.length, draft, places, myFloor, hasFloors],
-  );
+  const layout = useMemo(() => {
+    if (myScene === 'hall') return layoutFor('hall', hallDoors.length);
+    if (myScene === 'room') return layoutFor('room', 0, draft ?? rooms[myRoom ?? ''] ?? null);
+    return layoutFor(myScene, tables.length, draft ?? places[myScene], myFloor);
+  }, [myScene, tables.length, draft, places, myFloor, hallDoors.length, rooms, myRoom]);
+  // a porta do quarto onde estou, no corredor (para sair dele de volta na frente dela)
+  const backX = myRoom ? (layoutFor('hall', hallDoors.length).doors[hallDoors.indexOf(myRoom)]?.x ?? undefined) : undefined;
+  const doorRefs = useRef(new Map<number, HTMLDivElement>());
   const editRef = useRef({ draft, tool, rot, itemColor, selected, hover: null as Point | null, tableCount: tables.length });
   editRef.current = { ...editRef.current, draft, tool, rot, itemColor, selected, tableCount: tables.length };
   // mini TV flutuante com a transmissão de alguém (id de quem transmite)
@@ -196,8 +225,8 @@ export default function PlazaView() {
   const memberById = useMemo(() => new Map((detail?.members ?? []).map((m) => [m.id, m])), [detail?.members]);
 
   // tudo o que o laço de desenho lê sem precisar recriar o laço
-  const live = useRef({ layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId });
-  live.current = { layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId };
+  const live = useRef({ layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId, room: myRoom, backX, hallDoors });
+  live.current = { layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId, room: myRoom, backX, hallDoors };
 
   const world = useRef({
     anims: new Map<string, Anim>(),
@@ -211,6 +240,8 @@ export default function PlazaView() {
     pendingDrink: null as string | null,
     /** fui andando até o elevador: ao chegar, abre a escolha do andar */
     pendingElevator: false,
+    /** fui andando até a porta de um quarto, no corredor: ao chegar, entra (o dono) */
+    pendingRoom: null as string | null,
     /** fui andando até o balcão: ao chegar, abre o cardápio (a coluna do balcão clicada) */
     pendingBar: null as number | null,
     /** quando o volume da voz do lobby foi recalculado pela última vez */
@@ -298,16 +329,16 @@ export default function PlazaView() {
       const meId = useApp.getState().me?.id;
       const scene = layout.kind;
       for (const [id, wk] of Object.entries(plaza.walkers)) {
-        if (wk.scene !== scene || (scene === 'inside' && (wk.floor ?? 0) !== layout.level)) {
+        if (wk.scene !== scene || (scene === 'inside' && (wk.floor ?? 0) !== layout.level) || (scene === 'room' && (wk.roomOf ?? null) !== L.room)) {
           w.anims.delete(id);
           continue;
         }
         let a = w.anims.get(id);
         if (!a) {
-          a = { x: wk.x, y: wk.y, goal: { x: wk.x, y: wk.y }, path: [], facing: 1, walked: 0, where: `${wk.scene}:${wk.floor ?? 0}` };
+          a = { x: wk.x, y: wk.y, goal: { x: wk.x, y: wk.y }, path: [], facing: 1, walked: 0, where: placeKey(wk) };
           w.anims.set(id, a);
         }
-        const where = `${wk.scene}:${wk.floor ?? 0}`;
+        const where = placeKey(wk);
         if (a.where !== where) {
           // trocou de lugar (porta, elevador): aparece na chegada, sem caminhar desde a posição antiga
           Object.assign(a, { x: wk.x, y: wk.y, goal: { x: wk.x, y: wk.y }, path: [], where });
@@ -424,7 +455,15 @@ export default function PlazaView() {
       const atDoor = meId ? w.anims.get(meId) : undefined;
       if (w.pendingDoor && atDoor && !atDoor.path.length && atDoor.x === layout.door.x && atDoor.y === layout.door.y) {
         w.pendingDoor = false;
-        plaza.door();
+        plaza.door(L.backX);
+      }
+
+      // no corredor, cheguei na frente da porta de um quarto: entra
+      if (w.pendingRoom && meAnim && !meAnim.path.length && layout.kind === 'hall') {
+        const i = L.hallDoors.indexOf(w.pendingRoom);
+        const d = layout.doors[i];
+        if (d && meAnim.x === d.x && meAnim.y === d.y) plaza.enterRoom(w.pendingRoom);
+        w.pendingRoom = null;
       }
 
       // cheguei na mesa que cliquei: entra na call
@@ -456,6 +495,21 @@ export default function PlazaView() {
           const sy = tb.y + o.dy;
           const p = at(sx + 0.5, sy + 0.5);
           figs.push({ userId, avatar, x: sx + 0.5, y: sy + 0.5, facing: 3, pose: 'stand', seated: true, bob: 0, fx: p.x, fy: p.y });
+        }
+      }
+      // no quarto: o dono aparece no computador ou no videogame (se não estiver andando por ali); longe, na cama
+      const nookLook = { desk: false, game: false, sleeper: null as PlazaAvatar | null };
+      if (layout.nook && L.room && !w.anims.has(L.room)) {
+        const n = layout.nook;
+        const owner = L.room;
+        const avatar = plaza.walkers[owner]?.avatar ?? plaza.avatars[owner] ?? defaultAvatar(owner);
+        const mode = ownerMode(useApp.getState().online[owner]);
+        if (mode === 'bed') nookLook.sleeper = avatar;
+        else {
+          nookLook[mode] = true;
+          const spot = mode === 'desk' ? { x: n.desk.x + 1, y: n.desk.y + 1.45, z: 8 } : { x: n.pouf.x + 0.5, y: n.pouf.y + 0.5, z: 6 };
+          const p = at(spot.x, spot.y, spot.z);
+          figs.push({ userId: owner, avatar, x: spot.x, y: spot.y, facing: 3, pose: 'sit', seated: false, bob: 0, fx: p.x, fy: p.y + 2, nook: mode });
         }
       }
       for (const [userId, a] of w.anims) {
@@ -530,14 +584,14 @@ export default function PlazaView() {
           live: !!channelId && L.voiceStates.some((v) => v.channelId === channelId && v.streaming),
         };
       });
-      const items = sceneObjects(layout, looks, PAL.coral, now);
+      const items = sceneObjects(layout, looks, PAL.coral, now, nookLook);
       for (const f of figs) {
         // lá dentro, quem fala na call da mesa; no lobby, quem fala na voz da praça
         const speaking = f.seated ? !!voice.speaking[f.userId] : !!pv.speaking[f.userId];
         // sentado e mutado: dorme na mesa; sentado e jogando (o app desktop detecta): console na mão
         const vs = f.seated ? L.voiceStates.find((v) => v.userId === f.userId) : undefined;
         const sleeping = !!vs && (vs.muted || vs.deafened) && f.pose === 'sit';
-        const playing = f.seated && !!useApp.getState().online[f.userId]?.activities?.some((a) => a.type === 'playing');
+        const playing = f.nook === 'game' || (f.seated && !!useApp.getState().online[f.userId]?.activities?.some((a) => a.type === 'playing'));
         const wk = plaza.walkers[f.userId];
         const drinkColor = wk?.drink ? (DRINKS.find((d) => d.id === wk.drink)?.color ?? null) : null;
         // sentado numa cadeira, a bebida fica em cima da mesa (na frente de quem pediu), não na mão
@@ -596,6 +650,13 @@ export default function PlazaView() {
         const p = toCss(at(tb.x + 1, tb.y + 1).x, at(tb.x + 1, tb.y + 1).y + 18);
         el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
       });
+      layout.doors.forEach((d, i) => {
+        const el = doorRefs.current.get(i);
+        if (!el) return;
+        const q = at(d.x + 0.5, d.y, 52);
+        const p = toCss(q.x, q.y);
+        el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+      });
       if (barRef.current && barColRef.current !== null) {
         const meA = meId ? w.anims.get(meId) : undefined;
         if (layout.kind !== 'inside' || layout.level !== 0 || (meA && !meA.path.length && !nearCounter(layout, { x: Math.round(meA.x), y: Math.round(meA.y) }))) {
@@ -625,6 +686,7 @@ export default function PlazaView() {
   const moveMe = (target: Point, keepJoin = false) => {
     const w = world.current;
     if (!keepJoin) w.pendingJoin = null;
+    w.pendingRoom = null;
     w.pendingDoor = target.x === layout.door.x && target.y === layout.door.y;
     w.pan = { x: 0, y: 0 };
     const meId = me.id;
@@ -764,6 +826,14 @@ export default function PlazaView() {
         return clickTable(i);
       }
     }
+    // no corredor, clicar numa porta (ou na casa na frente dela) vai até ela e entra no quarto
+    if (layout.kind === 'hall') {
+      for (const off of [0, 12, 24, 36]) {
+        const b = tileAt(nx, ny + off);
+        const i = layout.doors.findIndex((d) => b.x === d.x && (b.y === d.y || b.y === d.y - 1));
+        if (i >= 0 && hallDoors[i]) return goRoom(i);
+      }
+    }
     // lá dentro, clicar no elevador (a porta na parede ou a casa dele) leva até ele
     if (layout.elevator) {
       const ev = layout.elevator;
@@ -890,10 +960,12 @@ export default function PlazaView() {
 
   // ---- quem aparece (rótulos em HTML) ----
   const people = useMemo(() => {
-    const ids = new Set<string>(Object.values(walkers).filter((w) => w.scene === myScene && (!inside || (w.floor ?? 0) === myFloor)).map((w) => w.userId));
+    const mine = walkers[me.id];
+    const ids = new Set<string>(Object.values(walkers).filter((w) => mine && placeKey(w) === placeKey(mine)).map((w) => w.userId));
     if (inside) for (const id of seating.keys()) ids.add(id);
+    if (myRoom && ownerMode(online[myRoom]) !== 'bed') ids.add(myRoom);
     return [...ids];
-  }, [walkers, seating, myScene, inside, myFloor]);
+  }, [walkers, seating, inside, me.id, myRoom, online]);
 
   // troquei de lugar: câmera de novo em mim e uma transição de blocos
   const firstScene = useRef(true);
@@ -907,7 +979,7 @@ export default function PlazaView() {
     world.current.pendingJoin = null;
     setWipe((k) => k + 1);
     setFloorMenu(false);
-  }, [myScene, myFloor]);
+  }, [myScene, myFloor, myRoom]);
 
   // entrei na call pela TV: abre a mini TV assim que eu estiver na mesa
   useEffect(() => {
@@ -942,9 +1014,9 @@ export default function PlazaView() {
   const prevCall = useRef(voiceChannelId);
   useEffect(() => {
     // (na praça, ou lá dentro mas em outro andar)
-    if (voiceChannelId && voiceChannelId !== prevCall.current && (myScene === 'lobby' || !tables.includes(voiceChannelId))) usePlaza.getState().table();
+    if (voiceChannelId && voiceChannelId !== prevCall.current && (!inside || !tables.includes(voiceChannelId))) usePlaza.getState().table();
     prevCall.current = voiceChannelId;
-  }, [voiceChannelId, myScene, tables]);
+  }, [voiceChannelId, inside, tables]);
   useEffect(() => {
     if (lobbyVoice) void usePlazaVoice.getState().connect(serverId);
     else usePlazaVoice.getState().disconnect();
@@ -956,11 +1028,31 @@ export default function PlazaView() {
     [],
   );
 
-  const goDoor = () => moveMe(layout.door);
+  // no corredor e lá em cima não há porta para a praça: o botão leva ao elevador
+  const goDoor = () => {
+    if (layout.door.x >= 0) return moveMe(layout.door);
+    if (!layout.elevator) return;
+    moveMe(layout.elevator);
+    world.current.pendingElevator = true;
+  };
+  const goRoom = (i: number) => {
+    const d = layout.doors[i];
+    const owner = hallDoors[i];
+    if (!d || !owner) return;
+    const mine = usePlaza.getState().walkers[me.id];
+    if (mine && mine.x === d.x && mine.y === d.y) return usePlaza.getState().enterRoom(owner);
+    moveMe(d);
+    world.current.pendingRoom = owner;
+  };
+  // entrei num quarto: a cara do dono (ele pode não estar na praça)
+  useEffect(() => {
+    if (myRoom) usePlaza.getState().fetchAvatars([myRoom]);
+  }, [myRoom]);
 
   // ---- editor ----
   const startEdit = () => {
-    setDraft(structuredClone(places[myScene] ?? defaultStyle(myScene, tables.length)));
+    const saved = myScene === 'room' ? rooms[me.id] : places[myScene];
+    setDraft(structuredClone(saved ?? defaultStyle(myScene, tables.length)));
     setTool('select');
     setSelected(null);
     setCard(null);
@@ -982,6 +1074,13 @@ export default function PlazaView() {
     if (!draft) return;
     setSavingPlace(true);
     try {
+      if (myScene === 'room') {
+        await api.put('/me/plaza-room', { style: draft });
+        usePlaza.setState({ rooms: { ...usePlaza.getState().rooms, [me.id]: draft } });
+        stopEdit();
+        toast.success('Quarto salvo.');
+        return;
+      }
       await api.put(`/servers/${serverId}/plaza/place`, { scene: myScene, style: draft });
       usePlaza.setState({ places: { ...usePlaza.getState().places, [myScene]: draft } });
       stopEdit();
@@ -995,7 +1094,20 @@ export default function PlazaView() {
 
   const myVoice = voiceStates?.find((v) => v.userId === me.id);
   const myChannel = voiceChannelId ? channelById.get(voiceChannelId) : undefined;
-  const count = Object.values(walkers).filter((w) => w.scene === myScene && (!inside || (w.floor ?? 0) === myFloor)).length;
+  const count = Object.values(walkers).filter((w) => walkers[me.id] && placeKey(w) === placeKey(walkers[me.id])).length;
+  const roomOwner = myRoom ? memberById.get(myRoom) : undefined;
+  const title =
+    myScene === 'room'
+      ? myRoom === me.id
+        ? 'Seu quarto'
+        : `Quarto de ${roomOwner ? memberName(roomOwner) : 'alguém'}`
+      : myScene === 'hall'
+        ? `Quartos · ${detail?.server.name ?? ''}`
+        : inside
+          ? `Dentro de ${detail?.server.name ?? ''}${hasFloors ? ` · ${floorName(myFloor)}` : ''}`
+          : `Praça · ${detail?.server.name ?? ''}`;
+  // pode montar: a praça e o prédio (térreo), quem gerencia; o quarto, só o dono
+  const canEdit = myScene === 'room' ? myRoom === me.id : myScene !== 'hall' && canManage && myFloor === 0;
 
   return (
     <div className="plaza-root fixed inset-0 z-[60] overflow-hidden select-none" style={{ background: PAL.night }}>
@@ -1010,7 +1122,7 @@ export default function PlazaView() {
       {/* rótulos presos ao mapa: num contexto próprio, para nunca passar por cima da barra e das janelas */}
       <div className="pointer-events-none absolute inset-0 isolate overflow-hidden">
       {/* placa do prédio com o nome do servidor */}
-      <div ref={signRef} className="pointer-events-none absolute top-0 left-0">
+      <div ref={signRef} className={cx('pointer-events-none absolute top-0 left-0', (myScene === 'hall' || myScene === 'room') && 'hidden')}>
         <div
           className="plaza-pixel -translate-x-1/2 -translate-y-1/2 whitespace-nowrap font-bold tracking-wide"
           style={inside ? { color: '#ffd9f0', textShadow: '0 0 4px #ff5c9a, 0 0 12px #ff5c9a, 0 0 22px rgba(255,92,154,0.6)' } : { color: '#ffe6a0', textShadow: '0 0 6px rgba(255,200,120,0.7)' }}
@@ -1025,6 +1137,29 @@ export default function PlazaView() {
           <TableTag channel={tables[i] ? channelById.get(tables[i]!) : undefined} hidden={!tables[i]} states={(voiceStates ?? []).filter((v) => v.channelId === tables[i])} mine={voiceChannelId === tables[i] && !!tables[i]} />
         </div>
       ))}
+
+      {/* no corredor, o nome em cima de cada porta e o que a pessoa está fazendo (clicar leva até lá) */}
+      {layout.doors.map((_, i) => {
+        const id = hallDoors[i];
+        const m = id ? memberById.get(id) : undefined;
+        if (!id) return null;
+        const mode = ownerMode(online[id]);
+        return (
+          <div key={id} ref={(el) => void (el ? doorRefs.current.set(i, el) : doorRefs.current.delete(i))} className="absolute top-0 left-0">
+            <button
+              onClick={() => goRoom(i)}
+              title={`${id === me.id ? 'Seu quarto' : `Quarto de ${m ? memberName(m) : 'alguém'}`}: ${MODE_TEXT[mode]}`}
+              className={cx(
+                'pointer-events-auto flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap shadow',
+                id === me.id ? 'border-[#e8685a] bg-[#1b1430]/90 text-white' : 'border-white/10 bg-[#1b1430]/85 text-white/85',
+              )}
+            >
+              <span>{MODE_ICON[mode]}</span>
+              <span className="max-w-[90px] truncate">{id === me.id ? 'Você' : m ? memberName(m) : 'alguém'}</span>
+            </button>
+          </div>
+        );
+      })}
 
       {/* nomes, ícones, balões e gestos em cima de cada boneco */}
       {people.map((id) => (
@@ -1050,9 +1185,10 @@ export default function PlazaView() {
       <div className="absolute top-3 left-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1430]/80 py-1.5 pr-3.5 pl-1.5 text-white shadow-lg backdrop-blur">
         <Globe size={30} />
         <div className="leading-tight">
-          <div className="plaza-pixel text-[15px] font-bold">{inside ? `Dentro de ${detail?.server.name ?? ''}${hasFloors ? ` · ${floorName(myFloor)}` : ''}` : `Praça · ${detail?.server.name ?? ''}`}</div>
+          <div className="plaza-pixel text-[15px] font-bold">{title}</div>
           <div className="text-[11px] text-white/60">
-            {count} {count === 1 ? 'pessoa' : 'pessoas'} {inside ? 'aqui dentro' : 'na praça'}
+            {count} {count === 1 ? 'pessoa' : 'pessoas'} {myScene === 'lobby' ? 'na praça' : 'aqui'}
+            {myRoom && myRoom !== me.id && ` · dono ${MODE_TEXT[ownerMode(online[myRoom])]}`}
             {inside && ` · ${seating.size} na${seating.size === 1 ? '' : 's'} mesa${seating.size === 1 ? '' : 's'}`}
           </div>
         </div>
@@ -1064,8 +1200,8 @@ export default function PlazaView() {
         <HudButton label="Aproximar" onClick={() => setZoom((z) => Math.min(5, z + 1))}>
           <Plus size={16} />
         </HudButton>
-        {canManage && !draft && myFloor === 0 && (
-          <button onClick={startEdit} title={inside ? 'Montar o prédio' : 'Montar a praça'} className="flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-[#1b1430]/85 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-[#2b2350]">
+        {canEdit && !draft && (
+          <button onClick={startEdit} title={myScene === 'room' ? 'Montar o seu quarto' : inside ? 'Montar o prédio' : 'Montar a praça'} className="flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-[#1b1430]/85 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-[#2b2350]">
             <Hammer size={15} /> Montar
           </button>
         )}
@@ -1109,7 +1245,7 @@ export default function PlazaView() {
           <LobbyMic inCall={!!voiceChannelId} />
           <span className="mx-0.5 h-6 w-px bg-white/15" />
           <button onClick={goDoor} className="flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold text-white hover:bg-white/10">
-            <DoorOpen size={16} /> {inside ? 'Voltar à praça' : 'Entrar no prédio'}
+            <DoorOpen size={16} /> {myScene === 'room' ? 'Sair do quarto' : myScene === 'hall' || (inside && myFloor > 0) ? 'Elevador' : inside ? 'Voltar à praça' : 'Entrar no prédio'}
           </button>
         </div>
         {myChannel && (
@@ -1167,10 +1303,15 @@ export default function PlazaView() {
         </PlaceEditor>
       )}
       {tvMenu && <TvShareMenu onClose={() => setTvMenu(false)} />}
-      {floorMenu && hasFloors && (
+      {floorMenu && (
         <FloorMenu
+          inHall={myScene === 'hall'}
+          onHall={() => {
+            setFloorMenu(false);
+            usePlaza.getState().goHall();
+          }}
           floors={floorsAll}
-          current={myFloor}
+          current={inside ? myFloor : -1}
           channelName={(id) => (id ? channelById.get(id)?.name : undefined)}
           onPick={(f) => {
             setFloorMenu(false);
@@ -1348,12 +1489,16 @@ function FloorAssign({ serverId, channels }: { serverId: string; channels: Chann
 function FloorMenu({
   floors,
   current,
+  inHall,
+  onHall,
   channelName,
   onPick,
   onClose,
 }: {
   floors: (string | null)[][];
   current: number;
+  inHall: boolean;
+  onHall: () => void;
   channelName: (id: string | null) => string | undefined;
   onPick: (floor: number) => void;
   onClose: () => void;
@@ -1379,6 +1524,15 @@ function FloorMenu({
             {i === current && <span className="text-[10px] text-white/50">você está aqui</span>}
           </button>
         ))}
+        <button
+          disabled={inHall}
+          onClick={onHall}
+          className={cx('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs', inHall ? 'bg-white/15' : 'hover:bg-white/10')}
+        >
+          <span className="w-16 shrink-0 font-bold">Quartos</span>
+          <span className="min-w-0 flex-1 truncate text-white/60">o corredor com o quarto de cada um</span>
+          {inHall && <span className="text-[10px] text-white/50">você está aqui</span>}
+        </button>
       </div>
     </div>
   );

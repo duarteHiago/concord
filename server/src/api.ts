@@ -78,8 +78,8 @@ import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, support
 import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
-import { inPlaza, plazaCount, plazaEnabled, saveFloors, savePlace } from './plaza.ts';
-import { isScene, lobbyRoom } from '../../shared/plaza.ts';
+import { inPlaza, plazaCount, plazaEnabled, saveFloors, savePlace, saveRoom } from './plaza.ts';
+import { isPlaceScene, lobbyRoom } from '../../shared/plaza.ts';
 import {
   ART_OFFSET,
   ART_SCALE,
@@ -2381,9 +2381,19 @@ api.put('/servers/:id/plaza/place', (req, res) => {
   const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
   if (!plazaEnabled(server.id)) fail(404, 'A praça não abriu neste servidor');
   const scene = req.body?.scene;
-  if (!isScene(scene)) fail(400, 'Lugar inválido');
+  if (!isPlaceScene(scene)) fail(400, 'Lugar inválido');
   if (!plazaEditRate(server.id)) fail(429, 'Muitas mudanças na praça em pouco tempo. Espere um pouco.');
   const error = savePlace(server.id, scene, req.body?.style ?? null);
+  if (error) fail(400, error);
+  res.json({ ok: true });
+});
+
+// Quarto na Praça: só o dono monta o dele (o mesmo em toda Praça). `style: null` volta ao padrão.
+const roomEditRate = limiter(30, 10 * 60_000);
+api.put('/me/plaza-room', (req, res) => {
+  const me = uid(res);
+  if (!roomEditRate(me)) fail(429, 'Muitas mudanças no quarto em pouco tempo. Espere um pouco.');
+  const error = saveRoom(me, req.body?.style ?? null);
   if (error) fail(400, error);
   res.json({ ok: true });
 });
