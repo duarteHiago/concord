@@ -78,8 +78,17 @@ function endPeek(serverId: string, channelId: string, userId: string) {
   if (!cur?.delete(userId)) return;
   if (!cur.size) peeks.delete(channelId);
   broadcastPeeks(serverId);
-  if (getVoiceState(userId)?.channelId !== channelId) void removeFromRoom(channelId, userId).catch(() => {});
+  // tira da sala do LiveKit só depois de uma folga, e só se a pessoa não entrou na call nesse meio tempo: quem
+  // ouvia de perto e sentou na mesa usa a mesma identidade na sala, e tirar na hora derrubava a call recém-aberta
+  // ("Você foi removido da sala"), quando o fim da escuta chegava antes do aviso de entrar na call
+  setTimeout(() => {
+    if (getVoiceState(userId)?.channelId === channelId || isPeeking(channelId, userId)) return;
+    void removeFromRoom(channelId, userId).catch(() => {});
+  }, PEEK_LEAVE_GRACE_MS).unref();
 }
+
+/** Folga antes de tirar da sala quem parou de espiar ou de ouvir (dá tempo de o "entrei na call" chegar). */
+const PEEK_LEAVE_GRACE_MS = 4000;
 
 // faxina das espiadas vencidas (uma vez por segundo)
 setInterval(() => {
