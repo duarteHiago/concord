@@ -1258,6 +1258,8 @@ export default function PlazaView() {
     moveMe(d);
     world.current.pendingRoom = owner;
   };
+  // quem sou eu, para a reconexão lembrar onde eu estava
+  useEffect(() => usePlaza.setState({ meId: me.id }), [me.id]);
   // entrei num quarto: a cara do dono (ele pode não estar na praça)
   useEffect(() => {
     if (myRoom) usePlaza.getState().fetchAvatars([myRoom]);

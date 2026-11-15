@@ -54,6 +54,8 @@ type Ack = {
 interface PlazaState {
   /** servidor cuja praça está aberta (null = fechada) */
   serverId: string | null;
+  /** eu (para lembrar onde estava ao reconectar) */
+  meId: string | null;
   /** 'arriving': a animação do globo está passando; 'ready': já chegou */
   phase: 'arriving' | 'ready' | null;
   /** canal de cada mesa, na ordem do mapa (null = sala que eu não vejo) */
@@ -82,6 +84,8 @@ interface PlazaState {
   fetchAvatars: (userIds: string[]) => void;
   open: (serverId: string) => void;
   arrived: () => void;
+  /** reconectou: entra de novo no mesmo lugar, sem limpar a tela */
+  rejoin: () => void;
   close: () => void;
   move: (x: number, y: number) => void;
   /** pisei na porta: o servidor confere e troca de lugar (saindo do quarto, `x` é a porta dele no corredor) */
@@ -110,9 +114,19 @@ let bubbleSeq = 0;
 /** de quem já pedi a cara (não pede de novo a cada quadro) */
 const asked = new Set<string>();
 
+/**
+ * Sentado numa mesa é estar na call dela: trocar de lugar (elevador, escada, porta) levanta e sai da call antes.
+ * Sem isso, a pessoa chegava no corredor ainda "na mesa", e a voz por proximidade ficava desligada.
+ */
+function standUp() {
+  const v = useVoice.getState();
+  if (v.channelId && v.status !== 'idle') void v.leave();
+}
+
 export const usePlaza = create<PlazaState>((set, get) => {
-  function enter(serverId: string) {
-    getSocket()?.emit('plaza:enter', { serverId }, (r: Ack) => {
+  /** `resume`: onde eu estava (ao reconectar), para o servidor me pôr de volta lá em vez de na praça */
+  function enter(serverId: string, resume?: { scene: Scene; floor: number; roomOf: string | null; x: number; y: number }) {
+    getSocket()?.emit('plaza:enter', { serverId, resume }, (r: Ack) => {
       if (get().serverId !== serverId) return;
       if (!r?.ok) {
         toast.error(r?.error ?? 'Não deu para entrar na praça.');
@@ -135,6 +149,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
   }
 
   return {
+    meId: null,
     serverId: null,
     phase: null,
     tables: [],
@@ -168,6 +183,12 @@ export const usePlaza = create<PlazaState>((set, get) => {
       enter(serverId);
     },
     arrived: () => set({ phase: 'ready' }),
+    rejoin: () => {
+      const serverId = get().serverId;
+      if (!serverId) return;
+      const mine = get().meId ? get().walkers[get().meId!] : undefined;
+      enter(serverId, mine ? { scene: mine.scene, floor: mine.floor ?? 0, roomOf: mine.roomOf ?? null, x: mine.x, y: mine.y } : undefined);
+    },
     close: () => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:leave', { serverId });
@@ -178,18 +199,22 @@ export const usePlaza = create<PlazaState>((set, get) => {
       if (serverId) getSocket()?.emit('plaza:move', { serverId, x, y });
     },
     door: (x, floor) => {
+      standUp();
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:door', { serverId, x, floor });
     },
     stairs: () => {
+      standUp();
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:stairs', { serverId });
     },
     goHall: (floor = 0) => {
+      standUp();
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:hall', { serverId, floor });
     },
     enterRoom: (owner) => {
+      standUp();
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:room', { serverId, owner });
     },
@@ -198,6 +223,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
       if (serverId) getSocket()?.emit('plaza:table', { serverId });
     },
     goFloor: (floor) => {
+      standUp();
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:floor', { serverId, floor });
     },
@@ -240,14 +266,12 @@ export function bindPlazaSocket(socket: Socket) {
     if (cur) usePlaza.setState({ walkers: { ...s().walkers, [userId]: { ...cur, ...patch } } });
   };
 
-  // reconectou com a praça aberta: entra de novo (o servidor esqueceu esta conexão)
+  // reconectou com a praça aberta: entra de novo (o servidor esqueceu esta conexão), no mesmo lugar onde eu estava, e
+  // sem limpar a tela antes (limpar fazia o app achar, por um instante, que eu tinha voltado para a praça, e o
+  // editor do quarto fechava com tudo o que estava montado)
   socket.on('connect', () => {
     const serverId = s().serverId;
-    if (serverId) {
-      usePlaza.setState({ serverId: null });
-      s().open(serverId);
-      usePlaza.setState({ phase: 'ready' });
-    }
+    if (serverId) s().rejoin();
   });
   socket.on('voice:peeks', ({ serverId, peeks }: { serverId: string; peeks: Peek[] }) => {
     usePlaza.setState({ peeks: { ...s().peeks, [serverId]: peeks } });
