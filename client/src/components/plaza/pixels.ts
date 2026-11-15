@@ -148,8 +148,8 @@ function floorTile(ctx: Ctx, x: number, y: number) {
   }
 }
 
-function platformEdge(ctx: Ctx, layout: PlazaLayout) {
-  const depth = 10;
+function platformEdge(ctx: Ctx, layout: PlazaLayout, indoor = false) {
+  const depth = indoor ? 8 : 10;
   const { w, h } = layout;
   // frente esquerda (ao longo de y, em x = 0) e frente direita (ao longo de x, em y = h)
   const a = at(0, h);
@@ -195,7 +195,7 @@ function building(ctx: Ctx, layout: PlazaLayout, accent: string) {
     quad(u + 0.44, u + 0.48, 38, 51, PAL.windowDark);
   }
   // vitrine e porta no térreo
-  const door = a / 2 - 0.5;
+  const door = layout.door.x - x0;
   quad(door, door + 1, 0, 22, '#3a2f5c');
   quad(door + 0.1, door + 0.9, 0, 20, '#f6c768');
   quad(door + 0.48, door + 0.52, 0, 20, '#c9953f');
@@ -378,6 +378,141 @@ function portal(ctx: Ctx, x: number, y: number, t: number) {
   ctx.restore();
 }
 
+// ---- estabelecimento (por dentro) ----
+
+function woodTile(ctx: Ctx, x: number, y: number) {
+  const p = iso(x, y);
+  const even = (x + y) % 2 === 0;
+  fillPoly(ctx, [p, { x: p.x + 16, y: p.y + 8 }, { x: p.x, y: p.y + 16 }, { x: p.x - 16, y: p.y + 8 }], even ? '#9a6a4f' : '#8c5f46');
+  // tábuas: linhas ao longo de x
+  ctx.fillStyle = 'rgba(60, 34, 22, 0.35)';
+  for (const k of [0.33, 0.66]) {
+    const a = at(x, y + k);
+    const b = at(x + 1, y + k);
+    for (let i = 0; i <= 16; i++) {
+      const t = i / 16;
+      ctx.fillRect(Math.round(a.x + (b.x - a.x) * t), Math.round(a.y + (b.y - a.y) * t), 1, 1);
+    }
+  }
+  if ((x * 3 + y * 5) % 7 === 0) {
+    ctx.fillStyle = 'rgba(255, 220, 170, 0.12)';
+    ctx.fillRect(Math.round(p.x) - 3, Math.round(p.y) + 6, 6, 1);
+  }
+}
+
+function interiorWalls(ctx: Ctx, layout: PlazaLayout, accent: string) {
+  const H = 64;
+  const { w, h } = layout;
+  // parede esquerda (x = 0, olhando para +x) e parede do fundo (y = 0, olhando para +y)
+  fillPoly(ctx, [at(0, h), at(0, 0), at(0, 0, H), at(0, h, H)], '#5b4a8a');
+  fillPoly(ctx, [at(0, 0), at(w, 0), at(w, 0, H), at(0, 0, H)], '#6a589c');
+  // faixa de azulejo na parte de baixo das paredes
+  fillPoly(ctx, [at(0, h), at(0, 0), at(0, 0, 14), at(0, h, 14)], '#3f6fd9');
+  fillPoly(ctx, [at(0, 0), at(w, 0), at(w, 0, 14), at(0, 0, 14)], '#4a7ae6');
+  ctx.fillStyle = '#e9ecff';
+  for (let i = 0; i < h; i++) {
+    const p = at(0, i + 0.5, 7);
+    ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 2, 2);
+  }
+  for (let i = 0; i < w; i++) {
+    const p = at(i + 0.5, 0, 7);
+    ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 2, 2);
+  }
+  fillPoly(ctx, [at(0, h, 14), at(0, 0, 14), at(0, 0, 16), at(0, h, 16)], PAL.outline);
+  fillPoly(ctx, [at(0, 0, 14), at(w, 0, 14), at(w, 0, 16), at(0, 0, 16)], PAL.outline);
+  // topo das paredes
+  fillPoly(ctx, [at(0, h, H), at(0, 0, H), at(-0.25, -0.25, H), at(-0.25, h, H)], '#2d2450');
+  fillPoly(ctx, [at(0, 0, H), at(w, 0, H), at(w, -0.25, H), at(-0.25, -0.25, H)], '#2d2450');
+  // janelas na parede esquerda, com a noite lá fora
+  const ql = (a: number, b: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(0, a, z0), at(0, b, z0), at(0, b, z1), at(0, a, z1)], c);
+  for (let y0 = 2; y0 + 2 < h - 1; y0 += 4) {
+    ql(y0, y0 + 2, 24, 52, PAL.outline);
+    ql(y0 + 0.1, y0 + 1.9, 25, 51, '#1d1838');
+    ql(y0 + 0.1, y0 + 1.9, 25, 30, '#2a2350');
+    ql(y0 + 0.95, y0 + 1.05, 25, 51, PAL.outline);
+    const star = at(0, y0 + 0.5, 44);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(Math.round(star.x), Math.round(star.y), 1, 1);
+  }
+  // quadros na parede do fundo, longe do balcão
+  const { x0, x1 } = layout.building;
+  const qb = (a: number, b: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(a, 0, z0), at(b, 0, z0), at(b, 0, z1), at(a, 0, z1)], c);
+  for (const u of [1.5, x1 + 2.5]) {
+    if (u + 1.6 > w || (u > x0 - 2 && u < x1 + 1)) continue;
+    qb(u, u + 1.6, 28, 48, PAL.outline);
+    qb(u + 0.1, u + 1.5, 29, 47, u < x0 ? accent : '#3fb8c9');
+    qb(u + 0.3, u + 1.3, 33, 40, '#f3e7cf');
+  }
+}
+
+/** Balcão no fundo, com prateleiras e garrafas; o letreiro em neon com o nome vai por cima, em HTML. */
+function counter(ctx: Ctx, layout: PlazaLayout, accent: string) {
+  const { x0, x1 } = layout.building;
+  const a = x1 - x0 + 1;
+  const colors = ['#3fb8c9', '#f5c451', '#e8685a', '#2e9e6a', '#8b5cf6', '#ececec'];
+  for (const z of [26, 38]) {
+    fillPoly(ctx, [at(x0, 0, z), at(x0 + a, 0, z), at(x0 + a, 0.25, z), at(x0, 0.25, z)], '#4a2f22');
+    for (let i = 0; i < a * 3; i++) {
+      const p = at(x0 + 0.2 + i / 3, 0.1, z);
+      ctx.fillStyle = colors[(i * 7 + z) % colors.length];
+      ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 7, 2, 7);
+      ctx.fillRect(Math.round(p.x), Math.round(p.y) - 9, 1, 2);
+    }
+  }
+  box(ctx, x0, 1.2, a, 1.3, 0, 18, { top: '#c99069', left: '#7a4a33', right: '#5e3826' });
+  box(ctx, x0 - 0.05, 1.15, a + 0.1, 1.4, 18, 2, { top: '#e0a77c', left: '#9a6143', right: '#7a4a33' });
+  const f = (u: number, z: number) => at(x0 + u, 2.5, z);
+  for (let u = 0.5; u < a; u += 1) fillPoly(ctx, [f(u, 3), f(u + 0.5, 3), f(u + 0.5, 15), f(u, 15)], '#6b3f2b');
+  fillPoly(ctx, [f(0, 15), f(a, 15), f(a, 17), f(0, 17)], accent);
+  for (let u = 1; u < a; u += 2.5) {
+    const p = at(x0 + u, 1.8, 20);
+    ctx.fillStyle = 'rgba(220, 235, 255, 0.85)';
+    ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 4, 3, 4);
+  }
+}
+
+function exitMat(ctx: Ctx, x: number, y: number) {
+  const p = iso(x, y);
+  fillPoly(ctx, [{ x: p.x, y: p.y + 2 }, { x: p.x + 13, y: p.y + 8 }, { x: p.x, y: p.y + 14 }, { x: p.x - 13, y: p.y + 8 }], '#2b2350');
+  fillPoly(ctx, [{ x: p.x, y: p.y + 4 }, { x: p.x + 9, y: p.y + 8 }, { x: p.x, y: p.y + 12 }, { x: p.x - 9, y: p.y + 8 }], PAL.coral);
+  ctx.fillStyle = '#ffe6a0';
+  ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) + 5, 2, 4);
+  ctx.fillRect(Math.round(p.x) - 3, Math.round(p.y) + 8, 6, 1);
+  ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y) + 9, 4, 1);
+}
+
+function doorMat(ctx: Ctx, x: number, y: number) {
+  const p = iso(x, y);
+  fillPoly(ctx, [{ x: p.x, y: p.y + 2 }, { x: p.x + 13, y: p.y + 8 }, { x: p.x, y: p.y + 14 }, { x: p.x - 13, y: p.y + 8 }], '#5a3a2a');
+  fillPoly(ctx, [{ x: p.x, y: p.y + 4 }, { x: p.x + 9, y: p.y + 8 }, { x: p.x, y: p.y + 12 }, { x: p.x - 9, y: p.y + 8 }], '#c0714f');
+}
+
+function cafeTable(ctx: Ctx, x: number, y: number) {
+  const c = at(x + 0.5, y + 0.5);
+  fillEllipse(ctx, c.x, c.y, 9, 4.5, 'rgba(0,0,0,0.25)');
+  ctx.fillStyle = PAL.metal;
+  ctx.fillRect(Math.round(c.x) - 1, Math.round(c.y) - 10, 2, 10);
+  fillEllipse(ctx, c.x, c.y - 10, 10, 5, '#d8d2ea');
+  fillEllipse(ctx, c.x, c.y - 11, 10, 5, '#f3f0fb');
+  ctx.fillStyle = PAL.coral;
+  ctx.fillRect(Math.round(c.x) + 1, Math.round(c.y) - 15, 3, 3);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillRect(Math.round(c.x) + 2, Math.round(c.y) - 18, 1, 2);
+}
+
+function floorLamp(ctx: Ctx, x: number, y: number, t: number) {
+  const base = at(x + 0.5, y + 0.5);
+  const bx = Math.round(base.x);
+  const by = Math.round(base.y);
+  fillEllipse(ctx, bx, by, 5, 2.5, 'rgba(0,0,0,0.25)');
+  ctx.fillStyle = PAL.metal;
+  ctx.fillRect(bx - 1, by - 30, 2, 30);
+  fillEllipse(ctx, bx, by - 1, 4, 2, PAL.outline);
+  const flicker = 0.88 + 0.12 * Math.sin(t / 1100 + x * 2);
+  fillPoly(ctx, [{ x: bx - 4, y: by - 38 }, { x: bx + 4, y: by - 38 }, { x: bx + 7, y: by - 29 }, { x: bx - 7, y: by - 29 }], `rgba(255, 220, 150, ${flicker})`);
+  fillPoly(ctx, [{ x: bx - 4, y: by - 38 }, { x: bx + 4, y: by - 38 }, { x: bx + 4, y: by - 37 }, { x: bx - 4, y: by - 37 }], '#c9953f');
+}
+
 // ---- cena ----
 
 /** Camada fixa (chão, borda e prédio): desenhada uma vez por mapa. Devolve o canvas e onde fica a casa (0, 0). */
@@ -391,15 +526,24 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
   canvas.height = Math.ceil(bottom - top);
   const ctx = canvas.getContext('2d')!;
   ctx.translate(-Math.round(left), -top);
-  platformEdge(ctx, layout);
-  for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) floorTile(ctx, x, y);
+  if (layout.kind === 'inside') {
+    interiorWalls(ctx, layout, accent);
+    platformEdge(ctx, layout, true);
+    for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) woodTile(ctx, x, y);
+    exitMat(ctx, layout.door.x, layout.door.y);
+  } else {
+    platformEdge(ctx, layout);
+    for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) floorTile(ctx, x, y);
+    doorMat(ctx, layout.door.x, layout.door.y);
+  }
   // tapete embaixo de cada mesa
   for (const t of layout.tables) {
     const c = at(t.x + 1, t.y + 1);
     fillEllipse(ctx, c.x, c.y, 46, 23, 'rgba(35, 26, 58, 0.25)');
     fillEllipse(ctx, c.x, c.y, 42, 21, 'rgba(232, 104, 90, 0.20)');
   }
-  building(ctx, layout, accent);
+  if (layout.kind === 'inside') counter(ctx, layout, accent);
+  else building(ctx, layout, accent);
   return { canvas, originX: Math.round(-left), originY: -top };
 }
 
@@ -424,10 +568,16 @@ export function sceneObjects(layout: PlazaLayout, tables: TableLook[], accent: s
     out.push({ depth: d(tb.x + 1, tb.y + 1), draw: (ctx) => table(ctx, tb.x, tb.y, look.locked, accent) });
     for (const s of tb.seats) out.push({ depth: d(s.x + 0.4, s.y + 0.4), draw: (ctx) => stool(ctx, s.x, s.y, accent) });
   });
-  for (const l of layout.lamps) out.push({ depth: d(l.x + 0.5, l.y + 0.5), draw: (ctx) => lampPost(ctx, l.x, l.y, t) });
+  for (const c of layout.cafes) {
+    out.push({ depth: d(c.x - 0.6, c.y + 0.4), draw: (ctx) => stool(ctx, c.x - 1, c.y, accent) });
+    out.push({ depth: d(c.x + 0.5, c.y + 0.5), draw: (ctx) => cafeTable(ctx, c.x, c.y) });
+    out.push({ depth: d(c.x + 1.4, c.y + 0.4), draw: (ctx) => stool(ctx, c.x + 1, c.y, accent) });
+  }
+  const indoor = layout.kind === 'inside';
+  for (const l of layout.lamps) out.push({ depth: d(l.x + 0.5, l.y + 0.5), draw: (ctx) => (indoor ? floorLamp(ctx, l.x, l.y, t) : lampPost(ctx, l.x, l.y, t)) });
   for (const p of layout.plants) out.push({ depth: d(p.x + 0.5, p.y + 0.5), draw: (ctx) => plant(ctx, p.x, p.y) });
   for (const b of layout.benches) out.push({ depth: d(b.x + 0.5, b.y + 0.5), draw: (ctx) => bench(ctx, b.x, b.y) });
-  out.push({ depth: -1, draw: (ctx) => portal(ctx, layout.spawn.x, layout.spawn.y, t) });
+  if (!indoor) out.push({ depth: -1, draw: (ctx) => portal(ctx, layout.spawn.x, layout.spawn.y, t) });
   return out;
 }
 

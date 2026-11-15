@@ -110,18 +110,76 @@ export interface PlazaTable {
 /** Para onde o boneco olha: 0 = baixo-direita, 1 = baixo-esquerda, 2 = cima-esquerda, 3 = cima-direita */
 export type Facing = 0 | 1 | 2 | 3;
 
+/** A praça (lobby, ao ar livre) ou o estabelecimento do servidor (por dentro, com as mesas das calls). */
+export type Scene = 'lobby' | 'inside';
+export const isScene = (raw: unknown): raw is Scene => raw === 'lobby' || raw === 'inside';
+
 export interface PlazaLayout {
+  kind: Scene;
   w: number;
   h: number;
+  /** a porta: no lobby, a entrada do prédio; dentro, a saída. Pisar nela troca de lugar. */
+  door: Point;
+  /** mesinhas de café do lobby (1 casa, com dois banquinhos ao lado) */
+  cafes: Point[];
   tables: PlazaTable[];
   /** casa por casa (y * w + x): 1 = não dá para pisar */
   blocked: Uint8Array;
   spawn: Point;
-  /** prédio do servidor, no fundo (de x0 a x1, nas linhas 0 a 2) */
+  /** no lobby, o prédio do servidor; dentro, o balcão (de x0 a x1, nas linhas 0 a 2) */
   building: { x0: number; x1: number };
   lamps: Point[];
   plants: Point[];
   benches: (Point & { facing: Facing })[];
+}
+
+/** O mapa de um lugar: o lobby é fixo; o estabelecimento tem uma mesa por sala de voz. */
+export function layoutFor(scene: Scene, tableCount: number): PlazaLayout {
+  return scene === 'lobby' ? buildLobby() : buildLayout(tableCount);
+}
+
+export function buildLobby(): PlazaLayout {
+  const w = 22;
+  const h = 18;
+  const blocked = new Uint8Array(w * h);
+  const block = (x: number, y: number) => {
+    if (x >= 0 && y >= 0 && x < w && y < h) blocked[y * w + x] = 1;
+  };
+  const building = { x0: Math.floor(w / 2) - 4, x1: Math.floor(w / 2) + 3 };
+  for (let x = building.x0; x <= building.x1; x++) for (let y = 0; y <= 2; y++) block(x, y);
+  const door = { x: Math.floor(w / 2), y: 3 };
+  const cafes = [
+    { x: 4, y: 7 },
+    { x: 16, y: 7 },
+    { x: 5, y: 12 },
+    { x: 15, y: 12 },
+  ];
+  // mesinha no meio, banquinhos dos lados (ao longo de x)
+  for (const c of cafes) for (let dx = -1; dx <= 1; dx++) block(c.x + dx, c.y);
+  const lamps = [
+    { x: 1, y: 4 },
+    { x: w - 2, y: 4 },
+    { x: 1, y: h - 2 },
+    { x: w - 2, y: h - 2 },
+    { x: Math.floor(w / 2) - 3, y: 9 },
+    { x: Math.floor(w / 2) + 3, y: 9 },
+  ];
+  const plants = [
+    { x: building.x0 - 1, y: 0 },
+    { x: building.x1 + 1, y: 0 },
+    { x: 0, y: 9 },
+    { x: w - 1, y: 9 },
+    { x: building.x0 - 1, y: 3 },
+    { x: building.x1 + 1, y: 3 },
+  ];
+  const benches: PlazaLayout['benches'] = [
+    { x: 0, y: 11, facing: 0 },
+    { x: w - 1, y: 11, facing: 1 },
+    { x: 0, y: 13, facing: 0 },
+    { x: w - 1, y: 13, facing: 1 },
+  ];
+  for (const p of [...lamps, ...plants, ...benches]) block(p.x, p.y);
+  return { kind: 'lobby', w, h, door, cafes, tables: [], blocked, spawn: { x: Math.floor(w / 2), y: h - 2 }, building, lamps, plants, benches };
 }
 
 export function buildLayout(tableCount: number): PlazaLayout {
@@ -180,7 +238,7 @@ export function buildLayout(tableCount: number): PlazaLayout {
   for (const p of [...lamps, ...plants, ...benches]) block(p.x, p.y);
 
   const spawn = { x: Math.floor(w / 2), y: h - 2 };
-  return { w, h, tables, blocked, spawn, building, lamps, plants, benches };
+  return { kind: 'inside', w, h, door: { x: spawn.x, y: h - 1 }, cafes: [], tables, blocked, spawn, building, lamps, plants, benches };
 }
 
 export const walkable = (layout: PlazaLayout, x: number, y: number) =>
