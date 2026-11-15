@@ -2141,7 +2141,8 @@ const uploadsPerUser = limiter(60, 60 * 60_000);
 api.post('/attachments', humansOnly, attachmentBody, (req, res) => {
   const me = uid(res);
   if (!uploadsPerUser(me)) fail(429, 'Muitos arquivos em pouco tempo. Espere um pouco.');
-  const name = cleanFileName(req.query.name);
+  // ?name=a&name=b chega como lista: só um nome de verdade vale
+  const name = cleanFileName(typeof req.query.name === 'string' ? req.query.name : undefined);
   const { url, image } = saveAttachment(me, req.body, name);
   const row: AttachmentRow = { id: randomUUID(), uploader_id: me, url, name, size: (req.body as Buffer).length, image: image ? 1 : 0, message_id: null, created_at: now() };
   run(

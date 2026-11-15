@@ -18,7 +18,11 @@ const MAX_JSON = 80 * 1024 * 1024;
 
 mkdirSync(config.diagnosticsDir, { recursive: true });
 
-const fileOf = (id: string) => join(config.diagnosticsDir, `${id}.json.gz`);
+/** O arquivo de um diagnóstico. O id vem da URL: só um UUID vale (nada de "../" saindo da pasta). */
+const fileOf = (id: string) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('id de diagnóstico inválido');
+  return join(config.diagnosticsDir, `${id}.json.gz`);
+};
 
 export function readDiagnostic(id: string): Buffer | null {
   try {
@@ -30,7 +34,11 @@ export function readDiagnostic(id: string): Buffer | null {
 
 export function deleteDiagnostic(id: string) {
   run('DELETE FROM diagnostics WHERE id = ?', id);
-  rmSync(fileOf(id), { force: true });
+  try {
+    rmSync(fileOf(id), { force: true });
+  } catch {
+    // id que nem é de diagnóstico: não há arquivo para apagar
+  }
 }
 
 function cleanup() {

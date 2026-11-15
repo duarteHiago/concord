@@ -95,7 +95,9 @@ export function registerCspReportRoutes(api: Router) {
       if (lastLogged.size > 500) lastLogged.clear();
       lastLogged.set(key, Date.now());
       const where = String(r['document-uri'] ?? r.documentURL ?? '').replace(/^https?:\/\/[^/]+/, '').slice(0, 80);
-      console.warn(`[csp] bloquearia ${directive} ${blocked} (em ${where || '?'})`);
+      // sem caracteres de controle: nada do relatório (que vem do navegador) escreve uma linha falsa no log
+      const safe = (t: string) => t.replace(/[\u0000-\u001f\u007f]/g, '');
+      console.warn(`[csp] bloquearia ${safe(directive)} ${safe(blocked)} (em ${safe(where) || '?'})`);
     }
     res.status(204).end();
   });
