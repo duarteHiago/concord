@@ -13,8 +13,10 @@ import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.j
 import type { AudioProcessorOptions, LocalAudioTrack, Track, TrackProcessor } from 'livekit-client';
 import { AUTO_INITIAL, autoStep, type AutoState } from './noiseAuto';
 import dfnWorkletUrl from './worklets/deepfilter.worklet.js?url';
+import gateWorkletUrl from './worklets/gate.worklet.js?url';
 import meterWorkletUrl from './worklets/meter.worklet.js?url';
 import monoWorkletUrl from './worklets/mono.worklet.js?url';
+import pitchWorkletUrl from './worklets/pitch.worklet.js?url';
 import smartGateWorkletUrl from './worklets/smartgate.worklet.js?url';
 
 /**
@@ -331,113 +333,12 @@ export const EFFECTS: { id: EffectId; label: string; hint: string }[] = [
   { id: 'cave', label: 'Caverna', hint: 'Reverberação' },
 ];
 
-// Deslocador de tom simples: duas leituras de uma linha de atraso, com janela triangular.
-const PITCH_WORKLET = `
-class ConcordPitch extends AudioWorkletProcessor {
-  static get parameterDescriptors() { return [{ name: 'ratio', defaultValue: 1, minValue: 0.5, maxValue: 2 }]; }
-  constructor() {
-    super();
-    this.size = 4096; this.buf = new Float32Array(this.size); this.w = 0;
-    this.win = 1200; this.phase = 0; this.dead = false;
-    this.port.onmessage = (e) => { if (e.data === 'destroy') this.dead = true; };
-  }
-  read(pos) {
-    const i = Math.floor(pos); const f = pos - i;
-    const a = this.buf[(i + this.size) % this.size]; const b = this.buf[(i + 1 + this.size) % this.size];
-    return a + (b - a) * f;
-  }
-  process(inputs, outputs, params) {
-    if (this.dead) return false;
-    const input = inputs[0] && inputs[0][0];
-    const out = outputs[0];
-    if (!input) return true;
-    const ratio = params.ratio[0];
-    for (let i = 0; i < input.length; i++) {
-      this.buf[this.w] = input[i];
-      this.phase = (this.phase + (1 - ratio) + this.win) % this.win;
-      const d1 = this.phase; const d2 = (this.phase + this.win / 2) % this.win;
-      const g1 = 1 - Math.abs((2 * d1) / this.win - 1); const g2 = 1 - Math.abs((2 * d2) / this.win - 1);
-      const v = this.read(this.w - d1) * g1 + this.read(this.w - d2) * g2;
-      for (let c = 0; c < out.length; c++) out[c][i] = v;
-      this.w = (this.w + 1) % this.size;
-    }
-    return true;
-  }
-}
-registerProcessor('concord-pitch', ConcordPitch);
-`;
+// Deslocador de tom simples: duas leituras de uma linha de atraso, com janela triangular (worklets/pitch.worklet.js).
 
 // Portão de voz (como a "sensibilidade de entrada automática" do Discord): fecha o microfone quando você
 // não está falando, para o resto de ruído não passar. Aprende sozinho o ruído de fundo (modo automático)
 // e só abre com som que dura (~20 ms seguidos, como uma sílaba): estalos curtos, tipo tecla, não abrem.
-// Atrasa o som 25 ms para não cortar o começo das palavras e segura aberto um pouco depois da fala.
-const GATE_WORKLET = `
-class ConcordGate extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.mode = 'auto'; this.threshold = -50; this.dead = false;
-    this.floor = -60; this.open = false; this.hold = 0; this.gain = 0;
-    this.delay = new Float32Array(Math.round(sampleRate * 0.025)); this.w = 0;
-    this.above = 0; this.needAbove = Math.round(sampleRate * 0.02 / 128);
-    this.energies = new Float32Array(8); this.ei = 0;
-    this.attack = 1 - Math.exp(-1 / (sampleRate * 0.002));
-    this.release = 1 - Math.exp(-1 / (sampleRate * 0.25));
-    // segura aberto 450 ms: cobre a pausa entre palavras (antes cortava no meio da frase)
-    this.holdSamples = Math.round(sampleRate * 0.45);
-    // fechado = -40 dB, não silêncio absoluto: soa como "abaixar", não como corte
-    this.closedGain = 0.01;
-    this.report = 0;
-    this.port.onmessage = (e) => {
-      if (e.data === 'destroy') { this.dead = true; return; }
-      if (e.data.mode) this.mode = e.data.mode;
-      if (typeof e.data.threshold === 'number') this.threshold = e.data.threshold;
-    };
-  }
-  process(inputs, outputs) {
-    if (this.dead) return false;
-    const input = inputs[0] && inputs[0][0];
-    const out = outputs[0];
-    if (!input) return true;
-    let e = 0;
-    for (let i = 0; i < input.length; i++) e += input[i] * input[i];
-    const block = 10 * Math.log10(e / input.length + 1e-12);
-    this.energies[this.ei] = e / input.length;
-    this.ei = (this.ei + 1) % this.energies.length;
-    let avg = 0;
-    for (let i = 0; i < this.energies.length; i++) avg += this.energies[i];
-    const level = 10 * Math.log10(avg / this.energies.length + 1e-12);
-    // ruído de fundo: desce rápido, sobe devagar (~5 dB/s)
-    if (level < this.floor) this.floor += (level - this.floor) * 0.1;
-    else this.floor += 0.015;
-    this.floor = Math.min(-25, Math.max(-90, this.floor));
-    const thr = this.mode === 'manual' ? this.threshold : Math.max(this.floor + 14, -62);
-    // conta blocos seguidos acima do limite (som que dura); estalo curto zera a contagem
-    this.above = block > thr ? this.above + 1 : 0;
-    const voice = this.open ? level > thr : this.above >= this.needAbove;
-    if (this.mode === 'off' || voice) {
-      this.open = true;
-      this.hold = this.holdSamples;
-    } else if (this.hold > 0) this.hold -= input.length;
-    else this.open = false;
-    const target = this.open ? 1 : this.closedGain;
-    for (let i = 0; i < input.length; i++) {
-      const delayed = this.delay[this.w];
-      this.delay[this.w] = input[i];
-      this.w = (this.w + 1) % this.delay.length;
-      this.gain += (target - this.gain) * (target > this.gain ? this.attack : this.release);
-      const v = delayed * this.gain;
-      for (let c = 0; c < out.length; c++) out[c][i] = v;
-    }
-    this.report += input.length;
-    if (this.report >= sampleRate * 0.05) {
-      this.report = 0;
-      this.port.postMessage({ level, threshold: thr, open: this.open });
-    }
-    return true;
-  }
-}
-registerProcessor('concord-gate', ConcordGate);
-`;
+// Atrasa o som 25 ms para não cortar o começo das palavras e segura aberto um pouco depois da fala (worklets/gate.worklet.js).
 
 /** smart (experimental): guiado pela IA, abre pelo que a supressão deixou passar; sem IA ativa vale como 'auto'. */
 export type GateMode = 'auto' | 'manual' | 'off' | 'smart';
@@ -458,21 +359,6 @@ export interface MicLevel {
 }
 export const micLevels = new EventTarget();
 
-const inlineModules = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
-function loadInlineWorklet(ctx: BaseAudioContext, name: string, code: string) {
-  let map = inlineModules.get(ctx);
-  if (!map) {
-    map = new Map();
-    inlineModules.set(ctx, map);
-  }
-  let p = map.get(name);
-  if (!p) {
-    const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
-    p = ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url));
-    map.set(name, p);
-  }
-  return p;
-}
 
 function distortionCurve(amount: number) {
   const n = 1024;
@@ -502,7 +388,7 @@ async function buildEffect(ctx: BaseAudioContext, effect: EffectId, src: AudioNo
   switch (effect) {
     case 'deep':
     case 'chipmunk': {
-      await loadInlineWorklet(ctx, 'concord-pitch', PITCH_WORKLET);
+      await addModule(ctx, pitchWorkletUrl);
       const pitch = add(new AudioWorkletNode(ctx, 'concord-pitch'));
       pitch.parameters.get('ratio')!.value = effect === 'deep' ? 0.72 : 1.55;
       src.connect(pitch).connect(dest);
@@ -633,7 +519,7 @@ export class Chain {
     await Promise.all([
       addModule(ctx, monoWorkletUrl),
       addModule(ctx, meterWorkletUrl),
-      loadInlineWorklet(ctx, 'concord-gate', GATE_WORKLET),
+      addModule(ctx, gateWorkletUrl),
       settings.gate.mode === 'smart' ? addModule(ctx, smartGateWorkletUrl) : Promise.resolve(),
     ]);
     if (this.done) return;

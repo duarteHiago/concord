@@ -78,6 +78,11 @@ export default defineConfig({
       manifest: false,
     }),
   ],
+  build: {
+    // worklet de áudio (supressão de ruído, portão, medidor) nunca vira data: embutido no código, mesmo pequeno: a CSP
+    // só deixa o navegador carregar worklet do próprio site, e um data: bloqueado derruba o processamento do microfone
+    assetsInlineLimit: (filePath: string) => (/worklet\.js$/i.test(filePath) ? false : undefined),
+  },
   define: {
     // só pra mostrar no "Modo desenvolvedor" das configurações quando esse build do client foi gerado
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
