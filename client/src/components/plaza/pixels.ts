@@ -1665,6 +1665,26 @@ export function drawAvatar(
   const top = y - SPRITE_H + 1 + Math.round(opts.bob ?? 0);
   ctx.drawImage(sprite, x - SPRITE_W / 2, top);
   ctx.globalAlpha = 1;
+  // cochilando: os "z" subindo em cima da cabeça, no próprio mapa (o nome pode estar escondido na mesa cheia)
+  if (opts.sleeping) {
+    const k = (opts.t / 1600 + (x % 7) / 7) % 1;
+    const alpha = 1 - k * 0.7;
+    const z = (size: number, zx: number, zy: number) => {
+      ctx.font = `bold ${size}px monospace`;
+      ctx.fillStyle = `rgba(27, 20, 48, ${alpha})`;
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ])
+        ctx.fillText('z', Math.round(zx + dx), Math.round(zy + dy));
+      ctx.fillStyle = `rgba(233, 236, 255, ${alpha})`;
+      ctx.fillText('z', Math.round(zx), Math.round(zy));
+    };
+    z(8, x + 4, top + 8 - k * 5);
+    z(10, x + 8, top + 2 - k * 5);
+  }
   // nas mãos (mais ou menos na altura da barriga do boneco)
   const handY = top + 19;
   if (opts.console && !opts.sleeping) {

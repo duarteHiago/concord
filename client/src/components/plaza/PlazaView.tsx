@@ -680,7 +680,8 @@ export default function PlazaView() {
         const speaking = f.seated ? !!voice.speaking[f.userId] : !!pv.speaking[f.userId];
         // sentado e mutado: dorme na mesa; sentado e jogando (o app desktop detecta): console na mão
         const vs = f.seated ? L.voiceStates.find((v) => v.userId === f.userId) : undefined;
-        const sleeping = !!vs && (vs.muted || vs.deafened) && f.pose === 'sit';
+        // cochila quem desligou o fone (não ouve a mesa); só o microfone mutado é quem está ouvindo, e fica acordado
+        const sleeping = !!vs && vs.deafened && f.pose === 'sit';
         const playing = f.nook === 'game' || (f.seated && !!useApp.getState().online[f.userId]?.activities?.some((a) => a.type === 'playing'));
         const wk = plaza.walkers[f.userId];
         const drinkColor = wk?.drink ? (DRINKS.find((d) => d.id === wk.drink)?.color ?? null) : null;
@@ -1395,7 +1396,7 @@ export default function PlazaView() {
             voice={(voiceStates ?? []).find((v) => v.userId === id)}
             idle={
               (!seating.has(id) && !!walkers[id] && Date.now() - walkers[id].activeAt > IDLE_MS) ||
-              (inside && seating.has(id) && !!(voiceStates ?? []).find((v) => v.userId === id && (v.muted || v.deafened)))
+              (inside && seating.has(id) && !!(voiceStates ?? []).find((v) => v.userId === id && v.deafened))
             }
 
             bubbles={bubbles.filter((b) => b.userId === id)}
