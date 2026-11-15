@@ -11,7 +11,8 @@ import { DIAGNOSTIC_RETENTION_DAYS, deleteDiagnostic, readDiagnostic } from './d
 import { registerFeedbackAdminRoutes } from './feedback.ts';
 import { fail, uid } from './http.ts';
 import { removeFromRoom } from './livekit.ts';
-import { dropVoice, getVoiceState, liveStats, onlineUserIds, revokeSockets } from './realtime.ts';
+import { plazaForgetRoom } from './plaza.ts';
+import { dropVoice, getVoiceState, leaveServerRoom, liveStats, onlineUserIds, revokeSockets, serverChanged } from './realtime.ts';
 import { removeUpload } from './uploads.ts';
 import { invalidateTrust, trustOf } from './trust.ts';
 
@@ -224,11 +225,20 @@ export function registerAdminRoutes(api: Router) {
     for (const u of [...bots, target]) {
       await kickEverywhere(u.id);
       logAction(me, u, 'delete', reason);
+      // os servidores dela, antes de a conta (e as linhas de membro) sumir
+      const servers = all<{ server_id: string }>('SELECT server_id FROM members WHERE user_id = ?', u.id).map((m) => m.server_id);
       tx(() => {
         run('DELETE FROM contract_locks WHERE user_id = ?', u.id);
         run('DELETE FROM users WHERE id = ?', u.id);
       });
       for (const url of [u.avatar_url, u.banner_url]) removeUpload(url);
+      // quem está com o servidor aberto vê a pessoa sumir na hora (lista de membros e a porta do quarto no corredor
+      // da Praça), e quem estava no quarto dela volta para o corredor
+      plazaForgetRoom(u.id);
+      for (const serverId of servers) {
+        leaveServerRoom(u.id, serverId);
+        serverChanged(serverId);
+      }
     }
     console.log(`[portal] conta @${target.username} apagada`);
     res.json({ ok: true, bots: bots.length });

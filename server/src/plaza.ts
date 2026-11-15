@@ -470,6 +470,23 @@ function removeSocket(serverId: string, userId: string, socketId: string) {
   broadcastCount(serverId);
 }
 
+/**
+ * A conta foi apagada: o quarto dela some (a linha em plaza_rooms sai junto com a conta, pela chave estrangeira).
+ * Esquece o quarto guardado em memória e quem estava dentro dele volta para o corredor, no primeiro andar.
+ */
+export function plazaForgetRoom(owner: string) {
+  rooms.delete(owner);
+  if (!io) return;
+  for (const [serverId, plaza] of plazas) {
+    for (const [userId, w] of plaza) {
+      if (w.scene !== 'room' || w.roomOf !== owner) continue;
+      const hall = hallLayout(serverId, 0);
+      Object.assign(w, { scene: 'hall', floor: 0, roomOf: null, ...spawnPoint(hall, plaza, hall.spawn), activeAt: Date.now() });
+      io.to(room(serverId)).emit('plaza:scene', { serverId, userId, scene: w.scene, floor: w.floor, roomOf: null, x: w.x, y: w.y });
+    }
+  }
+}
+
 /** Saiu (ou foi tirado) do servidor: sai da praça junto, em todos os aparelhos. */
 export function plazaLeaveServer(userId: string, serverId: string) {
   const w = plazas.get(serverId)?.get(userId);
