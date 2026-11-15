@@ -3,7 +3,7 @@
 // /uploads, e só o resumo no banco. Quem lê é o portal da equipe (admin.ts). Some sozinho depois de 90 dias.
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import express, { type Router } from 'express';
 import { config } from './config.ts';
@@ -18,27 +18,32 @@ const MAX_JSON = 80 * 1024 * 1024;
 
 mkdirSync(config.diagnosticsDir, { recursive: true });
 
-const fileOf = (id: string) => join(config.diagnosticsDir, `${id}.json.gz`);
 // o id chega pela URL do portal (o Express decodifica %2F): só um UUID vira caminho de arquivo
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DIR = resolve(config.diagnosticsDir);
+
+/** O arquivo de um diagnóstico, ou null se o id não é de diagnóstico ou o caminho sairia da pasta. */
+function fileOf(id: string): string | null {
+  if (!UUID.test(id)) return null;
+  const file = resolve(DIR, `${id}.json.gz`);
+  return file.startsWith(DIR + sep) ? file : null;
+}
 
 export function readDiagnostic(id: string): Buffer | null {
-  if (!UUID.test(id)) return null;
+  const file = fileOf(id);
+  if (!file) return null;
   try {
-    return readFileSync(fileOf(id));
+    return readFileSync(file);
   } catch {
     return null;
   }
 }
 
 export function deleteDiagnostic(id: string) {
-  if (!UUID.test(id)) return;
+  const file = fileOf(id);
+  if (!file) return;
   run('DELETE FROM diagnostics WHERE id = ?', id);
-  try {
-    rmSync(fileOf(id), { force: true });
-  } catch {
-    // id que nem é de diagnóstico: não há arquivo para apagar
-  }
+  rmSync(file, { force: true });
 }
 
 function cleanup() {
@@ -88,7 +93,7 @@ export function registerDiagnosticRoutes(api: Router) {
     const startedAt = time(data.startedAt);
     const endedAt = time(data.endedAt);
     const id = randomUUID();
-    writeFileSync(fileOf(id), body);
+    writeFileSync(fileOf(id)!, body); // id acabou de sair do randomUUID
     run(
       `INSERT INTO diagnostics (id, user_id, note, started_at, ended_at, samples, markers, mode, client_commit, user_agent, size, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
