@@ -100,6 +100,31 @@ describe('praça: andares (shared)', () => {
     assert.equal(validateStyle({ ...base, items: [{ k: 'plant', x: room.nook.bed.x, y: room.nook.bed.y, r: 0, c: 0 }] }, 'room', 0).ok, false);
     assert.equal(validateStyle({ ...base, items: [{ k: 'tree', x: 4, y: 4, r: 0, c: 0 }] }, 'room', 0).ok, false);
   });
+
+  it('troféu só em cima da prateleira, um por casa; pôster só encostado numa parede', () => {
+    const base = defaultStyle('room');
+    const it = (k: string, x: number, y: number, r = 0) => ({ k, x, y, r, c: 0 });
+    const ok = (...items: ReturnType<typeof it>[]) => validateStyle({ ...base, items: [...base.items, ...items] }, 'room', 0).ok;
+    const ledge = it('ledge', 4, 6);
+    // os dois troféus, cada um numa casa da prateleira (a ordem na lista não importa)
+    assert.equal(ok(it('trophyGold', 4, 6), it('trophyCup', 5, 6), ledge), true);
+    assert.equal(ok(ledge, it('trophyGold', 4, 6), it('trophyCup', 4, 6)), false);
+    assert.equal(ok(it('trophyGold', 4, 6)), false);
+    assert.equal(ok(ledge, it('trophyCup', 6, 6)), false);
+    // enfeite não ocupa o chão: dá para andar na frente da prateleira
+    const st = validateStyle({ ...base, items: [ledge, it('trophyGold', 4, 6)] }, 'room', 0);
+    assert.ok(st.ok);
+    const room = layoutFor('room', 0, st.style);
+    assert.equal(room.items.length, 2);
+    assert.equal(walkable(room, 4, 7), true);
+    // pôster: parede do fundo (y = 0) ou da esquerda (x = 0, girado), sem um em cima do outro
+    assert.equal(ok(it('poster', 3, 0)), true);
+    assert.equal(ok(it('poster', 0, 2, 1)), true);
+    assert.equal(ok(it('poster', 3, 2)), false);
+    assert.equal(ok(it('poster', 3, 0), it('poster', 4, 0)), false);
+    // enfeite pessoal só no quarto
+    assert.equal(validateStyle({ ...defaultStyle('inside', 2), items: [it('poster', 3, 0)] }, 'inside', 2).ok, false);
+  });
 });
 
 describe('praça: desligada fora da lista', () => {

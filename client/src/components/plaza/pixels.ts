@@ -16,6 +16,7 @@ import {
   type Point,
   type Scene,
 } from '../../../../shared/plaza.ts';
+import posterUrl from './sprites/poster-champion.png';
 
 export const TW = 32;
 export const TH = 16;
@@ -445,8 +446,10 @@ function interiorWalls(ctx: Ctx, layout: PlazaLayout, accent: string) {
   // quadros na parede do fundo, longe do balcão
   const { x0, x1 } = layout.building;
   const qb = (a: number, b: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(a, 0, z0), at(b, 0, z0), at(b, 0, z1), at(a, 0, z1)], c);
+  const posters = layout.items.filter((it) => it.k === 'poster').map(wallSpan);
   for (const u of layout.kind === 'hall' ? [] : [1.5, x1 + 2.5]) {
     if (u + 1.6 > w || (u > x0 - 2 && u < x1 + 1)) continue;
+    if (posters.some((sp) => sp.wall === 'back' && u < sp.b && u + 1.6 > sp.a)) continue;
     qb(u, u + 1.6, 28, 48, PAL.outline);
     qb(u + 0.1, u + 1.5, 29, 47, u < x0 ? accent : '#3fb8c9');
     qb(u + 0.3, u + 1.3, 33, 40, '#f3e7cf');
@@ -776,6 +779,179 @@ function fountain(ctx: Ctx, x: number, y: number, t: number) {
   for (const dx of [-5, -3, 3, 5]) ctx.fillRect(Math.round(c.x + dx), Math.round(c.y - 19 + Math.abs(dx) - jet), 1, 2);
 }
 
+
+// ---- enfeites (prateleira, troféus e pôster) ----
+
+/** Sprite desenhado em texto (um caractere por pixel, '.' vazio), com o contorno escuro posto em volta. */
+function charSprite(rows: string[], pal: Record<string, string>): HTMLCanvasElement {
+  const w = Math.max(...rows.map((r) => r.length));
+  const canvas = document.createElement('canvas');
+  canvas.width = w + 2;
+  canvas.height = rows.length + 2;
+  const ctx = canvas.getContext('2d')!;
+  const solid = (x: number, y: number) => y >= 0 && y < rows.length && x >= 0 && x < w && (rows[y][x] ?? '.') !== '.';
+  ctx.fillStyle = PAL.outline;
+  for (let y = -1; y <= rows.length; y++)
+    for (let x = -1; x <= w; x++) if (!solid(x, y) && (solid(x + 1, y) || solid(x - 1, y) || solid(x, y + 1) || solid(x, y - 1))) ctx.fillRect(x + 1, y + 1, 1, 1);
+  rows.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      if (ch === '.') return;
+      ctx.fillStyle = pal[ch] ?? '#ff00ff';
+      ctx.fillRect(x + 1, y + 1, 1, 1);
+    }),
+  );
+  return canvas;
+}
+
+let trophyCache: Record<'trophyGold' | 'trophyCup', HTMLCanvasElement> | null = null;
+function trophySprites() {
+  trophyCache ??= {
+    // troféu de lascas douradas, com rachaduras e um vão no meio, em cima de uma base roxa
+    trophyGold: charSprite(
+      [
+        '......H......',
+        '.....HY......',
+        '.....HYD.....',
+        '....HYYK.....',
+        '....HYKDD....',
+        '....KKYDD....',
+        '...HYYYYDD...',
+        '...HYYYYKD...',
+        '..HYYYKKDDD..',
+        '..HYYKKKYDD..',
+        '.HYYKKKKKYDD.',
+        '.HYYYYYYYYDD.',
+        '.GGGGGGGGGGG.',
+        '..PPPPPPPQQ..',
+        '..PPPPPPQQQ..',
+        '.GGGGGGGGGGG.',
+      ],
+      { H: '#fff0b0', Y: '#f5c451', D: '#c98a2a', K: '#3a2a55', G: '#e0a93a', P: '#4a3f6b', Q: '#2d2450' },
+    ),
+    // taça prateada em degraus, com o anel de rebites, brilho vermelho de um lado e azul do outro, base dourada
+    trophyCup: charSprite(
+      [
+        '...SWWSM...',
+        '..RSWSMNB..',
+        '..RSWWSNB..',
+        '.RSWWSMMNB.',
+        '.RSWSSMMNB.',
+        'RSWWSSMMNNB',
+        'NONONONONON',
+        'RSWSSMMMNNB',
+        '.RSWSMMMNB.',
+        '..RWSMMNB..',
+        '...RSMNB...',
+        '....SMN....',
+        '....WMN....',
+        '...SWMMN...',
+        '....WMN....',
+        '...SWSMN...',
+        '..gGGGGGgg.',
+        '..GGLbLLGg.',
+        '..GGLLLLGg.',
+        '.gGGGGGGGgg',
+      ],
+      { W: '#f2f4fa', S: '#b8bfd4', M: '#7d84a3', N: '#4b4f6b', R: '#ff4d5e', B: '#4f8bff', O: '#ffffff', G: '#e0a93a', g: '#b07a22', L: '#f3e7cf', b: '#2f62e6' },
+    ),
+  };
+  return trophyCache;
+}
+
+/** Altura do tampo da prateleira (onde os enfeites ficam). */
+export const LEDGE_TOP = 15;
+
+/** Prateleira baixa de madeira, de 2 casas (girada, ao longo de y). */
+function ledge(ctx: Ctx, it: Furniture) {
+  const a = it.r ? 0.5 : 1.8;
+  const b = it.r ? 1.8 : 0.5;
+  const x = it.x + (it.r ? 0.25 : 0.1);
+  const y = it.y + (it.r ? 0.1 : 0.25);
+  const wood = { top: '#c99069', left: '#a87454', right: '#8a5a3c' };
+  const leg = { top: '#6e4834', left: '#6e4834', right: '#5e3826' };
+  for (const [dx, dy] of [
+    [0, 0],
+    [a - 0.12, 0],
+    [0, b - 0.12],
+    [a - 0.12, b - 0.12],
+  ])
+    box(ctx, x + dx, y + dy, 0.12, 0.12, 0, 12, leg);
+  box(ctx, x, y, a, b, 4, 2, wood);
+  box(ctx, x - 0.02, y - 0.02, a + 0.04, b + 0.04, 12, LEDGE_TOP - 12, wood);
+}
+
+/** Enfeite em cima da prateleira: pés no meio da casa, na altura do tampo (z). */
+function trophy(ctx: Ctx, it: Furniture, z = LEDGE_TOP) {
+  const sp = trophySprites()[it.k as 'trophyGold' | 'trophyCup'];
+  const p = at(it.x + 0.5, it.y + 0.5, z);
+  ctx.drawImage(sp, Math.round(p.x - sp.width / 2), Math.round(p.y - sp.height + 2));
+}
+
+// pôster: imagem carregada uma vez; enquanto não chega, fica de fora (o laço da cena redesenha sozinho)
+const posterImg = typeof Image !== 'undefined' ? new Image() : null;
+/** Resolve quando as imagens dos enfeites carregaram (para as miniaturas do editor se redesenharem). */
+export const decorReady: Promise<void> = new Promise((resolve) => {
+  if (!posterImg) return resolve();
+  posterImg.onload = () => resolve();
+  posterImg.onerror = () => resolve();
+  posterImg.src = posterUrl;
+});
+
+/** Pôster com moldura escura; `shear` 1 = parede do fundo, -1 = parede da esquerda, 0 = de frente (miniatura). */
+const posterCache = new Map<number, HTMLCanvasElement>();
+function posterSprite(shear: -1 | 0 | 1): HTMLCanvasElement | null {
+  if (!posterImg?.complete || !posterImg.naturalWidth) return null;
+  const hit = posterCache.get(shear);
+  if (hit) return hit;
+  const flat = document.createElement('canvas');
+  flat.width = posterImg.naturalWidth + 2;
+  flat.height = posterImg.naturalHeight + 2;
+  const fctx = flat.getContext('2d')!;
+  fctx.fillStyle = PAL.outline;
+  fctx.fillRect(0, 0, flat.width, flat.height);
+  fctx.drawImage(posterImg, 1, 1);
+  if (!shear) {
+    posterCache.set(0, flat);
+    return flat;
+  }
+  // inclina coluna a coluna (meio pixel para baixo a cada pixel para o lado), como as paredes em isométrico
+  const out = document.createElement('canvas');
+  out.width = flat.width;
+  out.height = flat.height + Math.ceil(flat.width / 2);
+  const octx = out.getContext('2d')!;
+  for (let i = 0; i < flat.width; i++) {
+    const dy = shear > 0 ? Math.floor(i / 2) : Math.floor((flat.width - 1 - i) / 2);
+    octx.drawImage(flat, i, 0, 1, flat.height, i, dy, 1, flat.height);
+  }
+  posterCache.set(shear, out);
+  return out;
+}
+
+const POSTER_TOP = 54;
+
+/** Pôster pendurado: no meio das 2 casas que ele ocupa, na parede do fundo (r 0) ou na da esquerda (r 1). */
+function poster(ctx: Ctx, it: Furniture) {
+  const sp = posterSprite(it.r ? -1 : 1);
+  if (!sp) return;
+  const half = (sp.width / 2) / (TW / 2);
+  // canto de cima à esquerda (na tela) da moldura
+  const p = it.r ? at(0, it.y + 1 + half, POSTER_TOP) : at(it.x + 1 - half, 0, POSTER_TOP);
+  const lift = it.r ? Math.floor((sp.width - 1) / 2) : 0;
+  ctx.drawImage(sp, Math.round(p.x), Math.round(p.y - lift));
+}
+
+/** Miniatura do editor para o que vai na parede: o pôster de frente. */
+export function drawWallThumb(ctx: Ctx, width: number, height: number) {
+  const sp = posterSprite(0);
+  if (!sp) return;
+  const k = Math.min(1, (height - 4) / sp.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sp, Math.round((width - sp.width * k) / 2), Math.round((height - sp.height * k) / 2), sp.width * k, sp.height * k);
+}
+
+/** Casas do pôster na parede (para saber se um quadro fixo fica atrás dele). */
+const wallSpan = (it: Furniture) => (it.r ? { wall: 'left' as const, a: it.y, b: it.y + 2 } : { wall: 'back' as const, a: it.x, b: it.x + 2 });
+
 const itemColor = (it: Furniture) => ITEM_COLORS[it.c] ?? ITEM_COLORS[0];
 
 /** Desenha um móvel (menos o tapete, que fica na camada do chão). */
@@ -805,6 +981,13 @@ export function drawItem(ctx: Ctx, it: Furniture, scene: Scene, t: number) {
       return arcade(ctx, it.x, it.y, itemColor(it), t);
     case 'fountain':
       return fountain(ctx, it.x, it.y, t);
+    case 'ledge':
+      return ledge(ctx, it);
+    case 'trophyGold':
+    case 'trophyCup':
+      return trophy(ctx, it);
+    case 'poster':
+      return poster(ctx, it);
   }
 }
 
@@ -896,9 +1079,13 @@ export function sceneObjects(layout: PlazaLayout, tables: TableLook[], accent: s
     for (const s of tb.seats) out.push({ depth: d(s.x + 0.4, s.y + 0.4), draw: (ctx) => stool(ctx, s.x, s.y, accent) });
   });
   const indoor = layout.kind !== 'lobby';
+  const ledgeAt = new Map<string, Furniture>();
+  for (const it of layout.items) if (it.k === 'ledge') for (const f of footprint(it)) ledgeAt.set(`${f.x}:${f.y}`, it);
   for (const it of layout.items) {
     if (it.k === 'rug') continue;
-    out.push({ depth: itemDepth(it), draw: (ctx) => drawItem(ctx, it, layout.kind, t) });
+    const under = ledgeAt.get(`${it.x}:${it.y}`);
+    const depth = it.k === 'poster' ? -100 : (it.k === 'trophyGold' || it.k === 'trophyCup') && under ? itemDepth(under) + 0.01 : itemDepth(it);
+    out.push({ depth, draw: (ctx) => drawItem(ctx, it, layout.kind, t) });
   }
   if (!indoor) out.push({ depth: -1, draw: (ctx) => portal(ctx, layout.spawn.x, layout.spawn.y, t) });
   return out;
