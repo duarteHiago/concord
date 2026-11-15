@@ -174,6 +174,16 @@ if [ -n "${RECORDING_SERVERS:-}" ]; then
   fi
 fi
 
+# Praça do servidor: ids dos servidores onde ela abre (separados por vírgula). Vem da variável do CI.
+# Vazio no CI não mexe no que já está no .env; "*" abre em todos.
+if [ -n "${PLAZA_SERVERS:-}" ]; then
+  if printf '%s' "$PLAZA_SERVERS" | grep -qE '^[A-Za-z0-9,* -]{1,2000}$'; then
+    upsert_env PLAZA_SERVERS "$PLAZA_SERVERS"
+  else
+    echo "!! PLAZA_SERVERS com formato inesperado (use: id1,id2); ignorado." >&2
+  fi
+fi
+
 # senha do Grafana: gerada aqui na VPS e nunca impressa (os logs do CI são públicos)
 if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' .env; then
   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)" >> .env

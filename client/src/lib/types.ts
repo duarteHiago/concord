@@ -2,6 +2,7 @@ import type { SupporterTier } from '../../../shared/supporter.ts';
 import type { Overwrite } from '../../../shared/permissions.ts';
 import type { Patch, StickerFinish } from '../../../shared/cosmetics.ts';
 import type { PlazaAvatar } from '../../../shared/plaza.ts';
+import type { TrustRequirement } from '../../../shared/trust.ts';
 
 export type { Patch, StickerFinish };
 
@@ -225,6 +226,8 @@ export interface Channel {
   recording?: { until: number; effects?: Record<string, { effect: string; until: number | null }> } | null;
   /** quem vê pode ligar o modo gravação e usar o painel de direção */
   canRecord?: boolean;
+  /** exigências de confiança do servidor/canal que a pessoa não alcança aqui (ver shared/trust.ts) */
+  trustBlock?: Partial<Record<'speak' | 'stream', TrustRequirement>>;
 }
 
 export interface Member extends User {

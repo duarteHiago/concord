@@ -3,11 +3,13 @@
 // conta (o link fica no detalhe). Ver server/src/reports.ts.
 import { ExternalLink, MonitorX, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { REPORT_CATEGORY_INFO, type ReportCategory } from '../../../../shared/reports.ts';
+import { REPORT_CATEGORIES, REPORT_CATEGORY_INFO, type ReportCategory } from '../../../../shared/reports.ts';
 import { api } from '../../lib/api';
 import { toast } from '../../store/toast';
 import { Button, cx } from '../ui';
 import { Badge, Loading, Page, Pager, RowLink, Table, fmtDate, useAdminData } from './parts';
+import { TrustBadge, TrustBreakdown, type TrustBrief } from './Trust';
+import type { TrustItem } from '../../../../shared/trust.ts';
 
 type Kind = 'message' | 'dm_message' | 'user' | 'stream';
 
@@ -15,8 +17,11 @@ interface ReportSummary {
   id: string;
   kind: Kind;
   category: ReportCategory;
+  /** o motivo que a equipe confirmou ao agir (é o que pesa na confiança) */
+  confirmedCategory: ReportCategory | null;
   reporter: string | null;
-  target: { id: string; username: string; deleted: boolean; suspended: boolean };
+  reporterTrust: TrustBrief | null;
+  target: { id: string; username: string; deleted: boolean; suspended: boolean; trust: TrustBrief | null };
   status: 'open' | 'resolved';
   outcome: 'dismissed' | 'actioned' | null;
   createdAt: number;
@@ -34,6 +39,9 @@ interface ReportDetailData extends ReportSummary {
   expired: boolean;
   streamingNow: boolean;
   otherReports: number;
+  /** pessoas diferentes que denunciaram o mesmo caso */
+  reporters: number;
+  targetTrustItems: TrustItem[];
   retentionDays: number;
 }
 
@@ -90,6 +98,8 @@ export function ReportsList() {
                       <span>{KIND_LABEL[r.kind]}</span>,
                       <span className="font-semibold">
                         @{r.target.username} {r.target.suspended && <Badge tone="warn">suspensa</Badge>} {r.target.deleted && <Badge>apagada</Badge>}
+                        {' '}
+                        <TrustBadge trust={r.target.trust} />
                       </span>,
                       <span className="text-fg-muted">{r.reporter ? `@${r.reporter}` : 'conta apagada'}</span>,
                       <span className="whitespace-nowrap text-fg-muted">{fmtDate(status === 'open' ? r.createdAt : (r.resolvedAt ?? r.createdAt))}</span>,
@@ -109,12 +119,14 @@ export function ReportsList() {
 export function ReportDetail({ id }: { id: string }) {
   const { data, error, reload } = useAdminData<ReportDetailData>(`/admin/reports/${id}`);
   const [note, setNote] = useState('');
+  // o motivo confirmado ao agir (vazio: o que quem denunciou escolheu)
+  const [confirmed, setConfirmed] = useState<ReportCategory | ''>('');
   const [busy, setBusy] = useState<string | null>(null);
 
   async function act(action: string, body: Record<string, unknown> = {}, done = 'Feito.', key = action) {
     setBusy(key);
     try {
-      await api.post(`/admin/reports/${id}/${action}`, { note: note.trim() || undefined, ...body });
+      await api.post(`/admin/reports/${id}/${action}`, { note: note.trim() || undefined, category: confirmed || undefined, ...body });
       toast.success(done);
       setNote('');
       reload();
@@ -181,6 +193,12 @@ export function ReportDetail({ id }: { id: string }) {
                   @{r.target.username} {r.target.suspended && <Badge tone="warn">suspensa</Badge>} {r.target.deleted && <Badge>apagada</Badge>}
                 </p>
                 <p className="mt-1 text-xs text-fg-muted">{r.otherReports ? `${r.otherReports} outra(s) denúncia(s) contra essa conta.` : 'Nenhuma outra denúncia contra essa conta.'}</p>
+                {r.reporters > 1 && <p className="mt-1 text-xs font-semibold text-warn">{r.reporters} pessoas diferentes denunciaram este mesmo caso.</p>}
+                {r.target.trust && (
+                  <div className="mt-3 rounded-2xl bg-surface-1 p-3">
+                    <TrustBreakdown trust={r.target.trust} items={r.targetTrustItems} />
+                  </div>
+                )}
                 {!r.target.deleted && (
                   <a href={`#contas/${r.target.id}`} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
                     <ExternalLink size={14} /> Abrir a conta (suspender fica lá)
@@ -188,8 +206,32 @@ export function ReportDetail({ id }: { id: string }) {
                 )}
               </Box>
 
+              <Box title="Quem denunciou">
+                <p className="font-semibold">{r.reporter ? `@${r.reporter}` : 'conta apagada'}</p>
+                {r.reporterTrust && (
+                  <p className="mt-1">
+                    <TrustBadge trust={r.reporterTrust} />
+                  </p>
+                )}
+              </Box>
+
               {r.status === 'open' ? (
                 <Box title="Decidir">
+                  <label className="mb-3 block">
+                    <span className="mb-1 block text-xs text-fg-muted">Motivo confirmado (se a equipe agir, é ele que baixa a confiança)</span>
+                    <select
+                      value={confirmed || r.category}
+                      onChange={(e) => setConfirmed(e.target.value as ReportCategory)}
+                      className="h-9 w-full rounded-2xl bg-surface-1 px-3 text-sm outline-none focus:ring-1 focus:ring-accent"
+                    >
+                      {REPORT_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {REPORT_CATEGORY_INFO[c].label}
+                          {c === r.category ? ' (o que foi denunciado)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
@@ -228,6 +270,11 @@ export function ReportDetail({ id }: { id: string }) {
                   <p className="text-sm">
                     <Badge tone={r.outcome === 'actioned' ? 'ok' : 'muted'}>{r.outcome === 'actioned' ? 'A equipe agiu' : 'Arquivada'}</Badge>
                   </p>
+                  {r.outcome === 'actioned' && r.confirmedCategory && (
+                    <p className="mt-2 text-xs text-fg-muted">
+                      Motivo confirmado: <b className="text-fg">{REPORT_CATEGORY_INFO[r.confirmedCategory].label}</b>
+                    </p>
+                  )}
                   <p className="mt-2 text-xs text-fg-muted">
                     {r.resolvedBy ? `por @${r.resolvedBy}` : ''} {r.resolvedAt ? `em ${fmtDate(r.resolvedAt)}` : ''}
                   </p>

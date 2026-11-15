@@ -19,6 +19,7 @@ import { StickerButton, StickerMessage } from './StickerPicker';
 import { JamCard, useJamInMessage } from './Jam';
 import { ReplyBar, ReplyQuote, startReply } from './Replies';
 import { MobileBackButton } from './MobileNav';
+import { trustBlockMessage } from '../lib/trust';
 
 const EMPTY: Message[] = [];
 
@@ -501,10 +502,14 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   }
 
   // no chat estreito da sala o texto tem que caber numa linha ao lado dos botões
+  // sem permissão por causa da exigência de confiança do canal: o texto diz o que falta (ver lib/trust.ts)
+  const trustNotice = !canSend ? trustBlockMessage(channel, 'speak') : null;
   const placeholder = !canSend
     ? compact
-      ? 'Você não pode escrever aqui'
-      : 'Você não pode enviar mensagens aqui'
+      ? trustNotice
+        ? 'Este canal pede uma conta mais confiável'
+        : 'Você não pode escrever aqui'
+      : (trustNotice ?? 'Você não pode enviar mensagens aqui')
     : compact
       ? 'Mensagem…'
       : channel.type === 'voice'

@@ -8,6 +8,7 @@ import { GoogleAccountSection } from '../GoogleLogin';
 import { EmailSection } from '../EmailRecovery';
 import { TwoFactorCodeInput, TwoFactorSection } from '../TwoFactor';
 import { SessionsSection } from '../Sessions';
+import { TrustCard } from '../TrustRules';
 import { LocalRecordControls } from '../RecordControls';
 import { useEffect, useRef, useState } from 'react';
 import { api, setToken } from '../../lib/api';
@@ -1195,6 +1196,7 @@ export function Account() {
   return (
     <div className="space-y-5">
       {desktop && <DesktopServer />}
+      <TrustCard />
       <TwoFactorSection />
       <SessionsSection />
       <GoogleAccountSection />

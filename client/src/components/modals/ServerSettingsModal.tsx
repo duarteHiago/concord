@@ -1,8 +1,9 @@
 import { memberName } from '../../lib/types';
-import { ArrowDown, ArrowUp, Ban, Crown, ImagePlus, Link2, Plus, Puzzle, Search, Shield, Shirt, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Ban, Crown, ImagePlus, Link2, Plus, Puzzle, Search, Shield, ShieldCheck, Shirt, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
 import { ServerPatchesPanel } from '../ServerPatches';
 import { WorkshopSettingsTab } from '../../workshop/Slots';
 import { WORKSHOP_ENABLED } from '../../workshop/store';
+import { TrustRulesEditor } from '../TrustRules';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useEffect, useState } from 'react';
 import { P, PERMISSION_INFO, has, type PermissionInfo } from '../../../../shared/permissions.ts';
@@ -34,6 +35,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
     { id: 'members', label: 'Membros', icon: <Users size={16} />, show: true },
     { id: 'invites', label: 'Convites', icon: <Link2 size={16} />, show: has(perms, P.CREATE_INVITE) },
     { id: 'bans', label: 'Banidos', icon: <Ban size={16} />, show: has(perms, P.BAN_MEMBERS) },
+    { id: 'trust', label: 'Segurança', icon: <ShieldCheck size={16} />, show: has(perms, P.MANAGE_SERVER) },
     { id: 'patches', label: 'Patches', icon: <Shirt size={16} />, show: true },
     { id: 'workshop', label: 'Oficina', icon: <Puzzle size={16} />, show: WORKSHOP_ENABLED && has(perms, P.MANAGE_SERVER) },
   ].filter((t) => t.show);
@@ -67,6 +69,13 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
           {current === 'invites' && <Invites detail={detail} />}
           {current === 'bans' && <Bans detail={detail} />}
           {current === 'workshop' && <WorkshopSettingsTab serverId={detail.server.id} />}
+          {current === 'trust' && (
+            <section>
+              <h2 className="text-xl font-bold">Segurança</h2>
+              <p className="mt-1 mb-5 text-sm text-fg-muted">Exigências mínimas de conta e de confiança.</p>
+              <TrustRulesEditor serverId={detail.server.id} />
+            </section>
+          )}
           {current === 'patches' && (
             <section>
               <h2 className="text-xl font-bold">Patches do servidor</h2>

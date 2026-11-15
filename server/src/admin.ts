@@ -12,6 +12,7 @@ import { fail, uid } from './http.ts';
 import { removeFromRoom } from './livekit.ts';
 import { dropVoice, getVoiceState, liveStats, onlineUserIds, revokeSockets } from './realtime.ts';
 import { removeUpload } from './uploads.ts';
+import { invalidateTrust, trustOf } from './trust.ts';
 
 export function isAdmin(userId: string): boolean {
   if (!config.adminUsers.size) return false;
@@ -174,6 +175,7 @@ export function registerAdminRoutes(api: Router) {
     const bots = all<UserRow>('SELECT * FROM users WHERE bot_owner_id = ? AND banned_at IS NULL', target.id);
     for (const u of [target, ...bots]) {
       run('UPDATE users SET banned_at = ?, ban_reason = ?, banned_by = ? WHERE id = ?', Date.now(), reason, me, u.id);
+      invalidateTrust(u.id);
       await kickEverywhere(u.id);
       logAction(me, u, 'ban', u.id === target.id ? reason : `bot de @${target.username}: ${reason}`);
     }
@@ -200,6 +202,7 @@ export function registerAdminRoutes(api: Router) {
     const bots = all<UserRow>('SELECT * FROM users WHERE bot_owner_id = ? AND banned_at IS NOT NULL', target.id);
     for (const u of [target, ...bots]) {
       run('UPDATE users SET banned_at = NULL, ban_reason = NULL, banned_by = NULL WHERE id = ?', u.id);
+      invalidateTrust(u.id);
       logAction(me, u, 'unban', reasonOf(req.body));
     }
     res.json({ ok: true });
@@ -294,7 +297,15 @@ export function registerAdminRoutes(api: Router) {
       ban: u.banned_at
         ? { at: u.banned_at, reason: u.ban_reason, by: get<{ username: string }>('SELECT username FROM users WHERE id = ?', u.banned_by ?? '')?.username ?? null }
         : null,
-      actions: all<AdminActionRow & { admin_username: string | null }>(
+      // Fator de Confiança (ver trust.ts): a nota, a faixa e o que entrou nela
+      trust: trustOf(u.id),
+      reports: {
+        against: count("SELECT COUNT(*) AS n FROM reports WHERE target_user_id = ?", u.id),
+        confirmed: count("SELECT COUNT(*) AS n FROM reports WHERE target_user_id = ? AND outcome = 'actioned'", u.id),
+        made: count("SELECT COUNT(*) AS n FROM reports WHERE reporter_id = ?", u.id),
+        madeConfirmed: count("SELECT COUNT(*) AS n FROM reports WHERE reporter_id = ? AND outcome = 'actioned'", u.id),
+      },
+      actions: all<AdminActionRow) & { admin_username: string | null }>(
         'SELECT a.*, u.username AS admin_username FROM admin_actions a LEFT JOIN users u ON u.id = a.admin_id WHERE a.target_id = ? ORDER BY a.id DESC LIMIT 50',
         u.id,
       ).map((a) => ({ id: a.id, action: a.action, reason: a.reason, at: a.created_at, by: a.admin_username })),
