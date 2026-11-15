@@ -174,7 +174,22 @@ export default function PlazaView() {
   const serverId = usePlaza((s) => s.serverId)!;
   const phase = usePlaza((s) => s.phase);
   const floorsAll = usePlaza((s) => s.floors);
-  const walkers = usePlaza((s) => s.walkers);
+  // Quem está onde, sem as posições: a tela só redesenha quando alguém troca de lugar, entra, sai, pega bebida ou fica
+  // parado (o "zzz"). Antes ela assinava a lista inteira e redesenhava a cada passo de qualquer pessoa da praça; as
+  // posições já são lidas direto pelo laço do canvas (usePlaza.getState()).
+  const walkersSig = usePlaza((s) =>
+    Object.values(s.walkers)
+      .map((w) => `${w.userId}:${w.scene}:${w.floor ?? 0}:${w.roomOf ?? ''}:${w.drink ?? ''}:${Date.now() - w.activeAt > IDLE_MS ? 1 : 0}`)
+      .sort()
+      .join('|'),
+  );
+  const walkers = useMemo(() => usePlaza.getState().walkers, [walkersSig]); // eslint-disable-line react-hooks/exhaustive-deps
+  // o "zzz" de quem parou acende com o tempo, sem ninguém mexer: confere de vez em quando
+  const [, setIdleTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdleTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
   const bubbles = usePlaza((s) => s.bubbles);
   const emotes = usePlaza((s) => s.emotes);
   const detail = useApp((s) => s.details[serverId]);
@@ -217,11 +232,9 @@ export default function PlazaView() {
   const rooms = usePlaza((s) => s.rooms);
   // a mesma ordem para todo mundo (quem entrou no servidor primeiro fica na primeira porta): cada quarto tem o seu
   // lugar fixo no corredor, e quem está lá vê os outros parados na frente da porta certa
-  const hallDoors = useMemo(() => {
-    const all = [...(detail?.members ?? [])];
-    all.sort((a, b) => a.joinedAt - b.joinedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    return all.map((m) => m.id).slice(0, MAX_HALL_DOORS);
-  }, [detail?.members]);
+  // portas do corredor: o servidor guarda a de cada um (fixa); a de quem saiu fica interditada (null aqui)
+  const doors = usePlaza((s) => s.doors);
+  const hallDoors = useMemo(() => doors.slice(0, MAX_HALL_DOORS).map((d) => (d.gone ? null : d.userId)), [doors]);
   // andar do corredor onde eu estou (HALL_DOORS_PER_FLOOR quartos por andar, escada no fim)
   const hallFloor = myScene === 'hall' ? (walkers[me.id]?.floor ?? 0) : 0;
   const hallFloors = hallFloorCount(hallDoors.length);
@@ -368,9 +381,11 @@ export default function PlazaView() {
       // camada fixa: refeita só quando o mapa muda
       const mineAt = layout.kind === 'hall' ? L.hallDoors.indexOf(L.meId) : -1;
       const myDoor = mineAt >= 0 && hallSpot(mineAt).level === layout.level ? mineAt % HALL_DOORS_PER_FLOOR : -1;
-      const key = `${layout.kind}:${layout.w}x${layout.h}:${layout.floor}:${layout.wall}:${myDoor}:${layout.level}:${layout.stairs?.up ? 1 : 0}${layout.stairs?.down ? 1 : 0}:${JSON.stringify(layout.items.filter((i) => i.k === 'rug' || furnitureDef(i.k).place === 'wall'))}`;
+      // portas interditadas deste andar (quem saiu do servidor, foi expulso ou apagou a conta)
+      const taped = layout.kind === 'hall' ? layout.doors.map((_, i) => i).filter((i) => L.hallDoors[layout.level * HALL_DOORS_PER_FLOOR + i] === null) : [];
+      const key = `${layout.kind}:${layout.w}x${layout.h}:${layout.floor}:${layout.wall}:${myDoor}:${layout.level}:${layout.stairs?.up ? 1 : 0}${layout.stairs?.down ? 1 : 0}:${taped.join(',')}:${JSON.stringify(layout.items.filter((i) => i.k === 'rug' || furnitureDef(i.k).place === 'wall'))}`;
       if (w.staticKey !== key) {
-        w.staticLayer = renderStatic(layout, PAL.coral, myDoor);
+        w.staticLayer = renderStatic(layout, PAL.coral, myDoor, taped);
         w.staticKey = key;
       }
       const st = w.staticLayer!;
@@ -1023,7 +1038,7 @@ export default function PlazaView() {
       for (const off of [0, 12, 24, 36]) {
         const b = tileAt(nx, ny + off);
         const i = layout.doors.findIndex((d) => b.x === d.x && (b.y === d.y || b.y === d.y - 1));
-        if (i >= 0 && doorOwner(i)) return goRoom(i);
+        if (i >= 0) return goRoom(i);
       }
       // a escada (a casa dela ou a parede atrás)
       for (const p of [layout.stairs?.up, layout.stairs?.down]) {
@@ -1252,6 +1267,7 @@ export default function PlazaView() {
   const goRoom = (i: number) => {
     const d = layout.doors[i];
     const owner = doorOwner(i);
+    if (d && !owner) return toast.info('Esse quarto está interditado: a pessoa não está mais no servidor.');
     if (!d || !owner) return;
     const mine = usePlaza.getState().walkers[me.id];
     if (mine && mine.x === d.x && mine.y === d.y) return usePlaza.getState().enterRoom(owner);
@@ -1377,7 +1393,17 @@ export default function PlazaView() {
       {layout.doors.map((_, i) => {
         const id = doorOwner(i);
         const m = id ? memberById.get(id) : undefined;
-        if (!id) return null;
+        if (!id) {
+          // porta interditada: quem era dono saiu do servidor, foi expulso ou apagou a conta
+          return (
+            <div key={`fita:${i}`} ref={(el) => void (el ? doorRefs.current.set(i, el) : doorRefs.current.delete(i))} className="absolute top-0 left-0">
+              <div title="Quarto interditado: a pessoa não está mais no servidor" className={cx(chip(), 'pointer-events-auto -translate-x-1/2 -translate-y-full text-fg-subtle')}>
+                <span aria-hidden>🚧</span>
+                <span>Interditado</span>
+              </div>
+            </div>
+          );
+        }
         const mode = roomMode(id, walkers[id], online[id], inCall.has(id));
         return (
           <div key={id} ref={(el) => void (el ? doorRefs.current.set(i, el) : doorRefs.current.delete(i))} className="absolute top-0 left-0">

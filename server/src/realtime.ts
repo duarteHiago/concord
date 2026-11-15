@@ -7,7 +7,7 @@ import { all, get, type ChannelRow } from './db.ts';
 import { botUserId, touchSession, verifySession } from './http.ts';
 import { removeFromRoom, updateVoicePermission, voiceParticipants } from './livekit.ts';
 import { socketEvents, timedSocket } from './metrics.ts';
-import { inPlaza, isPeeking, lobbyServerOf, plazaLeaveServer, registerPlaza, setupPlaza } from './plaza.ts';
+import { inPlaza, isPeeking, lobbyServerOf, plazaLeaveServer, plazaMembersChanged, registerPlaza, setupPlaza } from './plaza.ts';
 
 export interface VoiceState {
   userId: string;
@@ -141,6 +141,8 @@ export async function emitToChannel(channel: ChannelRow, event: string, payload:
 
 export function joinServerRoom(userId: string, serverId: string) {
   io.in(`user:${userId}`).socketsJoin(`server:${serverId}`);
+  // a porta nova no corredor dos quartos da Praça
+  plazaMembersChanged(serverId);
   socketsOf(userId).forEach((s) => {
     s.emit('voice:states', { serverId, states: voiceStatesFor(serverId) });
     s.emit('voice:jams', { serverId, jams: jamsFor(serverId) });

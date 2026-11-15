@@ -49,9 +49,18 @@ type Ack = {
   floors?: (string | null)[][];
   floorAssign?: Record<string, number>;
   rooms?: Record<string, PlaceStyle | null>;
+  doors?: HallDoor[];
 };
 
+/** Uma porta do corredor dos quartos: de quem é, ou interditada (a pessoa saiu, foi expulsa ou apagou a conta). */
+export interface HallDoor {
+  userId: string | null;
+  gone: boolean;
+}
+
 interface PlazaState {
+  /** as portas do corredor, na ordem (o servidor guarda; quem sai deixa a porta interditada) */
+  doors: HallDoor[];
   /** servidor cuja praça está aberta (null = fechada) */
   serverId: string | null;
   /** eu (para lembrar onde estava ao reconectar) */
@@ -142,6 +151,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
         walkers,
         places: r.places ?? {},
         rooms: r.rooms ?? {},
+        doors: r.doors ?? [],
         peeks: { ...get().peeks, [serverId]: r.peeks ?? [] },
         closed: { ...get().closed, [serverId]: r.closed ?? [] },
       });
@@ -150,6 +160,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
 
   return {
     meId: null,
+    doors: [],
     serverId: null,
     phase: null,
     tables: [],
@@ -275,6 +286,9 @@ export function bindPlazaSocket(socket: Socket) {
   });
   socket.on('voice:peeks', ({ serverId, peeks }: { serverId: string; peeks: Peek[] }) => {
     usePlaza.setState({ peeks: { ...s().peeks, [serverId]: peeks } });
+  });
+  socket.on('plaza:doors', ({ serverId, doors }: { serverId: string; doors: HallDoor[] }) => {
+    if (s().serverId === serverId) usePlaza.setState({ doors });
   });
   socket.on('plaza:closed', ({ serverId, closed }: { serverId: string; closed: string[] }) => {
     usePlaza.setState({ closed: { ...s().closed, [serverId]: closed } });

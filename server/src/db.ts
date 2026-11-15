@@ -671,6 +671,19 @@ db.exec(`
     PRIMARY KEY (day, kind)
   );
 `);
+// Portas do corredor dos quartos da Praça: cada pessoa do servidor tem a sua porta (slot), fixa. Quem sai, é expulso
+// ou tem a conta apagada deixa a porta interditada (gone_at), para as outras não mudarem de lugar; quem volta recupera a
+// mesma. Conta apagada: user_id vira NULL (a porta fica sem nome). Ver plaza.ts#doorsOf.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS plaza_doors (
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    slot INTEGER NOT NULL,
+    user_id TEXT,
+    gone_at INTEGER,
+    PRIMARY KEY (server_id, slot)
+  );
+  CREATE INDEX IF NOT EXISTS plaza_doors_user ON plaza_doors (user_id);
+`);
 // servidor: o mesmo quarto em toda Praça. Sem linha, vale o padrão (shared/plaza.ts#defaultStyle('room')).
 db.exec(`
   CREATE TABLE IF NOT EXISTS plaza_rooms (
