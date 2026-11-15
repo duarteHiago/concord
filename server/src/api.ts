@@ -77,6 +77,8 @@ import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, support
 import * as google from './google.ts';
 import * as twoFactor from './twoFactor.ts';
 import { registerReportRoutes } from './reports.ts';
+import { forgetChannelRules, invalidateTrust, requireJoinTrust, trustMask, unmetRequirements } from './trust.ts';
+import { registerTrustRoutes } from './trustRoutes.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
 import { inPlaza, plazaCount, plazaEnabled, savePlace } from './plaza.ts';
 import { isScene, lobbyRoom } from '../../shared/plaza.ts';
@@ -1420,6 +1422,8 @@ api.get('/servers/:id', (req, res) => {
       // modo gravação (ver director.ts): o selo aparece em cima do nome da sala
       recording: c.type === 'voice' ? recordingOf(c.id) : null,
       canRecord: c.type === 'voice' && !!config.authorityServerId && server.id === config.authorityServerId && isAdmin(me),
+      // exigências de confiança que a pessoa não alcança aqui (o app explica por que não dá para falar/transmitir)
+      trustBlock: unmetRequirements(server.id, c.id, me),
     }));
 
   const memberRows = all<UserRow & { joined_at: number; nickname: string | null }>(
@@ -1614,6 +1618,7 @@ api.delete('/channels/:id', (req, res) => {
     dropVoice(v.userId, 'A sala foi apagada.');
   }
   run('DELETE FROM channels WHERE id = ?', channel.id);
+  forgetChannelRules(channel.server_id, channel.id);
   serverChanged(channel.server_id);
   res.json({ ok: true });
 });
@@ -1801,6 +1806,7 @@ api.post('/servers/:id/bans', (req, res) => {
   const member = isMember(server.id, user.id);
   if (member && !outranks(server.id, me, user.id)) fail(403, 'Você não pode banir este membro');
   run('INSERT INTO server_bans (server_id, user_id, reason, banned_by, created_at) VALUES (?, ?, ?, ?, ?)', server.id, user.id, reason, me, now());
+  invalidateTrust(user.id);
   if (member) {
     emitToUser(user.id, 'server:removed', { serverId: server.id, reason: `Você foi banido de ${server.name}.` });
     dropVoice(user.id, 'Você foi banido do servidor.');
@@ -1813,6 +1819,7 @@ api.delete('/servers/:id/bans/:userId', (req, res) => {
   const server = requireServerPerm(req.params.id, uid(res), P.BAN_MEMBERS);
   if (!isBanned(server.id, req.params.userId)) fail(404, 'Essa pessoa não está banida');
   run('DELETE FROM server_bans WHERE server_id = ? AND user_id = ?', server.id, req.params.userId);
+  invalidateTrust(req.params.userId);
   res.json({ ok: true });
 });
 
@@ -2027,6 +2034,7 @@ api.post('/invites/:code', humansOnly, (req, res) => {
   const server = getServer(invite!.server_id);
   if (!isMember(server.id, me)) {
     if (isBanned(server.id, me)) fail(403, `Você foi banido de ${server.name}.`);
+    requireJoinTrust(server.id, server.name, me);
     tx(() => {
       run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', server.id, me, now());
       run('UPDATE invites SET uses = uses + 1 WHERE code = ?', invite!.code);
@@ -2341,7 +2349,9 @@ api.post('/servers/:id/plaza/voice-token', humansOnly, async (req, res) => {
   if (!plazaEnabled(server.id)) fail(404, 'A praça não abriu neste servidor');
   if (!inPlaza(server.id, me)) fail(409, 'Você não está na praça');
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', me)!;
-  const perms = has(serverPermissions(server.id, me), P.SPEAK) ? P.SPEAK : 0;
+  const serverPerms = serverPermissions(server.id, me);
+  // exigência de confiança para falar (a do servidor; a Praça não é um canal)
+  const perms = trustMask(server.id, null, me, serverPerms, has(serverPerms, P.SPEAK) ? P.SPEAK : 0);
   const token = await createVoiceToken({
     roomName: lobbyRoom(server.id),
     identity: me,
@@ -3153,6 +3163,7 @@ registerDiagnosticRoutes(api);
 registerAdminRoutes(api);
 // depois do admin: as rotas /admin/contracts* ficam atrás do requireAdmin
 registerContractRoutes(api);
+registerTrustRoutes(api);
 registerDirectorRoutes(api);
 // também depois do admin: /admin/reports* só para a equipe
 registerReportRoutes(api, {

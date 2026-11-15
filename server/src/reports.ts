@@ -15,6 +15,7 @@ import { all, get, run } from './db.ts';
 import { fail, humansOnly, optStr, uid } from './http.ts';
 import { getVoiceState } from './realtime.ts';
 import { limiter } from './recovery.ts';
+import { invalidateTrust, trustOf } from './trust.ts';
 
 type Category = ReportCategory;
 const KINDS = ['message', 'dm_message', 'user', 'stream'] as const;
@@ -41,6 +42,7 @@ interface ReportRow {
   evidence: string | null;
   status: 'open' | 'resolved';
   outcome: 'dismissed' | 'actioned' | null;
+  confirmed_category: Category | null;
   note: string | null;
   resolved_by: string | null;
   resolved_at: number | null;
@@ -240,12 +242,26 @@ export function registerReportRoutes(api: Router, hooks: ReportHooks) {
     FROM reports r LEFT JOIN users ru ON ru.id = r.reporter_id LEFT JOIN users tu ON tu.id = r.target_user_id`;
   type Joined = ReportRow & { reporter_username: string | null; target_now: string | null; target_banned: number | null };
 
+  // Fator de Confiança (ver trust.ts) de quem foi denunciado e de quem denunciou: ajuda a pesar a denúncia
+  const trustBrief = (userId: string | null) => {
+    const t = userId ? trustOf(userId) : null;
+    return t ? { score: t.score, band: t.band, level: t.level } : null;
+  };
+
   const summary = (r: Joined) => ({
     id: r.id,
     kind: r.kind,
     category: r.category,
+    confirmedCategory: r.confirmed_category,
     reporter: r.reporter_username,
-    target: { id: r.target_user_id, username: r.target_now ?? r.target_username, deleted: !r.target_now, suspended: !!r.target_banned },
+    reporterTrust: trustBrief(r.reporter_id),
+    target: {
+      id: r.target_user_id,
+      username: r.target_now ?? r.target_username,
+      deleted: !r.target_now,
+      suspended: !!r.target_banned,
+      trust: r.target_now ? trustBrief(r.target_user_id) : null,
+    },
     status: r.status,
     outcome: r.outcome,
     createdAt: r.created_at,
@@ -270,6 +286,14 @@ export function registerReportRoutes(api: Router, hooks: ReportHooks) {
     const dir = dirOf(r.id);
     const resolver = r.resolved_by ? get<{ username: string }>('SELECT username FROM users WHERE id = ?', r.resolved_by)?.username : null;
     const others = get<{ n: number }>('SELECT COUNT(*) AS n FROM reports WHERE target_user_id = ? AND id != ?', r.target_user_id, r.id)!.n;
+    // quantas pessoas diferentes denunciaram o mesmo caso (a mesma mensagem ou, sem mensagem, a mesma conta e tipo)
+    const reporters = get<{ n: number }>(
+      "SELECT COUNT(DISTINCT reporter_id) AS n FROM reports WHERE target_user_id = ? AND kind = ? AND IFNULL(message_id, '') = ?",
+      r.target_user_id,
+      r.kind,
+      r.message_id ?? '',
+    )!.n;
+    const targetTrust = r.target_now ? trustOf(r.target_user_id) : null;
     const messageExists =
       r.message_id && (r.kind === 'message' ? !!get('SELECT 1 FROM messages WHERE id = ?', r.message_id) : !!get('SELECT 1 FROM dm_messages WHERE id = ?', r.message_id));
     const voice = r.kind === 'stream' ? getVoiceState(r.target_user_id) : null;
@@ -285,6 +309,8 @@ export function registerReportRoutes(api: Router, hooks: ReportHooks) {
       expired: !!ev.expired,
       streamingNow: !!voice && voice.channelId === r.channel_id && (voice.streaming || voice.camera),
       otherReports: others,
+      reporters,
+      targetTrustItems: targetTrust?.items ?? [],
       retentionDays: REPORT_RETENTION_DAYS,
     });
   });
@@ -294,15 +320,43 @@ export function registerReportRoutes(api: Router, hooks: ReportHooks) {
     return typeof n === 'string' && n.trim() ? n.trim().slice(0, 500) : null;
   };
 
-  function resolve(r: ReportRow, me: string, outcome: 'dismissed' | 'actioned', note: string | null) {
-    run("UPDATE reports SET status = 'resolved', outcome = ?, note = ?, resolved_by = ?, resolved_at = ? WHERE id = ?", outcome, note, me, now(), r.id);
+  /** O motivo que a equipe confirmou (pode corrigir o que quem denunciou escolheu). É ele que pesa na confiança. */
+  const confirmedOf = (body: unknown, r: ReportRow): Category => {
+    const c = (body as { category?: unknown } | undefined)?.category;
+    return REPORT_CATEGORIES.includes(c as Category) ? (c as Category) : r.category;
+  };
+
+  /**
+   * Resolve a denúncia e as outras abertas da mesma mensagem (o mesmo caso, denunciado por várias pessoas). Só a
+   * resolvida como "a equipe agiu" baixa a confiança de quem foi denunciado (e sobe a de quem denunciou).
+   */
+  function resolve(r: ReportRow, me: string, outcome: 'dismissed' | 'actioned', note: string | null, category: Category | null) {
+    const confirmed = outcome === 'actioned' ? (category ?? r.category) : null;
+    const set = "status = 'resolved', outcome = ?, confirmed_category = ?, resolved_by = ?, resolved_at = ?";
+    run(`UPDATE reports SET ${set}, note = ? WHERE id = ?`, outcome, confirmed, me, now(), note, r.id);
+    const siblings = r.message_id
+      ? all<{ reporter_id: string | null }>("SELECT reporter_id FROM reports WHERE message_id = ? AND status = 'open' AND id != ?", r.message_id, r.id)
+      : [];
+    if (siblings.length) {
+      run(
+        `UPDATE reports SET ${set}, note = ? WHERE message_id = ? AND status = 'open' AND id != ?`,
+        outcome,
+        confirmed,
+        me,
+        now(),
+        'Resolvida junto com outra denúncia da mesma mensagem',
+        r.message_id,
+        r.id,
+      );
+    }
+    invalidateTrust(r.target_user_id, r.reporter_id, ...siblings.map((s) => s.reporter_id));
   }
 
   /** Arquivar (nada a fazer) ou dar por resolvida (a equipe já agiu, por exemplo suspendendo a conta). */
   api.post('/admin/reports/:id/resolve', (req, res) => {
     const r = byId(req.params.id);
     const outcome = req.body?.outcome === 'actioned' ? 'actioned' : 'dismissed';
-    resolve(r, uid(res), outcome, noteOf(req.body));
+    resolve(r, uid(res), outcome, noteOf(req.body), confirmedOf(req.body, r));
     res.json({ ok: true });
   });
 
@@ -310,7 +364,8 @@ export function registerReportRoutes(api: Router, hooks: ReportHooks) {
     const r = byId(req.params.id);
     if (r.status !== 'resolved') fail(400, 'Essa denúncia já está aberta');
     if (r.evidence?.includes('"expired":true')) fail(400, 'A prova dessa denúncia já foi apagada');
-    run("UPDATE reports SET status = 'open', outcome = NULL, resolved_by = NULL, resolved_at = NULL WHERE id = ?", r.id);
+    run("UPDATE reports SET status = 'open', outcome = NULL, confirmed_category = NULL, resolved_by = NULL, resolved_at = NULL WHERE id = ?", r.id);
+    invalidateTrust(r.target_user_id, r.reporter_id);
     res.json({ ok: true });
   });
 
@@ -320,7 +375,7 @@ export function registerReportRoutes(api: Router, hooks: ReportHooks) {
     if (!r.message_id || (r.kind !== 'message' && r.kind !== 'dm_message')) fail(400, 'Essa denúncia não é de uma mensagem');
     const deleted = r.kind === 'message' ? await hooks.deleteMessage(r.message_id!) : await hooks.deleteDmMessage(r.message_id!);
     if (!deleted) fail(404, 'A mensagem já foi apagada');
-    resolve(r, uid(res), 'actioned', noteOf(req.body) ?? 'Mensagem apagada pela equipe');
+    resolve(r, uid(res), 'actioned', noteOf(req.body) ?? 'Mensagem apagada pela equipe', confirmedOf(req.body, r));
     res.json({ ok: true });
   });
 
@@ -329,7 +384,7 @@ export function registerReportRoutes(api: Router, hooks: ReportHooks) {
     const r = byId(req.params.id);
     if (r.kind !== 'stream') fail(400, 'Essa denúncia não é de uma transmissão');
     if (!(await hooks.stopStream(r.target_user_id))) fail(400, 'Essa pessoa não está transmitindo agora');
-    resolve(r, uid(res), 'actioned', noteOf(req.body) ?? 'Transmissão encerrada pela equipe');
+    resolve(r, uid(res), 'actioned', noteOf(req.body) ?? 'Transmissão encerrada pela equipe', confirmedOf(req.body, r));
     res.json({ ok: true });
   });
 }

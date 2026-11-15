@@ -28,6 +28,16 @@ import { playSound } from '../lib/sounds';
 import { getSocket } from '../lib/socket';
 import { diagnoseH265, h265Support, type H265Diagnosis } from '../lib/h265';
 import { toast } from './toast';
+import { trustBlockMessage } from '../lib/trust';
+
+/** O motivo de não poder falar/transmitir na sala: a exigência de confiança do canal, se for ela (ver lib/trust.ts). */
+async function voiceBlockMessage(serverId: string | null, channelId: string | null, action: 'speak' | 'stream', fallback: string) {
+  if (!serverId || !channelId) return fallback;
+  // import dinâmico: o store do app importa este
+  const { useApp } = await import('./app');
+  const channel = useApp.getState().details[serverId]?.channels.find((c) => c.id === channelId);
+  return trustBlockMessage(channel, action) ?? fallback;
+}
 
 export interface SharePreset {
   id: string;
@@ -826,7 +836,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       const s = get();
       if (!s.room) return;
       if (s.serverMuted) return toast.info('Você foi silenciado por um moderador.');
-      if (!has(s.permissions, P.SPEAK)) return toast.info('Você não tem permissão para falar nesta sala.');
+      if (!has(s.permissions, P.SPEAK)) return toast.info(await voiceBlockMessage(s.serverId, s.channelId, 'speak', 'Você não tem permissão para falar nesta sala.'));
       const next = !s.micOn;
       try {
         if (next && s.deafened) {
@@ -861,7 +871,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     toggleCamera: async () => {
       const s = get();
       if (!s.room) return;
-      if (!has(s.permissions, P.STREAM)) return toast.info('Você não tem permissão para transmitir nesta sala.');
+      if (!has(s.permissions, P.STREAM)) return toast.info(await voiceBlockMessage(s.serverId, s.channelId, 'stream', 'Você não tem permissão para transmitir nesta sala.'));
       try {
         const { videoInputId, cameraQuality } = s.audioSettings;
         const hd = cameraQuality === '1080p';
@@ -881,7 +891,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
     startShare: async (settings, sourceId) => {
       const s = get();
       if (!s.room) return;
-      if (!has(s.permissions, P.STREAM)) return toast.info('Você não tem permissão para transmitir nesta sala.');
+      if (!has(s.permissions, P.STREAM)) return toast.info(await voiceBlockMessage(s.serverId, s.channelId, 'stream', 'Você não tem permissão para transmitir nesta sala.'));
       set({ shareSettings: settings });
       save('concord.share', settings);
       const support = screenShareSupport();

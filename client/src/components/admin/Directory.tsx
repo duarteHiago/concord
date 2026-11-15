@@ -7,6 +7,8 @@ import { toast } from '../../store/toast';
 import { Avatar, Button, cx } from '../ui';
 import type { DiagnosticMeta } from './Diagnostics';
 import { Badge, Loading, Page, Pager, RowLink, SearchBox, Table, fmtDate, fmtDay, fmtDuration, fmtNumber, useAdminData, useDebounced } from './parts';
+import { TrustBreakdown, type TrustBrief } from './Trust';
+import type { TrustItem } from '../../../../shared/trust.ts';
 
 interface UserSummary {
   id: string;
@@ -121,6 +123,8 @@ interface UserDetailData extends Omit<UserSummary, 'servers'> {
   email: string | null;
   emailPending: string | null;
   ban: { at: number; reason: string | null; by: string | null } | null;
+  trust: (TrustBrief & { items: TrustItem[] }) | null;
+  reports: { against: number; confirmed: number; made: number; madeConfirmed: number };
   actions: { id: number; action: string; reason: string | null; at: number; by: string | null }[];
 }
 
@@ -308,6 +312,25 @@ export function UserDetail({ id }: { id: string }) {
               </span>
               <UserFlags u={{ ...u, servers: u.servers.length }} />
             </div>
+
+            {u.trust && (
+              <section className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-surface-3/60 p-4 ring-1 ring-line">
+                  <h2 className="mb-2 text-sm font-bold">Fator de Confiança</h2>
+                  <TrustBreakdown trust={u.trust} items={u.trust.items} />
+                </div>
+                <div className="rounded-2xl bg-surface-3/60 p-4 text-sm ring-1 ring-line">
+                  <h2 className="mb-2 text-sm font-bold">Denúncias</h2>
+                  <p>
+                    Contra a conta: <b>{u.reports.against}</b> ({u.reports.confirmed} confirmada(s) pela equipe)
+                  </p>
+                  <p>
+                    Feitas pela conta: <b>{u.reports.made}</b> ({u.reports.madeConfirmed} confirmada(s))
+                  </p>
+                  <p className="mt-2 text-xs text-fg-muted">Só a denúncia confirmada pela equipe mexe na confiança.</p>
+                </div>
+              </section>
+            )}
 
             <section>
               <h2 className="mb-2 text-sm font-bold">Servidores ({u.servers.length})</h2>

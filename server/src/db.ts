@@ -618,6 +618,23 @@ db.exec(`
     created_at INTEGER NOT NULL,
     PRIMARY KEY (server_id, user_id)
   );
+  CREATE INDEX IF NOT EXISTS idx_server_bans_user ON server_bans(user_id);
+`);
+// Fator de Confiança (ver trust.ts). A equipe pode corrigir o motivo ao confirmar uma denúncia (quem denunciou
+// escolheu "abuso infantil", mas era spam): a nota usa o motivo confirmado.
+addColumn('reports', 'confirmed_category', 'TEXT');
+db.exec('CREATE INDEX IF NOT EXISTS idx_reports_reporter ON reports(reporter_id, outcome)');
+// Exigências mínimas (nível da conta e faixa de confiança) para entrar, falar e transmitir. channel_id '' = o
+// servidor inteiro; num canal, vale a mais exigente das duas.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trust_rules (
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL DEFAULT '',
+    rules TEXT NOT NULL,
+    updated_by TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (server_id, channel_id)
+  );
 `);
 // Praça do servidor (ver plaza.ts): chão, paredes e móveis de cada lugar (lobby e estabelecimento), montados
 // por quem gerencia o servidor. Sem linha, vale o padrão (shared/plaza.ts#defaultStyle).
