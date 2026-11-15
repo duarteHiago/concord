@@ -1,6 +1,7 @@
 // Praça do servidor (ver shared/plaza.ts): quem está andando por ela, onde está e com que cara. Fica só na
 // memória: a posição some quando a pessoa sai, e os balões passam direto, sem ficar guardados em lugar nenhum.
 // Quem está sentado (na call) vem do estado de voz, não daqui.
+import { randomInt } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
 import { DRINK_MS, FLOOR_TABLES, GROUND_TABLES, MAX_FLOORS, MAX_HALL_DOORS, hallFloorCount, hallSpot, isDrink, nearCounter, planFloors, NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceScene, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
@@ -497,7 +498,7 @@ function spawnPoint(layout: PlazaLayout, plaza: Map<string, Walker>, center = la
         if (Math.max(Math.abs(dx), Math.abs(dy)) === r && walkable(layout, x + dx, y + dy) && !taken.has(`${x + dx},${y + dy}`)) ring.push({ x: x + dx, y: y + dy });
       }
     }
-    if (ring.length) return ring[Math.floor(Math.random() * ring.length)];
+    if (ring.length) return ring[randomInt(ring.length)];
   }
   return nearestWalkable(layout, center);
 }
