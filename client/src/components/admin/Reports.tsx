@@ -1,8 +1,8 @@
 // Denúncias no portal da equipe: a fila (das mais graves para as mais leves) e o detalhe com a prova guardada na
 // hora. As ações aqui são arquivar, apagar a mensagem e encerrar a transmissão; suspender a conta é na página da
 // conta (o link fica no detalhe). Ver server/src/reports.ts.
-import { ExternalLink, MonitorX, RotateCcw, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronLeft, ChevronRight, Download, ExternalLink, MonitorX, RotateCcw, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { REPORT_CATEGORIES, REPORT_CATEGORY_INFO, type ReportCategory } from '../../../../shared/reports.ts';
 import { api } from '../../lib/api';
 import { toast } from '../../store/toast';
@@ -122,6 +122,8 @@ export function ReportDetail({ id }: { id: string }) {
   // o motivo confirmado ao agir (vazio: o que quem denunciou escolheu)
   const [confirmed, setConfirmed] = useState<ReportCategory | ''>('');
   const [busy, setBusy] = useState<string | null>(null);
+  // prova aberta em tela cheia (índice na lista de imagens)
+  const [viewing, setViewing] = useState<number | null>(null);
 
   async function act(action: string, body: Record<string, unknown> = {}, done = 'Feito.', key = action) {
     setBusy(key);
@@ -171,9 +173,9 @@ export function ReportDetail({ id }: { id: string }) {
                     <Box title={r.frames.length ? 'Imagens da tela no momento da denúncia' : 'Imagens anexadas'}>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {[...r.frames, ...r.files].map((src, i) => (
-                          <a key={i} href={src} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-2xl bg-black">
+                          <button key={i} type="button" onClick={() => setViewing(i)} title="Ver em tela cheia" className="block cursor-zoom-in overflow-hidden rounded-2xl bg-black">
                             <img src={src} alt={`Prova ${i + 1}`} className="max-h-72 w-full object-contain" />
-                          </a>
+                          </button>
                         ))}
                       </div>
                     </Box>
@@ -288,9 +290,83 @@ export function ReportDetail({ id }: { id: string }) {
               )}
             </div>
           </div>
+          {viewing !== null && [...r.frames, ...r.files][viewing] && (
+            <EvidenceViewer images={[...r.frames, ...r.files]} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} name={`denuncia-${r.id.slice(0, 8)}`} />
+          )}
         </Page>
       )}
     </Loading>
+  );
+}
+
+/**
+ * A prova em tela cheia, dentro do portal. As imagens chegam como data: URL (não ficam em /uploads, que é público), e
+ * o navegador não deixa abrir data: numa aba nova: por isso o visualizador aqui e o botão de baixar.
+ */
+function EvidenceViewer({
+  images,
+  index,
+  onIndex,
+  onClose,
+  name,
+}: {
+  images: string[];
+  index: number;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+  name: string;
+}) {
+  const src = images[index];
+  const many = images.length > 1;
+  const go = (step: number) => onIndex((index + step + images.length) % images.length);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (many && e.key === 'ArrowRight') onIndex((index + 1) % images.length);
+      if (many && e.key === 'ArrowLeft') onIndex((index - 1 + images.length) % images.length);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [index, images.length, many, onClose, onIndex]);
+
+  const ext = /^data:image\/(\w+)/.exec(src)?.[1]?.replace('jpeg', 'jpg') ?? 'jpg';
+  const btn = 'flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20';
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col bg-black/90" onClick={onClose} role="dialog" aria-label="Prova da denúncia">
+      <div className="flex items-center justify-end gap-2 p-3" onClick={(e) => e.stopPropagation()}>
+        {many && (
+          <span className="mr-auto pl-2 text-sm font-semibold text-white/80">
+            {index + 1} de {images.length}
+          </span>
+        )}
+        <a href={src} download={`${name}-${index + 1}.${ext}`} className={btn} title="Baixar">
+          <Download size={18} />
+        </a>
+        <button type="button" onClick={onClose} className={btn} title="Fechar (Esc)">
+          <X size={18} />
+        </button>
+      </div>
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-6">
+        <img src={src} alt={`Prova ${index + 1}`} className="max-h-full max-w-full object-contain" onClick={(e) => e.stopPropagation()} />
+        {many && (
+          <>
+            <button type="button" onClick={(e) => {
+                e.stopPropagation();
+                go(-1);
+              }} className={cx(btn, 'absolute left-4')} title="Anterior">
+              <ChevronLeft size={20} />
+            </button>
+            <button type="button" onClick={(e) => {
+                e.stopPropagation();
+                go(1);
+              }} className={cx(btn, 'absolute right-4')} title="Próxima">
+              <ChevronRight size={20} />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
