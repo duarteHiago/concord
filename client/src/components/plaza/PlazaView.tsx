@@ -390,7 +390,7 @@ export default function PlazaView() {
       const meId = useApp.getState().me?.id;
       const scene = layout.kind;
       for (const [id, wk] of Object.entries(plaza.walkers)) {
-        if (wk.scene !== scene || (scene === 'inside' && (wk.floor ?? 0) !== layout.level) || (scene === 'room' && (wk.roomOf ?? null) !== L.room)) {
+        if (wk.scene !== scene || ((scene === 'inside' || scene === 'hall') && (wk.floor ?? 0) !== layout.level) || (scene === 'room' && (wk.roomOf ?? null) !== L.room)) {
           w.anims.delete(id);
           continue;
         }
