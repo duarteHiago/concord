@@ -264,6 +264,8 @@ const serverJson = (s: ServerRow) => ({
   iconColor: s.icon_color,
   iconUrl: s.icon_url,
   verified: !!s.verified,
+  public: !!s.public,
+  description: s.description ?? '',
 });
 
 const roleJson = (r: RoleRow) => ({
@@ -1334,7 +1336,7 @@ api.post('/servers', humansOnly, (req, res) => {
   if (owned >= MAX_OWNED_SERVERS) fail(400, `Você já é dono de ${MAX_OWNED_SERVERS} servidores. Apague algum antes de criar outro.`);
   if (!serverCreateRate(me)) fail(429, 'Você já criou servidores agora há pouco. Espere um pouco.');
   const name = str(req.body?.name, 'nome', 2, 50);
-  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, verified: 0, created_at: now() };
+  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, verified: 0, public: 0, description: '', created_at: now() };
 
   tx(() => {
     run('INSERT INTO servers (id, name, owner_id, icon_color, created_at) VALUES (?, ?, ?, ?, ?)', server.id, name, me, server.icon_color, server.created_at);
@@ -1457,6 +1459,11 @@ api.patch('/servers/:id', (req, res) => {
   const name = optStr(req.body?.name, 'nome', 2, 50);
   if (name) run('UPDATE servers SET name = ? WHERE id = ?', name, server.id);
   if (req.body?.iconColor) run('UPDATE servers SET icon_color = ? WHERE id = ?', color(req.body.iconColor), server.id);
+  // público: aparece em "Descobrir" e entra quem quiser, sem convite
+  if (typeof req.body?.public === 'boolean') run('UPDATE servers SET public = ? WHERE id = ?', req.body.public ? 1 : 0, server.id);
+  if (typeof req.body?.description === 'string') {
+    run('UPDATE servers SET description = ? WHERE id = ?', req.body.description.replace(/\s+/g, ' ').trim().slice(0, 200), server.id);
+  }
   serverChanged(server.id);
   res.json(serverJson(getServer(server.id)));
 });
@@ -2034,6 +2041,55 @@ api.post('/invites/:code', humansOnly, (req, res) => {
     serverChanged(server.id);
   }
   res.json(serverJson(server));
+});
+
+// ============================================================ Servidores públicos ("Descobrir")
+
+/** Servidores públicos, dos mais cheios para os mais vazios (busca pelo nome ou pela descrição). */
+api.get('/discover', (req, res) => {
+  const me = uid(res);
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 50).toLowerCase() : '';
+  const rows = all<ServerRow & { members: number; mine: number }>(
+    `SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS members,
+            EXISTS (SELECT 1 FROM members m WHERE m.server_id = s.id AND m.user_id = ?) AS mine
+       FROM servers s
+      WHERE s.public = 1
+        AND NOT EXISTS (SELECT 1 FROM server_bans b WHERE b.server_id = s.id AND b.user_id = ?)
+        AND (? = '' OR lower(s.name) LIKE ? OR lower(s.description) LIKE ?)
+      ORDER BY members DESC, s.created_at
+      LIMIT 60`,
+    me,
+    me,
+    q,
+    `%${q}%`,
+    `%${q}%`,
+  );
+  const online = new Set(onlineUserIds());
+  res.json(
+    rows.map((s) => ({
+      ...serverJson(s),
+      memberCount: s.members,
+      onlineCount: all<{ user_id: string }>('SELECT user_id FROM members WHERE server_id = ?', s.id).filter((m) => online.has(m.user_id)).length,
+      joined: !!s.mine,
+    })),
+  );
+});
+
+const publicJoinRate = limiter(20, 60 * 60_000);
+
+/** Entrar num servidor público sem convite (banido continua barrado). */
+api.post('/servers/:id/join', humansOnly, (req, res) => {
+  const me = uid(res);
+  const server = get<ServerRow>('SELECT * FROM servers WHERE id = ?', req.params.id);
+  if (!server || !server.public) fail(404, 'Esse servidor não é público. Peça um convite.');
+  if (!isMember(server!.id, me)) {
+    if (isBanned(server!.id, me)) fail(403, `Você foi banido de ${server!.name}.`);
+    if (!publicJoinRate(me)) fail(429, 'Muitas entradas em pouco tempo. Espere um pouco.');
+    run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', server!.id, me, now());
+    joinServerRoom(me, server!.id);
+    serverChanged(server!.id);
+  }
+  res.json(serverJson(server!));
 });
 
 // ============================================================ Mensagens

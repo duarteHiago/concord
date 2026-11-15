@@ -1,4 +1,4 @@
-import { Download, Minus, Newspaper, MessageCircle, Plus } from 'lucide-react';
+import { Download, Minus, Newspaper, MessageCircle, Plus, Compass } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
@@ -159,6 +159,14 @@ export function ServerStrip() {
         className={cx(tile, 'border-2 border-dashed border-line-strong text-fg-muted hover:border-accent hover:text-accent')}
       >
         <Plus size={20} />
+      </button>
+      <button
+        title="Descobrir servidores públicos"
+        aria-label="Descobrir servidores públicos"
+        onClick={() => openModal({ type: 'discover' })}
+        className={cx(tile, 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-accent')}
+      >
+        <Compass size={20} />
       </button>
       <button
         title="Novidades"
