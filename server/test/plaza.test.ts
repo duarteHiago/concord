@@ -640,6 +640,31 @@ describe('praça: andando e conversando', () => {
     assert.deepEqual([scenes[6].scene, scenes[6].floor], ['inside', 0]);
   });
 
+  it('a conexão caiu: volta para o mesmo lugar (ou para onde o app lembra, se o servidor reiniciou)', async () => {
+    const { ana, bia, caio, serverId, a, b, c } = await setup();
+    type Me = { userId: string; scene: string; floor?: number; roomOf?: string | null };
+    const mine = (r: Record<string, unknown>) => (r.walkers as Me[]).find((w) => w.userId === ana.id)!;
+    await emitAck(a, 'plaza:enter', { serverId });
+    const lobby = buildLobby();
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(80);
+    a.emit('plaza:door', { serverId });
+    await sleep(150);
+    a.disconnect();
+    await sleep(150);
+    // voltou: lá dentro, não na praça
+    const a2 = await connect(server, ana);
+    sockets.push(a2);
+    assert.equal(mine(await emitAck(a2, 'plaza:enter', { serverId })).scene, 'inside');
+    // servidor reiniciado (nada guardado): vale o que o app lembra, conferido
+    const rb = (await emitAck(b, 'plaza:enter', { serverId, resume: { scene: 'room', floor: 0, roomOf: ana.id, x: 3, y: 3 } })) as Record<string, unknown>;
+    const mb = (rb.walkers as Me[]).find((w) => w.userId === bia.id)!;
+    assert.deepEqual([mb.scene, mb.roomOf], ['room', ana.id]);
+    // quarto de quem não é do servidor não vale: nasce na praça
+    const rc = (await emitAck(c, 'plaza:enter', { serverId, resume: { scene: 'room', roomOf: 'alguem-de-fora', x: 1, y: 1 } })) as Record<string, unknown>;
+    assert.equal((rc.walkers as Me[]).find((w) => w.userId === caio.id)!.scene, 'lobby');
+  });
+
   it('quem sai do servidor sai da praça', async () => {
     const { bia, serverId, a, b } = await setup();
     await emitAck(a, 'plaza:enter', { serverId });
