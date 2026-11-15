@@ -90,6 +90,51 @@ export function DeviceSplitButton({
   );
 }
 
+/**
+ * Só a setinha que abre a lista de dispositivos, para pôr ao lado de um botão que já existe (ex.: a barra da Praça,
+ * com botões redondos maiores que os da barra lateral).
+ */
+export function DeviceChevron({ kind, className }: { kind: Kind; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const ref = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={ref}
+        title={`Escolher ${TITLES[kind].toLowerCase()}`}
+        aria-label={`Escolher ${TITLES[kind].toLowerCase()}`}
+        aria-expanded={open}
+        onClick={() => {
+          setAnchor(ref.current?.getBoundingClientRect() ?? null);
+          setOpen(!open);
+        }}
+        className={cx('flex items-center justify-center text-fg-subtle hover:text-fg', className)}
+      >
+        <ChevronUp size={13} className={cx('transition-transform', !open && 'rotate-180')} />
+      </button>
+      {open && anchor && createPortal(<DeviceList ref={menuRef} kind={kind} anchor={anchor} onDone={() => setOpen(false)} />, document.body)}
+    </>
+  );
+}
+
 const MENU_WIDTH = 300;
 
 function DeviceList({ kind, anchor, onDone, ref }: { kind: Kind; anchor: DOMRect; onDone: () => void; ref: React.Ref<HTMLDivElement> }) {

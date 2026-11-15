@@ -47,6 +47,7 @@ import { usePlaza } from '../../store/plaza';
 import { usePlazaVoice } from '../../store/plazaVoice';
 import { usePlazaPeek } from '../../store/plazaPeek';
 import { toast } from '../../store/toast';
+import { DeviceChevron } from '../DeviceMenu';
 import { useVoice } from '../../store/voice';
 import { cx } from '../ui';
 import { AvatarEditor } from './AvatarEditor';
@@ -1845,10 +1846,21 @@ function EmotePicker() {
   );
 }
 
-/** Microfone da voz por proximidade do lobby. */
+/** Botão redondo com a setinha de escolher o dispositivo grudada nele (microfone ou saída de áudio). */
+function WithDevice({ kind, children }: { kind: 'audioinput' | 'audiooutput'; children: React.ReactNode }) {
+  return (
+    <span className="flex shrink-0 items-center">
+      {children}
+      <DeviceChevron kind={kind} className="h-11 w-5 rounded-full" />
+    </span>
+  );
+}
+
+/** Microfone e fone da voz por proximidade (praça, prédio, corredor e quartos), com a escolha do dispositivo. */
 function LobbyMic({ inCall }: { inCall: boolean }) {
   const status = usePlazaVoice((s) => s.status);
   const micOn = usePlazaVoice((s) => s.micOn);
+  const deafened = usePlazaVoice((s) => s.deafened);
   if (inCall) {
     return (
       <span title="Você está numa call: a voz da praça fica desligada" className="grid h-11 w-11 shrink-0 cursor-default place-items-center rounded-full bg-surface-3 text-fg-subtle opacity-60">
@@ -1858,15 +1870,30 @@ function LobbyMic({ inCall }: { inCall: boolean }) {
   }
   if (status !== 'connected') return null;
   return (
-    <button
-      onClick={() => void usePlazaVoice.getState().toggleMic()}
-      title={micOn ? 'Desligar o microfone da praça' : 'Falar na praça (quem estiver perto te ouve)'}
-      aria-label={micOn ? 'Desligar o microfone da praça' : 'Falar na praça'}
-      aria-pressed={micOn}
-      className={round(micOn ? 'on' : 'off')}
-    >
-      {micOn ? <Mic size={19} /> : <MicOff size={19} />}
-    </button>
+    <>
+      <WithDevice kind="audioinput">
+        <button
+          onClick={() => void usePlazaVoice.getState().toggleMic()}
+          title={micOn ? 'Desligar o microfone da praça' : 'Falar na praça (quem estiver perto te ouve)'}
+          aria-label={micOn ? 'Desligar o microfone da praça' : 'Falar na praça'}
+          aria-pressed={micOn}
+          className={round(micOn ? 'on' : 'off')}
+        >
+          {micOn ? <Mic size={19} /> : <MicOff size={19} />}
+        </button>
+      </WithDevice>
+      <WithDevice kind="audiooutput">
+        <button
+          onClick={() => void usePlazaVoice.getState().toggleDeafen()}
+          title={deafened ? 'Ouvir de novo' : 'Ensurdecer (não ouvir ninguém na praça)'}
+          aria-label={deafened ? 'Ouvir de novo' : 'Ensurdecer'}
+          aria-pressed={deafened}
+          className={round(deafened ? 'off' : 'default')}
+        >
+          {deafened ? <HeadphoneOff size={19} /> : <Headphones size={19} />}
+        </button>
+      </WithDevice>
+    </>
   );
 }
 
@@ -1876,12 +1903,16 @@ function VoiceButtons({ myVoice }: { myVoice?: VoiceState }) {
   const muted = !micOn || !!myVoice?.serverMuted;
   return (
     <>
-      <button title={muted ? 'Ativar microfone' : 'Silenciar'} aria-label={muted ? 'Ativar microfone' : 'Silenciar'} onClick={() => void useVoice.getState().toggleMic()} className={round(muted ? 'off' : 'default')}>
-        {muted ? <MicOff size={19} /> : <Mic size={19} />}
-      </button>
-      <button title={deafened ? 'Ouvir de novo' : 'Ensurdecer'} aria-label={deafened ? 'Ouvir de novo' : 'Ensurdecer'} onClick={() => void useVoice.getState().toggleDeafen()} className={round(deafened ? 'off' : 'default')}>
-        {deafened ? <HeadphoneOff size={19} /> : <Headphones size={19} />}
-      </button>
+      <WithDevice kind="audioinput">
+        <button title={muted ? 'Ativar microfone' : 'Silenciar'} aria-label={muted ? 'Ativar microfone' : 'Silenciar'} onClick={() => void useVoice.getState().toggleMic()} className={round(muted ? 'off' : 'default')}>
+          {muted ? <MicOff size={19} /> : <Mic size={19} />}
+        </button>
+      </WithDevice>
+      <WithDevice kind="audiooutput">
+        <button title={deafened ? 'Ouvir de novo' : 'Ensurdecer'} aria-label={deafened ? 'Ouvir de novo' : 'Ensurdecer'} onClick={() => void useVoice.getState().toggleDeafen()} className={round(deafened ? 'off' : 'default')}>
+          {deafened ? <HeadphoneOff size={19} /> : <Headphones size={19} />}
+        </button>
+      </WithDevice>
     </>
   );
 }

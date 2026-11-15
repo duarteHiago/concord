@@ -12,16 +12,20 @@ interface PlazaVoiceState {
   status: 'idle' | 'connecting' | 'connected';
   micOn: boolean;
   canSpeak: boolean;
+  /** ensurdecido na Praça: não ouve ninguém e o microfone desliga (volta como estava ao ouvir de novo) */
+  deafened: boolean;
   /** quem está falando agora no lobby (pelo LiveKit) */
   speaking: Record<string, true>;
   connect: (serverId: string) => Promise<void>;
   disconnect: () => void;
   toggleMic: () => Promise<void>;
+  toggleDeafen: () => Promise<void>;
   /** volume (0..1) de cada pessoa, pela distância; quem está longe deixa de ser recebido */
   setVolumes: (volumes: Map<string, number>) => void;
 }
 
 let room: Room | null = null;
+let micBeforeDeafen = false;
 const audioEls = new Map<string, HTMLMediaElement>();
 const lastVolume = new Map<string, number>();
 
@@ -46,6 +50,7 @@ export const usePlazaVoice = create<PlazaVoiceState>((set, get) => ({
   micOn: false,
   canSpeak: false,
   speaking: {},
+  deafened: false,
 
   connect: async (serverId) => {
     if (get().serverId === serverId && get().status !== 'idle') return;
@@ -102,6 +107,8 @@ export const usePlazaVoice = create<PlazaVoiceState>((set, get) => ({
       return;
     }
     const next = !get().micOn;
+    // falar tira o ensurdecer (como nas calls)
+    if (next && get().deafened) set({ deafened: false });
     try {
       const { inputId, echoCancellation, autoGain } = useVoice.getState().audioSettings;
       await room.localParticipant.setMicrophoneEnabled(next, { deviceId: inputId, echoCancellation, autoGainControl: autoGain, noiseSuppression: true });
@@ -111,9 +118,21 @@ export const usePlazaVoice = create<PlazaVoiceState>((set, get) => ({
     }
   },
 
+  toggleDeafen: async () => {
+    const next = !get().deafened;
+    set({ deafened: next });
+    if (next) {
+      micBeforeDeafen = get().micOn;
+      if (get().micOn) await get().toggleMic();
+      // o volume de cada um vai a zero no próximo setVolumes (umas 10 vezes por segundo, enquanto a Praça está aberta)
+    } else {
+      if (micBeforeDeafen && !get().micOn) await get().toggleMic();
+    }
+  },
+
   setVolumes: (volumes) => {
     if (!room) return;
-    const deaf = useVoice.getState().deafened;
+    const deaf = useVoice.getState().deafened || get().deafened;
     for (const p of room.remoteParticipants.values()) {
       const v = deaf ? 0 : (volumes.get(p.identity) ?? 0);
       const pub = p.getTrackPublication(Track.Source.Microphone);
@@ -129,3 +148,11 @@ export const usePlazaVoice = create<PlazaVoiceState>((set, get) => ({
     }
   },
 }));
+
+// trocou o microfone ou a saída de áudio (na Praça ou em qualquer lugar do app): a voz da Praça troca na hora
+useVoice.subscribe((s, prev) => {
+  if (!room) return;
+  const { inputId, outputId } = s.audioSettings;
+  if (outputId !== prev.audioSettings.outputId && outputId) void room.switchActiveDevice('audiooutput', outputId).catch(() => {});
+  if (inputId !== prev.audioSettings.inputId && inputId && usePlazaVoice.getState().micOn) void room.switchActiveDevice('audioinput', inputId).catch(() => {});
+});
