@@ -506,7 +506,24 @@ function createPasswordUser(f: { username: string; displayName: string; password
   return id;
 }
 
+/**
+ * Conta nova entra no servidor da comunidade do Concord (o do convite COMMUNITY_INVITE): quem chega não cai num app
+ * vazio, e o app já abre esse servidor (é o único da lista). Sem o convite configurado, ou se ele sumiu, não faz nada.
+ */
+function joinCommunity(userId: string) {
+  if (!config.communityInvite) return;
+  const invite = get<InviteRow>('SELECT * FROM invites WHERE code = ?', config.communityInvite);
+  if (!invite || isMember(invite.server_id, userId) || isBanned(invite.server_id, userId)) return;
+  tx(() => {
+    run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', invite.server_id, userId, now());
+    run('UPDATE invites SET uses = uses + 1 WHERE code = ?', invite.code);
+  });
+  joinServerRoom(userId, invite.server_id);
+  serverChanged(invite.server_id);
+}
+
 async function sendNewAccount(res: express.Response, userId: string) {
+  joinCommunity(userId);
   const recoveryCode = await rotateRecoveryCode(userId);
   res.json({ token: signToken(userId), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', userId)!), recoveryCode });
 }
@@ -877,6 +894,7 @@ api.post('/auth/google/signup', googleLimit, async (req, res) => {
       ticket.sub,
       now(),
     );
+    joinCommunity(id);
   }
   const recoveryCode = existing ? undefined : await rotateRecoveryCode(id);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', id)!;
