@@ -1,7 +1,7 @@
 // Praça do servidor: o servidor como um lugar em pixel art isométrico. Cada sala de voz é uma mesa (clicar
 // leva o boneco até ela e entra na call), a TV acende quando alguém transmite, e a conversa é por balão,
 // só para quem está na praça. Quem está numa call aparece sentado, mesmo sem ter aberto a praça.
-import { DoorOpen, Eye, EyeOff, Hammer, Hand, LogOut, MonitorUp, Maximize2, MessageSquare, Mic, MicOff, Minus, Plus, Headphones, HeadphoneOff, Shirt, X, Send, Crosshair, Lock, Radio } from 'lucide-react';
+import { DoorOpen, Eye, EyeOff, Hammer, Hand, LogOut, MonitorUp, Maximize2, MessageSquare, Mic, MicOff, Minus, Plus, Headphones, HeadphoneOff, Shirt, Smile, X, Send, Crosshair, Lock, Radio } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { P, has } from '../../../../shared/permissions.ts';
 import {
@@ -52,6 +52,7 @@ import { cx } from '../ui';
 import { AvatarEditor } from './AvatarEditor';
 import { StreamPip } from './StreamPip';
 import { TvShareMenu } from './TvShareMenu';
+import { chip, float, hud, item, primarySm, round, soft } from './hud';
 import { PlaceEditor, pruneDecor, turnItem, type EditorTool } from './PlaceEditor';
 import { api } from '../../lib/api';
 import { Globe } from './Globe';
@@ -1357,9 +1358,9 @@ export default function PlazaView() {
             <button
               onClick={() => goStairs(sp)}
               title={dir === 'up' ? `Subir para o ${to + 1}º andar (mais quartos)` : `Descer para o ${to + 1}º andar`}
-              className="pointer-events-auto flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-md border border-[#f5c451]/60 bg-[#1b1430]/90 px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap text-white shadow"
+              className={cx(chip(), 'pointer-events-auto -translate-x-1/2 -translate-y-full transition hover:scale-105')}
             >
-              <span>{dir === 'up' ? '▲' : '▼'}</span>
+              <span className="text-accent">{dir === 'up' ? '▲' : '▼'}</span>
               <span>{to + 1}º andar</span>
             </button>
           </div>
@@ -1376,10 +1377,7 @@ export default function PlazaView() {
             <button
               onClick={() => goRoom(i)}
               title={`${id === me.id ? 'Seu quarto' : `Quarto de ${m ? memberName(m) : 'alguém'}`}: ${MODE_TEXT[mode]}`}
-              className={cx(
-                'pointer-events-auto flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap shadow',
-                id === me.id ? 'border-[#e8685a] bg-[#1b1430]/90 text-white' : 'border-white/10 bg-[#1b1430]/85 text-white/85',
-              )}
+              className={cx(chip(id === me.id), 'pointer-events-auto -translate-x-1/2 -translate-y-full transition hover:scale-105')}
             >
               <span>{MODE_ICON[mode]}</span>
               <span className="max-w-[90px] truncate">{id === me.id ? 'Você' : m ? memberName(m) : 'alguém'}</span>
@@ -1409,42 +1407,46 @@ export default function PlazaView() {
       </div>
 
       {/* topo: servidor e quantos estão na praça */}
-      <div className="absolute top-3 left-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1430]/80 py-1.5 pr-3.5 pl-1.5 text-white shadow-lg backdrop-blur">
-        <Globe size={30} />
-        <div className="leading-tight">
-          <div className="plaza-pixel text-[15px] font-bold">{title}</div>
-          <div className="text-[11px] text-white/60">
+      <div className="absolute top-3 left-3 flex max-w-[calc(100%-15rem)] items-center gap-2.5 rounded-full bg-surface-2 py-1.5 pr-4 pl-1.5 text-fg shadow-[0_10px_28px_-12px_rgba(0,0,0,0.65)]">
+        <Globe size={32} />
+        <div className="min-w-0 leading-tight">
+          <div className={cx(hud.title, 'truncate text-[15px]')}>{title}</div>
+          <div className="truncate text-[11.5px] text-fg-muted">
             {count} {count === 1 ? 'pessoa' : 'pessoas'} {myScene === 'lobby' ? 'na praça' : 'aqui'}
             {myRoom && myRoom !== me.id && ` · dono ${MODE_TEXT[roomMode(myRoom, walkers[myRoom], online[myRoom], inCall.has(myRoom))]}`}
             {inside && ` · ${seating.size} na${seating.size === 1 ? '' : 's'} mesa${seating.size === 1 ? '' : 's'}`}
           </div>
         </div>
       </div>
-      <div className="absolute top-3 right-3 flex gap-1.5">
-        <HudButton label="Afastar" onClick={() => setZoom((z) => Math.max(1, z - 1))}>
-          <Minus size={16} />
+      <div className="absolute top-3 right-3 flex items-center gap-2">
+        <HudButton float label="Afastar" onClick={() => setZoom((z) => Math.max(1, z - 1))}>
+          <Minus size={18} />
         </HudButton>
-        <HudButton label="Aproximar" onClick={() => setZoom((z) => Math.min(5, z + 1))}>
-          <Plus size={16} />
+        <HudButton float label="Aproximar" onClick={() => setZoom((z) => Math.min(5, z + 1))}>
+          <Plus size={18} />
         </HudButton>
         {canEdit && !draft && (
-          <button onClick={startEdit} title={myScene === 'room' ? 'Montar o seu quarto' : inside ? 'Montar o prédio' : 'Montar a praça'} className="flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-[#1b1430]/85 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-[#2b2350]">
-            <Hammer size={15} /> Montar
+          <button
+            onClick={startEdit}
+            title={myScene === 'room' ? 'Montar o seu quarto' : inside ? 'Montar o prédio' : 'Montar a praça'}
+            className="flex h-10 items-center gap-2 rounded-full bg-surface-2 px-4 font-display text-[14px] font-bold text-fg shadow-[0_8px_20px_-8px_rgba(0,0,0,0.6)] transition-all hover:scale-[1.03] hover:bg-surface-3"
+          >
+            <Hammer size={16} /> Montar
           </button>
         )}
-        <HudButton label="Centralizar em mim" onClick={() => (world.current.pan = { x: 0, y: 0 })}>
-          <Crosshair size={16} />
+        <HudButton float label="Centralizar em mim" onClick={() => (world.current.pan = { x: 0, y: 0 })}>
+          <Crosshair size={18} />
         </HudButton>
-        <HudButton label="Sair da praça (Esc)" onClick={leave}>
-          <X size={16} />
+        <HudButton float label="Sair da praça (Esc)" onClick={leave}>
+          <X size={18} />
         </HudButton>
       </div>
 
       {hint && phase === 'ready' && (
-        <div className="absolute top-20 left-1/2 w-[min(92vw,420px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#1b1430]/90 p-4 text-sm text-white/90 shadow-xl backdrop-blur">
-          <div className="plaza-pixel mb-1 text-base font-bold text-[#ffe6a0]">Bem-vindo à praça!</div>
+        <div className={cx(hud.panel, 'absolute top-20 left-1/2 w-[min(92vw,440px)] -translate-x-1/2 p-5 text-sm text-fg-muted')}>
+          <div className={cx(hud.title, 'mb-1.5 text-lg')}>Bem-vindo à praça!</div>
           Clique no chão para andar (ou use as setas). A conversa é <b>por proximidade</b>, aqui fora e dentro do prédio: ligue o microfone e quem estiver perto te ouve, e os balões do lado de fora só chegam a quem está perto. Quem está sentado numa mesa está na call, e não ouve a praça. As calls ficam <b>dentro do prédio</b>: entre pela porta e clique numa mesa para sentar. Clique na TV de uma mesa para assistir a transmissão numa telinha. O que você escreve vira balão e <b>não fica salvo</b>.
-          <button onClick={dismissHint} className="mt-3 block rounded-lg bg-[#e8685a] px-3 py-1.5 font-semibold text-white hover:brightness-110">
+          <button onClick={dismissHint} className={cx(primarySm('md'), 'mt-4')}>
             Entendi
           </button>
         </div>
@@ -1456,48 +1458,43 @@ export default function PlazaView() {
       {/* barra de baixo */}
       <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-center gap-2 p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
         <SayBox />
-        <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-[#1b1430]/85 p-1.5 shadow-lg backdrop-blur">
-          {EMOTES.map((e) => (
-            <button key={e.id} title={e.label} aria-label={e.label} onClick={() => usePlaza.getState().emote(e.id)} className="grid h-9 w-9 place-items-center rounded-xl text-lg transition hover:bg-white/10 active:scale-90">
-              {e.emoji}
-            </button>
-          ))}
-          <span className="mx-0.5 h-6 w-px bg-white/15" />
-          <HudButton label="Conversa da praça" flat active={logOpen} onClick={() => setLogOpen((v) => !v)}>
-            <MessageSquare size={17} />
+        <div className={hud.dock}>
+          <EmotePicker />
+          <HudButton label="Conversa da praça" active={logOpen} onClick={() => setLogOpen((v) => !v)}>
+            <MessageSquare size={19} />
           </HudButton>
-          <HudButton label="Meu boneco" flat onClick={() => setEditing(true)}>
-            <Shirt size={17} />
+          <HudButton label="Meu boneco" onClick={() => setEditing(true)}>
+            <Shirt size={19} />
           </HudButton>
           <LobbyMic inCall={!!voiceChannelId} />
-          <span className="mx-0.5 h-6 w-px bg-white/15" />
-          <button onClick={goDoor} className="flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold text-white hover:bg-white/10">
-            <DoorOpen size={16} /> {myScene === 'room' ? 'Sair do quarto' : myScene === 'hall' && hallFloor > 0 ? 'Descer a escada' : myScene === 'hall' || (inside && myFloor > 0) ? 'Elevador' : inside ? 'Voltar à praça' : 'Entrar no prédio'}
+          <button onClick={goDoor} className={hud.primary}>
+            <DoorOpen size={18} />
+            <span className="hidden sm:inline">{myScene === 'room' ? 'Sair do quarto' : myScene === 'hall' && hallFloor > 0 ? 'Descer a escada' : myScene === 'hall' || (inside && myFloor > 0) ? 'Elevador' : inside ? 'Voltar à praça' : 'Entrar no prédio'}</span>
           </button>
         </div>
         {myChannel && (
-          <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-[#1b1430]/85 p-1.5 pl-3 text-white shadow-lg backdrop-blur">
-            <div className="mr-1 max-w-[140px] truncate text-xs leading-tight">
-              <div className="text-white/50">Na mesa</div>
-              <div className="font-semibold">#{myChannel.name}</div>
+          <div className={hud.dock}>
+            <div className="mr-0.5 max-w-[140px] min-w-0 pl-3 leading-tight">
+              <div className="text-[11px] text-fg-subtle">Na mesa</div>
+              <div className={cx(hud.title, 'truncate text-[13px]')}>#{myChannel.name}</div>
             </div>
             <VoiceButtons myVoice={myVoice} />
             <HudButton
               label={closedTables?.includes(voiceChannelId!) ? 'Mesa fechada para espiadas (clique para abrir)' : 'Mesa aberta para espiadas (clique para fechar)'}
-              flat
               active={closedTables?.includes(voiceChannelId!)}
               onClick={() => getSocket()?.emit('plaza:close-table', { channelId: voiceChannelId, closed: !closedTables?.includes(voiceChannelId!) })}
             >
-              {closedTables?.includes(voiceChannelId!) ? <EyeOff size={17} /> : <Eye size={17} />}
+              {closedTables?.includes(voiceChannelId!) ? <EyeOff size={19} /> : <Eye size={19} />}
             </HudButton>
-            <HudButton label="TV da mesa: transmitir a tela" flat onClick={() => setTvMenu(true)}>
-              <MonitorUp size={17} />
+            <HudButton label="TV da mesa: transmitir a tela" onClick={() => setTvMenu(true)}>
+              <MonitorUp size={19} />
             </HudButton>
-            <HudButton label="Abrir a call" flat onClick={openCall}>
-              <Maximize2 size={17} />
+            <HudButton label="Abrir a call" onClick={openCall}>
+              <Maximize2 size={19} />
             </HudButton>
-            <button onClick={standUp} className="ml-0.5 flex h-9 items-center gap-1.5 rounded-xl bg-[#e8685a] px-3 text-sm font-semibold text-white hover:brightness-110">
-              <LogOut size={15} /> Levantar
+            <button onClick={standUp} title="Levantar (sair da call)" className={hud.danger}>
+              <LogOut size={18} />
+              <span className="hidden sm:inline">Levantar</span>
             </button>
           </div>
         )}
@@ -1597,22 +1594,17 @@ export default function PlazaView() {
 function TableMenu({ channel, people, closed, onSit, onPeek, onClose }: { channel?: Channel; people: number; closed: boolean; onSit: () => void; onPeek: () => void; onClose: () => void }) {
   const peekBlock = closed ? 'A mesa fechou para espiadas' : people === 0 ? 'Ninguém na mesa' : null;
   return (
-    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 text-white shadow-xl">
-      <span className="plaza-pixel max-w-[140px] truncate text-[13px] font-bold">#{channel?.name ?? 'mesa'}</span>
-      {people > 0 && <span className="text-[11px] text-white/50">· {people}</span>}
-      <button onClick={onSit} className="ml-1 rounded-lg bg-[#e8685a] px-2.5 py-1 text-xs font-bold hover:brightness-110">
+    <div className={cx(hud.dock, 'animate-pop-in absolute bottom-[84px] left-1/2 z-[64] -translate-x-1/2 gap-1.5 pl-4')}>
+      <span className={cx(hud.title, 'max-w-[150px] truncate text-[14px]')}>#{channel?.name ?? 'mesa'}</span>
+      {people > 0 && <span className="text-[12px] text-fg-subtle">· {people}</span>}
+      <button onClick={onSit} className={cx(primarySm('md'), 'ml-1')}>
         Sentar
       </button>
-      <button
-        onClick={onPeek}
-        disabled={!!peekBlock}
-        title={peekBlock ?? 'Ouvir 10 s (a mesa vê que você está espiando)'}
-        className="flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-xs font-bold hover:bg-white/15 disabled:opacity-40"
-      >
-        <Eye size={13} /> Espiar
+      <button onClick={onPeek} disabled={!!peekBlock} title={peekBlock ?? 'Ouvir 10 s (a mesa vê que você está espiando)'} className={soft('md')}>
+        <Eye size={14} /> Espiar
       </button>
-      <button onClick={onClose} aria-label="Fechar" className="rounded-lg p-1 text-white/60 hover:bg-white/10">
-        <X size={13} />
+      <button onClick={onClose} aria-label="Fechar" className={hud.close}>
+        <X size={15} />
       </button>
     </div>
   );
@@ -1630,14 +1622,14 @@ function PeekBar({ channel, until, whispering, near }: { channel?: Channel; unti
   const peek = usePlazaPeek.getState();
   if (near) {
     return (
-      <div className="pointer-events-none absolute top-16 left-1/2 z-[63] -translate-x-1/2 rounded-full bg-[#1b1430]/90 px-3 py-1 text-[12px] font-semibold text-white shadow-lg ring-1 ring-white/15">
+      <div className="pointer-events-none absolute top-[72px] left-1/2 z-[63] -translate-x-1/2 rounded-full bg-surface-2 px-3.5 py-1.5 font-display text-[12.5px] font-bold text-fg shadow-[0_8px_22px_-10px_rgba(0,0,0,0.6)]">
         👂 ouvindo #{channel?.name ?? 'mesa'}
       </div>
     );
   }
   return (
-    <div className="absolute top-16 left-1/2 z-[63] flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#1b1430]/95 py-1 pr-1 pl-3 text-white shadow-lg ring-1 ring-white/15">
-      <span className="text-[12px] font-semibold">
+    <div className={cx(hud.dock, 'absolute top-[72px] left-1/2 z-[63] -translate-x-1/2 gap-1 py-1 pr-1 pl-4')}>
+      <span className={cx(hud.title, 'text-[13px]')}>
         👀 #{channel?.name ?? 'mesa'} · {left}s
       </span>
       <button
@@ -1646,12 +1638,12 @@ function PeekBar({ channel, until, whispering, near }: { channel?: Channel; unti
         onPointerLeave={() => void peek.setWhisper(false)}
         title="Segure para cochichar"
         aria-label="Segure para cochichar"
-        className={cx('grid h-7 w-7 place-items-center rounded-full select-none', whispering ? 'bg-[#2e9e6a]' : 'bg-white/10 hover:bg-white/15')}
+        className={cx('grid h-8 w-8 place-items-center rounded-full transition select-none', whispering ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg hover:bg-surface-4')}
       >
-        <Mic size={13} />
+        <Mic size={14} />
       </button>
-      <button onClick={() => peek.stop()} aria-label="Parar de espiar" className="grid h-7 w-7 place-items-center rounded-full text-white/70 hover:bg-white/10">
-        <X size={13} />
+      <button onClick={() => peek.stop()} aria-label="Parar de espiar" className={cx(hud.close, 'h-8 w-8')}>
+        <X size={14} />
       </button>
     </div>
   );
@@ -1680,8 +1672,8 @@ function FloorAssign({ serverId, channels }: { serverId: string; channels: Chann
   };
   return (
     <div>
-      <div className="mb-1.5 text-[11px] font-bold tracking-wider text-white/50 uppercase">Andares</div>
-      <p className="mb-2 text-[11px] text-white/45">
+      <div className={cx(hud.label, 'mb-1.5')}>Andares</div>
+      <p className="mb-2 text-[11.5px] text-fg-muted">
         O térreo cabe {GROUND_TABLES} salas e cada andar {FLOOR_TABLES}. Escolha onde fica cada uma; em Automático, o Concord encaixa.
       </p>
       <div className="space-y-1">
@@ -1697,7 +1689,7 @@ function FloorAssign({ serverId, channels }: { serverId: string; channels: Chann
                 else next[c.id] = v;
                 setAssign(next);
               }}
-              className="rounded-md bg-white/10 px-1.5 py-1 text-xs outline-none"
+              className="rounded-full bg-surface-2 px-2.5 py-1 text-xs text-fg outline-none"
             >
               <option value={-1}>Automático ({floorName(Math.max(0, levelOf(c.id)))})</option>
               {Array.from({ length: MAX_FLOORS + 1 }, (_, i) => (
@@ -1709,7 +1701,7 @@ function FloorAssign({ serverId, channels }: { serverId: string; channels: Chann
           </label>
         ))}
       </div>
-      <button onClick={() => void save()} disabled={saving} className="mt-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold hover:bg-white/15 disabled:opacity-50">
+      <button onClick={() => void save()} disabled={saving} className={cx(soft('sm', 'raised'), 'mt-2.5')}>
         {saving ? 'Salvando…' : 'Salvar andares'}
       </button>
     </div>
@@ -1735,34 +1727,25 @@ function FloorMenu({
   onClose: () => void;
 }) {
   return (
-    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] w-[min(92vw,360px)] -translate-x-1/2 rounded-xl border border-white/10 bg-[#1b1430]/95 p-2 text-white shadow-xl">
-      <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="plaza-pixel text-[13px] font-bold">Elevador</span>
-        <button onClick={onClose} aria-label="Fechar" className="rounded-lg p-1 text-white/60 hover:bg-white/10">
-          <X size={13} />
+    <div className={cx(hud.panel, 'animate-pop-in absolute bottom-[84px] left-1/2 z-[64] w-[min(92vw,380px)] -translate-x-1/2 p-2.5')}>
+      <div className="mb-1.5 flex items-center justify-between px-1.5">
+        <span className={cx(hud.title, 'text-[15px]')}>Elevador</span>
+        <button onClick={onClose} aria-label="Fechar" className={hud.close}>
+          <X size={15} />
         </button>
       </div>
-      <div className="max-h-[40vh] space-y-1 overflow-y-auto">
+      <div className="max-h-[40vh] space-y-0.5 overflow-y-auto">
         {floors.map((f, i) => (
-          <button
-            key={i}
-            disabled={i === current}
-            onClick={() => onPick(i)}
-            className={cx('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs', i === current ? 'bg-white/15' : 'hover:bg-white/10')}
-          >
-            <span className="w-16 shrink-0 font-bold">{floorName(i)}</span>
-            <span className="min-w-0 flex-1 truncate text-white/60">{f.map((id) => (id ? `#${channelName(id) ?? 'sala'}` : 'reservada')).join(' · ') || 'sem salas'}</span>
-            {i === current && <span className="text-[10px] text-white/50">você está aqui</span>}
+          <button key={i} disabled={i === current} onClick={() => onPick(i)} className={item(i === current)}>
+            <span className="w-16 shrink-0 font-display font-bold">{floorName(i)}</span>
+            <span className="min-w-0 flex-1 truncate text-fg-muted">{f.map((id) => (id ? `#${channelName(id) ?? 'sala'}` : 'reservada')).join(' · ') || 'sem salas'}</span>
+            {i === current && <span className="text-[11px] text-fg-subtle">você está aqui</span>}
           </button>
         ))}
-        <button
-          disabled={inHall}
-          onClick={onHall}
-          className={cx('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs', inHall ? 'bg-white/15' : 'hover:bg-white/10')}
-        >
-          <span className="w-16 shrink-0 font-bold">Quartos</span>
-          <span className="min-w-0 flex-1 truncate text-white/60">o corredor com o quarto de cada um</span>
-          {inHall && <span className="text-[10px] text-white/50">você está aqui</span>}
+        <button disabled={inHall} onClick={onHall} className={item(inHall)}>
+          <span className="w-16 shrink-0 font-display font-bold">Quartos</span>
+          <span className="min-w-0 flex-1 truncate text-fg-muted">o corredor com o quarto de cada um</span>
+          {inHall && <span className="text-[11px] text-fg-subtle">você está aqui</span>}
         </button>
       </div>
     </div>
@@ -1772,45 +1755,75 @@ function FloorMenu({
 /** Cardápio do balcão: aparece em cima do balcão, quando o boneco chega lá. */
 function BarMenu({ holding, onPick, onClose }: { holding: string | null; onPick: (drink: string | null) => void; onClose: () => void }) {
   return (
-    <div className="animate-pop-in flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 whitespace-nowrap text-white shadow-xl">
-      <span className="plaza-pixel mr-1 text-[13px] font-bold">Balcão</span>
+    <div className={cx(hud.dock, 'animate-pop-in -translate-x-1/2 -translate-y-full gap-1 py-1.5 pl-4 whitespace-nowrap')}>
+      <span className={cx(hud.title, 'mr-1 text-[14px]')}>Balcão</span>
       {DRINKS.map((d) => (
         <button
           key={d.id}
           onClick={() => onPick(d.id)}
           title={d.label}
           aria-label={d.label}
-          className={cx('grid h-8 w-8 place-items-center rounded-lg text-lg hover:bg-white/10', holding === d.id && 'bg-white/15')}
+          className={cx('grid h-10 w-10 place-items-center rounded-full text-xl transition hover:scale-110 hover:bg-surface-3', holding === d.id && 'bg-surface-4')}
         >
           {d.emoji}
         </button>
       ))}
       {holding && (
-        <button onClick={() => onPick(null)} className="rounded-lg px-2 py-1 text-xs font-semibold text-white/70 hover:bg-white/10">
+        <button onClick={() => onPick(null)} className={soft()}>
           Largar
         </button>
       )}
-      <button onClick={onClose} aria-label="Fechar" className="rounded-lg p-1 text-white/60 hover:bg-white/10">
-        <X size={13} />
+      <button onClick={onClose} aria-label="Fechar" className={hud.close}>
+        <X size={15} />
       </button>
     </div>
   );
 }
 
-function HudButton({ label, onClick, children, flat, active }: { label: string; onClick: () => void; children: React.ReactNode; flat?: boolean; active?: boolean }) {
+function HudButton({ label, onClick, children, float: floating, active }: { label: string; onClick: () => void; children: React.ReactNode; float?: boolean; active?: boolean }) {
   return (
-    <button
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className={cx(
-        'grid h-9 w-9 place-items-center rounded-xl text-white transition active:scale-90',
-        flat ? 'hover:bg-white/10' : 'border border-white/10 bg-[#1b1430]/85 shadow-lg backdrop-blur hover:bg-[#2b2350]',
-        active && 'bg-white/15',
-      )}
-    >
+    <button title={label} aria-label={label} aria-pressed={active} onClick={onClick} className={(floating ? float : round)(active ? 'off' : 'default')}>
       {children}
     </button>
+  );
+}
+
+/** Gestos: um botão na barra que abre os gestos (como as reações da call). */
+function EmotePicker() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('pointerdown', away);
+    return () => window.removeEventListener('pointerdown', away);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <HudButton label="Gestos" active={open} onClick={() => setOpen((v) => !v)}>
+        <Smile size={19} />
+      </HudButton>
+      {open && (
+        <div className="animate-pop-in absolute bottom-[calc(100%+12px)] left-1/2 flex -translate-x-1/2 gap-1 rounded-full border border-line bg-popover p-1.5 shadow-[0_20px_44px_-16px_rgba(0,0,0,0.6)]">
+          {EMOTES.map((e) => (
+            <button
+              key={e.id}
+              title={e.label}
+              aria-label={e.label}
+              onClick={() => {
+                usePlaza.getState().emote(e.id);
+                setOpen(false);
+              }}
+              className="grid h-10 w-10 place-items-center rounded-full text-xl transition hover:scale-110 hover:bg-surface-3 active:scale-90"
+            >
+              {e.emoji}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1820,8 +1833,8 @@ function LobbyMic({ inCall }: { inCall: boolean }) {
   const micOn = usePlazaVoice((s) => s.micOn);
   if (inCall) {
     return (
-      <span title="Você está numa call: a voz da praça fica desligada" className="grid h-9 w-9 place-items-center text-white/35">
-        <MicOff size={17} />
+      <span title="Você está numa call: a voz da praça fica desligada" className="grid h-11 w-11 shrink-0 cursor-default place-items-center rounded-full bg-surface-3 text-fg-subtle opacity-60">
+        <MicOff size={19} />
       </span>
     );
   }
@@ -1832,10 +1845,9 @@ function LobbyMic({ inCall }: { inCall: boolean }) {
       title={micOn ? 'Desligar o microfone da praça' : 'Falar na praça (quem estiver perto te ouve)'}
       aria-label={micOn ? 'Desligar o microfone da praça' : 'Falar na praça'}
       aria-pressed={micOn}
-      className={cx('flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold text-white transition', micOn ? 'bg-[#2e9e6a] hover:brightness-110' : 'hover:bg-white/10')}
+      className={round(micOn ? 'on' : 'off')}
     >
-      {micOn ? <Mic size={16} /> : <MicOff size={16} className="text-[#ff8a7e]" />}
-      <span className="hidden sm:inline">{micOn ? 'Falando' : 'Falar'}</span>
+      {micOn ? <Mic size={19} /> : <MicOff size={19} />}
     </button>
   );
 }
@@ -1843,14 +1855,15 @@ function LobbyMic({ inCall }: { inCall: boolean }) {
 function VoiceButtons({ myVoice }: { myVoice?: VoiceState }) {
   const micOn = useVoice((s) => s.micOn);
   const deafened = useVoice((s) => s.deafened);
+  const muted = !micOn || !!myVoice?.serverMuted;
   return (
     <>
-      <HudButton label={micOn ? 'Silenciar' : 'Ativar microfone'} flat onClick={() => void useVoice.getState().toggleMic()}>
-        {micOn && !myVoice?.serverMuted ? <Mic size={17} /> : <MicOff size={17} className="text-[#ff8a7e]" />}
-      </HudButton>
-      <HudButton label={deafened ? 'Ouvir de novo' : 'Ensurdecer'} flat onClick={() => void useVoice.getState().toggleDeafen()}>
-        {deafened ? <HeadphoneOff size={17} className="text-[#ff8a7e]" /> : <Headphones size={17} />}
-      </HudButton>
+      <button title={muted ? 'Ativar microfone' : 'Silenciar'} aria-label={muted ? 'Ativar microfone' : 'Silenciar'} onClick={() => void useVoice.getState().toggleMic()} className={round(muted ? 'off' : 'default')}>
+        {muted ? <MicOff size={19} /> : <Mic size={19} />}
+      </button>
+      <button title={deafened ? 'Ouvir de novo' : 'Ensurdecer'} aria-label={deafened ? 'Ouvir de novo' : 'Ensurdecer'} onClick={() => void useVoice.getState().toggleDeafen()} className={round(deafened ? 'off' : 'default')}>
+        {deafened ? <HeadphoneOff size={19} /> : <Headphones size={19} />}
+      </button>
     </>
   );
 }
@@ -1872,7 +1885,7 @@ function SayBox() {
         e.preventDefault();
         void send();
       }}
-      className="flex w-[min(100%,420px)] items-center gap-1 rounded-2xl border border-white/10 bg-[#1b1430]/85 p-1.5 pl-3.5 shadow-lg backdrop-blur"
+      className={cx(hud.dock, 'w-[min(100%,420px)]')}
     >
       <input
         id="plaza-say"
@@ -1883,11 +1896,11 @@ function SayBox() {
           if (e.key === 'Escape') (e.target as HTMLInputElement).blur();
         }}
         placeholder="Fale na praça… (vira balão, não fica salvo)"
-        className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+        className={hud.input}
         autoComplete="off"
       />
-      <button type="submit" disabled={!text.trim() || sending} aria-label="Enviar balão" className="grid h-9 w-9 place-items-center rounded-xl bg-[#e8685a] text-white transition hover:brightness-110 disabled:opacity-40">
-        <Send size={16} />
+      <button type="submit" disabled={!text.trim() || sending} aria-label="Enviar balão" className={cx(round('on'), 'disabled:opacity-40 disabled:hover:scale-100')}>
+        <Send size={18} />
       </button>
     </form>
   );
@@ -1897,16 +1910,11 @@ function TableTag({ channel, hidden, states, mine }: { channel?: Channel; hidden
   const live = states.some((s) => s.streaming);
   const locked = hidden || !channel || !has(channel.permissions, P.CONNECT);
   return (
-    <div
-      className={cx(
-        'plaza-pixel -translate-x-1/2 flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-bold shadow-md',
-        mine ? 'border-[#ffe6a0] bg-[#e8685a] text-white' : 'border-white/15 bg-[#1b1430]/85 text-white/90',
-      )}
-    >
-      {locked && <Lock size={10} />}
-      {live && <Radio size={11} className="text-[#ff5c7a]" />}
-      <span className="max-w-[120px] truncate">{hidden ? 'Mesa reservada' : `#${channel?.name ?? ''}`}</span>
-      {states.length > 0 && <span className="text-white/60">· {states.length}</span>}
+    <div className={cx(chip(mine), '-translate-x-1/2')}>
+      {locked && <Lock size={11} />}
+      {live && <Radio size={12} className={mine ? '' : 'text-live'} />}
+      <span className="max-w-[130px] truncate">{hidden ? 'Mesa reservada' : `#${channel?.name ?? ''}`}</span>
+      {states.length > 0 && <span className={mine ? 'opacity-75' : 'text-fg-subtle'}>· {states.length}</span>}
     </div>
   );
 }
@@ -1936,8 +1944,8 @@ function PersonTag({
     <div className="relative -translate-x-1/2 -translate-y-full">
       <div className="absolute bottom-full left-1/2 mb-1 flex -translate-x-1/2 flex-col items-center gap-1">
         {bubbles.map((b) => (
-          <div key={b.id} className="plaza-bubble relative w-max max-w-[220px] rounded-lg border-2 border-[#1b1430] bg-white px-2 py-1 text-[12.5px] leading-snug text-[#1b1430] shadow-[2px_2px_0_#1b1430]" style={{ overflowWrap: 'anywhere' }}>
-            <b className="plaza-pixel mr-1 text-[#2f62e6]">{name}:</b>
+          <div key={b.id} className="plaza-bubble relative w-max max-w-[220px] rounded-2xl rounded-bl-md bg-surface-2 px-3 py-1.5 text-[13px] leading-snug text-fg shadow-[0_6px_16px_-6px_rgba(0,0,0,0.55)]" style={{ overflowWrap: 'anywhere' }}>
+            <b className="mr-1 font-display text-accent">{name}:</b>
             {b.text}
           </div>
         ))}
@@ -1959,8 +1967,8 @@ function PersonTag({
         </div>
       )}
 
-      <div className={cx('plaza-pixel flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-bold leading-[16px]', isMe ? 'bg-[#e8685a] text-white' : 'bg-[#1b1430]/75 text-white')}>
-        {voice?.streaming && <span className="rounded-sm bg-[#ff5c7a] px-0.5 text-[9px] leading-[12px]">AO VIVO</span>}
+      <div className={chip(isMe)}>
+        {voice?.streaming && <span className="rounded-full bg-live px-1.5 py-[2px] text-[9px] leading-none text-white">AO VIVO</span>}
         {peeking && <span title={peeking === 'near' ? 'Ouvindo uma mesa de perto' : 'Espiando uma mesa'}>{peeking === 'near' ? '👂' : '👀'}</span>}
         <span className="max-w-[110px] truncate">{name}</span>
         {voice && (voice.deafened ? <HeadphoneOff size={10} /> : voice.muted ? <MicOff size={10} /> : null)}
@@ -1974,21 +1982,21 @@ function PlazaLog({ members, onClose }: { members: Map<string, Member>; onClose:
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [log.length]);
   return (
-    <div className="absolute right-3 bottom-24 flex max-h-[45vh] w-[min(92vw,320px)] flex-col rounded-2xl border border-white/10 bg-[#1b1430]/90 text-white shadow-xl backdrop-blur">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-        <div className="plaza-pixel text-sm font-bold">Conversa da praça</div>
-        <button onClick={onClose} aria-label="Fechar" className="rounded p-1 hover:bg-white/10">
-          <X size={14} />
+    <div className={cx(hud.panel, 'absolute right-3 bottom-24 flex max-h-[45vh] w-[min(92vw,330px)] flex-col')}>
+      <div className="flex items-center justify-between px-4 pt-3 pb-2">
+        <div className={cx(hud.title, 'text-[15px]')}>Conversa da praça</div>
+        <button onClick={onClose} aria-label="Fechar" className={hud.close}>
+          <X size={15} />
         </button>
       </div>
-      <div className="flex-1 space-y-1 overflow-y-auto px-3 py-2 text-[13px]">
-        {log.length === 0 && <div className="text-white/50">Ninguém falou desde que você chegou. O que é dito aqui não fica salvo.</div>}
+      <div className="flex-1 space-y-1.5 overflow-y-auto px-4 pb-3 text-[13px] text-fg">
+        {log.length === 0 && <div className="text-fg-muted">Ninguém falou desde que você chegou. O que é dito aqui não fica salvo.</div>}
         {log.map((b) => {
           const m = members.get(b.userId);
           return (
             <div key={b.id} style={{ overflowWrap: 'anywhere' }}>
-              <span className="text-white/40">{new Date(b.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} </span>
-              <b className="text-[#9db4ff]">{m ? memberName(m) : 'Alguém'}:</b> {b.text}
+              <span className="text-fg-subtle">{new Date(b.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} </span>
+              <b className="font-display text-accent">{m ? memberName(m) : 'Alguém'}:</b> {b.text}
             </div>
           );
         })}
@@ -2007,34 +2015,34 @@ function PersonCard({ userId, member, isMe, onEdit, onClose, serverId }: { userI
     fn();
   };
   return (
-    <div className="absolute bottom-24 left-1/2 w-[min(92vw,300px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#1b1430]/95 p-3 text-white shadow-xl backdrop-blur">
-      <div className="flex items-center gap-2.5">
+    <div className={cx(hud.panel, 'animate-pop-in absolute bottom-24 left-1/2 w-[min(92vw,320px)] -translate-x-1/2 p-4')}>
+      <div className="flex items-center gap-3">
         {member?.avatarUrl ? (
-          <img src={member.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+          <img src={member.avatarUrl} alt="" className="h-11 w-11 rounded-full object-cover" />
         ) : (
-          <div className="grid h-10 w-10 place-items-center rounded-full font-bold" style={{ background: member?.avatarColor ?? '#2f62e6' }}>
+          <div className="grid h-11 w-11 place-items-center rounded-full font-display font-bold text-white" style={{ background: member?.avatarColor ?? 'var(--color-accent)' }}>
             {name[0]?.toUpperCase()}
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold">{name}</div>
-          {member && <div className="truncate text-xs text-white/50">@{member.username}</div>}
-          {playingNow && <div className="truncate text-xs text-[#9fe7b5]">🎮 Jogando {playingNow}</div>}
+          <div className={cx(hud.title, 'truncate text-[15px]')}>{name}</div>
+          {member && <div className="truncate text-xs text-fg-muted">@{member.username}</div>}
+          {playingNow && <div className="truncate text-xs font-semibold text-ok">🎮 Jogando {playingNow}</div>}
         </div>
-        <button onClick={onClose} aria-label="Fechar" className="rounded p-1 hover:bg-white/10">
-          <X size={14} />
+        <button onClick={onClose} aria-label="Fechar" className={hud.close}>
+          <X size={15} />
         </button>
       </div>
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3.5 flex gap-2">
         {isMe ? (
           <button
             onClick={() => {
               onClose();
               onEdit();
             }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#e8685a] py-1.5 text-sm font-semibold hover:brightness-110"
+            className={cx(primarySm('md'), 'flex-1')}
           >
-            <Shirt size={14} /> Trocar meu boneco
+            <Shirt size={15} /> Trocar meu boneco
           </button>
         ) : (
           <>
@@ -2043,14 +2051,14 @@ function PersonCard({ userId, member, isMe, onEdit, onClose, serverId }: { userI
                 usePlaza.getState().emote('wave');
                 onClose();
               }}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white/10 py-1.5 text-sm font-semibold hover:bg-white/15"
+              className={cx(soft('md', 'raised'), 'flex-1')}
             >
-              <Hand size={14} /> Acenar
+              <Hand size={15} /> Acenar
             </button>
-            <button onClick={() => go(() => void useApp.getState().openDm(userId))} className="flex-1 rounded-lg bg-white/10 py-1.5 text-sm font-semibold hover:bg-white/15">
+            <button onClick={() => go(() => void useApp.getState().openDm(userId))} className={cx(soft('md', 'raised'), 'flex-1')}>
               Mensagem
             </button>
-            <button onClick={() => go(() => useApp.getState().openProfile(userId, serverId))} className="flex-1 rounded-lg bg-[#e8685a] py-1.5 text-sm font-semibold hover:brightness-110">
+            <button onClick={() => go(() => useApp.getState().openProfile(userId, serverId))} className={cx(primarySm('md'), 'flex-1')}>
               Perfil
             </button>
           </>
