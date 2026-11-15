@@ -92,12 +92,12 @@ describe('praça: andares (shared)', () => {
     assert.ok(hall.doors.every((d) => walkable(hall, d.x, d.y)));
     assert.ok(hall.elevator && walkable(hall, hall.elevator.x, hall.elevator.y));
     const room = layoutFor('room', 0);
-    assert.ok(room.nook && !walkable(room, room.nook.bed.x, room.nook.bed.y));
+    assert.ok(room.nook?.bed && !walkable(room, room.nook.bed.x, room.nook.bed.y));
     assert.ok(walkable(room, room.door.x, room.door.y));
     // nada de móvel em cima da cama nem móvel que só existe na praça
     const base = defaultStyle('room');
     assert.equal(validateStyle(base, 'room', 0).ok, true);
-    assert.equal(validateStyle({ ...base, items: [{ k: 'plant', x: room.nook.bed.x, y: room.nook.bed.y, r: 0, c: 0 }] }, 'room', 0).ok, false);
+    assert.equal(validateStyle({ ...base, items: [{ k: 'plant', x: room.nook.bed!.x, y: room.nook.bed!.y, r: 0, c: 0 }] }, 'room', 0).ok, false);
     assert.equal(validateStyle({ ...base, items: [{ k: 'tree', x: 4, y: 4, r: 0, c: 0 }] }, 'room', 0).ok, false);
   });
 
@@ -124,6 +124,31 @@ describe('praça: andares (shared)', () => {
     assert.deepEqual(hallSpot(8), { level: 1, at: top.doors[0] });
   });
 
+  it('quarto: escrivaninha, TV, pufe e cama mudam de lugar e giram, mas são um de cada e voltam se faltarem', () => {
+    const it = (k: string, x: number, y: number, r = 0, c = 0) => ({ k, x, y, r, c });
+    // quarto salvo antes (sem eles na lista): voltam para o lugar de sempre
+    const old = layoutFor('room', 0, { floor: 0, wall: 0, items: [{ k: 'plant', x: 8, y: 2, r: 0, c: 0 }] });
+    assert.deepEqual([old.nook?.desk?.x, old.nook?.tv?.x, old.nook?.bed?.y], [1, 5, 5]);
+    // mudou de lugar, girou e trocou de cor
+    const moved = { floor: 0, wall: 0, items: [it('desk', 0, 0, 1), it('tvGame', 5, 0), it('pouf', 5, 2, 0, 3), it('bed', 6, 4, 0, 2)] };
+    const ok = validateStyle(moved, 'room', 0);
+    assert.ok(ok.ok);
+    const room = layoutFor('room', 0, ok.style);
+    assert.deepEqual([room.nook?.desk?.r, room.nook?.bed?.x, room.nook?.pouf?.c], [1, 6, 3]);
+    // dois iguais não vale
+    assert.equal(validateStyle({ ...moved, items: [...moved.items, it('desk', 2, 4)] }, 'room', 0).ok, false);
+  });
+
+  it('no prédio: quadro, relógio e neon na parede, mas não em cima do balcão nem do elevador', () => {
+    const base = defaultStyle('inside', 2);
+    const it = (k: string, x: number, y: number, r = 0) => ({ k, x, y, r, c: 0 });
+    const ins = layoutFor('inside', 2, base, 0);
+    const ok = (...items: ReturnType<typeof it>[]) => validateStyle({ ...base, items: [...base.items, ...items] }, 'inside', 2).ok;
+    assert.equal(ok(it('painting', 0, 3, 1)), true);
+    assert.equal(ok(it('clock', ins.building.x0, 0)), false);
+    assert.equal(ok(it('neon', ins.elevator!.x, 0)), false);
+  });
+
   it('troféu só em cima da prateleira, um por casa; pôster só encostado numa parede', () => {
     const base = defaultStyle('room');
     const it = (k: string, x: number, y: number, r = 0) => ({ k, x, y, r, c: 0 });
@@ -138,7 +163,7 @@ describe('praça: andares (shared)', () => {
     const st = validateStyle({ ...base, items: [ledge, it('trophyGold', 4, 6)] }, 'room', 0);
     assert.ok(st.ok);
     const room = layoutFor('room', 0, st.style);
-    assert.equal(room.items.length, 2);
+    assert.ok(room.items.some((x) => x.k === 'ledge') && room.items.some((x) => x.k === 'trophyGold'));
     assert.equal(walkable(room, 4, 7), true);
     // pôster: parede do fundo (y = 0) ou da esquerda (x = 0, girado), sem um em cima do outro
     assert.equal(ok(it('poster', 3, 0)), true);
@@ -522,7 +547,7 @@ describe('praça: andando e conversando', () => {
     assert.equal(said.length, 0);
     // só a própria pessoa monta o quarto (a rota é sempre do quarto de quem chama); móvel na cama não vale
     const room = layoutFor('room', 0);
-    const bad = { ...defaultStyle('room'), items: [{ k: 'plant', x: room.nook!.bed.x, y: room.nook!.bed.y, r: 0, c: 0 }] };
+    const bad = { ...defaultStyle('room'), items: [{ k: 'plant', x: room.nook!.bed!.x, y: room.nook!.bed!.y, r: 0, c: 0 }] };
     assert.equal((await bia.put('/me/plaza-room', { style: bad })).status, 400);
     const styled = new Promise<{ owner: string; style: { floor: number } }>((res) => a.once('plaza:room-style', res));
     assert.equal((await bia.put('/me/plaza-room', { style: { ...defaultStyle('room'), floor: 3 } })).status, 200);

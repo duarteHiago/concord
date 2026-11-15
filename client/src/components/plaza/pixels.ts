@@ -9,6 +9,8 @@ import {
   SKIN_TONES,
   WALLS,
   footprint,
+  furnitureDef,
+  itemPoint,
   type Facing,
   type Furniture,
   type PlazaAvatar,
@@ -64,6 +66,12 @@ export const PAL = {
   leafLight: '#5cb889',
   leafDark: '#2b6a4f',
   pot: '#c0714f',
+};
+
+/** #rrggbb com transparência. */
+const hexA = (hex: string, a: number) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
 /** Preenche um polígono com linhas inteiras (borda dura, sem anti-aliasing). */
@@ -228,7 +236,7 @@ function building(ctx: Ctx, layout: PlazaLayout, accent: string) {
 
 // ---- objetos ----
 
-function lampPost(ctx: Ctx, x: number, y: number, t: number) {
+function lampPost(ctx: Ctx, x: number, y: number, t: number, light = '#ffe6a0') {
   const base = at(x + 0.5, y + 0.5);
   const bx = Math.round(base.x);
   const by = Math.round(base.y);
@@ -245,7 +253,7 @@ function lampPost(ctx: Ctx, x: number, y: number, t: number) {
   ctx.fillStyle = PAL.outline;
   ctx.fillRect(bx + 3, by - 46, 7, 3);
   const flicker = 0.85 + 0.15 * Math.sin(t / 900 + x * 3);
-  ctx.fillStyle = `rgba(255, 230, 160, ${flicker})`;
+  ctx.fillStyle = hexA(light, flicker);
   ctx.fillRect(bx + 4, by - 43, 5, 2);
 }
 
@@ -282,8 +290,8 @@ export function lampLight(ctx: Ctx, x: number, y: number) {
   ctx.restore();
 }
 
-function plant(ctx: Ctx, x: number, y: number) {
-  box(ctx, x + 0.22, y + 0.22, 0.56, 0.56, 0, 8, { top: '#5a3a2a', left: PAL.pot, right: '#9b5a3f' });
+function plant(ctx: Ctx, x: number, y: number, pot = PAL.pot) {
+  box(ctx, x + 0.22, y + 0.22, 0.56, 0.56, 0, 8, { top: '#5a3a2a', left: pot, right: hexShade(pot, -0.2) });
   const c = at(x + 0.5, y + 0.5, 8);
   fillEllipse(ctx, c.x, c.y - 9, 10, 10, PAL.leafDark);
   fillEllipse(ctx, c.x - 2, c.y - 11, 8, 8, PAL.leaf);
@@ -291,9 +299,10 @@ function plant(ctx: Ctx, x: number, y: number) {
   fillEllipse(ctx, c.x + 4, c.y - 6, 3, 3, PAL.leafLight);
 }
 
-function bench(ctx: Ctx, x: number, y: number) {
-  box(ctx, x + 0.15, y + 0.1, 0.7, 0.8, 0, 7, { top: PAL.woodTop, left: PAL.wood, right: PAL.woodDark });
-  box(ctx, x + 0.15, y + 0.1, 0.15, 0.8, 7, 8, { top: PAL.woodTop, left: PAL.wood, right: PAL.woodDark });
+function bench(ctx: Ctx, x: number, y: number, wood = PAL.wood) {
+  const c = { top: hexShade(wood, 0.2), left: wood, right: hexShade(wood, -0.3) };
+  box(ctx, x + 0.15, y + 0.1, 0.7, 0.8, 0, 7, c);
+  box(ctx, x + 0.15, y + 0.1, 0.15, 0.8, 7, 8, c);
 }
 
 function stool(ctx: Ctx, x: number, y: number, color: string) {
@@ -434,7 +443,10 @@ function interiorWalls(ctx: Ctx, layout: PlazaLayout, accent: string) {
   fillPoly(ctx, [at(0, 0, H), at(w, 0, H), at(w, -0.25, H), at(-0.25, -0.25, H)], '#2d2450');
   // janelas na parede esquerda, com a noite lá fora
   const ql = (a: number, b: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(0, a, z0), at(0, b, z0), at(0, b, z1), at(0, a, z1)], c);
+  const hung = layout.items.filter((it) => furnitureDef(it.k).place === 'wall').map(wallSpan);
   for (let y0 = 2; y0 + 2 < h - 1; y0 += 4) {
+    // algo pendurado em cima da janela: ela dá lugar
+    if (hung.some((sp) => sp.wall === 'left' && y0 < sp.b && y0 + 2 > sp.a)) continue;
     ql(y0, y0 + 2, 24, 52, PAL.outline);
     ql(y0 + 0.1, y0 + 1.9, 25, 51, '#1d1838');
     ql(y0 + 0.1, y0 + 1.9, 25, 30, '#2a2350');
@@ -446,7 +458,7 @@ function interiorWalls(ctx: Ctx, layout: PlazaLayout, accent: string) {
   // quadros na parede do fundo, longe do balcão
   const { x0, x1 } = layout.building;
   const qb = (a: number, b: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(a, 0, z0), at(b, 0, z0), at(b, 0, z1), at(a, 0, z1)], c);
-  const posters = layout.items.filter((it) => it.k === 'poster').map(wallSpan);
+  const posters = hung;
   for (const u of layout.kind === 'hall' ? [] : [1.5, x1 + 2.5]) {
     if (u + 1.6 > w || (u > x0 - 2 && u < x1 + 1)) continue;
     if (posters.some((sp) => sp.wall === 'back' && u < sp.b && u + 1.6 > sp.a)) continue;
@@ -550,6 +562,32 @@ function stairsDown(ctx: Ctx, x: number, y: number) {
   }
 }
 
+/** Corredor: passadeira no meio do chão e arandelas acesas na parede entre as portas. */
+function hallDecor(ctx: Ctx, layout: PlazaLayout, accent: string) {
+  const { w } = layout;
+  const strip = (v0: number, v1: number, u0: number, u1: number, c: string) => fillPoly(ctx, [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)], c);
+  strip(1.5, 2.5, 0.6, w - 0.6, '#5e1f2e');
+  strip(1.6, 2.4, 0.7, w - 0.7, '#8e2f44');
+  strip(1.72, 1.78, 0.8, w - 0.8, '#f5c451');
+  strip(2.22, 2.28, 0.8, w - 0.8, '#f5c451');
+  for (let u = 2; u < w - 1; u += 3) {
+    const p = at(u + 0.5, 1.95);
+    fillEllipse(ctx, p.x, p.y, 3, 1.5, hexA(accent, 0.55));
+  }
+  // arandelas: entre uma porta e outra (as portas ficam a cada 3 casas a partir da 4ª)
+  for (let i = 0; i < layout.doors.length; i++) {
+    const u = layout.doors[i].x + 2;
+    if (u >= w - 1 || (layout.stairs?.up && Math.abs(u - layout.stairs.up.x) < 1.5)) continue;
+    const glow = at(u, 0, 40);
+    fillEllipse(ctx, glow.x, glow.y, 9, 7, 'rgba(255, 220, 150, 0.16)');
+    fillEllipse(ctx, glow.x, glow.y, 5, 4, 'rgba(255, 220, 150, 0.22)');
+    const q = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(u + u0, 0, z0), at(u + u1, 0, z0), at(u + u1, 0, z1), at(u + u0, 0, z1)], c);
+    q(-0.06, 0.06, 32, 38, PAL.metal);
+    q(-0.16, 0.16, 38, 44, PAL.outline);
+    q(-0.12, 0.12, 39, 43.5, '#ffdc96');
+  }
+}
+
 /** Porta de um quarto na parede do fundo do corredor (a sua tem a moldura na cor do servidor). */
 function roomDoor(ctx: Ctx, x: number, y: number, frame: string) {
   const q = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(x + u0, y, z0), at(x + u1, y, z0), at(x + u1, y, z1), at(x + u0, y, z1)], c);
@@ -629,14 +667,14 @@ function deskChair(ctx: Ctx, cx: number, cy: number) {
   box(ctx, cx - 0.28, cy - 0.28, 0.56, 0.56, 6, 2, { top: '#e8685a', left: '#c9554a', right: '#a8443b' });
 }
 
-function pouf(ctx: Ctx, x: number, y: number) {
+function pouf(ctx: Ctx, x: number, y: number, color = '#8b5cf6') {
   const c = at(x + 0.5, y + 0.5);
   fillEllipse(ctx, c.x, c.y + 1, 9, 4.5, 'rgba(0,0,0,0.25)');
-  box(ctx, x + 0.2, y + 0.2, 0.6, 0.6, 0, 6, { top: '#a77bf0', left: '#8b5cf6', right: '#6d43c9' });
+  box(ctx, x + 0.2, y + 0.2, 0.6, 0.6, 0, 6, { top: hexShade(color, 0.2), left: color, right: hexShade(color, -0.25) });
 }
 
 /** Cama com a cabeceira na parede da esquerda (2 casas ao longo de x). Com alguém dormindo, a cabeça fica no travesseiro. */
-function bed(ctx: Ctx, x: number, y: number, sleeper: PlazaAvatar | null, t: number) {
+function bed(ctx: Ctx, x: number, y: number, sleeper: PlazaAvatar | null, t: number, blanket = '#5a7fd9', mirrored = false) {
   const wood = { top: '#a87454', left: '#8a5a3b', right: '#6e4834' };
   box(ctx, x + 0.05, y + 0.1, 1.9, 0.8, 0, 6, wood);
   box(ctx, x + 0.05, y + 0.1, 0.15, 0.8, 0, 20, wood);
@@ -647,14 +685,24 @@ function bed(ctx: Ctx, x: number, y: number, sleeper: PlazaAvatar | null, t: num
     const p = at(x + 0.5, y + 0.5, 11);
     ctx.drawImage(head, 0, 0, SPRITE_W, 13, Math.round(p.x) - SPRITE_W / 2, Math.round(p.y) - 12, SPRITE_W, 13);
   }
-  box(ctx, x + 0.66, y + 0.12, 1.28, 0.76, 9, sleeper ? 3.5 : 1.5, { top: '#5a7fd9', left: '#4a6cc4', right: '#3d5aa8' });
-  if (sleeper) {
+  box(ctx, x + 0.66, y + 0.12, 1.28, 0.76, 9, sleeper ? 3.5 : 1.5, { top: blanket, left: hexShade(blanket, -0.15), right: hexShade(blanket, -0.3) });
+  if (sleeper && !mirrored) {
     const z = at(x + 0.6, y + 0.3, 30 + ((t / 90) % 10));
     ctx.fillStyle = `rgba(233, 236, 255, ${0.9 - ((t / 90) % 10) / 12})`;
     ctx.font = 'bold 7px monospace';
     ctx.fillText('z', Math.round(z.x), Math.round(z.y));
     ctx.fillText('z', Math.round(z.x) + 5, Math.round(z.y) - 6);
   }
+}
+
+/** Os "z" de quem dorme, fora do espelho (para não saírem ao contrário na cama girada). */
+function sleepZ(ctx: Ctx, it: Furniture, t: number) {
+  const head = itemPoint(it, 0.6, 0.3);
+  const z = at(head.x, head.y, 30 + ((t / 90) % 10));
+  ctx.fillStyle = `rgba(233, 236, 255, ${0.9 - ((t / 90) % 10) / 12})`;
+  ctx.font = 'bold 7px monospace';
+  ctx.fillText('z', Math.round(z.x), Math.round(z.y));
+  ctx.fillText('z', Math.round(z.x) + 5, Math.round(z.y) - 6);
 }
 
 /** O que o dono do quarto está fazendo (para acender o computador, a TV ou deitar na cama). */
@@ -680,20 +728,20 @@ function doorMat(ctx: Ctx, x: number, y: number) {
   fillPoly(ctx, [{ x: p.x, y: p.y + 4 }, { x: p.x + 9, y: p.y + 8 }, { x: p.x, y: p.y + 12 }, { x: p.x - 9, y: p.y + 8 }], '#c0714f');
 }
 
-function cafeTable(ctx: Ctx, x: number, y: number) {
+function cafeTable(ctx: Ctx, x: number, y: number, top = '#f3f0fb') {
   const c = at(x + 0.5, y + 0.5);
   fillEllipse(ctx, c.x, c.y, 9, 4.5, 'rgba(0,0,0,0.25)');
   ctx.fillStyle = PAL.metal;
   ctx.fillRect(Math.round(c.x) - 1, Math.round(c.y) - 10, 2, 10);
-  fillEllipse(ctx, c.x, c.y - 10, 10, 5, '#d8d2ea');
-  fillEllipse(ctx, c.x, c.y - 11, 10, 5, '#f3f0fb');
+  fillEllipse(ctx, c.x, c.y - 10, 10, 5, hexShade(top, -0.12));
+  fillEllipse(ctx, c.x, c.y - 11, 10, 5, top);
   ctx.fillStyle = PAL.coral;
   ctx.fillRect(Math.round(c.x) + 1, Math.round(c.y) - 15, 3, 3);
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.fillRect(Math.round(c.x) + 2, Math.round(c.y) - 18, 1, 2);
 }
 
-function floorLamp(ctx: Ctx, x: number, y: number, t: number) {
+function floorLamp(ctx: Ctx, x: number, y: number, t: number, shade = '#ffdc96') {
   const base = at(x + 0.5, y + 0.5);
   const bx = Math.round(base.x);
   const by = Math.round(base.y);
@@ -702,7 +750,7 @@ function floorLamp(ctx: Ctx, x: number, y: number, t: number) {
   ctx.fillRect(bx - 1, by - 30, 2, 30);
   fillEllipse(ctx, bx, by - 1, 4, 2, PAL.outline);
   const flicker = 0.88 + 0.12 * Math.sin(t / 1100 + x * 2);
-  fillPoly(ctx, [{ x: bx - 4, y: by - 38 }, { x: bx + 4, y: by - 38 }, { x: bx + 7, y: by - 29 }, { x: bx - 7, y: by - 29 }], `rgba(255, 220, 150, ${flicker})`);
+  fillPoly(ctx, [{ x: bx - 4, y: by - 38 }, { x: bx + 4, y: by - 38 }, { x: bx + 7, y: by - 29 }, { x: bx - 7, y: by - 29 }], hexA(shade, flicker));
   fillPoly(ctx, [{ x: bx - 4, y: by - 38 }, { x: bx + 4, y: by - 38 }, { x: bx + 4, y: by - 37 }, { x: bx - 4, y: by - 37 }], '#c9953f');
 }
 
@@ -999,25 +1047,201 @@ export function drawWallThumb(ctx: Ctx, width: number, height: number) {
 }
 
 /** Casas do pôster na parede (para saber se um quadro fixo fica atrás dele). */
-const wallSpan = (it: Furniture) => (it.r ? { wall: 'left' as const, a: it.y, b: it.y + 2 } : { wall: 'back' as const, a: it.x, b: it.x + 2 });
+const wallSpan = (it: Furniture) => {
+  const n = furnitureDef(it.k).w;
+  return it.r ? { wall: 'left' as const, a: it.y, b: it.y + n } : { wall: 'back' as const, a: it.x, b: it.x + n };
+};
 
-const itemColor = (it: Furniture) => ITEM_COLORS[it.c] ?? ITEM_COLORS[0];
+// ---- móveis novos (poltrona, aquário, caixa de som, cacto, palmeira) e os da parede ----
 
-/** Desenha um móvel (menos o tapete, que fica na camada do chão). */
-export function drawItem(ctx: Ctx, it: Furniture, scene: Scene, t: number) {
+function armchair(ctx: Ctx, x: number, y: number, color: string) {
+  const c = { top: hexShade(color, 0.15), left: color, right: hexShade(color, -0.3) };
+  const p = at(x + 0.5, y + 0.55);
+  fillEllipse(ctx, p.x, p.y + 1, 10, 5, 'rgba(0,0,0,0.22)');
+  box(ctx, x + 0.15, y + 0.2, 0.7, 0.65, 0, 8, c);
+  box(ctx, x + 0.15, y + 0.15, 0.7, 0.2, 8, 11, c);
+  box(ctx, x + 0.15, y + 0.3, 0.14, 0.55, 8, 4, c);
+  box(ctx, x + 0.71, y + 0.3, 0.14, 0.55, 8, 4, c);
+}
+
+function aquarium(ctx: Ctx, x: number, y: number, t: number) {
+  box(ctx, x + 0.1, y + 0.25, 1.8, 0.5, 0, 10, { top: '#5e3826', left: '#6e4834', right: '#4a2f22' });
+  box(ctx, x + 0.14, y + 0.29, 1.72, 0.42, 10, 2, { top: '#e8d7a8', left: '#d8c48f', right: '#c4ae79' });
+  box(ctx, x + 0.14, y + 0.29, 1.72, 0.42, 12, 13, { top: 'rgba(170, 220, 255, 0.45)', left: 'rgba(70, 150, 230, 0.7)', right: 'rgba(50, 120, 200, 0.7)' });
+  const f = (u: number, z: number) => at(x + 0.14 + u, y + 0.71, z);
+  // alga e peixinhos indo e voltando
+  ctx.fillStyle = '#2e9e6a';
+  for (const u of [0.25, 1.4]) {
+    const a = f(u, 12);
+    ctx.fillRect(Math.round(a.x), Math.round(a.y) - 7, 1, 7);
+    ctx.fillRect(Math.round(a.x) + 1, Math.round(a.y) - 4, 1, 4);
+  }
+  const fish = [
+    { c: '#f5a623', z: 19, s: 2600, o: 0 },
+    { c: '#ff4d5e', z: 16, s: 3400, o: 1.7 },
+    { c: '#f5c451', z: 22, s: 3000, o: 3.1 },
+  ];
+  for (const fi of fish) {
+    const k = (Math.sin(t / fi.s * Math.PI * 2 + fi.o) + 1) / 2;
+    const q = f(0.2 + k * 1.3, fi.z + Math.sin(t / 500 + fi.o));
+    ctx.fillStyle = fi.c;
+    ctx.fillRect(Math.round(q.x) - 1, Math.round(q.y), 3, 2);
+  }
+  // borda de cima
+  box(ctx, x + 0.12, y + 0.27, 1.76, 0.46, 25, 1, { top: '#2b2350', left: '#2b2350', right: '#1b1430' });
+}
+
+function speaker(ctx: Ctx, x: number, y: number, t: number) {
+  box(ctx, x + 0.25, y + 0.3, 0.5, 0.4, 0, 22, { top: '#3b3a48', left: '#2a2938', right: '#1f1e2b' });
+  const pulse = 1 + Math.max(0, Math.sin(t / 140)) * 0.6;
+  for (const [z, r] of [
+    [6, 3.2],
+    [15, 2.4],
+  ]) {
+    const c = at(x + 0.5, y + 0.7, z);
+    fillEllipse(ctx, c.x - 2, c.y, r * pulse, r * pulse, '#141127');
+    fillEllipse(ctx, c.x - 2, c.y, r * 0.45, r * 0.45, '#77709e');
+  }
+  const led = at(x + 0.5, y + 0.7, 20);
+  ctx.fillStyle = Math.floor(t / 500) % 2 ? '#3ad07a' : '#2e9e6a';
+  ctx.fillRect(Math.round(led.x) - 2, Math.round(led.y), 1, 1);
+}
+
+function cactus(ctx: Ctx, x: number, y: number) {
+  box(ctx, x + 0.3, y + 0.3, 0.4, 0.4, 0, 6, { top: '#5a3a2a', left: '#d98b5f', right: '#b46e4f' });
+  const c = at(x + 0.5, y + 0.5, 6);
+  const cx = Math.round(c.x);
+  const cy = Math.round(c.y);
+  ctx.fillStyle = '#2b6a4f';
+  ctx.fillRect(cx - 2, cy - 16, 5, 16);
+  ctx.fillRect(cx - 6, cy - 11, 3, 6);
+  ctx.fillRect(cx - 6, cy - 7, 4, 2);
+  ctx.fillRect(cx + 4, cy - 13, 3, 6);
+  ctx.fillRect(cx + 3, cy - 9, 3, 2);
+  ctx.fillStyle = '#3f8f6a';
+  ctx.fillRect(cx - 1, cy - 15, 2, 14);
+  ctx.fillRect(cx - 5, cy - 10, 1, 4);
+  ctx.fillRect(cx + 5, cy - 12, 1, 4);
+  ctx.fillStyle = '#f08fb0';
+  ctx.fillRect(cx, cy - 18, 2, 2);
+}
+
+function palm(ctx: Ctx, x: number, y: number) {
+  box(ctx, x + 0.25, y + 0.25, 0.5, 0.5, 0, 9, { top: '#5a3a2a', left: '#e8e4f2', right: '#c4c0d6' });
+  const c = at(x + 0.5, y + 0.5, 9);
+  const cx = Math.round(c.x);
+  const cy = Math.round(c.y);
+  ctx.fillStyle = '#8a5a3b';
+  for (let i = 0; i < 22; i++) ctx.fillRect(cx - 1 + Math.round(Math.sin(i / 6) * 1.5), cy - i, 2, 1);
+  const top = { x: cx + 1, y: cy - 22 };
+  const frond = (dx: number, dy: number, color: string) => {
+    for (let i = 0; i <= 10; i++) {
+      const k = i / 10;
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.round(top.x + dx * k), Math.round(top.y + dy * k + 5 * k * k), 2, 2);
+    }
+  };
+  frond(-12, -2, '#2b6a4f');
+  frond(12, -2, '#2b6a4f');
+  frond(-8, -7, '#3f8f6a');
+  frond(8, -7, '#3f8f6a');
+  frond(-3, -9, '#5cb889');
+  frond(4, -9, '#5cb889');
+}
+
+/** Quadrilátero na parede, ao longo de um móvel de parede (u em casas a partir do começo dele, z em altura). */
+function wallQuad(ctx: Ctx, it: Furniture, u0: number, u1: number, z0: number, z1: number, color: string) {
+  const pt = (u: number, z: number) => (it.r ? at(0, it.y + u, z) : at(it.x + u, 0, z));
+  fillPoly(ctx, [pt(u0, z0), pt(u1, z0), pt(u1, z1), pt(u0, z1)], color);
+}
+const wallPoint = (it: Furniture, u: number, z: number) => (it.r ? at(0, it.y + u, z) : at(it.x + u, 0, z));
+
+function painting(ctx: Ctx, it: Furniture, color: string) {
+  wallQuad(ctx, it, 0.2, 1.8, 26, 50, PAL.outline);
+  wallQuad(ctx, it, 0.27, 1.73, 27, 49, '#c9953f');
+  wallQuad(ctx, it, 0.35, 1.65, 28.5, 47.5, hexShade(color, 0.55));
+  // morros e um sol
+  wallQuad(ctx, it, 0.35, 1.65, 28.5, 34, hexShade(color, -0.15));
+  wallQuad(ctx, it, 0.7, 1.4, 34, 38, color);
+  const sun = wallPoint(it, 1.3, 43);
+  fillEllipse(ctx, sun.x, sun.y, 2, 2, '#f5c451');
+}
+
+function clock(ctx: Ctx, it: Furniture) {
+  const c = wallPoint(it, 0.5, 42);
+  fillEllipse(ctx, c.x, c.y, 7, 7, PAL.outline);
+  fillEllipse(ctx, c.x, c.y, 6, 6, '#f3f0fa');
+  const now = new Date();
+  const hand = (turn: number, len: number, color: string) => {
+    const a = turn * Math.PI * 2 - Math.PI / 2;
+    ctx.fillStyle = color;
+    for (let i = 0; i <= len; i++) ctx.fillRect(Math.round(c.x + Math.cos(a) * i), Math.round(c.y + Math.sin(a) * i), 1, 1);
+  };
+  hand(((now.getHours() % 12) + now.getMinutes() / 60) / 12, 3, PAL.outline);
+  hand(now.getMinutes() / 60, 5, '#4b4470');
+  ctx.fillStyle = '#e8685a';
+  ctx.fillRect(Math.round(c.x), Math.round(c.y), 1, 1);
+}
+
+function neon(ctx: Ctx, it: Furniture, color: string, t: number) {
+  const on = 0.75 + 0.25 * Math.sin(t / 260 + it.x);
+  wallQuad(ctx, it, 0.15, 1.85, 32, 54, 'rgba(20, 17, 39, 0.55)');
+  // coração e um risco ondulado do lado, com brilho em volta
+  for (const [r, a] of [
+    [2, 0.18 * on],
+    [1, 0.9 * on],
+  ] as const) {
+    ctx.fillStyle = hexA(color, a);
+    for (let i = 0; i <= 40; i++) {
+      const k = (i / 40) * Math.PI * 2;
+      const hx = 16 * Math.sin(k) ** 3;
+      const hy = 13 * Math.cos(k) - 5 * Math.cos(2 * k) - 2 * Math.cos(3 * k) - Math.cos(4 * k);
+      const p = wallPoint(it, 0.6 + hx / 70, 43 + hy / 2.2);
+      ctx.fillRect(Math.round(p.x) - (r - 1), Math.round(p.y) - (r - 1), r === 1 ? 1 : 3, r === 1 ? 1 : 3);
+    }
+    for (let i = 0; i <= 20; i++) {
+      const u = 1.05 + (i / 20) * 0.65;
+      const p = wallPoint(it, u, 43 + Math.sin(i / 2.5) * 3);
+      ctx.fillRect(Math.round(p.x) - (r - 1), Math.round(p.y) - (r - 1), r === 1 ? 1 : 3, r === 1 ? 1 : 3);
+    }
+  }
+}
+
+/**
+ * Desenha um móvel girado: o mesmo desenho, espelhado em volta do meio dele (no isométrico, espelhar a tela troca x
+ * por y). Assim todo móvel com frente gira sem precisar de um segundo desenho.
+ */
+function mirrored(ctx: Ctx, it: Furniture, draw: (it0: Furniture) => void) {
+  if (!it.r) return draw(it);
+  const d = furnitureDef(it.k);
+  const cx = it.x + d.h / 2;
+  const cy = it.y + d.w / 2;
+  const sx = Math.round(at(cx, cy).x);
+  ctx.save();
+  ctx.translate(2 * sx, 0);
+  ctx.scale(-1, 1);
+  draw({ ...it, x: cx - d.w / 2, y: cy - d.h / 2, r: 0 });
+  ctx.restore();
+}
+
+/** A cor escolhida do móvel; a primeira, nos que já existiam sem cor, é a original deles. */
+const itemColor = (it: Furniture) => (it.c === 0 ? furnitureDef(it.k).base : undefined) ?? ITEM_COLORS[it.c] ?? ITEM_COLORS[0];
+
+/** Desenha um móvel (menos o tapete, que fica na camada do chão). `look`: no quarto, o que o dono está fazendo. */
+export function drawItem(ctx: Ctx, it: Furniture, scene: Scene, t: number, look: NookLook = { desk: false, game: false, sleeper: null }) {
   switch (it.k) {
     case 'plant':
-      return plant(ctx, it.x, it.y);
+      return plant(ctx, it.x, it.y, itemColor(it));
     case 'tree':
       return tree(ctx, it.x, it.y);
     case 'flowers':
       return flowers(ctx, it.x, it.y, itemColor(it));
     case 'lamp':
-      return scene !== 'lobby' ? floorLamp(ctx, it.x, it.y, t) : lampPost(ctx, it.x, it.y, t);
+      return scene !== 'lobby' ? floorLamp(ctx, it.x, it.y, t, itemColor(it)) : lampPost(ctx, it.x, it.y, t, it.c ? itemColor(it) : undefined);
     case 'bench':
-      return bench(ctx, it.x, it.y);
+      return mirrored(ctx, it, (m) => bench(ctx, m.x, m.y, itemColor(it)));
     case 'cafe':
-      return cafeTable(ctx, it.x, it.y);
+      return cafeTable(ctx, it.x, it.y, itemColor(it));
     case 'stool':
       return stool(ctx, it.x, it.y, itemColor(it));
     case 'sofa':
@@ -1025,9 +1249,9 @@ export function drawItem(ctx: Ctx, it: Furniture, scene: Scene, t: number) {
     case 'rug':
       return rug(ctx, it, itemColor(it));
     case 'shelf':
-      return shelf(ctx, it.x, it.y);
+      return mirrored(ctx, it, (m) => shelf(ctx, m.x, m.y));
     case 'arcade':
-      return arcade(ctx, it.x, it.y, itemColor(it), t);
+      return mirrored(ctx, it, (m) => arcade(ctx, m.x, m.y, itemColor(it), t));
     case 'fountain':
       return fountain(ctx, it.x, it.y, t);
     case 'ledge':
@@ -1037,7 +1261,78 @@ export function drawItem(ctx: Ctx, it: Furniture, scene: Scene, t: number) {
       return trophy(ctx, it);
     case 'poster':
       return poster(ctx, it);
+    case 'armchair':
+      return mirrored(ctx, it, (m) => armchair(ctx, m.x, m.y, itemColor(it)));
+    case 'aquarium':
+      return mirrored(ctx, it, (m) => aquarium(ctx, m.x, m.y, t));
+    case 'speaker':
+      return mirrored(ctx, it, (m) => speaker(ctx, m.x, m.y, t));
+    case 'cactus':
+      return cactus(ctx, it.x, it.y);
+    case 'palm':
+      return palm(ctx, it.x, it.y);
+    case 'painting':
+      return painting(ctx, it, itemColor(it));
+    case 'clock':
+      return clock(ctx, it);
+    case 'neon':
+      return neon(ctx, it, itemColor(it), t);
+    case 'desk':
+      return mirrored(ctx, it, (m) => {
+        deskPC(ctx, m.x, m.y, look.desk, t);
+        deskChair(ctx, m.x + 1, m.y + 1.45);
+      });
+    case 'tvGame':
+      return mirrored(ctx, it, (m) => tvGame(ctx, m.x, m.y, look.game, t));
+    case 'pouf':
+      return pouf(ctx, it.x, it.y, itemColor(it));
+    case 'bed':
+      return mirrored(ctx, it, (m) => bed(ctx, m.x, m.y, look.sleeper, t, itemColor(it), !!it.r));
   }
+}
+
+let glowCanvas: HTMLCanvasElement | null = null;
+/**
+ * Destaca um desenho (o móvel selecionado no editor): contorno amarelo em volta e um brilho pulsando por cima. `draw`
+ * desenha no contexto que receber, com a mesma câmera de `ctx`.
+ */
+export function highlight(ctx: Ctx, draw: (c: Ctx) => void, t: number) {
+  const { width, height } = ctx.canvas;
+  glowCanvas ??= document.createElement('canvas');
+  if (glowCanvas.width !== width || glowCanvas.height !== height) {
+    glowCanvas.width = width;
+    glowCanvas.height = height;
+  }
+  const g = glowCanvas.getContext('2d')!;
+  const paint = (color: string) => {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, width, height);
+    g.setTransform(ctx.getTransform());
+    draw(g);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = color;
+    g.fillRect(0, 0, width, height);
+    g.globalCompositeOperation = 'source-over';
+  };
+  ctx.save();
+  paint('#ffe066');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (const [dx, dy] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ])
+    ctx.drawImage(glowCanvas, dx, dy);
+  ctx.restore();
+  draw(ctx);
+  paint(`rgba(255, 255, 255, ${0.12 + 0.12 * Math.sin(t / 220)})`);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(glowCanvas, 0, 0);
+  ctx.restore();
 }
 
 /** Profundidade de um móvel: o meio dele (os grandes ficam atrás de quem passa na frente). */
@@ -1078,6 +1373,7 @@ export function renderStatic(layout: PlazaLayout, accent: string, mine = -1) {
     if (layout.door.x >= 0) exitMat(ctx, layout.door.x, layout.door.y);
     if (layout.elevator) elevator(ctx, layout.elevator.x, layout.elevator.y, layout.level);
     layout.doors.forEach((d, i) => roomDoor(ctx, d.x, d.y, i === mine ? accent : '#5e3826'));
+    if (layout.kind === 'hall') hallDecor(ctx, layout, accent);
     if (layout.stairs?.up) stairsUp(ctx, layout.stairs.up.x, layout.stairs.up.y);
     if (layout.stairs?.down) stairsDown(ctx, layout.stairs.down.x, layout.stairs.down.y);
   } else {
@@ -1115,14 +1411,6 @@ export interface TableLook {
 export function sceneObjects(layout: PlazaLayout, tables: TableLook[], accent: string, t: number, nook: NookLook = { desk: false, game: false, sleeper: null }): Drawable[] {
   const out: Drawable[] = [];
   const d = (x: number, y: number) => x + y;
-  const n = layout.nook;
-  if (n) {
-    out.push({ depth: d(n.desk.x + 1, n.desk.y + 0.5), draw: (ctx) => deskPC(ctx, n.desk.x, n.desk.y, nook.desk, t) });
-    out.push({ depth: d(n.tv.x + 1, n.tv.y + 0.5), draw: (ctx) => tvGame(ctx, n.tv.x, n.tv.y, nook.game, t) });
-    out.push({ depth: d(n.pouf.x + 0.5, n.pouf.y + 0.4), draw: (ctx) => pouf(ctx, n.pouf.x, n.pouf.y) });
-    out.push({ depth: d(n.desk.x + 1, n.desk.y + 1.45) - 0.01, draw: (ctx) => deskChair(ctx, n.desk.x + 1, n.desk.y + 1.45) });
-    out.push({ depth: d(n.bed.x + 1, n.bed.y + 0.5), draw: (ctx) => bed(ctx, n.bed.x, n.bed.y, nook.sleeper, t) });
-  }
   layout.tables.forEach((tb, i) => {
     const look = tables[i] ?? { locked: false, live: false };
     out.push({ depth: d(tb.tv.x + 1, tb.tv.y + 0.5), draw: (ctx) => tv(ctx, tb.tv.x, tb.tv.y, look.live, t) });
@@ -1135,8 +1423,9 @@ export function sceneObjects(layout: PlazaLayout, tables: TableLook[], accent: s
   for (const it of layout.items) {
     if (it.k === 'rug') continue;
     const under = ledgeAt.get(`${it.x}:${it.y}`);
-    const depth = it.k === 'poster' ? -100 : (it.k === 'trophyGold' || it.k === 'trophyCup') && under ? itemDepth(under) + 0.01 : itemDepth(it);
-    out.push({ depth, draw: (ctx) => drawItem(ctx, it, layout.kind, t) });
+    const depth = furnitureDef(it.k).place === 'wall' ? -100 : (it.k === 'trophyGold' || it.k === 'trophyCup') && under ? itemDepth(under) + 0.01 : itemDepth(it);
+    out.push({ depth, draw: (ctx) => drawItem(ctx, it, layout.kind, t, nook) });
+    if (it.k === 'bed' && it.r && nook.sleeper) out.push({ depth: depth + 0.01, draw: (ctx) => sleepZ(ctx, it, t) });
   }
   if (!indoor) out.push({ depth: -1, draw: (ctx) => portal(ctx, layout.spawn.x, layout.spawn.y, t) });
   return out;
