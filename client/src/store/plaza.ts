@@ -90,7 +90,8 @@ interface PlazaState {
   /** em cima de uma escada do corredor: sobe ou desce um andar */
   stairs: () => void;
   /** no elevador: ir para o corredor dos quartos */
-  goHall: () => void;
+  /** no elevador: vai para um andar do corredor dos quartos (0 = o primeiro) */
+  goHall: (floor?: number) => void;
   /** na frente da porta, no corredor: entrar no quarto de alguém */
   enterRoom: (owner: string) => void;
   /** entrei numa call com a praça aberta: o boneco vai para a mesa dela, lá dentro */
@@ -184,9 +185,9 @@ export const usePlaza = create<PlazaState>((set, get) => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:stairs', { serverId });
     },
-    goHall: () => {
+    goHall: (floor = 0) => {
       const serverId = get().serverId;
-      if (serverId) getSocket()?.emit('plaza:hall', { serverId });
+      if (serverId) getSocket()?.emit('plaza:hall', { serverId, floor });
     },
     enterRoom: (owner) => {
       const serverId = get().serverId;

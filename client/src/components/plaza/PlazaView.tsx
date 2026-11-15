@@ -1234,7 +1234,6 @@ export default function PlazaView() {
   // no corredor e lá em cima não há porta para a praça: o botão leva ao elevador
   const goDoor = () => {
     if (layout.door.x >= 0) return moveMe(layout.door);
-    if (layout.stairs?.down) return goStairs(layout.stairs.down);
     if (!layout.elevator) return;
     moveMe(layout.elevator);
     world.current.pendingElevator = true;
@@ -1470,7 +1469,7 @@ export default function PlazaView() {
           <LobbyMic inCall={!!voiceChannelId} />
           <button onClick={goDoor} className={hud.primary}>
             <DoorOpen size={18} />
-            <span className="hidden sm:inline">{myScene === 'room' ? 'Sair do quarto' : myScene === 'hall' && hallFloor > 0 ? 'Descer a escada' : myScene === 'hall' || (inside && myFloor > 0) ? 'Elevador' : inside ? 'Voltar à praça' : 'Entrar no prédio'}</span>
+            <span className="hidden sm:inline">{myScene === 'room' ? 'Sair do quarto' : myScene === 'hall' || (inside && myFloor > 0) ? 'Elevador' : inside ? 'Voltar à praça' : 'Entrar no prédio'}</span>
           </button>
         </div>
         {myChannel && (
@@ -1532,10 +1531,12 @@ export default function PlazaView() {
       {tvMenu && <TvShareMenu onClose={() => setTvMenu(false)} />}
       {floorMenu && (
         <FloorMenu
-          inHall={myScene === 'hall'}
-          onHall={() => {
+          hallFloors={hallFloors}
+          hallAt={myScene === 'hall' ? hallFloor : -1}
+          myRoomFloor={hallDoors.includes(me.id) ? hallSpot(hallDoors.indexOf(me.id)).level : -1}
+          onHall={(f) => {
             setFloorMenu(false);
-            usePlaza.getState().goHall();
+            usePlaza.getState().goHall(f);
           }}
           floors={floorsAll}
           current={inside ? myFloor : -1}
@@ -1713,7 +1714,9 @@ function FloorAssign({ serverId, channels }: { serverId: string; channels: Chann
 function FloorMenu({
   floors,
   current,
-  inHall,
+  hallFloors,
+  hallAt,
+  myRoomFloor,
   onHall,
   channelName,
   onPick,
@@ -1721,8 +1724,13 @@ function FloorMenu({
 }: {
   floors: (string | null)[][];
   current: number;
-  inHall: boolean;
-  onHall: () => void;
+  /** andares do corredor dos quartos */
+  hallFloors: number;
+  /** em que andar do corredor eu estou (-1 = fora dele) */
+  hallAt: number;
+  /** em que andar do corredor fica o meu quarto (-1 = sem quarto) */
+  myRoomFloor: number;
+  onHall: (floor: number) => void;
   channelName: (id: string | null) => string | undefined;
   onPick: (floor: number) => void;
   onClose: () => void;
@@ -1743,11 +1751,15 @@ function FloorMenu({
             {i === current && <span className="text-[11px] text-fg-subtle">você está aqui</span>}
           </button>
         ))}
-        <button disabled={inHall} onClick={onHall} className={item(inHall)}>
-          <span className="w-16 shrink-0 font-display font-bold">Quartos</span>
-          <span className="min-w-0 flex-1 truncate text-fg-muted">o corredor com o quarto de cada um</span>
-          {inHall && <span className="text-[11px] text-fg-subtle">você está aqui</span>}
-        </button>
+        <div className={cx(hud.label, 'px-2.5 pt-2 pb-0.5')}>Quartos</div>
+        {Array.from({ length: hallFloors }, (_, i) => (
+          <button key={`q${i}`} disabled={hallAt === i} onClick={() => onHall(i)} className={item(hallAt === i)}>
+            <span className="w-16 shrink-0 font-display font-bold">{hallFloors > 1 ? `${i + 1}º andar` : 'Corredor'}</span>
+            <span className="min-w-0 flex-1 truncate text-fg-muted">{hallFloors > 1 ? `quartos ${i * HALL_DOORS_PER_FLOOR + 1} a ${(i + 1) * HALL_DOORS_PER_FLOOR}` : 'o quarto de cada um'}</span>
+            {myRoomFloor === i && hallAt !== i && <span className="rounded-full bg-accent px-2 py-0.5 text-[10.5px] font-bold text-on-accent">seu quarto</span>}
+            {hallAt === i && <span className="text-[11px] text-fg-subtle">você está aqui</span>}
+          </button>
+        ))}
       </div>
     </div>
   );
