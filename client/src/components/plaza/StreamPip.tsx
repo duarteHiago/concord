@@ -1,6 +1,6 @@
 // Mini TV da Praça: a transmissão de alguém da mesa numa janelinha flutuante por cima do mapa (como um
 // picture-in-picture). Dá para arrastar, redimensionar, pôr em tela cheia e mexer no volume, e continuar andando.
-import { Maximize, Maximize2, Volume2, VolumeX, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize, Maximize2, Volume2, VolumeX, X } from 'lucide-react';
 import { Track, type LocalTrack, type RemoteTrack } from 'livekit-client';
 import { useEffect, useRef, useState } from 'react';
 import { useVoice } from '../../store/voice';
@@ -8,7 +8,22 @@ import { Spinner } from '../ui';
 
 const MIN_W = 240;
 
-export function StreamPip({ userId, name, onClose, onOpenCall }: { userId: string; name: string; onClose: () => void; onOpenCall: () => void }) {
+export function StreamPip({
+  userId,
+  name,
+  channels,
+  onChannel,
+  onClose,
+  onOpenCall,
+}: {
+  userId: string;
+  name: string;
+  /** quem está transmitindo na call (cada um é um canal) */
+  channels: string[];
+  onChannel: (userId: string) => void;
+  onClose: () => void;
+  onOpenCall: () => void;
+}) {
   const room = useVoice((s) => s.room);
   useVoice((s) => s.tick); // redesenha quando a faixa chega
   const volume = useVoice((s) => s.streamVolumes[userId] ?? 1);
@@ -51,6 +66,35 @@ export function StreamPip({ userId, name, onClose, onOpenCall }: { userId: strin
     window.addEventListener('pointerup', onUp);
   };
 
+  // trocar de canal: chiado de TV antiga por um instante (e enquanto a imagem nova não chega)
+  const [noiseUntil, setNoiseUntil] = useState(0);
+  const [, setNow] = useState(0);
+  const ch = channels.indexOf(userId);
+  const zap = (dir: 1 | -1) => {
+    if (channels.length < 2) {
+      // um canal só: um chiado curto mesmo assim, como a TV de verdade
+      setNoiseUntil(Date.now() + 250);
+      playStatic(volume, 0.2);
+      return;
+    }
+    const next = channels[(Math.max(0, ch) + dir + channels.length) % channels.length];
+    setNoiseUntil(Date.now() + 550);
+    playStatic(volume, 0.45);
+    onChannel(next);
+  };
+  // mudou de canal sozinha (a transmissão de antes acabou): chiado também
+  const firstChannel = useRef(userId);
+  useEffect(() => {
+    if (userId === firstChannel.current) return;
+    firstChannel.current = userId;
+    setNoiseUntil((u) => Math.max(u, Date.now() + 450));
+  }, [userId]);
+  useEffect(() => {
+    if (!noiseUntil) return;
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, noiseUntil - Date.now()) + 10);
+    return () => clearTimeout(t);
+  }, [noiseUntil]);
+  const noisy = Date.now() < noiseUntil;
   const muted = volume === 0;
   return (
     <div
@@ -89,7 +133,18 @@ export function StreamPip({ userId, name, onClose, onOpenCall }: { userId: strin
         </div>
         {/* tela */}
         <div className="relative aspect-video overflow-hidden rounded-[14px] border-2 border-[#1b1430] bg-black">
-          {track ? <PipVideo track={track} /> : <div className="grid h-full place-items-center"><Spinner /></div>}
+          {track && <PipVideo track={track} />}
+          {(!track || noisy) && <TvStatic />}
+          {!track && !noisy && (
+            <div className="absolute inset-0 grid place-items-center">
+              <Spinner />
+            </div>
+          )}
+          {channels.length > 0 && (
+            <span className="plaza-pixel pointer-events-none absolute top-1.5 right-2 text-[13px] font-bold text-[#7dff9a] [text-shadow:0_0_6px_#2e9e6a]">
+              CH {Math.max(0, ch) + 1}
+            </span>
+          )}
           {/* reflexo de vidro */}
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),transparent_40%)]" />
         </div>
@@ -100,8 +155,16 @@ export function StreamPip({ userId, name, onClose, onOpenCall }: { userId: strin
           </button>
           <input type="range" min={0} max={2} step={0.05} value={volume} onChange={(e) => setVolume(userId, Number(e.target.value), true)} aria-label="Volume da transmissão" className="w-24" />
           <span className="flex-1" />
-          <span className="h-3.5 w-3.5 rounded-full border-2 border-[#1b1430] bg-[#e8685a]" />
-          <span className="h-3.5 w-3.5 rounded-full border-2 border-[#1b1430] bg-[#f5c451]" />
+          {/* trocar de canal: as outras transmissões da call */}
+          <button onClick={() => zap(-1)} title="Canal anterior" aria-label="Canal anterior" className="grid h-6 w-6 place-items-center rounded-full border-2 border-[#1b1430] bg-[#e8685a] hover:brightness-110 active:scale-90">
+            <ChevronLeft size={13} />
+          </button>
+          <span className="plaza-pixel min-w-[34px] text-center text-[11px] text-white/70">
+            {Math.max(0, ch) + 1}/{Math.max(1, channels.length)}
+          </span>
+          <button onClick={() => zap(1)} title="Próximo canal" aria-label="Próximo canal" className="grid h-6 w-6 place-items-center rounded-full border-2 border-[#1b1430] bg-[#f5c451] text-[#1b1430] hover:brightness-110 active:scale-90">
+            <ChevronRight size={13} />
+          </button>
           {/* canto para redimensionar */}
           <span onPointerDown={(e) => drag(e, 'resize')} title="Arraste para redimensionar" className="ml-1 h-4 w-4 cursor-nwse-resize rounded-sm bg-[linear-gradient(135deg,transparent_50%,rgba(255,255,255,0.45)_50%)]" />
         </div>
@@ -121,4 +184,58 @@ function PipVideo({ track }: { track: LocalTrack | RemoteTrack }) {
     };
   }, [track]);
   return <video ref={ref} autoPlay playsInline muted className="h-full w-full object-contain" />;
+}
+
+/** Chiado de TV antiga: pontinhos cinza mudando a cada quadro, com linhas de varredura. */
+function TvStatic() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current!;
+    const ctx = canvas.getContext('2d')!;
+    const img = ctx.createImageData(canvas.width, canvas.height);
+    let raf = 0;
+    const frame = () => {
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.random() * 255;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      // faixa mais clara rolando, como a TV fora de sintonia
+      const band = (performance.now() / 6) % canvas.height;
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(0, band, canvas.width, 8);
+      raf = requestAnimationFrame(frame);
+    };
+    frame();
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div className="absolute inset-0">
+      <canvas ref={ref} width={160} height={90} className="h-full w-full [image-rendering:pixelated]" />
+      <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(0,0,0,0.25)_0_1px,transparent_1px_3px)]" />
+    </div>
+  );
+}
+
+/** O som do chiado (ruído branco curto e baixinho), no volume da mini TV. */
+function playStatic(volume: number, seconds: number) {
+  if (volume <= 0 || typeof AudioContext === 'undefined') return;
+  try {
+    const ac = new AudioContext();
+    const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * seconds), ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const gain = ac.createGain();
+    gain.gain.setValueAtTime(0.06 * Math.min(1, volume), ac.currentTime);
+    gain.gain.linearRampToValueAtTime(0, ac.currentTime + seconds);
+    src.connect(gain).connect(ac.destination);
+    src.start();
+    src.onended = () => void ac.close();
+  } catch {
+    // sem áudio: só a imagem
+  }
 }

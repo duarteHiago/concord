@@ -106,6 +106,8 @@ interface Figure {
   fy: number;
   /** sentado numa cadeira: o meio da mesa (para pôr a bebida em cima dela) */
   table?: { x: number; y: number };
+  /** em volta de qual mesa (sentado ou de pé), para esconder os nomes quando ela lota */
+  atTable?: number;
   /** o dono do quarto, aparecendo onde está (no computador ou no videogame) */
   nook?: 'desk' | 'game';
 }
@@ -138,14 +140,22 @@ function movedStyle(style: PlaceStyle, idx: number, to: Point & { r?: 0 | 1 }): 
 const facingOf = (dx: number, dy: number): Facing => (dx > 0 ? 0 : dx < 0 ? 2 : dy > 0 ? 1 : 3);
 
 /** Quem não cabe nas 8 cadeiras fica de pé em volta da mesa. */
+// primeiro os cantos da mesa (espremidos ali, como se estivessem na mesa), depois uma roda em volta; nada na
+// frente da TV (que fica atrás da mesa, 2 casas acima; o canto de trás à direita cairia na frente da tela)
 const STANDING = [
+  { dx: -1, dy: 2 },
+  { dx: 2, dy: 2 },
+  { dx: -1, dy: -1 },
   { dx: 0, dy: 3 },
+  { dx: 1, dy: 3 },
+  { dx: -2, dy: 0 },
+  { dx: 3, dy: 1 },
+  { dx: -2, dy: 1 },
+  { dx: 3, dy: 0 },
   { dx: -1, dy: 3 },
   { dx: 2, dy: 3 },
   { dx: -2, dy: 2 },
   { dx: 3, dy: 2 },
-  { dx: -2, dy: 0 },
-  { dx: 3, dy: 0 },
 ];
 
 function loadPixelFont() {
@@ -546,13 +556,17 @@ export default function PlazaView() {
         if (seat < tb.seats.length) {
           const s = tb.seats[seat];
           const p = at(s.x + 0.5, s.y + 0.5, SEAT_Z);
-          figs.push({ userId, avatar, x: s.x + 0.5, y: s.y + 0.5, facing: s.facing, pose: 'sit', seated: true, bob: 0, fx: p.x, fy: p.y + 2, table: { x: tb.x + 1, y: tb.y + 1 } });
+          figs.push({ userId, avatar, x: s.x + 0.5, y: s.y + 0.5, facing: s.facing, pose: 'sit', seated: true, bob: 0, fx: p.x, fy: p.y + 2, table: { x: tb.x + 1, y: tb.y + 1 }, atTable: table });
         } else {
+          // não cabe nas cadeiras: de pé em volta, virado para a mesa
           const o = STANDING[(seat - tb.seats.length) % STANDING.length];
           const sx = tb.x + o.dx;
           const sy = tb.y + o.dy;
           const p = at(sx + 0.5, sy + 0.5);
-          figs.push({ userId, avatar, x: sx + 0.5, y: sy + 0.5, facing: 3, pose: 'stand', seated: true, bob: 0, fx: p.x, fy: p.y });
+          const dx = tb.x + 1 - (sx + 0.5);
+          const dy = tb.y + 1 - (sy + 0.5);
+          const facing = Math.abs(dx) > Math.abs(dy) ? facingOf(Math.sign(dx), 0) : facingOf(0, Math.sign(dy));
+          figs.push({ userId, avatar, x: sx + 0.5, y: sy + 0.5, facing, pose: 'stand', seated: true, bob: 0, fx: p.x, fy: p.y, atTable: table });
         }
       }
       // no quarto: o dono aparece no computador ou no videogame; longe do Concord, na cama. Se ele está na Praça
@@ -721,9 +735,17 @@ export default function PlazaView() {
 
       // rótulos em HTML (nomes, balões, placas) acompanham os bonecos
       const toCss = (nx: number, ny: number) => ({ x: ((nx - viewX) * scale) / dpr, y: ((ny - viewY) * scale) / dpr });
+      // mesa com 3 ou mais: os nomes (e o "ao vivo") somem, para não cobrir todo mundo; quem fala aparece
+      const crowd = new Map<number, number>();
+      for (const f of figs) if (f.atTable !== undefined) crowd.set(f.atTable, (crowd.get(f.atTable) ?? 0) + 1);
+      const talking = useVoice.getState().speaking;
       for (const f of figs) {
         const el = labelRefs.current.get(f.userId);
         if (!el) continue;
+        if (f.atTable !== undefined && (crowd.get(f.atTable) ?? 0) >= 3 && !talking[f.userId]) {
+          el.style.display = 'none';
+          continue;
+        }
         const p = toCss(f.fx, f.fy - 31 + f.bob - (f.pose === 'sit' ? -3 : 0));
         el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
         el.style.zIndex = String(Math.round((f.x + f.y) * 10));
@@ -1160,12 +1182,16 @@ export default function PlazaView() {
     if (streamer) setPip(streamer.userId);
   }, [voiceChannelId, voiceStates, me.id]);
 
-  // a transmissão acabou, ou saí da call: a mini TV fecha
+  // os "canais" da mini TV: quem está transmitindo na minha call (na ordem da lista da call)
+  const channels = useMemo(
+    () => (voiceStates ?? []).filter((v) => v.channelId === voiceChannelId && v.streaming && v.userId !== me.id).map((v) => v.userId),
+    [voiceStates, voiceChannelId, me.id],
+  );
+  // a transmissão acabou: pula para outro canal, se tiver; saí da call (ou ninguém mais transmite): a mini TV fecha
   useEffect(() => {
-    if (!pip) return;
-    const v = (voiceStates ?? []).find((s) => s.userId === pip);
-    if (!v || !v.streaming || v.channelId !== voiceChannelId) setPip(null);
-  }, [pip, voiceStates, voiceChannelId]);
+    if (!pip || channels.includes(pip)) return;
+    setPip(channels[0] ?? null);
+  }, [pip, channels]);
 
   // voz por proximidade: vale na praça e dentro do prédio; desliga durante uma call (para não ouvir duas conversas)
   const lobbyVoice = phase === 'ready' && !voiceChannelId;
@@ -1546,6 +1572,8 @@ export default function PlazaView() {
         <StreamPip
           userId={pip}
           name={memberById.get(pip) ? memberName(memberById.get(pip)!) : 'Alguém'}
+          channels={channels}
+          onChannel={setPip}
           onClose={() => setPip(null)}
           onOpenCall={() => {
             setPip(null);
