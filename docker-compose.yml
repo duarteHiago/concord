@@ -27,6 +27,8 @@ services:
       # gravar a sala: só nestes servidores (ids separados por vírgula); vazio = em todos
       RECORDING_SERVERS: ${RECORDING_SERVERS:-}
       PLAZA_SERVERS: ${PLAZA_SERVERS:-}
+      # CSP completa aplicada (padrão); CSP_ENFORCE=false no .env volta a só observar, sem precisar de outra versão
+      CSP_ENFORCE: ${CSP_ENFORCE:-}
       PUBLIC_URL: https://${DOMAIN}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
