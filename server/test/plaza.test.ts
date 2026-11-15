@@ -200,7 +200,7 @@ describe('praça: andando e conversando', () => {
     assert.equal(gotB.length, 0);
   });
 
-  it('a voz do lobby só libera para quem está no lobby', async () => {
+  it('a voz da Praça vale no lobby e dentro do prédio, e só para quem está nela', async () => {
     const { ana, serverId, a } = await setup();
     assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 409);
     await emitAck(a, 'plaza:enter', { serverId });
@@ -212,7 +212,25 @@ describe('praça: andando e conversando', () => {
     await sleep(100);
     a.emit('plaza:door', { serverId });
     await sleep(200);
+    assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 200);
+    a.emit('plaza:leave', { serverId });
+    await sleep(150);
     assert.equal((await ana.post(`/servers/${serverId}/plaza/voice-token`)).status, 409);
+  });
+
+  it('quem está numa call já chega lá dentro, na mesa dela', async () => {
+    const { ana, serverId, a } = await setup();
+    const detail = (await ana.get(`/servers/${serverId}`)).body as { channels: { id: string; type: string; name: string }[] };
+    const voice = detail.channels.filter((c) => c.type === 'voice');
+    const target = voice.find((c) => c.name === 'mesa-1')!;
+    assert.equal(((await emitAck(a, 'voice:join', { channelId: target.id })) as { ok: boolean }).ok, true);
+    const r = await emitAck(a, 'plaza:enter', { serverId });
+    const me = (r.walkers as { userId: string; scene: string; x: number; y: number }[]).find((w) => w.userId === ana.id)!;
+    assert.equal(me.scene, 'inside');
+    const inside = buildLayout((r.tables as unknown[]).length);
+    const idx = (r.tables as (string | null)[]).indexOf(target.id);
+    const front = inside.tables[idx].front;
+    assert.ok(Math.abs(me.x - front.x) <= 2 && Math.abs(me.y - front.y) <= 2);
   });
 
   it('balão sai limpo, e quem bloqueou não recebe', async () => {
@@ -259,6 +277,41 @@ describe('praça: andando e conversando', () => {
     assert.equal((await ana.put(`/servers/${serverId}/plaza/place`, { scene: 'lobby', style: null })).status, 200);
     const again = await emitAck(b, 'plaza:enter', { serverId });
     assert.equal((again.places as { lobby: unknown }).lobby, null);
+  });
+
+  it('espiar: só de dentro, quem está na call recebe o aviso, tem intervalo e a mesa pode fechar', async () => {
+    const { ana, bia, serverId, a, b, c } = await setup();
+    const detail = (await ana.get(`/servers/${serverId}`)).body as { channels: { id: string; type: string; name: string }[] };
+    const mesa = detail.channels.find((ch) => ch.name === 'mesa-1')!;
+    assert.equal(((await emitAck(b, 'voice:join', { channelId: mesa.id })) as { ok: boolean }).ok, true);
+    await emitAck(a, 'plaza:enter', { serverId });
+    await emitAck(c, 'plaza:enter', { serverId });
+    // lá fora não dá
+    assert.equal((await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id })).ok, false);
+    const lobby = buildLobby();
+    for (const s of [a, c]) {
+      s.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+      await sleep(80);
+      s.emit('plaza:door', { serverId });
+    }
+    await sleep(200);
+    const notices: { peeks: { userId: string; channelId: string }[] }[] = [];
+    b.on('voice:peeks', (m) => notices.push(m));
+    const r = await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id });
+    assert.equal(r.ok, true);
+    assert.equal(typeof r.token, 'string');
+    await sleep(200);
+    assert.ok(notices.some((n) => n.peeks.some((p) => p.userId === ana.id && p.channelId === mesa.id)));
+    // de novo antes do intervalo: não
+    const again = await emitAck(a, 'plaza:peek', { serverId, channelId: mesa.id });
+    assert.equal(again.ok, false);
+    // quem está na mesa fecha: ninguém mais espia
+    b.emit('plaza:close-table', { channelId: mesa.id, closed: true });
+    await sleep(150);
+    const closed = await emitAck(c, 'plaza:peek', { serverId, channelId: mesa.id });
+    assert.equal(closed.ok, false);
+    assert.match(String(closed.error), /fechou/);
+    void bia;
   });
 
   it('quem sai do servidor sai da praça', async () => {

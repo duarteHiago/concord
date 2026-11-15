@@ -37,6 +37,7 @@ import { DirectorRemote, DirectorWindowHost } from './components/Director';
 import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import { usePlaza } from './store/plaza';
+import { PeekNotice } from './components/plaza/PeekNotice';
 import './lib/visibility';
 
 const PATH = location.pathname.replace(/\/+$/, '');
@@ -172,6 +173,7 @@ function MainApp() {
       {me && <RecordingPill />}
       {me && <PatchInspectorHost />}
       {me && <SpotlightHost />}
+      {me && <PeekNotice />}
       {me && plazaOpen && (
         <div className="plaza-root fixed inset-0 z-[60] flex bg-[#231a3a]">
           <ErrorBoundary area="painel" resetKey="praca">

@@ -1,7 +1,7 @@
 // Praça do servidor: o servidor como um lugar em pixel art isométrico. Cada sala de voz é uma mesa (clicar
 // leva o boneco até ela e entra na call), a TV acende quando alguém transmite, e a conversa é por balão,
 // só para quem está na praça. Quem está numa call aparece sentado, mesmo sem ter aberto a praça.
-import { DoorOpen, Hammer, Hand, LogOut, Maximize2, MessageSquare, Mic, MicOff, Minus, Plus, Headphones, HeadphoneOff, Shirt, X, Send, Crosshair, Lock, Radio } from 'lucide-react';
+import { DoorOpen, Eye, EyeOff, Hammer, Hand, LogOut, MonitorUp, Maximize2, MessageSquare, Mic, MicOff, Minus, Plus, Headphones, HeadphoneOff, Shirt, X, Send, Crosshair, Lock, Radio } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { P, has } from '../../../../shared/permissions.ts';
 import {
@@ -26,13 +26,16 @@ import {
 import { memberName, type Channel, type Member, type VoiceState } from '../../lib/types';
 import { reduceMotion } from '../../lib/motion';
 import { useApp } from '../../store/app';
+import { getSocket } from '../../lib/socket';
 import { usePlaza } from '../../store/plaza';
 import { usePlazaVoice } from '../../store/plazaVoice';
+import { usePlazaPeek } from '../../store/plazaPeek';
 import { toast } from '../../store/toast';
 import { useVoice } from '../../store/voice';
 import { cx } from '../ui';
 import { AvatarEditor } from './AvatarEditor';
 import { StreamPip } from './StreamPip';
+import { TvShareMenu } from './TvShareMenu';
 import { PlaceEditor, type EditorTool } from './PlaceEditor';
 import { api } from '../../lib/api';
 import { Globe } from './Globe';
@@ -148,6 +151,14 @@ export default function PlazaView() {
   editRef.current = { ...editRef.current, draft, tool, rot, itemColor, selected, tableCount: tables.length };
   // mini TV flutuante com a transmissão de alguém (id de quem transmite)
   const [pip, setPip] = useState<string | null>(null);
+  const [tvMenu, setTvMenu] = useState(false);
+  // mesa clicada (fora de call): sentar ou espiar
+  const [tableMenu, setTableMenu] = useState<number | null>(null);
+  const peeking = usePlazaPeek((s) => s.channelId);
+  const peekUntil = usePlazaPeek((s) => s.until);
+  const whispering = usePlazaPeek((s) => s.whispering);
+  const allPeeks = usePlaza((s) => s.peeks[serverId]);
+  const closedTables = usePlaza((s) => s.closed[serverId]);
   const pendingWatch = useRef<string | null>(null);
   const [wipe, setWipe] = useState(0);
   const channelById = useMemo(() => new Map((detail?.channels ?? []).map((c) => [c.id, c])), [detail?.channels]);
@@ -291,12 +302,21 @@ export default function PlazaView() {
 
       // voz do lobby: volume de cada pessoa pela distância até o meu boneco (umas 10 vezes por segundo)
       const pv = usePlazaVoice.getState();
-      if (!L.inside && pv.status === 'connected' && now - w.volumesAt > 100) {
+      if (pv.status === 'connected' && now - w.volumesAt > 100) {
         w.volumesAt = now;
         const mine2 = meId ? w.anims.get(meId) : undefined;
         const volumes = new Map<string, number>();
         if (mine2) for (const [id, a] of w.anims) if (id !== meId) volumes.set(id, proximityVolume(distance(a, mine2)));
         pv.setVolumes(volumes);
+      }
+
+      // espiando uma mesa: o som dela cai conforme me afasto
+      const peek = usePlazaPeek.getState();
+      const meAnim = meId ? w.anims.get(meId) : undefined;
+      if (peek.channelId && meAnim) {
+        const ti = L.tables.indexOf(peek.channelId);
+        const tb = layout.tables[ti];
+        if (tb) peek.setVolume(proximityVolume(Math.max(0, distance(meAnim, { x: tb.x + 0.5, y: tb.y + 0.5 }) - 1.5)));
       }
 
       // cheguei na porta: troca de lugar (o servidor confere)
@@ -412,7 +432,7 @@ export default function PlazaView() {
       const items = sceneObjects(layout, looks, PAL.coral, now);
       for (const f of figs) {
         // lá dentro, quem fala na call da mesa; no lobby, quem fala na voz da praça
-        const speaking = L.inside ? !!voice.speaking[f.userId] && seats.has(f.userId) : !!pv.speaking[f.userId];
+        const speaking = f.seated ? !!voice.speaking[f.userId] : !!pv.speaking[f.userId];
         items.push({
           depth: f.x + f.y + (f.seated ? 0.05 : 0),
           draw: (ctx) => drawAvatar(ctx, f.avatar, f.facing, f.pose, f.fx, f.fy, { speaking, bob: f.bob, t: now }),
@@ -512,8 +532,27 @@ export default function PlazaView() {
       moveMe(tb.front);
       return;
     }
+    // fora de call: escolher entre sentar e espiar
+    setTableMenu(i);
+  };
+
+  const sitAt = (i: number) => {
+    const channelId = tables[i];
+    const tb = layout.tables[i];
+    setTableMenu(null);
+    if (!channelId || !tb) return;
+    usePlazaPeek.getState().stop();
     world.current.pendingJoin = { channelId, table: i };
     moveMe(tb.front, true);
+  };
+
+  const peekAt = (i: number) => {
+    const channelId = tables[i];
+    const tb = layout.tables[i];
+    setTableMenu(null);
+    if (!channelId || !tb) return;
+    moveMe(tb.front);
+    void usePlazaPeek.getState().start(serverId, channelId);
   };
 
   const down = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
@@ -593,6 +632,8 @@ export default function PlazaView() {
           if (voiceChannelId === tables[i]) return setPip(streamer.userId);
           pendingWatch.current = tables[i];
         }
+        // a TV da minha mesa, sem ninguém transmitindo: ligar a TV com a minha tela
+        if (onTv && !streamer && voiceChannelId === tables[i]) return setTvMenu(true);
         return clickTable(i);
       }
     }
@@ -721,8 +762,26 @@ export default function PlazaView() {
     if (!v || !v.streaming || v.channelId !== voiceChannelId) setPip(null);
   }, [pip, voiceStates, voiceChannelId]);
 
-  // voz por proximidade: liga no lobby (fora de call, para não ouvir duas conversas), desliga lá dentro
-  const lobbyVoice = phase === 'ready' && !inside && !voiceChannelId;
+  // voz por proximidade: vale na praça e dentro do prédio; desliga durante uma call (para não ouvir duas conversas)
+  const lobbyVoice = phase === 'ready' && !voiceChannelId;
+
+  // espiada acaba ao entrar numa call ou ao sair da praça
+  useEffect(() => {
+    if (voiceChannelId) usePlazaPeek.getState().stop();
+  }, [voiceChannelId]);
+  useEffect(
+    () => () => {
+      usePlazaPeek.getState().stop();
+    },
+    [],
+  );
+
+  // entrei numa call com a praça aberta (pela lista, por exemplo): o boneco vai direto para a mesa, lá dentro
+  const prevCall = useRef(voiceChannelId);
+  useEffect(() => {
+    if (voiceChannelId && voiceChannelId !== prevCall.current && myScene === 'lobby') usePlaza.getState().table();
+    prevCall.current = voiceChannelId;
+  }, [voiceChannelId, myScene]);
   useEffect(() => {
     if (lobbyVoice) void usePlazaVoice.getState().connect(serverId);
     else usePlazaVoice.getState().disconnect();
@@ -813,6 +872,7 @@ export default function PlazaView() {
             voice={(voiceStates ?? []).find((v) => v.userId === id)}
             idle={!seating.has(id) && !!walkers[id] && Date.now() - walkers[id].activeAt > IDLE_MS}
             bubbles={bubbles.filter((b) => b.userId === id)}
+            peeking={(allPeeks ?? []).some((p) => p.userId === id && p.until > Date.now())}
             emote={emotes[id]}
           />
         </div>
@@ -853,7 +913,7 @@ export default function PlazaView() {
       {hint && phase === 'ready' && (
         <div className="absolute top-20 left-1/2 w-[min(92vw,420px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#1b1430]/90 p-4 text-sm text-white/90 shadow-xl backdrop-blur">
           <div className="plaza-pixel mb-1 text-base font-bold text-[#ffe6a0]">Bem-vindo à praça!</div>
-          Clique no chão para andar (ou use as setas). Aqui fora a conversa é <b>por proximidade</b>: ligue o microfone e quem estiver perto te ouve, e os balões só chegam a quem está perto. As calls ficam <b>dentro do prédio</b>: entre pela porta e clique numa mesa para sentar. Clique na TV de uma mesa para assistir a transmissão numa telinha. O que você escreve vira balão e <b>não fica salvo</b>.
+          Clique no chão para andar (ou use as setas). A conversa é <b>por proximidade</b>, aqui fora e dentro do prédio: ligue o microfone e quem estiver perto te ouve, e os balões do lado de fora só chegam a quem está perto. Quem está sentado numa mesa está na call, e não ouve a praça. As calls ficam <b>dentro do prédio</b>: entre pela porta e clique numa mesa para sentar. Clique na TV de uma mesa para assistir a transmissão numa telinha. O que você escreve vira balão e <b>não fica salvo</b>.
           <button onClick={dismissHint} className="mt-3 block rounded-lg bg-[#e8685a] px-3 py-1.5 font-semibold text-white hover:brightness-110">
             Entendi
           </button>
@@ -879,7 +939,7 @@ export default function PlazaView() {
           <HudButton label="Meu boneco" flat onClick={() => setEditing(true)}>
             <Shirt size={17} />
           </HudButton>
-          {!inside && <LobbyMic inCall={!!voiceChannelId} />}
+          <LobbyMic inCall={!!voiceChannelId} />
           <span className="mx-0.5 h-6 w-px bg-white/15" />
           <button onClick={goDoor} className="flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold text-white hover:bg-white/10">
             <DoorOpen size={16} /> {inside ? 'Voltar à praça' : 'Entrar no prédio'}
@@ -892,6 +952,17 @@ export default function PlazaView() {
               <div className="font-semibold">#{myChannel.name}</div>
             </div>
             <VoiceButtons myVoice={myVoice} />
+            <HudButton
+              label={closedTables?.includes(voiceChannelId!) ? 'Mesa fechada para espiadas (clique para abrir)' : 'Mesa aberta para espiadas (clique para fechar)'}
+              flat
+              active={closedTables?.includes(voiceChannelId!)}
+              onClick={() => getSocket()?.emit('plaza:close-table', { channelId: voiceChannelId, closed: !closedTables?.includes(voiceChannelId!) })}
+            >
+              {closedTables?.includes(voiceChannelId!) ? <EyeOff size={17} /> : <Eye size={17} />}
+            </HudButton>
+            <HudButton label="TV da mesa: transmitir a tela" flat onClick={() => setTvMenu(true)}>
+              <MonitorUp size={17} />
+            </HudButton>
             <HudButton label="Abrir a call" flat onClick={openCall}>
               <Maximize2 size={17} />
             </HudButton>
@@ -926,6 +997,18 @@ export default function PlazaView() {
           }}
         />
       )}
+      {tvMenu && <TvShareMenu onClose={() => setTvMenu(false)} />}
+      {tableMenu !== null && tables[tableMenu] && (
+        <TableMenu
+          channel={channelById.get(tables[tableMenu]!)}
+          people={(voiceStates ?? []).filter((v) => v.channelId === tables[tableMenu]).length}
+          closed={!!closedTables?.includes(tables[tableMenu]!)}
+          onSit={() => sitAt(tableMenu)}
+          onPeek={() => peekAt(tableMenu)}
+          onClose={() => setTableMenu(null)}
+        />
+      )}
+      {peeking && <PeekBar channel={channelById.get(peeking)} until={peekUntil} whispering={whispering} />}
       {pip && (
         <StreamPip
           userId={pip}
@@ -944,6 +1027,60 @@ export default function PlazaView() {
 }
 
 // ---- pedaços da tela ----
+
+/** Mesa clicada fora de call: sentar (entrar na call) ou espiar por alguns segundos. */
+function TableMenu({ channel, people, closed, onSit, onPeek, onClose }: { channel?: Channel; people: number; closed: boolean; onSit: () => void; onPeek: () => void; onClose: () => void }) {
+  const peekBlock = closed ? 'Quem está nessa mesa fechou para espiadas.' : people === 0 ? 'Não tem ninguém nessa mesa.' : null;
+  return (
+    <div className="absolute inset-0 z-[64] grid place-items-center bg-black/30 p-4" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="animate-pop-in w-[min(92vw,300px)] rounded-2xl border border-white/10 bg-[#1b1430]/95 p-3 text-white shadow-2xl">
+        <div className="plaza-pixel mb-0.5 text-base font-bold">#{channel?.name ?? 'mesa'}</div>
+        <div className="mb-3 text-xs text-white/55">{people ? `${people} ${people === 1 ? 'pessoa' : 'pessoas'} na call` : 'Ninguém na call ainda'}</div>
+        <button onClick={onSit} className="mb-2 w-full rounded-xl bg-[#e8685a] py-2 text-sm font-bold hover:brightness-110">
+          Sentar e entrar na call
+        </button>
+        <button
+          onClick={onPeek}
+          disabled={!!peekBlock}
+          title={peekBlock ?? 'Ouvir a conversa por 10 segundos (quem está na mesa vê que você está espiando)'}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-sm font-bold hover:bg-white/15 disabled:opacity-40"
+        >
+          <Eye size={15} /> Espiar por 10 s
+        </button>
+        <div className="mt-2 text-[11px] text-white/45">{peekBlock ?? 'Quem está na mesa vê que você está espiando.'}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Espiando uma mesa: o tempo que falta, segurar para cochichar e parar. */
+function PeekBar({ channel, until, whispering }: { channel?: Channel; until: number; whispering: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, []);
+  const left = Math.max(0, Math.ceil((until - now) / 1000));
+  const peek = usePlazaPeek.getState();
+  return (
+    <div className="absolute top-16 left-1/2 z-[63] flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1430]/95 p-1.5 pl-3 text-white shadow-xl">
+      <span className="text-sm font-semibold">
+        👀 Espiando #{channel?.name ?? 'mesa'} · {left}s
+      </span>
+      <button
+        onPointerDown={() => void peek.setWhisper(true)}
+        onPointerUp={() => void peek.setWhisper(false)}
+        onPointerLeave={() => void peek.setWhisper(false)}
+        className={cx('flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-bold select-none', whispering ? 'bg-[#2e9e6a]' : 'bg-white/10 hover:bg-white/15')}
+      >
+        <Mic size={14} /> {whispering ? 'Cochichando…' : 'Segure para cochichar'}
+      </button>
+      <button onClick={() => peek.stop()} className="rounded-xl px-2.5 py-1.5 text-sm font-semibold text-white/70 hover:bg-white/10">
+        Parar
+      </button>
+    </div>
+  );
+}
 
 function HudButton({ label, onClick, children, flat, active }: { label: string; onClick: () => void; children: React.ReactNode; flat?: boolean; active?: boolean }) {
   return (
@@ -1066,7 +1203,9 @@ function PersonTag({
   idle,
   bubbles,
   emote,
+  peeking,
 }: {
+  peeking?: boolean;
   member?: Member;
   isMe: boolean;
   voice?: VoiceState;
@@ -1094,6 +1233,7 @@ function PersonTag({
       {idle && <div className="plaza-zzz plaza-pixel absolute -top-3 right-0 text-sm font-bold text-[#bfc7ff]">z</div>}
       <div className={cx('plaza-pixel flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-bold leading-[16px]', isMe ? 'bg-[#e8685a] text-white' : 'bg-[#1b1430]/75 text-white')}>
         {voice?.streaming && <span className="rounded-sm bg-[#ff5c7a] px-0.5 text-[9px] leading-[12px]">AO VIVO</span>}
+        {peeking && <span title="Espiando uma mesa">👀</span>}
         <span className="max-w-[110px] truncate">{name}</span>
         {voice && (voice.deafened ? <HeadphoneOff size={10} /> : voice.muted ? <MicOff size={10} /> : null)}
       </div>

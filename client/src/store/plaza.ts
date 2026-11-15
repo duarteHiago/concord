@@ -2,7 +2,8 @@
 // O desenho e a animação dos passos ficam no componente (components/plaza/); aqui só o que vem do servidor.
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
-import type { EmoteId, PlaceStyle, PlazaAvatar, Scene } from '../../../shared/plaza.ts';
+import { WHISPER_VOLUME, type EmoteId, type PlaceStyle, type PlazaAvatar, type Scene } from '../../../shared/plaza.ts';
+import { useVoice } from './voice';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
 
@@ -23,7 +24,21 @@ export interface Bubble {
   at: number;
 }
 
-type Ack = { ok: boolean; error?: string; tables?: (string | null)[]; walkers?: Walker[]; places?: Partial<Record<Scene, PlaceStyle | null>> };
+export interface Peek {
+  channelId: string;
+  userId: string;
+  until: number;
+}
+
+type Ack = {
+  ok: boolean;
+  error?: string;
+  tables?: (string | null)[];
+  walkers?: Walker[];
+  places?: Partial<Record<Scene, PlaceStyle | null>>;
+  peeks?: Peek[];
+  closed?: string[];
+};
 
 interface PlazaState {
   /** servidor cuja praça está aberta (null = fechada) */
@@ -34,6 +49,10 @@ interface PlazaState {
   tables: (string | null)[];
   /** como cada lugar está montado (null = o padrão), pelo editor de quem gerencia o servidor */
   places: Partial<Record<Scene, PlaceStyle | null>>;
+  /** quem está espiando cada mesa agora, por servidor (chega também para quem está na call sem abrir a praça) */
+  peeks: Record<string, Peek[]>;
+  /** mesas fechadas para espiadas, por servidor */
+  closed: Record<string, string[]>;
   walkers: Record<string, Walker>;
   bubbles: Bubble[];
   /** conversa da praça desde que entrei (só neste aparelho, some ao sair) */
@@ -50,6 +69,8 @@ interface PlazaState {
   move: (x: number, y: number) => void;
   /** pisei na porta: o servidor confere e troca de lugar */
   door: () => void;
+  /** entrei numa call com a praça aberta: o boneco vai para a mesa dela, lá dentro */
+  table: () => void;
   say: (text: string) => Promise<boolean>;
   emote: (emote: EmoteId) => void;
   avatarChanged: () => void;
@@ -71,7 +92,13 @@ export const usePlaza = create<PlazaState>((set, get) => {
       }
       const walkers: Record<string, Walker> = {};
       for (const w of r.walkers ?? []) walkers[w.userId] = w;
-      set({ tables: r.tables ?? [], walkers, places: r.places ?? {} });
+      set({
+        tables: r.tables ?? [],
+        walkers,
+        places: r.places ?? {},
+        peeks: { ...get().peeks, [serverId]: r.peeks ?? [] },
+        closed: { ...get().closed, [serverId]: r.closed ?? [] },
+      });
     });
   }
 
@@ -80,6 +107,8 @@ export const usePlaza = create<PlazaState>((set, get) => {
     phase: null,
     tables: [],
     places: {},
+    peeks: {},
+    closed: {},
     walkers: {},
     bubbles: [],
     log: [],
@@ -117,6 +146,10 @@ export const usePlaza = create<PlazaState>((set, get) => {
       const serverId = get().serverId;
       if (serverId) getSocket()?.emit('plaza:door', { serverId });
     },
+    table: () => {
+      const serverId = get().serverId;
+      if (serverId) getSocket()?.emit('plaza:table', { serverId });
+    },
     say: (text) =>
       new Promise((resolve) => {
         const serverId = get().serverId;
@@ -138,6 +171,8 @@ export const usePlaza = create<PlazaState>((set, get) => {
   // (os eventos do servidor entram por bindPlazaSocket, chamado junto com os outros em store/app.ts)
 });
 
+let whisperTimer: ReturnType<typeof setInterval> | undefined;
+
 /** Liga os eventos da praça na conexão em tempo real (uma vez por conexão). */
 export function bindPlazaSocket(socket: Socket) {
   const s = () => usePlaza.getState();
@@ -156,6 +191,21 @@ export function bindPlazaSocket(socket: Socket) {
       usePlaza.setState({ phase: 'ready' });
     }
   });
+  socket.on('voice:peeks', ({ serverId, peeks }: { serverId: string; peeks: Peek[] }) => {
+    usePlaza.setState({ peeks: { ...s().peeks, [serverId]: peeks } });
+  });
+  socket.on('plaza:closed', ({ serverId, closed }: { serverId: string; closed: string[] }) => {
+    usePlaza.setState({ closed: { ...s().closed, [serverId]: closed } });
+  });
+  // quem espia a minha call cochicha baixinho: o volume dele fica baixo aqui (enquanto houver espiada)
+  whisperTimer ??= setInterval(() => {
+    const v = useVoice.getState();
+    if (!v.room || !v.serverId || !v.channelId) return;
+    for (const p of s().peeks[v.serverId] ?? []) {
+      if (p.channelId !== v.channelId) continue;
+      v.room.remoteParticipants.get(p.userId)?.setVolume(WHISPER_VOLUME);
+    }
+  }, 500);
   socket.on('plaza:place', ({ serverId, scene, style }: { serverId: string; scene: Scene; style: PlaceStyle | null }) => {
     if (here(serverId)) usePlaza.setState({ places: { ...s().places, [scene]: style } });
   });
