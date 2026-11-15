@@ -3,7 +3,7 @@
 // Quem está sentado (na call) vem do estado de voz, não daqui.
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
-import { DRINK_MS, FLOOR_TABLES, GROUND_TABLES, MAX_FLOORS, MAX_HALL_DOORS, isDrink, nearCounter, planFloors, NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceScene, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
+import { DRINK_MS, FLOOR_TABLES, GROUND_TABLES, MAX_FLOORS, MAX_HALL_DOORS, hallFloorCount, isDrink, nearCounter, planFloors, NEAR_MS, NEAR_RADIUS, PEEK_COOLDOWN_MS, PEEK_MS, SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceScene, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
 import { createVoiceToken, removeFromRoom } from './livekit.ts';
 import { getVoiceState, isServerDeafened, isServerMuted, voiceStatesFor } from './realtime.ts';
 import { channelPermissions, getChannel, isMember } from './access.ts';
@@ -147,7 +147,7 @@ export function placeOf(serverId: string, scene: PlaceScene): PlaceStyle | null 
 
 /** O mapa de cada lugar: o lobby tem tamanho fixo; o de dentro sai das salas de voz do andar. */
 function layoutOf(serverId: string, scene: Scene, level = 0, roomOf: string | null = null) {
-  if (scene === 'hall') return HALL;
+  if (scene === 'hall') return hallLayout(serverId, level);
   if (scene === 'room') return roomLayout(roomOf ?? '');
   return scene === 'lobby' ? lobbyLayout(serverId) : insideLayout(serverId, level);
 }
@@ -159,10 +159,22 @@ const layoutAt = (serverId: string, w: Walker) => layoutOf(serverId, w.scene, w.
 const samePlace = (a: Walker, b: Walker) => a.scene === b.scene && a.floor === b.floor && a.roomOf === b.roomOf;
 
 // ---- quartos ----
-// O corredor mostra, no app, uma porta para cada pessoa online no servidor; aqui ele vale com todas as portas (só
-// para conferir onde dá para pisar). O quarto é da pessoa (o mesmo em toda Praça) e só ela monta.
+// O corredor tem uma porta para cada pessoa do servidor, na ordem em que entraram, HALL_DOORS_PER_FLOOR por andar
+// (escada no fim para o de cima). O quarto é da pessoa (o mesmo em toda Praça) e só ela monta.
 
-const HALL = layoutFor('hall', MAX_HALL_DOORS);
+const hallCache = new Map<string, PlazaLayout>(); // "quartos:andar" -> mapa
+const memberCount = (serverId: string) => (get<{ n: number }>('SELECT COUNT(*) AS n FROM members WHERE server_id = ?', serverId)?.n ?? 0);
+/** Um andar do corredor do servidor (o número de andares sai de quantas pessoas há nele). */
+function hallLayout(serverId: string, level: number) {
+  const total = Math.min(MAX_HALL_DOORS, memberCount(serverId));
+  const key = `${total}:${level}`;
+  let layout = hallCache.get(key);
+  if (!layout) {
+    layout = layoutFor('hall', total, null, level);
+    hallCache.set(key, layout);
+  }
+  return layout;
+}
 const rooms = new Map<string, { style: PlaceStyle | null; layout: PlazaLayout }>(); // dono -> quarto
 
 function roomEntry(owner: string) {
@@ -579,8 +591,25 @@ export function registerPlaza(socket: Socket, userId: string) {
   socket.on('plaza:hall', (data: { serverId?: unknown }) => {
     const here = walkerHere(data?.serverId);
     if (!here || !moveRate() || here.w.scene !== 'inside' || !onElevator(here.serverId, here.w)) return;
-    Object.assign(here.w, { scene: 'hall', floor: 0, roomOf: null, ...spawnPoint(HALL, others(here.serverId)), activeAt: Date.now() });
+    const to = hallLayout(here.serverId, 0);
+    Object.assign(here.w, { scene: 'hall', floor: 0, roomOf: null, ...spawnPoint(to, others(here.serverId)), activeAt: Date.now() });
     sceneChanged(here.serverId, here.w);
+  });
+
+  // no corredor, em cima de uma escada: sobe ou desce um andar (chega do lado da escada que leva de volta)
+  socket.on('plaza:stairs', (data: { serverId?: unknown }) => {
+    const here = walkerHere(data?.serverId);
+    if (!here || !moveRate() || here.w.scene !== 'hall') return;
+    const { w } = here;
+    const from = hallLayout(here.serverId, w.floor);
+    const on = (p: { x: number; y: number } | null | undefined) => !!p && w.x === p.x && w.y === p.y;
+    const dir = on(from.stairs?.up) ? 1 : on(from.stairs?.down) ? -1 : 0;
+    const level = w.floor + dir;
+    if (!dir || level < 0 || level >= hallFloorCount(memberCount(here.serverId))) return;
+    const to = hallLayout(here.serverId, level);
+    const back = dir > 0 ? to.stairs?.down : to.stairs?.up;
+    Object.assign(w, { scene: 'hall', floor: level, roomOf: null, ...spawnPoint(to, others(here.serverId), back ? { x: back.x, y: back.y + 1 } : to.spawn), activeAt: Date.now() });
+    sceneChanged(here.serverId, w);
   });
 
   // no corredor, na frente de uma porta: entra no quarto de alguém do servidor
@@ -607,7 +636,7 @@ export function registerPlaza(socket: Socket, userId: string) {
 
   // pisou na porta: entra no estabelecimento (ou sai para a praça; ou sai do quarto para o corredor, na frente da
   // porta dele, em `x`). Só vale estando de fato na porta.
-  socket.on('plaza:door', (data: { serverId?: unknown; x?: unknown }) => {
+  socket.on('plaza:door', (data: { serverId?: unknown; x?: unknown; floor?: unknown }) => {
     const here = walkerHere(data?.serverId);
     if (!here || !moveRate()) return;
     const { w } = here;
@@ -615,9 +644,13 @@ export function registerPlaza(socket: Socket, userId: string) {
     if (w.scene === 'room') {
       const from = layoutAt(here.serverId, w);
       if (w.x !== from.door.x || w.y !== from.door.y) return;
+      // volta para o andar do corredor onde fica a porta desse quarto, na frente dela
+      const asked = Number(data.floor);
+      const level = Number.isInteger(asked) && asked >= 0 && asked < hallFloorCount(memberCount(here.serverId)) ? asked : 0;
+      const hall = hallLayout(here.serverId, level);
       const x = Number(data.x);
-      const back = Number.isInteger(x) && walkable(HALL, x, 0) ? { x, y: 0 } : HALL.spawn;
-      Object.assign(w, { scene: 'hall', floor: 0, roomOf: null, ...spawnPoint(HALL, others(here.serverId), back), activeAt: Date.now() });
+      const back = Number.isInteger(x) && walkable(hall, x, 0) ? { x, y: 0 } : hall.spawn;
+      Object.assign(w, { scene: 'hall', floor: level, roomOf: null, ...spawnPoint(hall, others(here.serverId), back), activeAt: Date.now() });
       return sceneChanged(here.serverId, w);
     }
     // a porta de saída só existe no térreo
