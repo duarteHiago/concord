@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { buildLayout, buildLobby, cleanSay, defaultStyle, findPath, layoutFor, planFloors, sanitizeAvatar, validateStyle, walkable } from '../../shared/plaza.ts';
+import { HALL_DOORS_PER_FLOOR, buildLayout, buildLobby, cleanSay, defaultStyle, findPath, hallFloorCount, hallSpot, layoutFor, planFloors, sanitizeAvatar, validateStyle, walkable } from '../../shared/plaza.ts';
 import { signUp, startServer, type Client, type TestServer } from './helpers.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -92,13 +92,61 @@ describe('praça: andares (shared)', () => {
     assert.ok(hall.doors.every((d) => walkable(hall, d.x, d.y)));
     assert.ok(hall.elevator && walkable(hall, hall.elevator.x, hall.elevator.y));
     const room = layoutFor('room', 0);
-    assert.ok(room.nook && !walkable(room, room.nook.bed.x, room.nook.bed.y));
+    assert.ok(room.nook?.bed && !walkable(room, room.nook.bed.x, room.nook.bed.y));
     assert.ok(walkable(room, room.door.x, room.door.y));
     // nada de móvel em cima da cama nem móvel que só existe na praça
     const base = defaultStyle('room');
     assert.equal(validateStyle(base, 'room', 0).ok, true);
-    assert.equal(validateStyle({ ...base, items: [{ k: 'plant', x: room.nook.bed.x, y: room.nook.bed.y, r: 0, c: 0 }] }, 'room', 0).ok, false);
+    assert.equal(validateStyle({ ...base, items: [{ k: 'plant', x: room.nook.bed!.x, y: room.nook.bed!.y, r: 0, c: 0 }] }, 'room', 0).ok, false);
     assert.equal(validateStyle({ ...base, items: [{ k: 'tree', x: 4, y: 4, r: 0, c: 0 }] }, 'room', 0).ok, false);
+  });
+
+  it('corredor com mais quartos que o limite ganha andares, com escada para subir no fim e para descer no começo', () => {
+    assert.equal(HALL_DOORS_PER_FLOOR, 8);
+    assert.equal(hallFloorCount(8), 1);
+    assert.equal(hallFloorCount(9), 2);
+    const total = 10;
+    const ground = layoutFor('hall', total, null, 0);
+    const top = layoutFor('hall', total, null, 1);
+    assert.equal(ground.doors.length, 8);
+    assert.equal(top.doors.length, 2);
+    assert.ok(ground.elevator && !top.elevator);
+    assert.ok(ground.stairs?.up && !ground.stairs.down);
+    assert.ok(top.stairs?.down && !top.stairs.up);
+    // escadas e portas dá para pisar e chegar andando
+    for (const [layout, p] of [[ground, ground.stairs.up], [top, top.stairs.down]] as const) {
+      assert.ok(walkable(layout, p.x, p.y));
+      assert.ok(findPath(layout, layout.spawn, p).length);
+    }
+    // sem andar de cima, sem escada
+    assert.equal(layoutFor('hall', 8, null, 0).stairs?.up, null);
+    // o quarto número 9 (índice 8) fica na primeira porta do andar de cima
+    assert.deepEqual(hallSpot(8), { level: 1, at: top.doors[0] });
+  });
+
+  it('quarto: escrivaninha, TV, pufe e cama mudam de lugar e giram, mas são um de cada e voltam se faltarem', () => {
+    const it = (k: string, x: number, y: number, r = 0, c = 0) => ({ k, x, y, r, c });
+    // quarto salvo antes (sem eles na lista): voltam para o lugar de sempre
+    const old = layoutFor('room', 0, { floor: 0, wall: 0, items: [{ k: 'plant', x: 8, y: 2, r: 0, c: 0 }] });
+    assert.deepEqual([old.nook?.desk?.x, old.nook?.tv?.x, old.nook?.bed?.y], [1, 5, 5]);
+    // mudou de lugar, girou e trocou de cor
+    const moved = { floor: 0, wall: 0, items: [it('desk', 0, 0, 1), it('tvGame', 5, 0), it('pouf', 5, 2, 0, 3), it('bed', 6, 4, 0, 2)] };
+    const ok = validateStyle(moved, 'room', 0);
+    assert.ok(ok.ok);
+    const room = layoutFor('room', 0, ok.style);
+    assert.deepEqual([room.nook?.desk?.r, room.nook?.bed?.x, room.nook?.pouf?.c], [1, 6, 3]);
+    // dois iguais não vale
+    assert.equal(validateStyle({ ...moved, items: [...moved.items, it('desk', 2, 4)] }, 'room', 0).ok, false);
+  });
+
+  it('no prédio: quadro, relógio e neon na parede, mas não em cima do balcão nem do elevador', () => {
+    const base = defaultStyle('inside', 2);
+    const it = (k: string, x: number, y: number, r = 0) => ({ k, x, y, r, c: 0 });
+    const ins = layoutFor('inside', 2, base, 0);
+    const ok = (...items: ReturnType<typeof it>[]) => validateStyle({ ...base, items: [...base.items, ...items] }, 'inside', 2).ok;
+    assert.equal(ok(it('painting', 0, 3, 1)), true);
+    assert.equal(ok(it('clock', ins.building.x0, 0)), false);
+    assert.equal(ok(it('neon', ins.elevator!.x, 0)), false);
   });
 
   it('troféu só em cima da prateleira, um por casa; pôster só encostado numa parede', () => {
@@ -115,7 +163,7 @@ describe('praça: andares (shared)', () => {
     const st = validateStyle({ ...base, items: [ledge, it('trophyGold', 4, 6)] }, 'room', 0);
     assert.ok(st.ok);
     const room = layoutFor('room', 0, st.style);
-    assert.equal(room.items.length, 2);
+    assert.ok(room.items.some((x) => x.k === 'ledge') && room.items.some((x) => x.k === 'trophyGold'));
     assert.equal(walkable(room, 4, 7), true);
     // pôster: parede do fundo (y = 0) ou da esquerda (x = 0, girado), sem um em cima do outro
     assert.equal(ok(it('poster', 3, 0)), true);
@@ -499,7 +547,7 @@ describe('praça: andando e conversando', () => {
     assert.equal(said.length, 0);
     // só a própria pessoa monta o quarto (a rota é sempre do quarto de quem chama); móvel na cama não vale
     const room = layoutFor('room', 0);
-    const bad = { ...defaultStyle('room'), items: [{ k: 'plant', x: room.nook!.bed.x, y: room.nook!.bed.y, r: 0, c: 0 }] };
+    const bad = { ...defaultStyle('room'), items: [{ k: 'plant', x: room.nook!.bed!.x, y: room.nook!.bed!.y, r: 0, c: 0 }] };
     assert.equal((await bia.put('/me/plaza-room', { style: bad })).status, 400);
     const styled = new Promise<{ owner: string; style: { floor: number } }>((res) => a.once('plaza:room-style', res));
     assert.equal((await bia.put('/me/plaza-room', { style: { ...defaultStyle('room'), floor: 3 } })).status, 200);
@@ -515,6 +563,64 @@ describe('praça: andando e conversando', () => {
     assert.equal(back.scene, 'hall');
     assert.equal(back.roomOf, null);
     void ana;
+  });
+
+  it('corredor com mais de 8 quartos: escada sobe e desce, e sair do quarto volta ao andar da porta dele', async () => {
+    const { ana, serverId, a } = await setup();
+    const code = (await ana.post(`/servers/${serverId}/invites`, {})).body.code as string;
+    const extra = [];
+    for (let i = 0; i < 6; i++) {
+      const m = await signUp(server, `vizinho${i}`);
+      assert.equal((await m.post(`/invites/${code}`)).status, 200);
+      extra.push(m);
+    }
+    const total = 9; // ana, bia, caio e mais 6
+    await emitAck(a, 'plaza:enter', { serverId });
+    const lobby = buildLobby();
+    a.emit('plaza:move', { serverId, x: lobby.door.x, y: lobby.door.y });
+    await sleep(80);
+    a.emit('plaza:door', { serverId });
+    await sleep(150);
+    const ground = layoutFor('inside', 1, null, 0);
+    a.emit('plaza:move', { serverId, x: ground.elevator!.x, y: ground.elevator!.y });
+    await sleep(120);
+    const scenes: { userId: string; scene: string; floor: number; roomOf: string | null; x: number; y: number }[] = [];
+    a.on('plaza:scene', (m) => m.userId === ana.id && scenes.push(m));
+    a.emit('plaza:hall', { serverId });
+    await sleep(150);
+    const hall0 = layoutFor('hall', total, null, 0);
+    const hall1 = layoutFor('hall', total, null, 1);
+    // fora da escada: nada
+    a.emit('plaza:stairs', { serverId });
+    await sleep(120);
+    assert.equal(scenes.length, 1);
+    a.emit('plaza:move', { serverId, x: hall0.stairs!.up!.x, y: hall0.stairs!.up!.y });
+    await sleep(120);
+    a.emit('plaza:stairs', { serverId });
+    await sleep(150);
+    assert.deepEqual([scenes[1].scene, scenes[1].floor], ['hall', 1]);
+    // no andar de cima não tem escada para subir mais: a casa do fim nem existe aqui
+    assert.equal(walkable(hall1, hall0.stairs!.up!.x, 0), false);
+    // o quarto do 9º fica no andar de cima; entra e sai, volta para o mesmo andar
+    const spot = hallSpot(8);
+    a.emit('plaza:move', { serverId, x: spot.at.x, y: spot.at.y });
+    await sleep(120);
+    a.emit('plaza:room', { serverId, owner: extra[5].id });
+    await sleep(150);
+    assert.equal(scenes[2].roomOf, extra[5].id);
+    const room = layoutFor('room', 0);
+    a.emit('plaza:move', { serverId, x: room.door.x, y: room.door.y });
+    await sleep(120);
+    a.emit('plaza:door', { serverId, x: spot.at.x, floor: spot.level });
+    await sleep(150);
+    assert.deepEqual([scenes[3].scene, scenes[3].floor, scenes[3].x, scenes[3].y], ['hall', 1, spot.at.x, 0]);
+    // desce pela escada do começo e chega do lado da escada de subir
+    a.emit('plaza:move', { serverId, x: hall1.stairs!.down!.x, y: hall1.stairs!.down!.y });
+    await sleep(120);
+    a.emit('plaza:stairs', { serverId });
+    await sleep(150);
+    assert.equal(scenes[4].floor, 0);
+    assert.ok(Math.abs(scenes[4].x - hall0.stairs!.up!.x) <= 2);
   });
 
   it('quem sai do servidor sai da praça', async () => {

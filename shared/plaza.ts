@@ -158,22 +158,41 @@ export interface FurnitureDef {
    * (r 0 = parede do fundo, na fileira y = 0; r 1 = parede da esquerda, na coluna x = 0). Nenhum dos dois ocupa o chão.
    */
   place?: 'shelf' | 'wall';
+  /** igual de todos os lados: não tem o que girar */
+  still?: boolean;
+  /** um só por lugar e não sai (os móveis de sempre do quarto, onde o dono aparece): dá para mudar de lugar e girar */
+  unique?: boolean;
+  /** a cor original do móvel, no lugar da primeira de ITEM_COLORS (para quem já existia sem cor continuar igual) */
+  base?: string;
 }
 
 const BOTH: Scene[] = ['lobby', 'inside', 'room'];
+const INDOOR: Scene[] = ['inside', 'room'];
 export const FURNITURE = {
-  plant: { label: 'Planta', w: 1, h: 1, block: true, scenes: BOTH },
-  tree: { label: 'Árvore', w: 1, h: 1, block: true, scenes: ['lobby'] },
-  flowers: { label: 'Canteiro', w: 1, h: 1, block: true, scenes: BOTH, colors: true },
-  lamp: { label: 'Luminária', w: 1, h: 1, block: true, scenes: BOTH },
-  bench: { label: 'Banco', w: 1, h: 1, block: true, scenes: BOTH },
-  cafe: { label: 'Mesinha', w: 1, h: 1, block: true, scenes: BOTH },
-  stool: { label: 'Banquinho', w: 1, h: 1, block: true, scenes: BOTH, colors: true },
+  plant: { label: 'Planta', w: 1, h: 1, block: true, scenes: BOTH, colors: true, base: '#c0714f', still: true },
+  tree: { label: 'Árvore', w: 1, h: 1, block: true, scenes: ['lobby'], still: true },
+  flowers: { label: 'Canteiro', w: 1, h: 1, block: true, scenes: BOTH, colors: true, still: true },
+  lamp: { label: 'Luminária', w: 1, h: 1, block: true, scenes: BOTH, colors: true, base: '#ffdc96', still: true },
+  bench: { label: 'Banco', w: 1, h: 1, block: true, scenes: BOTH, colors: true, base: '#a87454' },
+  cafe: { label: 'Mesinha', w: 1, h: 1, block: true, scenes: BOTH, colors: true, base: '#f3f0fb', still: true },
+  stool: { label: 'Banquinho', w: 1, h: 1, block: true, scenes: BOTH, colors: true, still: true },
   sofa: { label: 'Sofá', w: 2, h: 1, block: true, scenes: BOTH, colors: true },
-  rug: { label: 'Tapete', w: 2, h: 2, block: false, scenes: BOTH, colors: true },
+  rug: { label: 'Tapete', w: 2, h: 2, block: false, scenes: BOTH, colors: true, still: true },
   shelf: { label: 'Estante', w: 1, h: 1, block: true, scenes: ['inside', 'room'] },
   arcade: { label: 'Fliperama', w: 1, h: 1, block: true, scenes: BOTH, colors: true },
-  fountain: { label: 'Fonte', w: 2, h: 2, block: true, scenes: ['lobby'] },
+  fountain: { label: 'Fonte', w: 2, h: 2, block: true, scenes: ['lobby'], still: true },
+  armchair: { label: 'Poltrona', w: 1, h: 1, block: true, scenes: INDOOR, colors: true },
+  aquarium: { label: 'Aquário', w: 2, h: 1, block: true, scenes: INDOOR },
+  speaker: { label: 'Caixa de som', w: 1, h: 1, block: true, scenes: INDOOR },
+  cactus: { label: 'Cacto', w: 1, h: 1, block: true, scenes: BOTH, still: true },
+  palm: { label: 'Palmeira', w: 1, h: 1, block: true, scenes: BOTH, still: true },
+  painting: { label: 'Quadro', w: 2, h: 1, block: false, scenes: INDOOR, place: 'wall', colors: true },
+  clock: { label: 'Relógio', w: 1, h: 1, block: false, scenes: INDOOR, place: 'wall' },
+  neon: { label: 'Neon', w: 2, h: 1, block: false, scenes: INDOOR, place: 'wall', colors: true },
+  desk: { label: 'Escrivaninha', w: 2, h: 2, block: true, scenes: ['room'], unique: true },
+  tvGame: { label: 'TV e videogame', w: 2, h: 1, block: true, scenes: ['room'], unique: true },
+  pouf: { label: 'Pufe', w: 1, h: 1, block: true, scenes: ['room'], unique: true, colors: true, base: '#8b5cf6', still: true },
+  bed: { label: 'Cama', w: 2, h: 1, block: true, scenes: ['room'], unique: true, colors: true, base: '#5a7fd9' },
   ledge: { label: 'Prateleira', w: 2, h: 1, block: true, scenes: ['inside', 'room'] },
   trophyGold: { label: 'Troféu dourado', w: 1, h: 1, block: false, scenes: ['room'], place: 'shelf' },
   trophyCup: { label: 'Taça prateada', w: 1, h: 1, block: false, scenes: ['room'], place: 'shelf' },
@@ -303,16 +322,18 @@ export interface PlazaLayout {
   doors: Point[];
   /** no quarto, onde ficam a escrivaninha, a TV com o videogame e a cama (e onde o dono aparece em cada uma) */
   nook: RoomNook | null;
+  /** no corredor, as escadas para o andar de cima e para o de baixo (pisar nelas troca de andar) */
+  stairs?: { up: Point | null; down: Point | null };
 }
 
 export interface RoomNook {
-  /** escrivaninha com o computador (2 casas na parede do fundo, a partir daqui) */
-  desk: Point;
-  /** TV com o videogame (2 casas na parede do fundo) e o pufe na frente */
-  tv: Point;
-  pouf: Point;
+  /** escrivaninha com o computador e a cadeira na frente (2×2) */
+  desk: Furniture | null;
+  /** TV com o videogame, e o pufe onde o dono senta para jogar */
+  tv: Furniture | null;
+  pouf: Furniture | null;
   /** cama (2 casas ao longo de x, a cabeceira na parede da esquerda) */
-  bed: Point;
+  bed: Furniture | null;
 }
 
 type Base = Omit<PlazaLayout, 'blocked' | 'floor' | 'wall' | 'items'>;
@@ -378,42 +399,98 @@ function baseInside(tableCount: number, level = 0): Base {
 
 // ---- quartos ----
 
-/** Portas no corredor, no máximo (quem está online no servidor, e você). */
-export const MAX_HALL_DOORS = 16;
+/** Quartos em cada andar do corredor; com o andar cheio, uma escada no fim leva ao de cima. */
+export const HALL_DOORS_PER_FLOOR = 8;
+/** Andares do corredor, no máximo. */
+export const MAX_HALL_FLOORS = 10;
+/** Quartos no corredor, no máximo (somando os andares). */
+export const MAX_HALL_DOORS = HALL_DOORS_PER_FLOOR * MAX_HALL_FLOORS;
+
+const hallTotal = (total: number) => Math.max(0, Math.min(MAX_HALL_DOORS, Math.floor(total) || 0));
+/** Quantos andares o corredor tem com `total` quartos. */
+export const hallFloorCount = (total: number) => Math.max(1, Math.ceil(hallTotal(total) / HALL_DOORS_PER_FLOOR));
 /** Sem prédio nem balcão (os quadros da parede vão para onde quiserem). */
 const NO_BUILDING = { x0: 1000, x1: 1000 };
 
-/** A casa na frente da porta do quarto número `i` do corredor. */
+/** A casa na frente da porta número `i` de um andar do corredor. */
 export const hallDoor = (i: number): Point => ({ x: 4 + i * 3, y: 0 });
 
-/** O corredor dos quartos: o elevador na ponta da esquerda e uma porta a cada 3 casas na parede do fundo. */
-function baseHall(doorCount: number): Base {
-  const n = Math.max(0, Math.min(MAX_HALL_DOORS, Math.floor(doorCount)));
-  const w = Math.max(10, hallDoor(n - 1).x + 4);
+/** Onde fica o quarto número `i` (na ordem do corredor, a mesma para todo mundo): o andar e a casa na frente da porta. */
+export const hallSpot = (i: number) => ({ level: Math.floor(i / HALL_DOORS_PER_FLOOR), at: hallDoor(i % HALL_DOORS_PER_FLOOR) });
+
+const hallWidth = (doors: number) => Math.max(10, hallDoor(doors - 1).x + 4);
+
+/**
+ * Um andar do corredor dos quartos: até HALL_DOORS_PER_FLOOR portas, uma a cada 3 casas na parede do fundo. No
+ * primeiro, o elevador na ponta da esquerda; nos de cima, a escada para descer no lugar dele. Se tem andar acima,
+ * a escada para subir fica no fim. `total` = quartos somando todos os andares.
+ */
+function baseHall(total: number, level = 0): Base {
+  const all = hallTotal(total);
+  const floors = hallFloorCount(all);
+  const lv = Math.max(0, Math.min(floors - 1, Math.floor(level) || 0));
+  const n = Math.max(0, Math.min(HALL_DOORS_PER_FLOOR, all - lv * HALL_DOORS_PER_FLOOR));
+  const w = hallWidth(n);
   const h = 5;
-  const elevator = { x: 1, y: 0 };
+  const elevator = lv === 0 ? { x: 1, y: 0 } : null;
+  const down = lv > 0 ? { x: 1, y: 0 } : null;
+  const up = lv < floors - 1 ? { x: w - 2, y: 0 } : null;
   const spawn = { x: 1, y: 1 };
   const doors = Array.from({ length: n }, (_, i) => hallDoor(i));
-  return { kind: 'hall', w, h, door: OFF_MAP, tables: [], fixed: new Uint8Array(w * h), reserved: [elevator, spawn, ...doors], spawn, building: NO_BUILDING, level: 0, elevator, doors, nook: null };
+  const reserved = [spawn, ...doors, ...[elevator, down, up].filter((p): p is Point => !!p)];
+  return { kind: 'hall', w, h, door: OFF_MAP, tables: [], fixed: new Uint8Array(w * h), reserved, spawn, building: NO_BUILDING, level: lv, elevator, doors, nook: null, stairs: { up, down } };
 }
 
-/** O quarto de alguém: escrivaninha, TV com videogame e cama fixas; a porta (de volta ao corredor) na frente. */
+/** Plantas encostadas na parede da frente do corredor. */
+function hallPlants(w: number): Furniture[] {
+  // encostado na parede da frente: planta, banco, palmeira... alternando
+  const items: Furniture[] = [];
+  const kinds: FurnitureKind[] = ['plant', 'bench', 'palm', 'bench'];
+  for (let x = 3, i = 0; x < w - 1; x += 3, i++) items.push({ ...item(kinds[i % kinds.length], x, 4), r: kinds[i % kinds.length] === 'bench' ? 1 : 0 });
+  return items;
+}
+
+/**
+ * O quarto de alguém: a porta (de volta ao corredor) na frente. A escrivaninha, a TV com o videogame, o pufe e a
+ * cama são móveis como os outros (o dono muda de lugar), mas sempre existem: ver roomBasics.
+ */
 function baseRoom(): Base {
   const w = 9;
   const h = 8;
-  const fixed = new Uint8Array(w * h);
-  const block = (x: number, y: number) => fixed.fill(1, y * w + x, y * w + x + 1);
-  const nook: RoomNook = { desk: { x: 1, y: 0 }, tv: { x: 5, y: 0 }, pouf: { x: 5, y: 2 }, bed: { x: 0, y: 5 } };
-  for (const p of [nook.desk, nook.tv, nook.bed]) {
-    block(p.x, p.y);
-    block(p.x + 1, p.y);
-  }
-  block(nook.pouf.x, nook.pouf.y);
   const spawn = { x: w - 2, y: h - 2 };
   const door = { x: w - 2, y: h - 1 };
-  // a cadeira da escrivaninha e a frente da TV ficam livres (o dono aparece ali)
-  const reserved = [door, spawn, { x: nook.desk.x, y: 1 }, { x: nook.desk.x + 1, y: 1 }, { x: nook.tv.x, y: 1 }, { x: nook.tv.x + 1, y: 1 }];
-  return { kind: 'room', w, h, door, tables: [], fixed, reserved, spawn, building: NO_BUILDING, level: 0, elevator: null, doors: [], nook };
+  return { kind: 'room', w, h, door, tables: [], fixed: new Uint8Array(w * h), reserved: [door, spawn], spawn, building: NO_BUILDING, level: 0, elevator: null, doors: [], nook: null };
+}
+
+/** Os móveis de sempre do quarto, onde vinham antes de dar para mexer neles. */
+const ROOM_BASICS: Furniture[] = [
+  { k: 'desk', x: 1, y: 0, r: 0, c: 0 },
+  { k: 'tvGame', x: 5, y: 0, r: 0, c: 0 },
+  { k: 'pouf', x: 5, y: 2, r: 0, c: 0 },
+  { k: 'bed', x: 0, y: 5, r: 0, c: 0 },
+];
+
+/** O quarto sempre tem escrivaninha, TV, pufe e cama: o que faltar (quarto salvo antes) volta para o lugar de sempre. */
+function roomBasics(items: Furniture[]): Furniture[] {
+  const missing = ROOM_BASICS.filter((b) => !items.some((it) => it.k === b.k));
+  return missing.length ? [...missing.map((b) => ({ ...b })), ...items] : items;
+}
+
+/** O estilo do quarto com os móveis de sempre (para o editor começar com eles na lista). */
+export const withRoomBasics = (style: PlaceStyle): PlaceStyle => ({ ...style, items: roomBasics(style.items) });
+
+/**
+ * Um ponto de um móvel (u, v em casas a partir do canto dele, como se não estivesse girado) no mapa. Girado, o
+ * móvel é o espelho dele mesmo trocando x por y em volta do meio (é assim que o desenho também gira).
+ */
+export function itemPoint(it: Pick<Furniture, 'k' | 'x' | 'y' | 'r'>, u: number, v: number): { x: number; y: number } {
+  if (!it.r) return { x: it.x + u, y: it.y + v };
+  const d = furnitureDef(it.k);
+  const cx = it.x + d.h / 2;
+  const cy = it.y + d.w / 2;
+  const px = cx - d.w / 2 + u;
+  const py = cy - d.h / 2 + v;
+  return { x: cx + (py - cy), y: cy + (px - cx) };
 }
 
 // ---- andares do estabelecimento ----
@@ -458,13 +535,8 @@ const item = (k: FurnitureKind, x: number, y: number, c = 0): Furniture => ({ k,
 
 /** Como cada lugar vem antes de alguém mexer (os enfeites de sempre). */
 export function defaultStyle(scene: Scene, tableCount = 0): PlaceStyle {
-  if (scene === 'room') return { floor: 1, wall: 4, items: [item('rug', 2, 3, 1), item('lamp', 0, 3), item('plant', 8, 2), item('shelf', 0, 1)] };
-  if (scene === 'hall') {
-    const w = baseHall(tableCount).w;
-    const items: Furniture[] = [];
-    for (let x = 3; x < w - 1; x += 6) items.push(item('plant', x, 4));
-    return { floor: 0, wall: 0, items };
-  }
+  if (scene === 'room') return { floor: 1, wall: 4, items: [...ROOM_BASICS.map((b) => ({ ...b })), item('rug', 2, 3, 1), item('lamp', 0, 3), item('plant', 8, 2), item('shelf', 0, 1)] };
+  if (scene === 'hall') return { floor: 0, wall: 0, items: hallPlants(baseHall(tableCount).w) };
   if (scene === 'lobby') {
     const w = 22;
     const h = 18;
@@ -537,14 +609,24 @@ function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
   const shelfTop = new Set<number>();
   const shelfUsed = new Set<number>();
   const wallUsed = new Set<string>();
+  const uniques = new Set<FurnitureKind>();
+  // na parede: nada em cima do elevador, das portas, das escadas nem do balcão
+  const wallBusy = new Set(base.reserved.map((p) => `${p.x}:${p.y}`));
+  for (const p of [base.elevator, base.stairs?.up, base.stairs?.down]) if (p) wallBusy.add(`${p.x}:${p.y}`);
+  const { x0, x1 } = base.building;
   for (const it of [...list].sort((a, b) => later(a) - later(b))) {
     const def = furnitureDef(it.k);
+    if (def.unique) {
+      if (uniques.has(it.k)) continue;
+      uniques.add(it.k);
+    }
     const tiles = footprint(it);
     const inside = (t: Point) => t.x >= 0 && t.y >= 0 && t.x < w && t.y < h;
     if (def.place === 'wall') {
       const keys = tiles.map((t) => `${it.r}:${t.x}:${t.y}`);
       const onWall = tiles.every((t) => inside(t) && (it.r ? t.x === 0 : t.y === 0));
-      if (!onWall || keys.some((k) => wallUsed.has(k))) continue;
+      const busy = tiles.some((t) => (base.kind !== 'room' && wallBusy.has(`${t.x}:${t.y}`)) || (!it.r && base.kind === 'inside' && t.x >= x0 - 1 && t.x <= x1 + 1));
+      if (!onWall || busy || keys.some((k) => wallUsed.has(k))) continue;
       for (const k of keys) wallUsed.add(k);
       items.push(it);
       continue;
@@ -572,18 +654,26 @@ function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
     }
     items.push(it);
   }
-  return { ...base, blocked, floor: style.floor, wall: style.wall, items };
+  const one = (k: FurnitureKind) => items.find((it) => it.k === k) ?? null;
+  const nook: RoomNook | null = base.kind === 'room' ? { desk: one('desk'), tv: one('tvGame'), pouf: one('pouf'), bed: one('bed') } : base.nook;
+  return { ...base, blocked, floor: style.floor, wall: style.wall, items, nook };
 }
 
 /**
  * O mapa de um lugar: o lobby tem tamanho fixo; o estabelecimento tem uma mesa por sala de voz no andar. Os andares
  * de cima usam as cores do térreo e os enfeites de sempre (o editor mexe no térreo). No corredor, `tableCount` é o
- * número de portas.
+ * número de quartos somando os andares, e `level` o andar do corredor.
  */
 export function layoutFor(scene: Scene, tableCount: number, style?: PlaceStyle | null, level = 0): PlazaLayout {
   if (scene === 'lobby') return applyStyle(baseLobby(), style ?? defaultStyle('lobby'));
-  if (scene === 'hall') return applyStyle(baseHall(tableCount), defaultStyle('hall', tableCount));
-  if (scene === 'room') return applyStyle(baseRoom(), style ?? defaultStyle('room'));
+  if (scene === 'hall') {
+    const base = baseHall(tableCount, level);
+    return applyStyle(base, { floor: 0, wall: 0, items: hallPlants(base.w) });
+  }
+  if (scene === 'room') {
+    const st = style ?? defaultStyle('room');
+    return applyStyle(baseRoom(), { ...st, items: roomBasics(st.items) });
+  }
   const base = baseInside(tableCount, level);
   if (!level) return applyStyle(base, style ?? defaultStyle('inside', tableCount));
   return applyStyle(base, { floor: style?.floor ?? 0, wall: style?.wall ?? 0, items: defaultStyle('inside', tableCount).items });
@@ -615,9 +705,9 @@ export function validateStyle(raw: unknown, scene: Scene, tableCount: number): {
     if (x < 0 || y < 0 || c < 0 || (it.r !== 0 && it.r !== 1)) return { ok: false, error: 'Posição inválida.' };
     items.push({ k: it.k, x, y, r: it.r, c });
   }
-  const style = { floor, wall, items };
+  const style = { floor, wall, items: scene === 'room' ? roomBasics(items) : items };
   const layout = layoutFor(scene, tableCount, style, 0);
-  if (layout.items.length !== items.length) return { ok: false, error: 'Algum móvel ficou fora do mapa, em cima de outro ou na passagem.' };
+  if (layout.items.length !== style.items.length) return { ok: false, error: 'Algum móvel ficou fora do mapa, em cima de outro ou na passagem.' };
   const must = [layout.door, ...layout.tables.map((t) => t.front), ...(layout.elevator ? [layout.elevator] : [])];
   for (const p of must) {
     if ((p.x !== layout.spawn.x || p.y !== layout.spawn.y) && !findPath(layout, layout.spawn, p).length) {
