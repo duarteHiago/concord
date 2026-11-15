@@ -594,6 +594,17 @@ db.exec(`
     PRIMARY KEY (server_id, user_id)
   );
 `);
+// Praça do servidor (ver plaza.ts): chão, paredes e móveis de cada lugar (lobby e estabelecimento), montados
+// por quem gerencia o servidor. Sem linha, vale o padrão (shared/plaza.ts#defaultStyle).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS plaza_places (
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    scene TEXT NOT NULL,
+    data TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (server_id, scene)
+  );
+`);
 const version = Number((db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value: string } | undefined)?.value ?? 1);
 if (version < 2) {
   // v2: permissão "Alterar o próprio apelido" (1 << 14) passa a vir no @everyone

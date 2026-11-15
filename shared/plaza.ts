@@ -99,6 +99,103 @@ export const EMOTES = [
 export type EmoteId = (typeof EMOTES)[number]['id'];
 export const isEmote = (raw: unknown): raw is EmoteId => EMOTES.some((e) => e.id === raw);
 
+/** A praça (lobby, ao ar livre) ou o estabelecimento do servidor (por dentro, com as mesas das calls). */
+export type Scene = 'lobby' | 'inside';
+export const isScene = (raw: unknown): raw is Scene => raw === 'lobby' || raw === 'inside';
+
+// ---- móveis e cores (o editor da Praça, para quem gerencia o servidor) ----
+
+export interface FurnitureDef {
+  label: string;
+  /** casas ao longo de x e de y (girado, troca) */
+  w: number;
+  h: number;
+  /** não dá para pisar em cima (o tapete dá) */
+  block: boolean;
+  scenes: Scene[];
+  /** dá para escolher a cor (ITEM_COLORS) */
+  colors?: boolean;
+}
+
+const BOTH: Scene[] = ['lobby', 'inside'];
+export const FURNITURE = {
+  plant: { label: 'Planta', w: 1, h: 1, block: true, scenes: BOTH },
+  tree: { label: 'Árvore', w: 1, h: 1, block: true, scenes: ['lobby'] },
+  flowers: { label: 'Canteiro', w: 1, h: 1, block: true, scenes: BOTH, colors: true },
+  lamp: { label: 'Luminária', w: 1, h: 1, block: true, scenes: BOTH },
+  bench: { label: 'Banco', w: 1, h: 1, block: true, scenes: BOTH },
+  cafe: { label: 'Mesinha', w: 1, h: 1, block: true, scenes: BOTH },
+  stool: { label: 'Banquinho', w: 1, h: 1, block: true, scenes: BOTH, colors: true },
+  sofa: { label: 'Sofá', w: 2, h: 1, block: true, scenes: BOTH, colors: true },
+  rug: { label: 'Tapete', w: 2, h: 2, block: false, scenes: BOTH, colors: true },
+  shelf: { label: 'Estante', w: 1, h: 1, block: true, scenes: ['inside'] },
+  arcade: { label: 'Fliperama', w: 1, h: 1, block: true, scenes: BOTH, colors: true },
+  fountain: { label: 'Fonte', w: 2, h: 2, block: true, scenes: ['lobby'] },
+} satisfies Record<string, FurnitureDef>;
+export type FurnitureKind = keyof typeof FURNITURE;
+const furnitureDef = (k: FurnitureKind): FurnitureDef => FURNITURE[k];
+export const isFurniture = (raw: unknown): raw is FurnitureKind => typeof raw === 'string' && Object.prototype.hasOwnProperty.call(FURNITURE, raw);
+
+export const ITEM_COLORS = ['#e8685a', '#2f62e6', '#2e9e6a', '#f5c451', '#8b5cf6', '#f08fb0', '#3fb8c9', '#ececec'];
+
+export interface Furniture {
+  k: FurnitureKind;
+  x: number;
+  y: number;
+  /** girado 90° (troca largura e profundidade) */
+  r: 0 | 1;
+  /** cor (índice em ITEM_COLORS) */
+  c: number;
+}
+
+export interface PlaceStyle {
+  /** chão (índice em FLOORS[lugar]) */
+  floor: number;
+  /** paredes, só lá dentro (índice em WALLS) */
+  wall: number;
+  items: Furniture[];
+}
+
+export const FLOORS: Record<Scene, { name: string; a: string; b: string }[]> = {
+  lobby: [
+    { name: 'Azulejo', a: '#7c86d6', b: '#6670c4' },
+    { name: 'Terracota', a: '#c9805e', b: '#b46e4f' },
+    { name: 'Grama', a: '#5fa86f', b: '#4f9660' },
+    { name: 'Pedra', a: '#8e8aa3', b: '#7d798f' },
+    { name: 'Areia', a: '#d8bf8a', b: '#c8ae79' },
+    { name: 'Rosa', a: '#d993b4', b: '#c781a2' },
+  ],
+  inside: [
+    { name: 'Madeira', a: '#9a6a4f', b: '#8c5f46' },
+    { name: 'Madeira clara', a: '#c4956b', b: '#b5875f' },
+    { name: 'Mármore', a: '#d9d6e6', b: '#c4c0d6' },
+    { name: 'Carpete', a: '#7b4fb8', b: '#6e45a8' },
+    { name: 'Ladrilho', a: '#3f8f8a', b: '#357a76' },
+    { name: 'Escuro', a: '#4a3f6b', b: '#40365e' },
+  ],
+};
+
+export const WALLS = [
+  { name: 'Lavanda', left: '#5b4a8a', back: '#6a589c' },
+  { name: 'Coral', left: '#b9564b', back: '#cc6357' },
+  { name: 'Verde', left: '#3f7a5c', back: '#4a8a69' },
+  { name: 'Azul', left: '#35539c', back: '#3f60ad' },
+  { name: 'Creme', left: '#c9b48f', back: '#d8c4a0' },
+  { name: 'Grafite', left: '#3b3a48', back: '#464555' },
+];
+
+export const MAX_ITEMS = 60;
+
+/** Casas ocupadas por um móvel. */
+export function footprint(it: Pick<Furniture, 'k' | 'x' | 'y' | 'r'>): Point[] {
+  const d = furnitureDef(it.k);
+  const w = it.r ? d.h : d.w;
+  const h = it.r ? d.w : d.h;
+  const out: Point[] = [];
+  for (let dx = 0; dx < w; dx++) for (let dy = 0; dy < h; dy++) out.push({ x: it.x + dx, y: it.y + dy });
+  return out;
+}
+
 // ---- mapa ----
 
 /** Mesas no máximo (uma por sala de voz, na ordem da lista de canais). */
@@ -127,91 +224,52 @@ export interface PlazaTable {
 /** Para onde o boneco olha: 0 = baixo-direita, 1 = baixo-esquerda, 2 = cima-esquerda, 3 = cima-direita */
 export type Facing = 0 | 1 | 2 | 3;
 
-/** A praça (lobby, ao ar livre) ou o estabelecimento do servidor (por dentro, com as mesas das calls). */
-export type Scene = 'lobby' | 'inside';
-export const isScene = (raw: unknown): raw is Scene => raw === 'lobby' || raw === 'inside';
-
 export interface PlazaLayout {
   kind: Scene;
   w: number;
   h: number;
   /** a porta: no lobby, a entrada do prédio; dentro, a saída. Pisar nela troca de lugar. */
   door: Point;
-  /** mesinhas de café do lobby (1 casa, com dois banquinhos ao lado) */
-  cafes: Point[];
   tables: PlazaTable[];
   /** casa por casa (y * w + x): 1 = não dá para pisar */
   blocked: Uint8Array;
+  /** só o que é fixo (prédio, balcão, mesas): móvel nenhum vai em cima */
+  fixed: Uint8Array;
+  /** casas que precisam ficar livres (porta, chegada, frente das mesas) */
+  reserved: Point[];
   spawn: Point;
   /** no lobby, o prédio do servidor; dentro, o balcão (de x0 a x1, nas linhas 0 a 2) */
   building: { x0: number; x1: number };
-  lamps: Point[];
-  plants: Point[];
-  benches: (Point & { facing: Facing })[];
+  floor: number;
+  wall: number;
+  /** móveis que valeram (os que caíram em lugar proibido ficam de fora) */
+  items: Furniture[];
 }
 
-/** O mapa de um lugar: o lobby é fixo; o estabelecimento tem uma mesa por sala de voz. */
-export function layoutFor(scene: Scene, tableCount: number): PlazaLayout {
-  return scene === 'lobby' ? buildLobby() : buildLayout(tableCount);
-}
+type Base = Omit<PlazaLayout, 'blocked' | 'floor' | 'wall' | 'items'>;
 
-export function buildLobby(): PlazaLayout {
+function baseLobby(): Base {
   const w = 22;
   const h = 18;
-  const blocked = new Uint8Array(w * h);
-  const block = (x: number, y: number) => {
-    if (x >= 0 && y >= 0 && x < w && y < h) blocked[y * w + x] = 1;
-  };
+  const fixed = new Uint8Array(w * h);
   const building = { x0: Math.floor(w / 2) - 4, x1: Math.floor(w / 2) + 3 };
-  for (let x = building.x0; x <= building.x1; x++) for (let y = 0; y <= 2; y++) block(x, y);
+  for (let x = building.x0; x <= building.x1; x++) for (let y = 0; y <= 2; y++) fixed[y * w + x] = 1;
   const door = { x: Math.floor(w / 2), y: 3 };
-  const cafes = [
-    { x: 4, y: 7 },
-    { x: 16, y: 7 },
-    { x: 5, y: 12 },
-    { x: 15, y: 12 },
-  ];
-  // mesinha no meio, banquinhos dos lados (ao longo de x)
-  for (const c of cafes) for (let dx = -1; dx <= 1; dx++) block(c.x + dx, c.y);
-  const lamps = [
-    { x: 1, y: 4 },
-    { x: w - 2, y: 4 },
-    { x: 1, y: h - 2 },
-    { x: w - 2, y: h - 2 },
-    { x: Math.floor(w / 2) - 3, y: 9 },
-    { x: Math.floor(w / 2) + 3, y: 9 },
-  ];
-  const plants = [
-    { x: building.x0 - 1, y: 0 },
-    { x: building.x1 + 1, y: 0 },
-    { x: 0, y: 9 },
-    { x: w - 1, y: 9 },
-    { x: building.x0 - 1, y: 3 },
-    { x: building.x1 + 1, y: 3 },
-  ];
-  const benches: PlazaLayout['benches'] = [
-    { x: 0, y: 11, facing: 0 },
-    { x: w - 1, y: 11, facing: 1 },
-    { x: 0, y: 13, facing: 0 },
-    { x: w - 1, y: 13, facing: 1 },
-  ];
-  for (const p of [...lamps, ...plants, ...benches]) block(p.x, p.y);
-  return { kind: 'lobby', w, h, door, cafes, tables: [], blocked, spawn: { x: Math.floor(w / 2), y: h - 2 }, building, lamps, plants, benches };
+  const spawn = { x: Math.floor(w / 2), y: h - 2 };
+  return { kind: 'lobby', w, h, door, tables: [], fixed, reserved: [door, { x: door.x, y: door.y + 1 }, spawn], spawn, building };
 }
 
-export function buildLayout(tableCount: number): PlazaLayout {
+function baseInside(tableCount: number): Base {
   const n = Math.max(0, Math.min(MAX_TABLES, Math.floor(tableCount)));
   const rows = Math.max(1, Math.ceil(n / COLS));
   const w = 2 + COLS * CELL + 1;
   const h = TOP + rows * CELL + 4;
-  const blocked = new Uint8Array(w * h);
+  const fixed = new Uint8Array(w * h);
   const block = (x: number, y: number) => {
-    if (x >= 0 && y >= 0 && x < w && y < h) blocked[y * w + x] = 1;
+    if (x >= 0 && y >= 0 && x < w && y < h) fixed[y * w + x] = 1;
   };
-
   const building = { x0: Math.floor(w / 2) - 4, x1: Math.floor(w / 2) + 3 };
   for (let x = building.x0; x <= building.x1; x++) for (let y = 0; y <= 2; y++) block(x, y);
-
   const tables: PlazaTable[] = [];
   for (let i = 0; i < n; i++) {
     const col = i % COLS;
@@ -235,27 +293,146 @@ export function buildLayout(tableCount: number): PlazaLayout {
     block(tv.x + 1, tv.y);
     tables.push({ x, y, seats, tv, front: { x: x + 1, y: y + 3 } });
   }
+  const spawn = { x: Math.floor(w / 2), y: h - 2 };
+  const door = { x: spawn.x, y: h - 1 };
+  return { kind: 'inside', w, h, door, tables, fixed, reserved: [door, spawn, ...tables.map((t) => t.front)], spawn, building };
+}
 
-  const lamps = [
+const item = (k: FurnitureKind, x: number, y: number, c = 0): Furniture => ({ k, x, y, r: 0, c });
+
+/** Como cada lugar vem antes de alguém mexer (os enfeites de sempre). */
+export function defaultStyle(scene: Scene, tableCount = 0): PlaceStyle {
+  if (scene === 'lobby') {
+    const w = 22;
+    const h = 18;
+    const b = baseLobby().building;
+    const items: Furniture[] = [];
+    for (const c of [
+      { x: 4, y: 7 },
+      { x: 16, y: 7 },
+      { x: 5, y: 12 },
+      { x: 15, y: 12 },
+    ]) {
+      items.push(item('stool', c.x - 1, c.y), item('cafe', c.x, c.y), item('stool', c.x + 1, c.y));
+    }
+    for (const p of [
+      { x: 1, y: 4 },
+      { x: w - 2, y: 4 },
+      { x: 1, y: h - 2 },
+      { x: w - 2, y: h - 2 },
+      { x: Math.floor(w / 2) - 3, y: 9 },
+      { x: Math.floor(w / 2) + 3, y: 9 },
+    ]) items.push(item('lamp', p.x, p.y));
+    for (const p of [
+      { x: b.x0 - 1, y: 0 },
+      { x: b.x1 + 1, y: 0 },
+      { x: 0, y: 9 },
+      { x: w - 1, y: 9 },
+      { x: b.x0 - 1, y: 3 },
+      { x: b.x1 + 1, y: 3 },
+    ]) items.push(item('plant', p.x, p.y));
+    for (const p of [
+      { x: 0, y: 11 },
+      { x: w - 1, y: 11 },
+      { x: 0, y: 13 },
+      { x: w - 1, y: 13 },
+    ]) items.push(item('bench', p.x, p.y));
+    return { floor: 0, wall: 0, items };
+  }
+  const base = baseInside(tableCount);
+  const { w, h, building: b } = base;
+  const items: Furniture[] = [];
+  for (const p of [
     { x: 1, y: 3 },
     { x: w - 2, y: 3 },
     { x: 1, y: h - 2 },
     { x: w - 2, y: h - 2 },
-  ];
-  const plants = [
-    { x: building.x0 - 1, y: 0 },
-    { x: building.x1 + 1, y: 0 },
+  ]) items.push(item('lamp', p.x, p.y));
+  for (const p of [
+    { x: b.x0 - 1, y: 0 },
+    { x: b.x1 + 1, y: 0 },
     { x: 0, y: Math.floor(h / 2) },
     { x: w - 1, y: Math.floor(h / 2) },
-  ];
-  const benches: PlazaLayout['benches'] = [
-    { x: 0, y: Math.floor(h / 2) + 2, facing: 0 },
-    { x: w - 1, y: Math.floor(h / 2) + 2, facing: 1 },
-  ];
-  for (const p of [...lamps, ...plants, ...benches]) block(p.x, p.y);
+  ]) items.push(item('plant', p.x, p.y));
+  for (const p of [
+    { x: 0, y: Math.floor(h / 2) + 2 },
+    { x: w - 1, y: Math.floor(h / 2) + 2 },
+  ]) items.push(item('bench', p.x, p.y));
+  return { floor: 0, wall: 0, items };
+}
 
-  const spawn = { x: Math.floor(w / 2), y: h - 2 };
-  return { kind: 'inside', w, h, door: { x: spawn.x, y: h - 1 }, cafes: [], tables, blocked, spawn, building, lamps, plants, benches };
+/** Põe os móveis no mapa; o que cair em lugar proibido (fora, em cima de algo, na passagem) fica de fora. */
+function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
+  const { w, h, fixed } = base;
+  const blocked = new Uint8Array(fixed);
+  const rug = new Uint8Array(w * h);
+  const reserved = new Set(base.reserved.map((p) => p.y * w + p.x));
+  const items: Furniture[] = [];
+  for (const it of style.items.slice(0, MAX_ITEMS)) {
+    if (!isFurniture(it.k)) continue;
+    const def = furnitureDef(it.k);
+    if (!def.scenes.includes(base.kind)) continue;
+    const tiles = footprint(it);
+    const ok = tiles.every((t) => {
+      if (t.x < 0 || t.y < 0 || t.x >= w || t.y >= h) return false;
+      const i = t.y * w + t.x;
+      if (fixed[i]) return false;
+      if (def.block) return !blocked[i] && !reserved.has(i);
+      return !rug[i];
+    });
+    if (!ok) continue;
+    // índices numéricos já conferidos acima (dentro do mapa); fill evita escrever por nome de propriedade
+    for (const t of tiles) {
+      const i = t.y * w + t.x;
+      (def.block ? blocked : rug).fill(1, i, i + 1);
+    }
+    items.push(it);
+  }
+  return { ...base, blocked, floor: style.floor, wall: style.wall, items };
+}
+
+/** O mapa de um lugar: o lobby tem tamanho fixo; o estabelecimento tem uma mesa por sala de voz. */
+export function layoutFor(scene: Scene, tableCount: number, style?: PlaceStyle | null): PlazaLayout {
+  const base = scene === 'lobby' ? baseLobby() : baseInside(tableCount);
+  return applyStyle(base, style ?? defaultStyle(scene, tableCount));
+}
+
+export const buildLobby = (style?: PlaceStyle | null) => layoutFor('lobby', 0, style);
+export const buildLayout = (tableCount: number, style?: PlaceStyle | null) => layoutFor('inside', tableCount, style);
+
+/**
+ * Confere o que o editor mandou salvar: índices válidos, móveis do lugar certo, nada em cima de nada, e a
+ * passagem livre do portal até a porta e a frente de todas as mesas.
+ */
+export function validateStyle(raw: unknown, scene: Scene, tableCount: number): { ok: true; style: PlaceStyle } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') return { ok: false, error: 'Nada para salvar.' };
+  const r = raw as Record<string, unknown>;
+  const int = (v: unknown, max: number) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < max ? v : -1);
+  const floor = int(r.floor, FLOORS[scene].length);
+  const wall = int(r.wall, WALLS.length);
+  if (floor < 0 || wall < 0) return { ok: false, error: 'Cor inválida.' };
+  if (!Array.isArray(r.items)) return { ok: false, error: 'Lista de móveis inválida.' };
+  if (r.items.length > MAX_ITEMS) return { ok: false, error: `No máximo ${MAX_ITEMS} móveis por lugar.` };
+  const items: Furniture[] = [];
+  for (const raw of r.items) {
+    const it = raw as Record<string, unknown>;
+    if (!it || !isFurniture(it.k)) return { ok: false, error: 'Móvel desconhecido.' };
+    const x = int(it.x, 64);
+    const y = int(it.y, 128);
+    const c = int(it.c ?? 0, ITEM_COLORS.length);
+    if (x < 0 || y < 0 || c < 0 || (it.r !== 0 && it.r !== 1)) return { ok: false, error: 'Posição inválida.' };
+    items.push({ k: it.k, x, y, r: it.r, c });
+  }
+  const style = { floor, wall, items };
+  const layout = layoutFor(scene, tableCount, style);
+  if (layout.items.length !== items.length) return { ok: false, error: 'Algum móvel ficou fora do mapa, em cima de outro ou na passagem.' };
+  const must = scene === 'lobby' ? [layout.door] : [layout.door, ...layout.tables.map((t) => t.front)];
+  for (const p of must) {
+    if ((p.x !== layout.spawn.x || p.y !== layout.spawn.y) && !findPath(layout, layout.spawn, p).length) {
+      return { ok: false, error: 'Assim fecha a passagem até a porta ou até alguma mesa.' };
+    }
+  }
+  return { ok: true, style };
 }
 
 export const walkable = (layout: PlazaLayout, x: number, y: number) =>

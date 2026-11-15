@@ -3,11 +3,11 @@
 // Quem está sentado (na call) vem do estado de voz, não daqui.
 import type { Server, Socket } from 'socket.io';
 import { P, has } from '../../shared/permissions.ts';
-import { SAY_RADIUS, buildLobby, buildLayout, cleanSay, distance, isEmote, lobbyRoom, nearestWalkable, sanitizeAvatar, walkable, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
+import { SAY_RADIUS, cleanSay, distance, isEmote, layoutFor, lobbyRoom, nearestWalkable, sanitizeAvatar, validateStyle, walkable, type PlaceStyle, type PlazaAvatar, type PlazaLayout, type Scene } from '../../shared/plaza.ts';
 import { removeFromRoom } from './livekit.ts';
 import { channelPermissions, isMember } from './access.ts';
 import { config } from './config.ts';
-import { all, get, type ChannelRow } from './db.ts';
+import { all, get, run, type ChannelRow } from './db.ts';
 
 interface Walker {
   /** no lobby (a praça) ou dentro do estabelecimento */
@@ -52,21 +52,87 @@ function voiceChannels(serverId: string) {
   return all<ChannelRow>("SELECT * FROM channels WHERE server_id = ? AND type = 'voice' ORDER BY position, name", serverId);
 }
 
-const LOBBY = buildLobby();
+// ---- como cada lugar está montado (editor da Praça) ----
 
-/** O mapa de cada lugar: o lobby é fixo; o de dentro sai das salas de voz. */
+const places = new Map<string, Partial<Record<Scene, PlaceStyle | null>>>(); // serverId -> lugar -> estilo (null = padrão)
+
+/** Copia os estilos de um servidor trocando o de um lugar (só 'lobby' ou 'inside', nunca outro nome). */
+function withScene(prev: Partial<Record<Scene, PlaceStyle | null>> | undefined, scene: Scene, style: PlaceStyle | null) {
+  return scene === 'lobby' ? { ...prev, lobby: style } : { ...prev, inside: style };
+}
+
+/** O estilo salvo de um lugar (null = o padrão). Lido do banco uma vez e guardado na memória. */
+export function placeOf(serverId: string, scene: Scene): PlaceStyle | null {
+  const cached = places.get(serverId);
+  if (cached && scene in cached) return cached[scene] ?? null;
+  const row = get<{ data: string }>('SELECT data FROM plaza_places WHERE server_id = ? AND scene = ?', serverId, scene);
+  let style: PlaceStyle | null = null;
+  try {
+    style = row ? (JSON.parse(row.data) as PlaceStyle) : null;
+  } catch {
+    style = null;
+  }
+  places.set(serverId, withScene(cached, scene, style));
+  return style;
+}
+
+/** O mapa de cada lugar: o lobby tem tamanho fixo; o de dentro sai das salas de voz. Os dois com os móveis salvos. */
 function layoutOf(serverId: string, scene: Scene) {
-  return scene === 'lobby' ? LOBBY : insideLayout(serverId);
+  return scene === 'lobby' ? lobbyLayout(serverId) : insideLayout(serverId);
+}
+
+function lobbyLayout(serverId: string) {
+  const style = placeOf(serverId, 'lobby');
+  const key = `lobby:${JSON.stringify(style)}`;
+  const cached = layouts.get(`${serverId}:lobby`);
+  if (cached?.key === key) return cached.layout;
+  const layout = layoutFor('lobby', 0, style);
+  layouts.set(`${serverId}:lobby`, { key, layout });
+  return layout;
 }
 
 /** O de dentro sai das salas de voz (todas, mesmo as que a pessoa não vê: a mesa delas aparece sem nome). */
 function insideLayout(serverId: string, channels = voiceChannels(serverId)) {
-  const key = channels.map((c) => c.id).join(',');
+  const style = placeOf(serverId, 'inside');
+  const key = `${channels.map((c) => c.id).join(',')}:${JSON.stringify(style)}`;
   const cached = layouts.get(serverId);
   if (cached?.key === key) return cached.layout;
-  const layout = buildLayout(channels.length);
+  const layout = layoutFor('inside', channels.length, style);
   layouts.set(serverId, { key, layout });
   return layout;
+}
+
+/**
+ * Salva como um lugar está montado (null volta ao padrão), avisa quem está na praça e tira de cima dos móveis
+ * novos quem estava parado onde eles foram postos. Devolve o erro, se o estilo não vale.
+ */
+export function savePlace(serverId: string, scene: Scene, raw: unknown): string | null {
+  let style: PlaceStyle | null = null;
+  if (raw !== null) {
+    const tableCount = scene === 'inside' ? voiceChannels(serverId).length : 0;
+    const check = validateStyle(raw, scene, tableCount);
+    if (!check.ok) return check.error;
+    style = check.style;
+    run(
+      'INSERT INTO plaza_places (server_id, scene, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (server_id, scene) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at',
+      serverId,
+      scene,
+      JSON.stringify(style),
+      Date.now(),
+    );
+  } else {
+    run('DELETE FROM plaza_places WHERE server_id = ? AND scene = ?', serverId, scene);
+  }
+  places.set(serverId, withScene(places.get(serverId), scene, style));
+  if (!io) return null;
+  io.to(room(serverId)).emit('plaza:place', { serverId, scene, style });
+  const layout = layoutOf(serverId, scene);
+  for (const [userId, w] of plazas.get(serverId) ?? []) {
+    if (w.scene !== scene || walkable(layout, w.x, w.y)) continue;
+    Object.assign(w, nearestWalkable(layout, w));
+    io.to(room(serverId)).emit('plaza:move', { serverId, userId, scene, x: w.x, y: w.y });
+  }
+  return null;
 }
 
 function avatarOf(userId: string) {
@@ -173,11 +239,11 @@ export function registerPlaza(socket: Socket, userId: string) {
     let w = plaza.get(userId);
     const isNew = !w;
     if (!w) {
-      w = { scene: 'lobby', ...spawnPoint(LOBBY, plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
+      w = { scene: 'lobby', ...spawnPoint(lobbyLayout(serverId), plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now() };
       plaza.set(userId, w);
     } else {
       // o mapa pode ter mudado (sala criada ou apagada) desde a última vez
-      Object.assign(w, nearestWalkable(w.scene === 'lobby' ? LOBBY : inside, w));
+      Object.assign(w, nearestWalkable(w.scene === 'lobby' ? lobbyLayout(serverId) : inside, w));
     }
     w.sockets.add(socket.id);
     joined.add(serverId);
@@ -188,6 +254,8 @@ export function registerPlaza(socket: Socket, userId: string) {
       // a mesa de uma sala que a pessoa não vê vai sem o id (aparece como "mesa reservada")
       tables: channels.slice(0, inside.tables.length).map((c) => (has(channelPermissions(c, userId), P.VIEW_CHANNEL) ? c.id : null)),
       walkers: [...plaza.entries()].map(([id, x]) => walkerJson(id, x)),
+      // como cada lugar está montado (null = padrão)
+      places: { lobby: placeOf(serverId, 'lobby'), inside: placeOf(serverId, 'inside') },
     });
     if (isNew) {
       socket.to(room(serverId)).emit('plaza:joined', { serverId, walker: walkerJson(userId, w) });

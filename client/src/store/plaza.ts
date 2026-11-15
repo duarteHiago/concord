@@ -2,7 +2,7 @@
 // O desenho e a animação dos passos ficam no componente (components/plaza/); aqui só o que vem do servidor.
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
-import type { EmoteId, PlazaAvatar, Scene } from '../../../shared/plaza.ts';
+import type { EmoteId, PlaceStyle, PlazaAvatar, Scene } from '../../../shared/plaza.ts';
 import { getSocket } from '../lib/socket';
 import { toast } from './toast';
 
@@ -23,7 +23,7 @@ export interface Bubble {
   at: number;
 }
 
-type Ack = { ok: boolean; error?: string; tables?: (string | null)[]; walkers?: Walker[] };
+type Ack = { ok: boolean; error?: string; tables?: (string | null)[]; walkers?: Walker[]; places?: Partial<Record<Scene, PlaceStyle | null>> };
 
 interface PlazaState {
   /** servidor cuja praça está aberta (null = fechada) */
@@ -32,6 +32,8 @@ interface PlazaState {
   phase: 'arriving' | 'ready' | null;
   /** canal de cada mesa, na ordem do mapa (null = sala que eu não vejo) */
   tables: (string | null)[];
+  /** como cada lugar está montado (null = o padrão), pelo editor de quem gerencia o servidor */
+  places: Partial<Record<Scene, PlaceStyle | null>>;
   walkers: Record<string, Walker>;
   bubbles: Bubble[];
   /** conversa da praça desde que entrei (só neste aparelho, some ao sair) */
@@ -69,7 +71,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
       }
       const walkers: Record<string, Walker> = {};
       for (const w of r.walkers ?? []) walkers[w.userId] = w;
-      set({ tables: r.tables ?? [], walkers });
+      set({ tables: r.tables ?? [], walkers, places: r.places ?? {} });
     });
   }
 
@@ -77,6 +79,7 @@ export const usePlaza = create<PlazaState>((set, get) => {
     serverId: null,
     phase: null,
     tables: [],
+    places: {},
     walkers: {},
     bubbles: [],
     log: [],
@@ -152,6 +155,9 @@ export function bindPlazaSocket(socket: Socket) {
       s().open(serverId);
       usePlaza.setState({ phase: 'ready' });
     }
+  });
+  socket.on('plaza:place', ({ serverId, scene, style }: { serverId: string; scene: Scene; style: PlaceStyle | null }) => {
+    if (here(serverId)) usePlaza.setState({ places: { ...s().places, [scene]: style } });
   });
   socket.on('plaza:count', ({ serverId, count }: { serverId: string; count: number }) => s().setCount(serverId, count));
   socket.on('plaza:joined', ({ serverId, walker }: { serverId: string; walker: Walker }) => {

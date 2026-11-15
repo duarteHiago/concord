@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { buildLayout, buildLobby, cleanSay, findPath, sanitizeAvatar, walkable } from '../../shared/plaza.ts';
+import { buildLayout, buildLobby, cleanSay, defaultStyle, findPath, sanitizeAvatar, validateStyle, walkable } from '../../shared/plaza.ts';
 import { signUp, startServer, type Client, type TestServer } from './helpers.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -34,6 +34,37 @@ describe('praça: mapa e validação (shared)', () => {
     assert.equal(cleanSay('  oi\n\ntudo‮ bem?  '), 'oi tudo bem?');
     assert.equal(cleanSay('x'.repeat(500)).length, 120);
     assert.equal(cleanSay(42), '');
+  });
+});
+
+describe('praça: editor (shared)', () => {
+  it('o padrão vale; móvel em cima do prédio, fora do mapa ou fechando a porta não vale', () => {
+    const base = defaultStyle('lobby');
+    assert.equal(validateStyle(base, 'lobby', 0).ok, true);
+    const lobby = buildLobby();
+    const onBuilding = { ...base, items: [...base.items, { k: 'plant', x: lobby.building.x0, y: 1, r: 0, c: 0 }] };
+    assert.equal(validateStyle(onBuilding, 'lobby', 0).ok, false);
+    const outside = { ...base, items: [{ k: 'sofa', x: lobby.w - 1, y: 5, r: 0, c: 0 }] };
+    assert.equal(validateStyle(outside, 'lobby', 0).ok, false);
+    // um muro de sofás em volta da porta fecha a passagem
+    const d = lobby.door;
+    const wall = { floor: 0, wall: 0, items: [
+      { k: 'sofa', x: d.x - 2, y: d.y + 2, r: 0, c: 0 },
+      { k: 'sofa', x: d.x, y: d.y + 2, r: 0, c: 0 },
+      { k: 'plant', x: d.x + 2, y: d.y + 2, r: 0, c: 0 },
+      { k: 'plant', x: d.x - 2, y: d.y + 1, r: 0, c: 0 },
+      { k: 'plant', x: d.x - 1, y: d.y + 1, r: 0, c: 0 },
+      { k: 'plant', x: d.x + 1, y: d.y + 1, r: 0, c: 0 },
+      { k: 'plant', x: d.x + 2, y: d.y + 1, r: 0, c: 0 },
+      { k: 'plant', x: d.x - 1, y: d.y, r: 0, c: 0 },
+      { k: 'plant', x: d.x + 1, y: d.y, r: 0, c: 0 },
+    ] };
+    const check = validateStyle(wall, 'lobby', 0);
+    assert.equal(check.ok, false);
+    // móvel só de dentro não vai no lobby; tapete não bloqueia o caminho
+    assert.equal(validateStyle({ ...base, items: [{ k: 'shelf', x: 3, y: 5, r: 0, c: 0 }] }, 'lobby', 0).ok, false);
+    const rug = validateStyle({ floor: 2, wall: 0, items: [{ k: 'rug', x: d.x - 1, y: d.y + 2, r: 0, c: 3 }] }, 'lobby', 0);
+    assert.equal(rug.ok, true);
   });
 });
 
@@ -101,7 +132,7 @@ describe('praça: andando e conversando', () => {
     const lobby = buildLobby();
     const moves: { userId: string; x: number; y: number }[] = [];
     b.on('plaza:move', (m) => moves.push(m));
-    const cafe = lobby.cafes[0];
+    const cafe = lobby.items.find((i) => i.k === 'cafe')!;
     a.emit('plaza:move', { serverId, x: cafe.x, y: cafe.y });
     a.emit('plaza:move', { serverId, x: 999, y: 0 });
     a.emit('plaza:move', { serverId, x: cafe.x, y: cafe.y + 1 });
@@ -198,6 +229,36 @@ describe('praça: andando e conversando', () => {
     assert.equal(gotB.length, 1);
     assert.equal(gotB[0].text, 'olá praça');
     assert.equal(gotC.length, 0);
+  });
+
+  it('só quem gerencia monta a praça; todo mundo recebe, e quem estava no lugar do móvel sai de cima', async () => {
+    const { ana, bia, serverId, a, b } = await setup();
+    await emitAck(a, 'plaza:enter', { serverId });
+    await emitAck(b, 'plaza:enter', { serverId });
+    const lobby = buildLobby();
+    // bia fica numa casa livre; o móvel novo vai bem ali
+    const spot = { x: 6, y: 15 };
+    b.emit('plaza:move', { serverId, x: spot.x, y: spot.y });
+    await sleep(200);
+    const style = { ...defaultStyle('lobby'), floor: 1, items: [...defaultStyle('lobby').items, { k: 'fountain', x: spot.x, y: spot.y, r: 0, c: 0 }] };
+    assert.equal((await bia.put(`/servers/${serverId}/plaza/place`, { scene: 'lobby', style })).status, 403);
+    const places: { scene: string; style: { floor: number } | null }[] = [];
+    const moves: { userId: string; x: number; y: number }[] = [];
+    a.on('plaza:place', (m) => places.push(m));
+    a.on('plaza:move', (m) => moves.push(m));
+    assert.equal((await ana.put(`/servers/${serverId}/plaza/place`, { scene: 'lobby', style })).status, 200);
+    await sleep(250);
+    assert.equal(places.length, 1);
+    assert.equal(places[0].style?.floor, 1);
+    const moved = moves.find((m) => m.userId === bia.id)!;
+    assert.ok(moved && !(moved.x === spot.x && moved.y === spot.y));
+    // fechar a porta não vale; null volta ao padrão
+    const d = lobby.door;
+    const blocked = { ...style, items: [...style.items, { k: 'plant', x: d.x, y: d.y + 1, r: 0, c: 0 }] };
+    assert.equal((await ana.put(`/servers/${serverId}/plaza/place`, { scene: 'lobby', style: blocked })).status, 400);
+    assert.equal((await ana.put(`/servers/${serverId}/plaza/place`, { scene: 'lobby', style: null })).status, 200);
+    const again = await emitAck(b, 'plaza:enter', { serverId });
+    assert.equal((again.places as { lobby: unknown }).lobby, null);
   });
 
   it('quem sai do servidor sai da praça', async () => {

@@ -206,6 +206,7 @@ function Shell() {
   const channel = detail?.channels.find((c) => c.id === channelId);
   const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}`;
 
+  const showPlaza = !!activeServerId && activeServerId !== HOME && !!detail?.plaza && !settingsOpen && !profileOpen && !releasesOpen;
   const showSidebar = !mobile || mobileView === 'sidebar';
   const showContent = !mobile || mobileView === 'chat';
 
@@ -245,15 +246,18 @@ function Shell() {
   );
 
   return (
-    <div className={cx('flex h-full flex-col bg-surface-1', !mobile && 'p-4')}>
+    <div className={cx('flex h-full flex-col bg-surface-1', !mobile && (showPlaza ? 'px-4 pt-4 pb-2' : 'p-4'))}>
       <div className={cx('flex min-h-0 flex-1', !mobile && 'gap-4')}>
         {showSidebar && <ChannelSidebar />}
         {showContent && content}
       </div>
-      <MobileBottomNav />
-      {activeServerId && activeServerId !== HOME && detail?.plaza && !settingsOpen && !profileOpen && !releasesOpen && (
-        <PlazaButton serverId={activeServerId} initialCount={detail.plaza.count} />
+      {/* faixa própria do globo da Praça, embaixo dos painéis: não cobre nada (nem os botões da call) e não some */}
+      {showPlaza && (
+        <div className={cx('flex shrink-0 justify-end', mobile ? 'px-3 py-1.5' : 'pt-2')}>
+          <PlazaButton serverId={activeServerId!} initialCount={detail!.plaza!.count} />
+        </div>
       )}
+      <MobileBottomNav />
     </div>
   );
 }
