@@ -303,6 +303,8 @@ export interface PlazaLayout {
   doors: Point[];
   /** no quarto, onde ficam a escrivaninha, a TV com o videogame e a cama (e onde o dono aparece em cada uma) */
   nook: RoomNook | null;
+  /** no corredor, as escadas para o andar de cima e para o de baixo (pisar nelas troca de andar) */
+  stairs?: { up: Point | null; down: Point | null };
 }
 
 export interface RoomNook {
@@ -378,23 +380,53 @@ function baseInside(tableCount: number, level = 0): Base {
 
 // ---- quartos ----
 
-/** Portas no corredor, no máximo (quem está online no servidor, e você). */
-export const MAX_HALL_DOORS = 16;
+/** Quartos em cada andar do corredor; com o andar cheio, uma escada no fim leva ao de cima. */
+export const HALL_DOORS_PER_FLOOR = 8;
+/** Andares do corredor, no máximo. */
+export const MAX_HALL_FLOORS = 10;
+/** Quartos no corredor, no máximo (somando os andares). */
+export const MAX_HALL_DOORS = HALL_DOORS_PER_FLOOR * MAX_HALL_FLOORS;
+
+const hallTotal = (total: number) => Math.max(0, Math.min(MAX_HALL_DOORS, Math.floor(total) || 0));
+/** Quantos andares o corredor tem com `total` quartos. */
+export const hallFloorCount = (total: number) => Math.max(1, Math.ceil(hallTotal(total) / HALL_DOORS_PER_FLOOR));
 /** Sem prédio nem balcão (os quadros da parede vão para onde quiserem). */
 const NO_BUILDING = { x0: 1000, x1: 1000 };
 
-/** A casa na frente da porta do quarto número `i` do corredor. */
+/** A casa na frente da porta número `i` de um andar do corredor. */
 export const hallDoor = (i: number): Point => ({ x: 4 + i * 3, y: 0 });
 
-/** O corredor dos quartos: o elevador na ponta da esquerda e uma porta a cada 3 casas na parede do fundo. */
-function baseHall(doorCount: number): Base {
-  const n = Math.max(0, Math.min(MAX_HALL_DOORS, Math.floor(doorCount)));
-  const w = Math.max(10, hallDoor(n - 1).x + 4);
+/** Onde fica o quarto número `i` (na ordem do corredor, a mesma para todo mundo): o andar e a casa na frente da porta. */
+export const hallSpot = (i: number) => ({ level: Math.floor(i / HALL_DOORS_PER_FLOOR), at: hallDoor(i % HALL_DOORS_PER_FLOOR) });
+
+const hallWidth = (doors: number) => Math.max(10, hallDoor(doors - 1).x + 4);
+
+/**
+ * Um andar do corredor dos quartos: até HALL_DOORS_PER_FLOOR portas, uma a cada 3 casas na parede do fundo. No
+ * primeiro, o elevador na ponta da esquerda; nos de cima, a escada para descer no lugar dele. Se tem andar acima,
+ * a escada para subir fica no fim. `total` = quartos somando todos os andares.
+ */
+function baseHall(total: number, level = 0): Base {
+  const all = hallTotal(total);
+  const floors = hallFloorCount(all);
+  const lv = Math.max(0, Math.min(floors - 1, Math.floor(level) || 0));
+  const n = Math.max(0, Math.min(HALL_DOORS_PER_FLOOR, all - lv * HALL_DOORS_PER_FLOOR));
+  const w = hallWidth(n);
   const h = 5;
-  const elevator = { x: 1, y: 0 };
+  const elevator = lv === 0 ? { x: 1, y: 0 } : null;
+  const down = lv > 0 ? { x: 1, y: 0 } : null;
+  const up = lv < floors - 1 ? { x: w - 2, y: 0 } : null;
   const spawn = { x: 1, y: 1 };
   const doors = Array.from({ length: n }, (_, i) => hallDoor(i));
-  return { kind: 'hall', w, h, door: OFF_MAP, tables: [], fixed: new Uint8Array(w * h), reserved: [elevator, spawn, ...doors], spawn, building: NO_BUILDING, level: 0, elevator, doors, nook: null };
+  const reserved = [spawn, ...doors, ...[elevator, down, up].filter((p): p is Point => !!p)];
+  return { kind: 'hall', w, h, door: OFF_MAP, tables: [], fixed: new Uint8Array(w * h), reserved, spawn, building: NO_BUILDING, level: lv, elevator, doors, nook: null, stairs: { up, down } };
+}
+
+/** Plantas encostadas na parede da frente do corredor. */
+function hallPlants(w: number): Furniture[] {
+  const items: Furniture[] = [];
+  for (let x = 3; x < w - 1; x += 6) items.push(item('plant', x, 4));
+  return items;
 }
 
 /** O quarto de alguém: escrivaninha, TV com videogame e cama fixas; a porta (de volta ao corredor) na frente. */
@@ -459,12 +491,7 @@ const item = (k: FurnitureKind, x: number, y: number, c = 0): Furniture => ({ k,
 /** Como cada lugar vem antes de alguém mexer (os enfeites de sempre). */
 export function defaultStyle(scene: Scene, tableCount = 0): PlaceStyle {
   if (scene === 'room') return { floor: 1, wall: 4, items: [item('rug', 2, 3, 1), item('lamp', 0, 3), item('plant', 8, 2), item('shelf', 0, 1)] };
-  if (scene === 'hall') {
-    const w = baseHall(tableCount).w;
-    const items: Furniture[] = [];
-    for (let x = 3; x < w - 1; x += 6) items.push(item('plant', x, 4));
-    return { floor: 0, wall: 0, items };
-  }
+  if (scene === 'hall') return { floor: 0, wall: 0, items: hallPlants(baseHall(tableCount).w) };
   if (scene === 'lobby') {
     const w = 22;
     const h = 18;
@@ -578,11 +605,14 @@ function applyStyle(base: Base, style: PlaceStyle): PlazaLayout {
 /**
  * O mapa de um lugar: o lobby tem tamanho fixo; o estabelecimento tem uma mesa por sala de voz no andar. Os andares
  * de cima usam as cores do térreo e os enfeites de sempre (o editor mexe no térreo). No corredor, `tableCount` é o
- * número de portas.
+ * número de quartos somando os andares, e `level` o andar do corredor.
  */
 export function layoutFor(scene: Scene, tableCount: number, style?: PlaceStyle | null, level = 0): PlazaLayout {
   if (scene === 'lobby') return applyStyle(baseLobby(), style ?? defaultStyle('lobby'));
-  if (scene === 'hall') return applyStyle(baseHall(tableCount), defaultStyle('hall', tableCount));
+  if (scene === 'hall') {
+    const base = baseHall(tableCount, level);
+    return applyStyle(base, { floor: 0, wall: 0, items: hallPlants(base.w) });
+  }
   if (scene === 'room') return applyStyle(baseRoom(), style ?? defaultStyle('room'));
   const base = baseInside(tableCount, level);
   if (!level) return applyStyle(base, style ?? defaultStyle('inside', tableCount));

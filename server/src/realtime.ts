@@ -395,6 +395,7 @@ export function liveStats() {
 
 const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:recording', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping', 'plaza:enter', 'plaza:leave', 'plaza:move', 'plaza:say', 'plaza:emote', 'plaza:avatar', 'plaza:avatars', 'plaza:door', 'plaza:floor',
   'plaza:hall',
+  'plaza:stairs',
   'plaza:room', 'plaza:table', 'plaza:drink', 'plaza:peek', 'plaza:peek-renew', 'plaza:peek-stop', 'plaza:close-table']);
 
 // Faxina das salas de voz. O LiveKit aceita qualquer um com token válido, mas só vale estar numa sala quem entrou

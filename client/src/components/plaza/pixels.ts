@@ -501,6 +501,55 @@ function elevator(ctx: Ctx, x: number, y: number, level: number) {
   fillPoly(ctx, [{ x: p.x, y: p.y + 3 }, { x: p.x + 12, y: p.y + 8 }, { x: p.x, y: p.y + 13 }, { x: p.x - 12, y: p.y + 8 }], '#4b4470');
 }
 
+/** Escada para subir: degraus de madeira na casa encostada na parede do fundo, até uma passagem escura na parede. */
+function stairsUp(ctx: Ctx, x: number, y: number) {
+  const q = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(x + u0, y, z0), at(x + u1, y, z0), at(x + u1, y, z1), at(x + u0, y, z1)], c);
+  q(0.04, 0.96, 20, 58, PAL.outline);
+  q(0.1, 0.9, 22, 56, '#141127');
+  q(0.1, 0.9, 22, 26, '#2a2350');
+  // pisante claro, espelho escuro: cada degrau aparece como uma listra
+  const wood = { top: '#e6b384', left: '#6e4834', right: '#4a2f22' };
+  const steps = 5;
+  for (let k = 0; k < steps; k++) box(ctx, x + 0.1, y, 0.8, 0.95 - k * 0.18, 0, (k + 1) * 5, wood);
+  // corrimão dos dois lados
+  ctx.fillStyle = '#f5c451';
+  for (const u of [0.1, 0.88]) {
+    const a = at(x + u, y + 0.95, 12);
+    const b = at(x + u, y + 0.05, 34);
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y));
+    for (let i = 0; i <= n; i++) ctx.fillRect(Math.round(a.x + ((b.x - a.x) * i) / n), Math.round(a.y + ((b.y - a.y) * i) / n), 1, 1);
+  }
+}
+
+/** Escada para descer: um vão no chão com degraus sumindo no escuro e um corrimão em volta. */
+function stairsDown(ctx: Ctx, x: number, y: number) {
+  const quad = (u0: number, v0: number, u1: number, v1: number, c: string) => fillPoly(ctx, [at(x + u0, y + v0), at(x + u1, y + v0), at(x + u1, y + v1), at(x + u0, y + v1)], c);
+  quad(0.05, 0.05, 0.95, 0.95, PAL.outline);
+  quad(0.1, 0.1, 0.9, 0.9, '#141127');
+  // degraus: os da frente mais claros (mais perto do chão), indo para o fundo e para o escuro
+  const tones = ['#8a5a3c', '#6e4834', '#4a2f22', '#2a1c16'];
+  tones.forEach((c, k) => quad(0.12, 0.88 - (k + 1) * 0.18, 0.88, 0.88 - k * 0.18 - 0.04, c));
+  ctx.fillStyle = '#f5c451';
+  for (const [u, v] of [
+    [0.08, 0.92],
+    [0.92, 0.92],
+    [0.92, 0.08],
+  ]) {
+    const p = at(x + u, y + v);
+    ctx.fillRect(Math.round(p.x), Math.round(p.y) - 9, 1, 9);
+  }
+  const l = at(x + 0.08, y + 0.92, 9);
+  const r = at(x + 0.92, y + 0.92, 9);
+  const t = at(x + 0.92, y + 0.08, 9);
+  for (const [a, b] of [
+    [l, r],
+    [r, t],
+  ]) {
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y));
+    for (let i = 0; i <= n; i++) ctx.fillRect(Math.round(a.x + ((b.x - a.x) * i) / n), Math.round(a.y + ((b.y - a.y) * i) / n), 1, 1);
+  }
+}
+
 /** Porta de um quarto na parede do fundo do corredor (a sua tem a moldura na cor do servidor). */
 function roomDoor(ctx: Ctx, x: number, y: number, frame: string) {
   const q = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(x + u0, y, z0), at(x + u1, y, z0), at(x + u1, y, z1), at(x + u0, y, z1)], c);
@@ -1029,6 +1078,8 @@ export function renderStatic(layout: PlazaLayout, accent: string, mine = -1) {
     if (layout.door.x >= 0) exitMat(ctx, layout.door.x, layout.door.y);
     if (layout.elevator) elevator(ctx, layout.elevator.x, layout.elevator.y, layout.level);
     layout.doors.forEach((d, i) => roomDoor(ctx, d.x, d.y, i === mine ? accent : '#5e3826'));
+    if (layout.stairs?.up) stairsUp(ctx, layout.stairs.up.x, layout.stairs.up.y);
+    if (layout.stairs?.down) stairsDown(ctx, layout.stairs.down.x, layout.stairs.down.y);
   } else {
     platformEdge(ctx, layout);
     const f = FLOORS.lobby[layout.floor] ?? FLOORS.lobby[0];
