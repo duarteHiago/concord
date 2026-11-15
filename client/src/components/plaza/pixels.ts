@@ -1009,7 +1009,8 @@ export function outlineTiles(ctx: Ctx, tiles: Point[], color: string) {
 // ---- cena ----
 
 /** Camada fixa (chão, borda e prédio): desenhada uma vez por mapa. Devolve o canvas e onde fica a casa (0, 0). */
-export function renderStatic(layout: PlazaLayout, accent: string) {
+/** `mine` = a porta do corredor que é do quarto de quem está vendo (pintada na cor de destaque), ou -1. */
+export function renderStatic(layout: PlazaLayout, accent: string, mine = -1) {
   const left = at(0, layout.h).x - 2;
   const right = at(layout.w, 0).x + 2;
   const top = -90;
@@ -1027,8 +1028,7 @@ export function renderStatic(layout: PlazaLayout, accent: string) {
     for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) woodTile(ctx, x, y, f.a, f.b);
     if (layout.door.x >= 0) exitMat(ctx, layout.door.x, layout.door.y);
     if (layout.elevator) elevator(ctx, layout.elevator.x, layout.elevator.y, layout.level);
-    // a primeira porta do corredor é a sua
-    layout.doors.forEach((d, i) => roomDoor(ctx, d.x, d.y, i === 0 ? accent : '#5e3826'));
+    layout.doors.forEach((d, i) => roomDoor(ctx, d.x, d.y, i === mine ? accent : '#5e3826'));
   } else {
     platformEdge(ctx, layout);
     const f = FLOORS.lobby[layout.floor] ?? FLOORS.lobby[0];

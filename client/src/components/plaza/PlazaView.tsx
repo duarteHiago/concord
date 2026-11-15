@@ -170,11 +170,13 @@ export default function PlazaView() {
   const online = useApp((s) => s.online);
   const rooms = usePlaza((s) => s.rooms);
   // as portas do corredor: a minha primeiro, depois quem está online, depois o resto (até MAX_HALL_DOORS)
+  // a mesma ordem para todo mundo (quem entrou no servidor primeiro fica na primeira porta): cada quarto tem o seu
+  // lugar fixo no corredor, e quem está lá vê os outros parados na frente da porta certa
   const hallDoors = useMemo(() => {
-    const others = (detail?.members ?? []).filter((m) => m.id !== me.id);
-    others.sort((a, b) => Number(!!online[b.id]) - Number(!!online[a.id]) || memberName(a).localeCompare(memberName(b)));
-    return [me.id, ...others.map((m) => m.id)].slice(0, MAX_HALL_DOORS);
-  }, [detail?.members, online, me.id]);
+    const all = [...(detail?.members ?? [])];
+    all.sort((a, b) => a.joinedAt - b.joinedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return all.map((m) => m.id).slice(0, MAX_HALL_DOORS);
+  }, [detail?.members]);
   // andar onde eu estou (lá dentro) e as mesas dele
   const myFloor = inside ? (walkers[me.id]?.floor ?? 0) : 0;
   const hasFloors = floorsAll.length > 1;
@@ -228,8 +230,8 @@ export default function PlazaView() {
   const memberById = useMemo(() => new Map((detail?.members ?? []).map((m) => [m.id, m])), [detail?.members]);
 
   // tudo o que o laço de desenho lê sem precisar recriar o laço
-  const live = useRef({ layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId, room: myRoom, backX, hallDoors });
-  live.current = { layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId, room: myRoom, backX, hallDoors };
+  const live = useRef({ layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId, room: myRoom, backX, hallDoors, meId: me.id });
+  live.current = { layout, inside, tables, channelById, memberById, voiceStates: voiceStates ?? [], voiceChannelId, room: myRoom, backX, hallDoors, meId: me.id };
 
   const world = useRef({
     anims: new Map<string, Anim>(),
@@ -305,9 +307,10 @@ export default function PlazaView() {
       const voice = useVoice.getState();
 
       // camada fixa: refeita só quando o mapa muda
-      const key = `${layout.kind}:${layout.w}x${layout.h}:${layout.floor}:${layout.wall}:${JSON.stringify(layout.items.filter((i) => i.k === 'rug'))}`;
+      const myDoor = layout.kind === 'hall' ? L.hallDoors.indexOf(L.meId) : -1;
+      const key = `${layout.kind}:${layout.w}x${layout.h}:${layout.floor}:${layout.wall}:${myDoor}:${JSON.stringify(layout.items.filter((i) => i.k === 'rug' || i.k === 'poster'))}`;
       if (w.staticKey !== key) {
-        w.staticLayer = renderStatic(layout, PAL.coral);
+        w.staticLayer = renderStatic(layout, PAL.coral, myDoor);
         w.staticKey = key;
       }
       const st = w.staticLayer!;
