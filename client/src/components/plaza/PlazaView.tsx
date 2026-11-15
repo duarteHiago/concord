@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { P, has } from '../../../../shared/permissions.ts';
 import {
   EMOTES,
+  NEAR_RADIUS,
   SAY_MAX,
   defaultAvatar,
   defaultStyle,
@@ -157,6 +158,7 @@ export default function PlazaView() {
   const peeking = usePlazaPeek((s) => s.channelId);
   const peekUntil = usePlazaPeek((s) => s.until);
   const whispering = usePlazaPeek((s) => s.whispering);
+  const peekNear = usePlazaPeek((s) => s.near);
   const allPeeks = usePlaza((s) => s.peeks[serverId]);
   const closedTables = usePlaza((s) => s.closed[serverId]);
   const pendingWatch = useRef<string | null>(null);
@@ -178,6 +180,11 @@ export default function PlazaView() {
     pendingDoor: false,
     /** quando o volume da voz do lobby foi recalculado pela última vez */
     volumesAt: 0,
+    /** ouvir de perto: última checagem, última renovação, tentativa em andamento, falhas recentes por mesa */
+    nearAt: 0,
+    nearRenewAt: 0,
+    nearStarting: false,
+    nearFail: new Map<string, number>(),
     staticKey: '',
     staticLayer: null as ReturnType<typeof renderStatic> | null,
     view: { x: 0, y: 0, scale: 1, dpr: 1 },
@@ -316,7 +323,43 @@ export default function PlazaView() {
       if (peek.channelId && meAnim) {
         const ti = L.tables.indexOf(peek.channelId);
         const tb = layout.tables[ti];
-        if (tb) peek.setVolume(proximityVolume(Math.max(0, distance(meAnim, { x: tb.x + 0.5, y: tb.y + 0.5 }) - 1.5)));
+        if (tb) {
+          const d = distance(meAnim, { x: tb.x + 0.5, y: tb.y + 0.5 });
+          // de perto: vai sumindo até a borda do alcance; espiando: o volume normal da proximidade
+          peek.setVolume(peek.near ? Math.max(0.12, 1 - Math.max(0, d - 1.5) / (NEAR_RADIUS - 1)) : proximityVolume(Math.max(0, d - 1.5)));
+        }
+      }
+
+      // ouvir de perto: chegou perto de uma mesa com gente (lá dentro, fora de call), começa a ouvir; saiu, para
+      if (L.inside && !L.voiceChannelId && meAnim && now - w.nearAt > 400 && (!peek.channelId || peek.near) && !w.nearStarting) {
+        w.nearAt = now;
+        let best: { ch: string; d: number } | null = null;
+        const closedNow = usePlaza.getState().closed[serverId] ?? [];
+        layout.tables.forEach((tb, i) => {
+          const ch = L.tables[i];
+          const c = ch ? L.channelById.get(ch) : undefined;
+          if (!ch || !c || !has(c.permissions, P.CONNECT) || closedNow.includes(ch)) return;
+          if (!L.voiceStates.some((v) => v.channelId === ch)) return;
+          if ((w.nearFail.get(ch) ?? 0) > now) return;
+          const d = distance(meAnim, { x: tb.x + 0.5, y: tb.y + 0.5 });
+          if (d <= NEAR_RADIUS && (!best || d < best.d)) best = { ch, d };
+        });
+        const target = best as { ch: string; d: number } | null;
+        if (target && peek.channelId !== target.ch) {
+          w.nearStarting = true;
+          void peek.start(serverId, target.ch, true).then((ok) => {
+            w.nearStarting = false;
+            w.nearRenewAt = performance.now();
+            if (!ok) w.nearFail.set(target.ch, performance.now() + 15_000);
+          });
+        } else if (!target && peek.channelId && peek.near) {
+          peek.stop();
+        } else if (target && peek.near && now - w.nearRenewAt > 7000) {
+          w.nearRenewAt = now;
+          peek.renew();
+        }
+      } else if ((!L.inside || L.voiceChannelId) && peek.near && peek.channelId) {
+        peek.stop();
       }
 
       // cheguei na porta: troca de lugar (o servidor confere)
@@ -872,7 +915,7 @@ export default function PlazaView() {
             voice={(voiceStates ?? []).find((v) => v.userId === id)}
             idle={!seating.has(id) && !!walkers[id] && Date.now() - walkers[id].activeAt > IDLE_MS}
             bubbles={bubbles.filter((b) => b.userId === id)}
-            peeking={(allPeeks ?? []).some((p) => p.userId === id && p.until > Date.now())}
+            peeking={(allPeeks ?? []).find((p) => p.userId === id && p.until > Date.now())?.near ? 'near' : (allPeeks ?? []).some((p) => p.userId === id && p.until > Date.now()) ? 'peek' : undefined}
             emote={emotes[id]}
           />
         </div>
@@ -1008,7 +1051,7 @@ export default function PlazaView() {
           onClose={() => setTableMenu(null)}
         />
       )}
-      {peeking && <PeekBar channel={channelById.get(peeking)} until={peekUntil} whispering={whispering} />}
+      {peeking && <PeekBar channel={channelById.get(peeking)} until={peekUntil} whispering={whispering} near={peekNear} />}
       {pip && (
         <StreamPip
           userId={pip}
@@ -1028,55 +1071,65 @@ export default function PlazaView() {
 
 // ---- pedaços da tela ----
 
-/** Mesa clicada fora de call: sentar (entrar na call) ou espiar por alguns segundos. */
+/** Mesa clicada fora de call: uma barrinha com sentar ou espiar. */
 function TableMenu({ channel, people, closed, onSit, onPeek, onClose }: { channel?: Channel; people: number; closed: boolean; onSit: () => void; onPeek: () => void; onClose: () => void }) {
-  const peekBlock = closed ? 'Quem está nessa mesa fechou para espiadas.' : people === 0 ? 'Não tem ninguém nessa mesa.' : null;
+  const peekBlock = closed ? 'A mesa fechou para espiadas' : people === 0 ? 'Ninguém na mesa' : null;
   return (
-    <div className="absolute inset-0 z-[64] grid place-items-center bg-black/30 p-4" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="animate-pop-in w-[min(92vw,300px)] rounded-2xl border border-white/10 bg-[#1b1430]/95 p-3 text-white shadow-2xl">
-        <div className="plaza-pixel mb-0.5 text-base font-bold">#{channel?.name ?? 'mesa'}</div>
-        <div className="mb-3 text-xs text-white/55">{people ? `${people} ${people === 1 ? 'pessoa' : 'pessoas'} na call` : 'Ninguém na call ainda'}</div>
-        <button onClick={onSit} className="mb-2 w-full rounded-xl bg-[#e8685a] py-2 text-sm font-bold hover:brightness-110">
-          Sentar e entrar na call
-        </button>
-        <button
-          onClick={onPeek}
-          disabled={!!peekBlock}
-          title={peekBlock ?? 'Ouvir a conversa por 10 segundos (quem está na mesa vê que você está espiando)'}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-sm font-bold hover:bg-white/15 disabled:opacity-40"
-        >
-          <Eye size={15} /> Espiar por 10 s
-        </button>
-        <div className="mt-2 text-[11px] text-white/45">{peekBlock ?? 'Quem está na mesa vê que você está espiando.'}</div>
-      </div>
+    <div className="animate-pop-in absolute bottom-[76px] left-1/2 z-[64] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-[#1b1430]/95 p-1 pl-2.5 text-white shadow-xl">
+      <span className="plaza-pixel max-w-[140px] truncate text-[13px] font-bold">#{channel?.name ?? 'mesa'}</span>
+      {people > 0 && <span className="text-[11px] text-white/50">· {people}</span>}
+      <button onClick={onSit} className="ml-1 rounded-lg bg-[#e8685a] px-2.5 py-1 text-xs font-bold hover:brightness-110">
+        Sentar
+      </button>
+      <button
+        onClick={onPeek}
+        disabled={!!peekBlock}
+        title={peekBlock ?? 'Ouvir 10 s (a mesa vê que você está espiando)'}
+        className="flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-xs font-bold hover:bg-white/15 disabled:opacity-40"
+      >
+        <Eye size={13} /> Espiar
+      </button>
+      <button onClick={onClose} aria-label="Fechar" className="rounded-lg p-1 text-white/60 hover:bg-white/10">
+        <X size={13} />
+      </button>
     </div>
   );
 }
 
-/** Espiando uma mesa: o tempo que falta, segurar para cochichar e parar. */
-function PeekBar({ channel, until, whispering }: { channel?: Channel; until: number; whispering: boolean }) {
+/** Ouvindo uma mesa: chip pequeno. Espiando: tempo, segurar para cochichar e parar. De perto: só o aviso. */
+function PeekBar({ channel, until, whispering, near }: { channel?: Channel; until: number; whispering: boolean; near: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (near) return;
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
-  }, []);
+  }, [near]);
   const left = Math.max(0, Math.ceil((until - now) / 1000));
   const peek = usePlazaPeek.getState();
+  if (near) {
+    return (
+      <div className="pointer-events-none absolute top-16 left-1/2 z-[63] -translate-x-1/2 rounded-full bg-[#1b1430]/90 px-3 py-1 text-[12px] font-semibold text-white shadow-lg ring-1 ring-white/15">
+        👂 ouvindo #{channel?.name ?? 'mesa'}
+      </div>
+    );
+  }
   return (
-    <div className="absolute top-16 left-1/2 z-[63] flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1430]/95 p-1.5 pl-3 text-white shadow-xl">
-      <span className="text-sm font-semibold">
-        👀 Espiando #{channel?.name ?? 'mesa'} · {left}s
+    <div className="absolute top-16 left-1/2 z-[63] flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#1b1430]/95 py-1 pr-1 pl-3 text-white shadow-lg ring-1 ring-white/15">
+      <span className="text-[12px] font-semibold">
+        👀 #{channel?.name ?? 'mesa'} · {left}s
       </span>
       <button
         onPointerDown={() => void peek.setWhisper(true)}
         onPointerUp={() => void peek.setWhisper(false)}
         onPointerLeave={() => void peek.setWhisper(false)}
-        className={cx('flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-bold select-none', whispering ? 'bg-[#2e9e6a]' : 'bg-white/10 hover:bg-white/15')}
+        title="Segure para cochichar"
+        aria-label="Segure para cochichar"
+        className={cx('grid h-7 w-7 place-items-center rounded-full select-none', whispering ? 'bg-[#2e9e6a]' : 'bg-white/10 hover:bg-white/15')}
       >
-        <Mic size={14} /> {whispering ? 'Cochichando…' : 'Segure para cochichar'}
+        <Mic size={13} />
       </button>
-      <button onClick={() => peek.stop()} className="rounded-xl px-2.5 py-1.5 text-sm font-semibold text-white/70 hover:bg-white/10">
-        Parar
+      <button onClick={() => peek.stop()} aria-label="Parar de espiar" className="grid h-7 w-7 place-items-center rounded-full text-white/70 hover:bg-white/10">
+        <X size={13} />
       </button>
     </div>
   );
@@ -1205,7 +1258,7 @@ function PersonTag({
   emote,
   peeking,
 }: {
-  peeking?: boolean;
+  peeking?: 'peek' | 'near';
   member?: Member;
   isMe: boolean;
   voice?: VoiceState;
@@ -1233,7 +1286,7 @@ function PersonTag({
       {idle && <div className="plaza-zzz plaza-pixel absolute -top-3 right-0 text-sm font-bold text-[#bfc7ff]">z</div>}
       <div className={cx('plaza-pixel flex items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-bold leading-[16px]', isMe ? 'bg-[#e8685a] text-white' : 'bg-[#1b1430]/75 text-white')}>
         {voice?.streaming && <span className="rounded-sm bg-[#ff5c7a] px-0.5 text-[9px] leading-[12px]">AO VIVO</span>}
-        {peeking && <span title="Espiando uma mesa">👀</span>}
+        {peeking && <span title={peeking === 'near' ? 'Ouvindo uma mesa de perto' : 'Espiando uma mesa'}>{peeking === 'near' ? '👂' : '👀'}</span>}
         <span className="max-w-[110px] truncate">{name}</span>
         {voice && (voice.deafened ? <HeadphoneOff size={10} /> : voice.muted ? <MicOff size={10} /> : null)}
       </div>

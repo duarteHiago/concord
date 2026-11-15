@@ -20,14 +20,25 @@ export function PeekNotice() {
     return () => clearInterval(t);
   }, [has]);
   if (!has) return null;
-  const names = active.map((p) => {
-    const m = members?.find((x) => x.id === p.userId);
+  const name = (id: string) => {
+    const m = members?.find((x) => x.id === id);
     return m ? memberName(m) : 'Alguém';
-  });
+  };
+  const spying = active.filter((p) => !p.near).map((p) => name(p.userId));
+  const near = active.filter((p) => p.near).map((p) => name(p.userId));
+  const line = (names: string[], verb: string) => `${names.join(', ')} ${names.length === 1 ? 'está' : 'estão'} ${verb}`;
   return (
-    <div role="status" className="pointer-events-none fixed top-14 left-1/2 z-[90] -translate-x-1/2 animate-pop-in rounded-full bg-[#1b1430] px-4 py-2 text-sm font-semibold text-white shadow-xl ring-1 ring-white/20">
-      👀 {names.join(', ')} {names.length === 1 ? 'está' : 'estão'} espiando a sua mesa pela Praça
-      <span className="ml-1.5 font-normal text-white/60">· cochichos chegam baixinho</span>
+    <div role="status" className="pointer-events-none fixed top-14 left-1/2 z-[90] flex -translate-x-1/2 animate-pop-in flex-col items-center gap-1">
+      {spying.length > 0 && (
+        <div className="rounded-full bg-[#1b1430] px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-xl ring-1 ring-white/20">
+          👀 {line(spying, 'espiando a sua mesa')} <span className="font-normal text-white/60">· cochichos chegam baixinho</span>
+        </div>
+      )}
+      {near.length > 0 && (
+        <div className="rounded-full bg-[#1b1430]/90 px-3 py-1 text-[12px] font-semibold text-white shadow-lg ring-1 ring-white/15">
+          👂 {line(near, 'ouvindo de perto pela Praça')}
+        </div>
+      )}
     </div>
   );
 }
