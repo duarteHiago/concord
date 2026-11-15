@@ -456,6 +456,41 @@ function broadcastCount(serverId: string) {
   io.to(`server:${serverId}`).emit('plaza:count', { serverId, count: plazaCount(serverId) });
 }
 
+// Onde cada um estava quando a conexão caiu (internet oscilando, app reiniciando): por alguns minutos, voltar a
+// entrar devolve a pessoa para o mesmo lugar, em vez de nascer na praça (e perder o quarto que estava montando).
+const RESUME_MS = 5 * 60_000;
+interface Place {
+  scene: Scene;
+  floor: number;
+  roomOf: string | null;
+  x: number;
+  y: number;
+}
+const lastPlace = new Map<string, Place & { at: number }>(); // `${serverId}:${userId}` -> onde estava
+
+/**
+ * Um lugar onde dá para pôr a pessoa de volta (o que veio do app é conferido: andar que existe, quarto de alguém do
+ * servidor), já numa casa livre perto de onde ela estava. Null = não vale, nasce no lugar de sempre.
+ */
+function resumeSpot(serverId: string, plaza: Map<string, Walker>, raw: unknown): (Place & { layout: PlazaLayout }) | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const scene = r.scene;
+  if (scene !== 'lobby' && scene !== 'inside' && scene !== 'hall' && scene !== 'room') return null;
+  const floor = Number.isInteger(r.floor) ? (r.floor as number) : 0;
+  const roomOf = typeof r.roomOf === 'string' ? r.roomOf : null;
+  if (scene === 'inside' && (floor < 0 || floor >= floorPlan(serverId).length)) return null;
+  if (scene === 'hall' && (floor < 0 || floor >= hallFloorCount(memberCount(serverId)))) return null;
+  if (scene === 'room' && (!roomOf || !isMember(serverId, roomOf))) return null;
+  const level = scene === 'inside' || scene === 'hall' ? floor : 0;
+  const layout = layoutOf(serverId, scene, level, scene === 'room' ? roomOf : null);
+  const x = Number(r.x);
+  const y = Number(r.y);
+  const near = Number.isFinite(x) && Number.isFinite(y) ? nearestWalkable(layout, { x: Math.round(x), y: Math.round(y) }) : layout.spawn;
+  const spot = spawnPoint(layout, plaza, near, scene === 'room' ? roomOf : null);
+  return { scene, floor: level, roomOf: scene === 'room' ? roomOf : null, ...spot, layout };
+}
+
 function removeSocket(serverId: string, userId: string, socketId: string) {
   const plaza = plazas.get(serverId);
   const w = plaza?.get(userId);
@@ -463,6 +498,7 @@ function removeSocket(serverId: string, userId: string, socketId: string) {
   w.sockets.delete(socketId);
   io.sockets.sockets.get(socketId)?.leave(room(serverId));
   if (w.sockets.size) return;
+  lastPlace.set(`${serverId}:${userId}`, { scene: w.scene, floor: w.floor, roomOf: w.roomOf, x: w.x, y: w.y, at: Date.now() });
   plaza.delete(userId);
   dropLobbyVoice(serverId, userId);
   if (!plaza.size) plazas.delete(serverId);
@@ -517,7 +553,7 @@ export function registerPlaza(socket: Socket, userId: string) {
   const emoteRate = rate(6, 6_000);
   const enterRate = rate(10, 10_000);
 
-  socket.on('plaza:enter', (data: { serverId?: unknown }, ack?: (r: unknown) => void) => {
+  socket.on('plaza:enter', (data: { serverId?: unknown; resume?: unknown }, ack?: (r: unknown) => void) => {
     const serverId = typeof data?.serverId === 'string' ? data.serverId : '';
     if (!enterRate()) return ack?.({ ok: false, error: 'Calma, tente de novo em instantes.' });
     if (!serverId || !isMember(serverId, userId)) return ack?.({ ok: false, error: 'Você não está neste servidor.' });
@@ -533,7 +569,13 @@ export function registerPlaza(socket: Socket, userId: string) {
       w = { scene: 'inside', floor: spot.level, roomOf: null, ...spawnPoint(spot.layout, plaza, spot.front), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now(), drink: null, drinkUntil: 0 };
       plaza.set(userId, w);
     } else if (!w) {
-      w = { scene: 'lobby', floor: 0, roomOf: null, ...spawnPoint(lobbyLayout(serverId), plaza), avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now(), drink: null, drinkUntil: 0 };
+      // voltando de uma queda: onde estava (guardado aqui; ou, se o servidor reiniciou, o que o app lembra)
+      const key = `${serverId}:${userId}`;
+      const kept = lastPlace.get(key);
+      lastPlace.delete(key);
+      const back = (kept && Date.now() - kept.at < RESUME_MS ? resumeSpot(serverId, plaza, kept) : null) ?? resumeSpot(serverId, plaza, data?.resume);
+      const at = back ? { scene: back.scene, floor: back.floor, roomOf: back.roomOf, x: back.x, y: back.y } : { scene: 'lobby' as Scene, floor: 0, roomOf: null, ...spawnPoint(lobbyLayout(serverId), plaza) };
+      w = { ...at, avatar: avatarOf(userId), sockets: new Set(), activeAt: Date.now(), drink: null, drinkUntil: 0 };
       plaza.set(userId, w);
     } else {
       // o mapa pode ter mudado (sala criada ou apagada, andar que sumiu) desde a última vez
