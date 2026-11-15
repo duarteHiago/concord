@@ -588,11 +588,16 @@ export function registerPlaza(socket: Socket, userId: string) {
   });
 
   // no elevador: vai para o corredor dos quartos
-  socket.on('plaza:hall', (data: { serverId?: unknown }) => {
+  // no elevador (do prédio ou de um andar do corredor): vai para um andar do corredor dos quartos (`floor`, 0 = o primeiro)
+  socket.on('plaza:hall', (data: { serverId?: unknown; floor?: unknown }) => {
     const here = walkerHere(data?.serverId);
-    if (!here || !moveRate() || here.w.scene !== 'inside' || !onElevator(here.serverId, here.w)) return;
-    const to = hallLayout(here.serverId, 0);
-    Object.assign(here.w, { scene: 'hall', floor: 0, roomOf: null, ...spawnPoint(to, others(here.serverId)), activeAt: Date.now() });
+    if (!here || !moveRate() || !onElevator(here.serverId, here.w)) return;
+    const asked = data.floor === undefined ? 0 : Number(data.floor);
+    if (!Number.isInteger(asked) || asked < 0 || asked >= hallFloorCount(memberCount(here.serverId))) return;
+    if (here.w.scene === 'hall' && here.w.floor === asked) return;
+    const to = hallLayout(here.serverId, asked);
+    const arrive = to.elevator ? { x: to.elevator.x, y: to.elevator.y + 1 } : to.spawn;
+    Object.assign(here.w, { scene: 'hall', floor: asked, roomOf: null, ...spawnPoint(to, others(here.serverId), arrive), activeAt: Date.now() });
     sceneChanged(here.serverId, here.w);
   });
 
