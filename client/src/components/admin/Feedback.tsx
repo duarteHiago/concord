@@ -4,6 +4,7 @@ import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { FEEDBACK_KINDS, FEEDBACK_RETENTION_DAYS, FEEDBACK_STATUSES } from '../../../../shared/feedback.ts';
 import { api, getToken } from '../../lib/api';
+import { FeedbackIcon } from '../../lib/feedbackIcons';
 import { toast } from '../../store/toast';
 import { Button, cx } from '../ui';
 import { Badge, Loading, Page, Pager, RowLink, Table, fmtDate, useAdminData } from './parts';
@@ -42,8 +43,9 @@ export function FeedbackList() {
           </button>
         ))}
         <span className="mx-1 w-px bg-line" />
-        {[['', 'Tudo'], ...FEEDBACK_KINDS.map((k) => [k.id, `${k.emoji} ${k.label}`])].map(([id, label]) => (
-          <button key={id || 'tudo'} className={chip(kind === id)} onClick={() => (setKind(id), setPage(0))}>
+        {[['', 'Tudo'], ...FEEDBACK_KINDS.map((k) => [k.id, k.label])].map(([id, label]) => (
+          <button key={id || 'tudo'} className={cx(chip(kind === id), 'inline-flex items-center gap-1')} onClick={() => (setKind(id), setPage(0))}>
+            {id && <FeedbackIcon kind={id} size={13} />}
             {label}
           </button>
         ))}
@@ -63,8 +65,8 @@ export function FeedbackList() {
                     key={x.id}
                     href={`#feedback/${x.id}`}
                     cells={[
-                      <span className="whitespace-nowrap">
-                        {kindOf(x.kind)?.emoji} {kindOf(x.kind)?.label}
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <FeedbackIcon kind={x.kind} size={14} /> {kindOf(x.kind)?.label}
                       </span>,
                       <span className="font-semibold">{x.user ? `@${x.user.username}` : 'conta apagada'}</span>,
                       <span className="line-clamp-2 max-w-md text-fg-muted">{x.body}</span>,
@@ -143,7 +145,7 @@ export function FeedbackDetail({ id }: { id: string }) {
       {(f) => (
         <Page
           back="#feedback"
-          title={`${kindOf(f.kind)?.emoji ?? ''} ${kindOf(f.kind)?.label ?? f.kind} de ${f.user ? `@${f.user.username}` : 'uma conta apagada'}`}
+          title={`${kindOf(f.kind)?.label ?? f.kind} de ${f.user ? `@${f.user.username}` : 'uma conta apagada'}`}
           subtitle={`Chegou em ${fmtDate(f.createdAt)}${f.updatedAt !== f.createdAt ? ` · mudou em ${fmtDate(f.updatedAt)}` : ''}`}
           actions={
             <Button variant="ghost" className="h-9 px-3 text-danger" onClick={() => void remove()}>

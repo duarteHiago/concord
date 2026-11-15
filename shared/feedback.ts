@@ -2,10 +2,10 @@
 // e pelo portal da equipe.
 
 export const FEEDBACK_KINDS = [
-  { id: 'bug', label: 'Bug', emoji: '🐞', hint: 'Algo quebrou ou não funciona como devia' },
-  { id: 'sugestao', label: 'Sugestão', emoji: '💡', hint: 'Uma ideia nova para o Concord' },
-  { id: 'melhoria', label: 'Melhoria', emoji: '✨', hint: 'Algo que existe e podia ficar melhor' },
-  { id: 'outro', label: 'Outro', emoji: '💬', hint: 'Qualquer outra coisa' },
+  { id: 'bug', label: 'Bug', hint: 'Algo quebrou ou não funciona como devia' },
+  { id: 'sugestao', label: 'Sugestão', hint: 'Uma ideia nova para o Concord' },
+  { id: 'melhoria', label: 'Melhoria', hint: 'Algo que existe e podia ficar melhor' },
+  { id: 'outro', label: 'Outro', hint: 'Qualquer outra coisa' },
 ] as const;
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number]['id'];
 export const isFeedbackKind = (v: unknown): v is FeedbackKind => FEEDBACK_KINDS.some((k) => k.id === v);
