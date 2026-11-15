@@ -48,7 +48,7 @@ import { cleanFileName, removeUpload, saveAttachment, saveImage, saveSound } fro
 import { allowAttempt, clientIp, limiter, loginWaitMinutes, normalize as normalizeCode, recordLoginFailure, rotateRecoveryCode } from './recovery.ts';
 import { isEmail, mailEnabled, maskEmail, sendEmailChanged, sendPasswordChanged, sendResetEmail, sendSignupCode, sendVerifyEmail } from './mail.ts';
 import { EMAIL_PROVIDER_NAMES, emailDomainAllowed, emailKey } from '../../shared/email.ts';
-import { SIGNUP_LIMITED, captchaSiteKey, emailRequired, requireCaptcha, signupAllowed } from './signupGuard.ts';
+import { SIGNUP_LIMITED, SIGNUP_TRIES, captchaSiteKey, emailRequired, requireCaptcha, signupAllowed, signupCreated, signupTryAllowed } from './signupGuard.ts';
 import { playGame } from './games.ts';
 import { isAdmin, registerAdminRoutes } from './admin.ts';
 import { recordingOf, registerDirectorRoutes } from './director.ts';
@@ -503,7 +503,24 @@ function createPasswordUser(f: { username: string; displayName: string; password
   return id;
 }
 
+/**
+ * Conta nova entra no servidor da comunidade do Concord (o do convite COMMUNITY_INVITE): quem chega não cai num app
+ * vazio, e o app já abre esse servidor (é o único da lista). Sem o convite configurado, ou se ele sumiu, não faz nada.
+ */
+function joinCommunity(userId: string) {
+  if (!config.communityInvite) return;
+  const invite = get<InviteRow>('SELECT * FROM invites WHERE code = ?', config.communityInvite);
+  if (!invite || isMember(invite.server_id, userId) || isBanned(invite.server_id, userId)) return;
+  tx(() => {
+    run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', invite.server_id, userId, now());
+    run('UPDATE invites SET uses = uses + 1 WHERE code = ?', invite.code);
+  });
+  joinServerRoom(userId, invite.server_id);
+  serverChanged(invite.server_id);
+}
+
 async function sendNewAccount(res: express.Response, userId: string) {
+  joinCommunity(userId);
   const recoveryCode = await rotateRecoveryCode(userId);
   res.json({ token: signToken(userId), user: meJson(get<UserRow>('SELECT * FROM users WHERE id = ?', userId)!), recoveryCode });
 }
@@ -517,6 +534,7 @@ api.post('/auth/register', async (req, res) => {
   await requireCaptcha(req, req.body?.captchaToken);
   if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
   const id = createPasswordUser({ username: f.username, displayName: f.displayName, passwordHash: await bcrypt.hash(f.password, 10) });
+  signupCreated(req);
   await sendNewAccount(res, id);
 });
 
@@ -557,7 +575,9 @@ api.post('/auth/register/start', async (req, res) => {
   if (!stagingAllows(f.username)) fail(403, STAGING_BLOCKED);
   const { email, key } = accountEmail(req.body?.email);
   await requireCaptcha(req, req.body?.captchaToken);
+  // antes de mandar o código: se a rede ou o aparelho já não pode criar conta, avisa agora (e não depois do código)
   if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
+  if (!signupTryAllowed(req)) fail(429, SIGNUP_TRIES);
   if (!signupMailPerKey(key) || !signupMailTotal('all')) fail(429, 'Muitos códigos enviados agora. Espere alguns minutos e tente de novo.');
 
   run('DELETE FROM pending_signups WHERE expires_at < ? OR email_key = ?', now(), key);
@@ -609,6 +629,8 @@ api.post('/auth/register/confirm', async (req, res) => {
     run('UPDATE pending_signups SET attempts = attempts + 1 WHERE id = ?', p.id);
     fail(400, `Código incorreto. Mais ${left} tentativa(s).`);
   }
+  // vários cadastros começados de uma vez só, da mesma rede ou aparelho: o limite vale na hora de a conta nascer
+  if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
   // entre o código e agora, alguém pode ter pegado o nome ou o e-mail
   const id = tx(() => {
     run('DELETE FROM pending_signups WHERE id = ?', p.id);
@@ -616,6 +638,7 @@ api.post('/auth/register/confirm', async (req, res) => {
     if (get('SELECT 1 FROM users WHERE email_key = ?', p.email_key)) fail(409, 'Esse e-mail já está em uma conta do Concord.');
     return createPasswordUser({ username: p.username, displayName: p.display_name, passwordHash: p.password_hash, email: p.email, emailKey: p.email_key });
   });
+  signupCreated(req);
   await sendNewAccount(res, id);
 });
 
@@ -854,6 +877,7 @@ api.post('/auth/google/signup', googleLimit, async (req, res) => {
   const id = existing?.id ?? randomUUID();
   if (!existing) {
     if (!signupAllowed(req)) fail(429, SIGNUP_LIMITED);
+    signupCreated(req);
     run(
       "INSERT INTO users (id, username, display_name, password_hash, avatar_color, google_sub, created_at) VALUES (?, ?, ?, '', ?, ?, ?)",
       id,
@@ -863,6 +887,7 @@ api.post('/auth/google/signup', googleLimit, async (req, res) => {
       ticket.sub,
       now(),
     );
+    joinCommunity(id);
   }
   const recoveryCode = existing ? undefined : await rotateRecoveryCode(id);
   const user = get<UserRow>('SELECT * FROM users WHERE id = ?', id)!;

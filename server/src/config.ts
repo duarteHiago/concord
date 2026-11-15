@@ -25,6 +25,8 @@ export const config = {
   requireEmail: env.REQUIRE_EMAIL !== 'false',
   // Content-Security-Policy completa aplicada (padrão). false = só observa, como antes (ver security.ts).
   cspEnforce: env.CSP_ENFORCE !== 'false',
+  // quantos e-mails o plano do Brevo deixa mandar por dia (o grátis: 300). Só para o painel avisar quando estiver perto.
+  mailDailyLimit: Math.max(1, Number(env.MAIL_DAILY_LIMIT) || 300),
   // captcha do cadastro e do "esqueci a senha" (Cloudflare Turnstile). Sem as duas chaves, fica desligado.
   turnstile: { siteKey: (env.TURNSTILE_SITE_KEY ?? '').trim(), secret: (env.TURNSTILE_SECRET ?? '').trim() },
   // código de um convite permanente: o app mostra "Entrar na comunidade" e a landing page ganha o botão

@@ -68,6 +68,8 @@ export class Client {
   token = '';
   id = '';
   username = '';
+  /** cabeçalhos a mais em todo pedido (ex.: o aparelho, X-Concord-Device) */
+  headers: Record<string, string> = {};
   base: string;
   constructor(base: string) {
     this.base = base;
@@ -76,7 +78,7 @@ export class Client {
   async req<T = any>(method: string, path: string, body?: unknown): Promise<Res<T>> {
     const res = await fetch(`${this.base}/api${path}`, {
       method,
-      headers: { 'content-type': 'application/json', ...(this.token ? { authorization: `Bearer ${this.token}` } : {}) },
+      headers: { 'content-type': 'application/json', ...(this.token ? { authorization: `Bearer ${this.token}` } : {}), ...this.headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();

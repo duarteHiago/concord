@@ -46,6 +46,18 @@ function storedHits(bucket: string, windowMs: number) {
 }
 
 /**
+ * Cota sem gastar ao olhar: `left(key)` só confere, `use(key)` conta. Para quando a conferência e o uso acontecem em
+ * momentos diferentes (o cadastro confere antes de mandar o código, e só conta quando a conta nasce). No banco.
+ */
+export function quota(max: number, windowMs: number, stored: string) {
+  const hits = storedHits(stored, windowMs);
+  return {
+    left: (key: string) => hits.recent(key).length < max,
+    use: (key: string) => hits.add(key),
+  };
+}
+
+/**
  * No máximo `max` usos de cada chave por janela. Sem `stored`, fica em memória (limites de ritmo, como o
  * anti-flood de mensagens); com `stored` (um nome único), vai para o banco e sobrevive a um reinício.
  */

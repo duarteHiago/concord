@@ -141,6 +141,30 @@ describe('cadastro com e-mail obrigatório', () => {
     assert.equal(res.status, 409);
   });
 
+  it('um aparelho cria no máximo 3 contas por dia; o 4º cadastro é barrado antes de mandar o código', async () => {
+    const device = `aparelho-teste-${process.pid}-${Date.now()}`;
+    for (let i = 0; i < 3; i++) {
+      const c = new Client(server.url);
+      c.headers['x-concord-device'] = device;
+      const email = `${uniq('apar')}@gmail.com`;
+      const start = await c.post('/auth/register/start', { username: uniq('apar'), password: 'senha-forte-123', email });
+      assert.equal(start.status, 200, JSON.stringify(start.body));
+      assert.equal((await c.post('/auth/register/confirm', { signupId: start.body.signupId, code: codeFor(email) })).status, 200);
+    }
+    const before = mails.length;
+    const c = new Client(server.url);
+    c.headers['x-concord-device'] = device;
+    const blocked = await c.post('/auth/register/start', { username: uniq('apar'), password: 'senha-forte-123', email: `${uniq('apar')}@gmail.com` });
+    assert.equal(blocked.status, 429);
+    assert.match(blocked.body.error, /Muitas contas/);
+    // nenhum código foi mandado à toa
+    assert.equal(mails.length, before);
+    // outro aparelho (ou sem aparelho, como apps antigos) continua podendo
+    const other = new Client(server.url);
+    other.headers['x-concord-device'] = `${device}-outro`;
+    assert.equal((await other.post('/auth/register/start', { username: uniq('apar'), password: 'senha-forte-123', email: `${uniq('apar')}@gmail.com` })).status, 200);
+  });
+
   it('mensagens rápidas demais são barradas (anti-flood)', async () => {
     const a = await signUpWithEmail(server, 'flood');
     const created = await a.post('/servers', { name: 'Flood' });
@@ -262,5 +286,41 @@ describe('conta antiga sem e-mail, suspensão e exclusão', () => {
     assert.equal((await chefe.del(`/admin/users/${dono.id}?confirm=${dono.username}`)).status, 409);
     // o bot da conta suspensa antes também tinha sido suspenso, e voltou junto
     assert.equal((await chefe.get(`/admin/users/${bot}`)).body.banned, false);
+  });
+});
+
+describe('portal da equipe: e-mails do dia contra o limite do plano', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'concord-mailstats-'));
+  const DB_PATH = join(dir, 'concord.db');
+  let server: TestServer;
+  let equipe: Client;
+  before(async () => {
+    // a conta da equipe precisa existir antes de entrar em ADMIN_USERS
+    const first = await startServer({ ...mailEnv(), DB_PATH });
+    const chefe = await signUpWithEmail(first, 'chefe');
+    await first.stop();
+    server = await startServer({ ...mailEnv(), DB_PATH, ADMIN_USERS: chefe.username, MAIL_DAILY_LIMIT: '50' });
+    equipe = new Client(server.url);
+    equipe.token = (await equipe.post('/auth/login', { username: chefe.username, password: 'senha-forte-123' })).body.token;
+  });
+  after(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('conta cada envio por tipo (e guarda entre reinícios); só a equipe vê', async () => {
+    // mais um código de cadastro, depois do reinício
+    const res = await new Client(server.url).post('/auth/register/start', { username: uniq('outro'), password: 'senha-forte-123', email: `${uniq('outro')}@gmail.com` });
+    assert.equal(res.status, 200);
+    const r = await equipe.get('/admin/mail');
+    assert.equal(r.status, 200);
+    assert.equal(r.body.limit, 50);
+    assert.equal(r.body.today.byKind.signup, 2);
+    assert.equal(r.body.today.sent, 2);
+    assert.equal(r.body.days.length, 30);
+    // sem consulta ao Brevo de verdade com a chave de mentira
+    assert.equal(r.body.plan, null);
+    const qualquer = await signUpWithEmail(server, 'qualquer');
+    assert.equal((await qualquer.get('/admin/mail')).status, 404);
   });
 });

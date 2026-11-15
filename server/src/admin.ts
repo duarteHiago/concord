@@ -11,6 +11,7 @@ import { DIAGNOSTIC_RETENTION_DAYS, deleteDiagnostic, readDiagnostic } from './d
 import { registerFeedbackAdminRoutes } from './feedback.ts';
 import { fail, uid } from './http.ts';
 import { removeFromRoom } from './livekit.ts';
+import { brevoPlan, mailEnabled, mailStats } from './mail.ts';
 import { plazaForgetRoom } from './plaza.ts';
 import { dropVoice, getVoiceState, leaveServerRoom, liveStats, onlineUserIds, revokeSockets, serverChanged } from './realtime.ts';
 import { removeUpload } from './uploads.ts';
@@ -242,6 +243,12 @@ export function registerAdminRoutes(api: Router) {
     }
     console.log(`[portal] conta @${target.username} apagada`);
     res.json({ ok: true, bots: bots.length });
+  });
+
+  // e-mails enviados por dia (UTC, como o Brevo conta) contra o limite diário do plano
+  api.get('/admin/mail', async (_req, res) => {
+    const days = mailStats(30);
+    res.json({ enabled: mailEnabled(), limit: config.mailDailyLimit, days, today: days[days.length - 1], plan: await brevoPlan() });
   });
 
   api.get('/admin/overview', (_req, res) => {
