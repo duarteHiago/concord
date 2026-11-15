@@ -43,6 +43,8 @@ export const SIGNUP_LIMITED = 'Muitas contas criadas desta rede. Tente de novo m
 /** A chave pública do widget, se o captcha está ligado (o app mostra o widget só com ela). */
 export const captchaSiteKey = () => (config.turnstile.siteKey && config.turnstile.secret ? config.turnstile.siteKey : null);
 
+type Verify = { success?: boolean; 'error-codes'?: string[]; hostname?: string };
+
 /** Confere na Cloudflare o token que o widget gerou no navegador (vale uma vez só). Sem chaves, não faz nada. */
 export async function requireCaptcha(req: Request, token: unknown) {
   if (!captchaSiteKey()) return;
@@ -53,7 +55,13 @@ export async function requireCaptcha(req: Request, token: unknown) {
     body: JSON.stringify({ secret: config.turnstile.secret, response: token, remoteip: local(req.ip ?? '') ? undefined : req.ip }),
     signal: AbortSignal.timeout(8_000),
   })
-    .then((r) => r.json() as Promise<{ success?: boolean }>)
-    .catch(() => null);
-  if (!result?.success) fail(400, 'Não deu para confirmar que você não é um robô. Tente de novo.');
+    .then((r) => r.json() as Promise<Verify>)
+    .catch((err: Error): Verify => ({ success: false, 'error-codes': [`fetch:${err.name}`] }));
+  if (!result.success) {
+    // só os códigos técnicos da Cloudflare (e o domínio que ela viu), para entender por que recusou; nada da pessoa
+    const codes = (result['error-codes'] ?? []).map((c) => String(c).replace(/[^\w:-]/g, '').slice(0, 40)).join(',') || 'sem-codigo';
+    console.warn(`[captcha] recusado: ${codes}${result.hostname ? ` (${String(result.hostname).replace(/[^\w.-]/g, '').slice(0, 80)})` : ''}`);
+    const expired = (result['error-codes'] ?? []).includes('timeout-or-duplicate');
+    fail(400, expired ? 'A verificação anti-robô expirou. Ela vai rodar de novo sozinha; espere um instante e tente outra vez.' : 'Não deu para confirmar que você não é um robô. Espere a verificação rodar de novo e tente outra vez.');
+  }
 }
