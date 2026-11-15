@@ -39,6 +39,7 @@ function MontarArt() {
 
 export default {
   id: '2026-11-14-1255',
+  audience: 'plaza',
   title: 'Monte a Praça do seu jeito',
   highlights: [
     {

@@ -59,6 +59,10 @@ body,
 html.has-titlebar #root {
   padding-top: 36px;
 }
+/* a Praça cobre a janela toda: no app desktop, começa abaixo da barra de título (senão os botões de cima somem) */
+html.has-titlebar .plaza-root {
+  top: 36px;
+}
 
 body {
   margin: 0;
