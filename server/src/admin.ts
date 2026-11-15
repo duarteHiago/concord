@@ -305,7 +305,7 @@ export function registerAdminRoutes(api: Router) {
         made: count("SELECT COUNT(*) AS n FROM reports WHERE reporter_id = ?", u.id),
         madeConfirmed: count("SELECT COUNT(*) AS n FROM reports WHERE reporter_id = ? AND outcome = 'actioned'", u.id),
       },
-      actions: all<AdminActionRow) & { admin_username: string | null }>(
+      actions: all<AdminActionRow & { admin_username: string | null }>(
         'SELECT a.*, u.username AS admin_username FROM admin_actions a LEFT JOIN users u ON u.id = a.admin_id WHERE a.target_id = ? ORDER BY a.id DESC LIMIT 50',
         u.id,
       ).map((a) => ({ id: a.id, action: a.action, reason: a.reason, at: a.created_at, by: a.admin_username })),
