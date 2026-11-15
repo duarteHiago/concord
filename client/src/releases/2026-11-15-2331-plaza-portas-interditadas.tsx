@@ -1,7 +1,7 @@
 import type { Release } from './index';
 
 export default {
-  id: '2026-11-15-1304',
+  id: '2026-11-15-2331',
   audience: 'plaza',
   title: 'Portas fixas no corredor dos quartos',
   highlights: [],
