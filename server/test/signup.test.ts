@@ -288,3 +288,39 @@ describe('conta antiga sem e-mail, suspensão e exclusão', () => {
     assert.equal((await chefe.get(`/admin/users/${bot}`)).body.banned, false);
   });
 });
+
+describe('portal da equipe: e-mails do dia contra o limite do plano', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'concord-mailstats-'));
+  const DB_PATH = join(dir, 'concord.db');
+  let server: TestServer;
+  let equipe: Client;
+  before(async () => {
+    // a conta da equipe precisa existir antes de entrar em ADMIN_USERS
+    const first = await startServer({ ...mailEnv(), DB_PATH });
+    const chefe = await signUpWithEmail(first, 'chefe');
+    await first.stop();
+    server = await startServer({ ...mailEnv(), DB_PATH, ADMIN_USERS: chefe.username, MAIL_DAILY_LIMIT: '50' });
+    equipe = new Client(server.url);
+    equipe.token = (await equipe.post('/auth/login', { username: chefe.username, password: 'senha-forte-123' })).body.token;
+  });
+  after(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('conta cada envio por tipo (e guarda entre reinícios); só a equipe vê', async () => {
+    // mais um código de cadastro, depois do reinício
+    const res = await new Client(server.url).post('/auth/register/start', { username: uniq('outro'), password: 'senha-forte-123', email: `${uniq('outro')}@gmail.com` });
+    assert.equal(res.status, 200);
+    const r = await equipe.get('/admin/mail');
+    assert.equal(r.status, 200);
+    assert.equal(r.body.limit, 50);
+    assert.equal(r.body.today.byKind.signup, 2);
+    assert.equal(r.body.today.sent, 2);
+    assert.equal(r.body.days.length, 30);
+    // sem consulta ao Brevo de verdade com a chave de mentira
+    assert.equal(r.body.plan, null);
+    const qualquer = await signUpWithEmail(server, 'qualquer');
+    assert.equal((await qualquer.get('/admin/mail')).status, 404);
+  });
+});

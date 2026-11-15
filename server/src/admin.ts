@@ -10,6 +10,7 @@ import { all, get, run, tx, type UserRow } from './db.ts';
 import { DIAGNOSTIC_RETENTION_DAYS, deleteDiagnostic, readDiagnostic } from './diagnostics.ts';
 import { fail, uid } from './http.ts';
 import { removeFromRoom } from './livekit.ts';
+import { brevoPlan, mailEnabled, mailStats } from './mail.ts';
 import { dropVoice, getVoiceState, liveStats, onlineUserIds, revokeSockets } from './realtime.ts';
 import { removeUpload } from './uploads.ts';
 import { invalidateTrust, trustOf } from './trust.ts';
@@ -231,6 +232,12 @@ export function registerAdminRoutes(api: Router) {
     }
     console.log(`[portal] conta @${target.username} apagada`);
     res.json({ ok: true, bots: bots.length });
+  });
+
+  // e-mails enviados por dia (UTC, como o Brevo conta) contra o limite diário do plano
+  api.get('/admin/mail', async (_req, res) => {
+    const days = mailStats(30);
+    res.json({ enabled: mailEnabled(), limit: config.mailDailyLimit, days, today: days[days.length - 1], plan: await brevoPlan() });
   });
 
   api.get('/admin/overview', (_req, res) => {
