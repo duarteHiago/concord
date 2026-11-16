@@ -588,6 +588,28 @@ function hallDecor(ctx: Ctx, layout: PlazaLayout, accent: string) {
   }
 }
 
+/** Porta interditada: duas fitas de perigo, amarelas e pretas, cruzadas em X por cima dela. */
+function hazardTape(ctx: Ctx, x: number, y: number) {
+  const P = (u: number, z: number) => at(x + u, y, z);
+  // a porta escurece por baixo (fechada de vez)
+  fillPoly(ctx, [P(0.14, 0), P(0.86, 0), P(0.86, 40), P(0.14, 40)], 'rgba(20, 14, 36, 0.35)');
+  const strip = (u0: number, z0: number, u1: number, z1: number) => {
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const a = i / n;
+      const b = (i + 1) / n;
+      const ua = u0 + (u1 - u0) * a;
+      const za = z0 + (z1 - z0) * a;
+      const ub = u0 + (u1 - u0) * b;
+      const zb = z0 + (z1 - z0) * b;
+      fillPoly(ctx, [P(ua, za - 3.5), P(ub, zb - 3.5), P(ub, zb + 3.5), P(ua, za + 3.5)], i % 2 ? '#1b1430' : '#ffd23f');
+    }
+  };
+  // passa um pouco das bordas, como fita colada de um lado ao outro
+  strip(-0.1, 8, 1.1, 38);
+  strip(-0.1, 38, 1.1, 8);
+}
+
 /** Porta de um quarto na parede do fundo do corredor (a sua tem a moldura na cor do servidor). */
 function roomDoor(ctx: Ctx, x: number, y: number, frame: string) {
   const q = (u0: number, u1: number, z0: number, z1: number, c: string) => fillPoly(ctx, [at(x + u0, y, z0), at(x + u1, y, z0), at(x + u1, y, z1), at(x + u0, y, z1)], c);
@@ -1353,8 +1375,11 @@ export function outlineTiles(ctx: Ctx, tiles: Point[], color: string) {
 // ---- cena ----
 
 /** Camada fixa (chão, borda e prédio): desenhada uma vez por mapa. Devolve o canvas e onde fica a casa (0, 0). */
-/** `mine` = a porta do corredor que é do quarto de quem está vendo (pintada na cor de destaque), ou -1. */
-export function renderStatic(layout: PlazaLayout, accent: string, mine = -1) {
+/**
+ * `mine` = a porta do corredor que é do quarto de quem está vendo (pintada na cor de destaque), ou -1. `taped` = as
+ * portas interditadas deste andar (quem saiu do servidor, foi expulso ou apagou a conta): faixa de perigo por cima.
+ */
+export function renderStatic(layout: PlazaLayout, accent: string, mine = -1, taped: number[] = []) {
   const left = at(0, layout.h).x - 2;
   const right = at(layout.w, 0).x + 2;
   const top = -90;
@@ -1372,7 +1397,10 @@ export function renderStatic(layout: PlazaLayout, accent: string, mine = -1) {
     for (let y = 0; y < layout.h; y++) for (let x = 0; x < layout.w; x++) woodTile(ctx, x, y, f.a, f.b);
     if (layout.door.x >= 0) exitMat(ctx, layout.door.x, layout.door.y);
     if (layout.elevator) elevator(ctx, layout.elevator.x, layout.elevator.y, layout.level);
-    layout.doors.forEach((d, i) => roomDoor(ctx, d.x, d.y, i === mine ? accent : '#5e3826'));
+    layout.doors.forEach((d, i) => {
+      roomDoor(ctx, d.x, d.y, i === mine ? accent : '#5e3826');
+      if (taped.includes(i)) hazardTape(ctx, d.x, d.y);
+    });
     if (layout.kind === 'hall') hallDecor(ctx, layout, accent);
     if (layout.stairs?.up) stairsUp(ctx, layout.stairs.up.x, layout.stairs.up.y);
     if (layout.stairs?.down) stairsDown(ctx, layout.stairs.down.x, layout.stairs.down.y);
