@@ -11,12 +11,12 @@ function ProximidadeArt() {
       <div className="absolute bottom-3 left-[38%] h-24 w-48 -translate-x-1/2 rounded-[50%] border-2 border-dashed border-[#3ad07a]/50" />
       <div className="absolute bottom-7 left-[38%] h-12 w-24 -translate-x-1/2 rounded-[50%] bg-[#3ad07a]/25" />
       <div className="absolute bottom-6 left-[38%] flex -translate-x-1/2 items-end gap-2">
-        <AvatarPreview size={3} spin={false} avatar={{ skin: 1, hair: 1, hairColor: 5, top: 1, topColor: 0, bottomColor: 6, accessory: 3 }} />
-        <AvatarPreview size={3} spin={false} avatar={{ skin: 4, hair: 2, hairColor: 0, top: 2, topColor: 1, bottomColor: 9, accessory: 1 }} />
+        <AvatarPreview size={3} spin={false} avatar={{ skin: 1, hair: 1, hairColor: 5, top: 1, topColor: 0, bottomColor: 6, accessory: 3, face: 0 }} />
+        <AvatarPreview size={3} spin={false} avatar={{ skin: 4, hair: 2, hairColor: 0, top: 2, topColor: 1, bottomColor: 9, accessory: 1, face: 0 }} />
       </div>
       {/* alguém longe, fora do alcance */}
       <div className="absolute right-6 bottom-10 opacity-60">
-        <AvatarPreview size={2} spin={false} avatar={{ skin: 0, hair: 4, hairColor: 3, top: 0, topColor: 4, bottomColor: 6, accessory: 5 }} />
+        <AvatarPreview size={2} spin={false} avatar={{ skin: 0, hair: 4, hairColor: 3, top: 0, topColor: 4, bottomColor: 6, accessory: 5, face: 0 }} />
       </div>
       <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg bg-[#2e9e6a] px-2 py-1 text-[11px] font-bold text-white">
         <Mic size={12} /> Falando

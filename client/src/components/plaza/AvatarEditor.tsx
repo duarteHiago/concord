@@ -1,10 +1,11 @@
-// Monta o boneco da Praça: pele, cabelo, roupa e acessório. Fica salvo nas preferências da conta
+// Monta o boneco da Praça: pele, cabelo, roupa, chapéu e máscara. Fica salvo nas preferências da conta
 // (settings.plazaAvatar) e o servidor relê de lá, validado, para mostrar aos outros.
 import { Dices, RotateCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import {
   ACCESSORIES,
   CLOTH_COLORS,
+  FACES,
   HAIR_COLORS,
   HAIR_STYLES,
   SKIN_TONES,
@@ -17,7 +18,7 @@ import { useApp } from '../../store/app';
 import { usePlaza } from '../../store/plaza';
 import { hud, primarySm, soft } from './hud';
 import { cx } from '../ui';
-import { avatarSprite, type Pose } from './pixels';
+import { SPRITE_H, SPRITE_W, avatarSprite, type Pose } from './pixels';
 
 export function AvatarPreview({ avatar, size = 6, spin = true }: { avatar: PlazaAvatar; size?: number; spin?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -42,13 +43,13 @@ export function AvatarPreview({ avatar, size = 6, spin = true }: { avatar: Plaza
     ctx.beginPath();
     ctx.ellipse(c.width / 2, c.height - size * 2, size * 7, size * 3, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.drawImage(avatarSprite(avatar, facing, pose), 0, 0, 18 * size, 30 * size);
+    ctx.drawImage(avatarSprite(avatar, facing, pose), 0, 0, SPRITE_W * size, SPRITE_H * size);
   }, [avatar, facing, pose, size]);
   return (
     <canvas
       ref={ref}
-      width={18 * size}
-      height={31 * size}
+      width={SPRITE_W * size}
+      height={(SPRITE_H + 1) * size}
       className="plaza-canvas cursor-pointer"
       title="Girar"
       onClick={() => setFacing((f) => ((f + 1) % 4) as Facing)}
@@ -107,6 +108,7 @@ export function AvatarEditor({ onClose }: { onClose: () => void }) {
       topColor: r(CLOTH_COLORS.length),
       bottomColor: r(CLOTH_COLORS.length),
       accessory: Math.random() < 0.5 ? 0 : r(ACCESSORIES.length),
+      face: Math.random() < 0.6 ? 0 : r(FACES.length),
     });
   };
   const save = async () => {
@@ -147,7 +149,8 @@ export function AvatarEditor({ onClose }: { onClose: () => void }) {
             {row('Roupa', <Chips label="Roupa" options={TOP_STYLES} value={av.top} onChange={(top) => set({ top })} />)}
             {row('Cor da roupa', <Swatches label="Cor da roupa" colors={CLOTH_COLORS} value={av.topColor} onChange={(topColor) => set({ topColor })} />)}
             {row('Calça', <Swatches label="Calça" colors={CLOTH_COLORS} value={av.bottomColor} onChange={(bottomColor) => set({ bottomColor })} />)}
-            {row('Acessório', <Chips label="Acessório" options={ACCESSORIES} value={av.accessory} onChange={(accessory) => set({ accessory })} />)}
+            {row('Na cabeça', <Chips label="Na cabeça" options={ACCESSORIES} value={av.accessory} onChange={(accessory) => set({ accessory })} />)}
+            {row('No rosto', <Chips label="No rosto" options={FACES} value={av.face} onChange={(face) => set({ face })} />)}
           </div>
           <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
             <button onClick={onClose} className={soft('md', 'raised')}>

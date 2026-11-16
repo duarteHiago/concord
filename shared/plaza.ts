@@ -10,7 +10,9 @@ export const HAIR_STYLES = ['Curto', 'Longo', 'Cacheado', 'Moicano', 'Coque', 'R
 export const HAIR_COLORS = ['#1f1a17', '#4a2f1f', '#8a5a2b', '#d9a54a', '#ebe4d6', '#d4483b', '#2f62e6', '#8b5cf6'];
 export const TOP_STYLES = ['Camiseta', 'Moletom', 'Jaqueta', 'Regata'];
 export const CLOTH_COLORS = ['#2f62e6', '#d4483b', '#2e9e6a', '#f5c451', '#8b5cf6', '#ececec', '#2b2b38', '#f08fb0', '#3fb8c9', '#8a5a2b'];
-export const ACCESSORIES = ['Nada', 'Boné', 'Gorro', 'Fone', 'Óculos', 'Flor'];
+// a ordem é o que fica salvo (índice): item novo entra sempre no fim
+export const ACCESSORIES = ['Nada', 'Boné', 'Gorro', 'Fone', 'Óculos', 'Flor', 'Coroa', 'Cartola', 'Chapéu de bruxa', 'Chifres', 'Auréola', 'Orelhas de gato', 'Viking', 'Abóbora'];
+export const FACES = ['Nada', 'Hóquei', 'Fantasma', 'Caveira', 'Cirúrgica', 'Bandana', 'Bigode', 'Tapa-olho', 'Nariz de palhaço', 'Óculos escuros'];
 
 export interface PlazaAvatar {
   skin: number;
@@ -20,6 +22,8 @@ export interface PlazaAvatar {
   topColor: number;
   bottomColor: number;
   accessory: number;
+  /** máscara ou o que mais vai no rosto (FACES) */
+  face: number;
 }
 
 const pick = (raw: unknown, size: number, fallback: number) =>
@@ -42,6 +46,7 @@ export function defaultAvatar(userId: string): PlazaAvatar {
     topColor: (h >>> 12) % CLOTH_COLORS.length,
     bottomColor: 6,
     accessory: 0,
+    face: 0,
   };
 }
 
@@ -58,6 +63,7 @@ export function sanitizeAvatar(raw: unknown, userId: string): PlazaAvatar {
     topColor: pick(a.topColor, CLOTH_COLORS.length, base.topColor),
     bottomColor: pick(a.bottomColor, CLOTH_COLORS.length, base.bottomColor),
     accessory: pick(a.accessory, ACCESSORIES.length, base.accessory),
+    face: pick(a.face, FACES.length, base.face),
   };
 }
 
