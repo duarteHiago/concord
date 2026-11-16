@@ -157,10 +157,10 @@ jobs:
   publish:
     name: Publicar na VPS
     needs: [build-win, build-mac]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.VPS_HOST != ''
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (vars.VPS_HOST != '' || vars.DEPLOY_ENABLED == 'true')
     runs-on: ubuntu-latest
     env:
-      TARGET: ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}
+      TARGET: ${{ secrets.VPS_USER || vars.VPS_USER }}@${{ secrets.VPS_HOST || vars.VPS_HOST }}
     steps:
       - uses: actions/download-artifact@v8
         with:

@@ -61,13 +61,15 @@ jobs:
     name: Deploy na VPS
     needs: test
     # só roda depois que deploy/setup-cicd.ps1 configurou as variáveis do repositório
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VPS_HOST != ''
+    # o endereço da VPS pode ficar só nos segredos (VPS_HOST/VPS_USER), que o log mascara; aí DEPLOY_ENABLED=true liga o deploy
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (vars.VPS_HOST != '' || vars.DEPLOY_ENABLED == 'true')
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://${{ vars.DEPLOY_DOMAIN }}
     env:
-      TARGET: ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}
+      # segredo primeiro: com VPS_HOST/VPS_USER nos segredos, o log público do deploy mostra *** em vez do IP
+      TARGET: ${{ secrets.VPS_USER || vars.VPS_USER }}@${{ secrets.VPS_HOST || vars.VPS_HOST }}
     steps:
       - uses: actions/checkout@v7
 
@@ -153,13 +155,13 @@ jobs:
   deploy-staging:
     name: Deploy no Concord de testes
     needs: test
-    if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request' && vars.STAGING_VPS_HOST != ''
+    if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request' && (vars.STAGING_VPS_HOST != '' || vars.STAGING_DEPLOY_ENABLED == 'true')
     runs-on: ubuntu-latest
     environment:
       name: staging
       url: https://${{ vars.STAGING_DOMAIN }}
     env:
-      TARGET: ${{ vars.STAGING_VPS_USER || 'root' }}@${{ vars.STAGING_VPS_HOST }}
+      TARGET: ${{ secrets.STAGING_VPS_USER || vars.STAGING_VPS_USER || 'root' }}@${{ secrets.STAGING_VPS_HOST || vars.STAGING_VPS_HOST }}
       # pasta própria: não mistura com uma instalação antiga que esteja em /opt/concord
       DIR: /opt/concord-staging
     steps:
