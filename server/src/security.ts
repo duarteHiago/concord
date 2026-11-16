@@ -35,7 +35,7 @@ const origin = (url: string) => {
 
 const ENFORCED = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
 
-function reportOnlyPolicy() {
+function fullPolicy() {
   // LiveKit em outro endereço (no dev, ws://localhost:7880): o websocket e o /rtc/validate por HTTP, que o
   // livekit-client chama quando a conexão falha. Em produção ele fica no mesmo domínio (/livekit) e 'self' basta.
   const lk = config.livekit.publicUrl ? origin(config.livekit.publicUrl) : '';
@@ -62,10 +62,16 @@ function reportOnlyPolicy() {
 }
 
 export function securityHeaders() {
-  const reportOnly = reportOnlyPolicy();
+  const full = fullPolicy();
   return (req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('Content-Security-Policy', ENFORCED);
-    res.setHeader('Content-Security-Policy-Report-Only', reportOnly);
+    // a política completa vale de verdade (barra script de fora e injetado: um XSS não consegue rodar código e levar o
+    // token da sessão). CSP_ENFORCE=false volta a só observar (relatórios em /api/csp-report), se algo legítimo quebrar.
+    if (config.cspEnforce) {
+      res.setHeader('Content-Security-Policy', full);
+    } else {
+      res.setHeader('Content-Security-Policy', ENFORCED);
+      res.setHeader('Content-Security-Policy-Report-Only', full);
+    }
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
