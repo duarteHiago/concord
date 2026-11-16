@@ -10,9 +10,12 @@ const allow = limiter(20, 10 * 60_000);
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max).replace(/[\u0000-\u0008\u000b-\u001f]/g, '') : '');
 /** Campos de uma linha só: sem quebra, ninguém escreve uma linha falsa no log. */
-const line = (v: unknown, max: number) => text(v, max).replace(/[\t\n]+/g, ' ');
+const line = (v: unknown, max: number) => text(v, max).replace(/[\u0000-\u001f\u007f]+/g, ' ');
 /** Pilhas (várias linhas): cada linha vai recuada, para não se passar por outra entrada do log. */
-const indent = (v: unknown, max: number) => text(v, max).replace(/\n/g, '\n    ');
+const indent = (v: unknown, max: number) =>
+  text(v, max)
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]+/g, ' ')
+    .replace(/\n/g, '\n    ');
 
 export function registerClientErrorRoutes(api: Router) {
   api.post('/client-errors', (req, res) => {

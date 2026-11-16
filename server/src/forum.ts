@@ -99,7 +99,7 @@ export function registerForumRoutes(api: Router, authorJson: AuthorJson) {
       new: (a, b) => b.created_at - a.created_at,
       active: (a, b) => b.last_activity_at - a.last_activity_at,
     };
-    rows = rows.sort((a, b) => b.pinned - a.pinned || (by[sort] ?? by.hot)(a, b)).slice(0, 200);
+    rows = rows.sort((a, b) => b.pinned - a.pinned || (Object.hasOwn(by, sort) ? by[sort] : by.hot)(a, b)).slice(0, 200);
     res.json(rows.map((p) => postJson(p, me)));
   });
 
