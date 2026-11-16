@@ -1,5 +1,7 @@
 // Integração com o Concord Desktop (Electron). Fora do app desktop, `desktop` é undefined.
 
+import pcmPlayerWorkletUrl from './worklets/pcm-player.worklet.js?url';
+
 export interface DesktopSource {
   id: string;
   name: string;
@@ -108,42 +110,8 @@ export function openDiagnosticsWindow() {
   else window.open('/diagnostico', 'concord-diagnostico', 'width=840,height=680,menubar=no,toolbar=no');
 }
 
-// Toca o PCM recebido (16 bits, 48 kHz, estéreo) com um buffer curto para manter baixa latência.
-const WORKLET = `
-class PcmPlayer extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.size = 48000 * 2;            // 0,5 s estéreo
-    this.buf = new Float32Array(this.size);
-    this.r = 0; this.w = 0; this.n = 0;
-    this.max = 48000 * 2 * 0.12;      // acima de 120 ms acumulados, descarta o excesso
-    this.port.onmessage = (e) => this.push(new Int16Array(e.data));
-  }
-  push(s) {
-    for (let i = 0; i < s.length; i++) {
-      this.buf[this.w] = s[i] / 32768;
-      this.w = (this.w + 1) % this.size;
-      if (this.n < this.size) this.n++; else this.r = (this.r + 1) % this.size;
-    }
-    if (this.n > this.max) {
-      const drop = (this.n - 48000 * 2 * 0.04) & ~1;
-      this.r = (this.r + drop) % this.size;
-      this.n -= drop;
-    }
-  }
-  process(_inputs, outputs) {
-    const l = outputs[0][0], r = outputs[0][1] || outputs[0][0];
-    for (let i = 0; i < l.length; i++) {
-      if (this.n >= 2) {
-        l[i] = this.buf[this.r]; r[i] = this.buf[(this.r + 1) % this.size];
-        this.r = (this.r + 2) % this.size; this.n -= 2;
-      } else { l[i] = 0; r[i] = 0; }
-    }
-    return true;
-  }
-}
-registerProcessor('concord-pcm-player', PcmPlayer);
-`;
+// O som do app desktop toca num worklet que é um arquivo do próprio site (worklets/pcm-player.worklet.js): a CSP não
+// deixa carregar worklet de blob: ou data:.
 
 export interface DesktopAudio {
   track: MediaStreamTrack;
@@ -154,9 +122,7 @@ export interface DesktopAudio {
 export async function startDesktopAudio(sourceId: string, onEnded: (message: string) => void): Promise<DesktopAudio> {
   const bridge = desktop!;
   const ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
-  const moduleUrl = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
-  await ctx.audioWorklet.addModule(moduleUrl);
-  URL.revokeObjectURL(moduleUrl);
+  await ctx.audioWorklet.addModule(pcmPlayerWorkletUrl);
   const node = new AudioWorkletNode(ctx, 'concord-pcm-player', { numberOfInputs: 0, outputChannelCount: [2] });
   const dest = ctx.createMediaStreamDestination();
   dest.channelCount = 2;
