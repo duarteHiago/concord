@@ -255,10 +255,13 @@ function findWebhook(req: Request<{ id: string; token: string }>): WebhookRow {
 }
 
 /** Nome que aparece como autor: sem quebra de linha, caracteres invisíveis nem inversão de direção do texto. */
+const invisible = (c: number) =>
+  c < 0x20 || (c >= 0x7f && c <= 0x9f) || (c >= 0x200b && c <= 0x200f) || (c >= 0x202a && c <= 0x202e) || (c >= 0x2060 && c <= 0x2069) || c === 0xfeff;
+
 export const cleanName = (s: string | undefined) =>
-  s
-    ?.replace(/\s+/g, ' ')
-    .replace(/[\p{Cc}​-‏‪-‮⁠-⁩﻿]/gu, '')
+  [...(s?.replace(/\s+/g, ' ') ?? '')]
+    .filter((ch) => !invisible(ch.codePointAt(0)!))
+    .join('')
     .trim() || undefined;
 
 const multipartBody = express.raw({ type: 'multipart/form-data', limit: '25mb' });

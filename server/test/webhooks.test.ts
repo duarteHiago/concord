@@ -187,7 +187,9 @@ describe('webhooks de entrada', () => {
 
   it('o nome trocado não leva quebra de linha nem caractere invisível', async () => {
     const { member, channel, hook } = await setup();
-    await postJson(pathOf(hook.url), { content: 'x', username: 'Ana\n​da‮moderação' });
+    // quebra de linha, espaço de largura zero e inversão de direção do texto
+    const sneaky = ['Ana', String.fromCharCode(10), String.fromCharCode(0x200b), 'da', String.fromCharCode(0x202e), 'moderação'].join('');
+    await postJson(pathOf(hook.url), { content: 'x', username: sneaky });
     assert.equal((await lastMessage(member, channel)).data.webhook.name, 'Ana damoderação');
   });
 });
