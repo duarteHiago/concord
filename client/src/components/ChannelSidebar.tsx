@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  FolderPlus,
   Hash,
   HeadphoneOff,
   Headphones,
@@ -27,7 +28,7 @@ import { PlazaButton } from './plaza/PlazaButton';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
-import { memberName, type Channel, type ServerDetail, type VoiceState } from '../lib/types';
+import { memberName, type Category, type Channel, type ServerDetail, type VoiceState } from '../lib/types';
 import { HOME, memberColor, useActiveDetail, useApp } from '../store/app';
 import { DmSidebar } from './DirectMessages';
 import { armPopoverToggle, toggleOrOpenPopover } from '../store/popover';
@@ -61,6 +62,11 @@ export function ChannelSidebar() {
             <ChannelGroup detail={detail} kind="voice" />
             <ChannelGroup detail={detail} kind="forum" />
             <ChannelGroup detail={detail} kind="text" />
+            {[...(detail.categories ?? [])]
+              .sort((a, b) => a.position - b.position)
+              .map((cat) => (
+                <CategorySection key={cat.id} detail={detail} category={cat} />
+              ))}
           </div>
         </>
       ) : (
@@ -132,6 +138,7 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
             item('Configurações do servidor', <Settings size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id }))}
           {item('Patches do servidor', <Shirt size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id, tab: 'patches' }))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar sala ou canal', <Plus size={16} />, () => openModal({ type: 'createChannel', serverId: detail.server.id, kind: 'voice' }))}
+          {has(perms, P.MANAGE_CHANNELS) && item('Criar categoria', <FolderPlus size={16} />, () => openModal({ type: 'category', serverId: detail.server.id }))}
           <div className="mx-2 my-1 h-px bg-line" />
           {isOwner
             ? item(
@@ -178,12 +185,18 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
 const GROUP_LABEL = { voice: 'Salas', forum: 'Fóruns', text: 'Conversas' } as const;
 const CREATE_LABEL = { voice: 'Criar sala', forum: 'Criar fórum', text: 'Criar canal de texto' } as const;
 
+const KIND_ORDER = { voice: 0, forum: 1, text: 2 } as const;
+
+/** Canal fora de categoria (ou numa que a pessoa não recebeu: aí ele fica no topo, em vez de sumir). */
+const uncategorized = (detail: ServerDetail, c: Channel) => !c.categoryId || !detail.categories?.some((cat) => cat.id === c.categoryId);
+
 function ChannelGroup({ detail, kind }: { detail: ServerDetail; kind: 'text' | 'voice' | 'forum' }) {
-  const channels = detail.channels.filter((c) => c.type === kind).sort((a, b) => a.position - b.position);
+  const channels = detail.channels.filter((c) => c.type === kind && uncategorized(detail, c)).sort((a, b) => a.position - b.position);
   const openModal = useApp((s) => s.openModal);
   const canManage = has(detail.permissions, P.MANAGE_CHANNELS);
-  // servidor sem fóruns não mostra o grupo vazio
-  if (kind === 'forum' && channels.length === 0) return null;
+  // servidor sem fóruns não mostra o grupo vazio; com categorias, nenhum grupo vazio aparece
+  // (o "+" de criar fica no cabeçalho de cada categoria e no menu do servidor)
+  if (channels.length === 0 && (kind === 'forum' || detail.categories?.length)) return null;
 
   return (
     <section>
@@ -202,6 +215,97 @@ function ChannelGroup({ detail, kind }: { detail: ServerDetail; kind: 'text' | '
       <div className={kind === 'voice' ? 'space-y-2' : 'space-y-0.5'}>
         {channels.map((c) => (kind === 'voice' ? <RoomCard key={c.id} detail={detail} channel={c} /> : <TextChannelRow key={c.id} detail={detail} channel={c} />))}
       </div>
+    </section>
+  );
+}
+
+// categorias recolhidas: preferência de cada pessoa, neste navegador
+const COLLAPSED_KEY = 'concord:categorias-recolhidas';
+
+function readCollapsed(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function useCollapsed(categoryId: string) {
+  const [collapsed, setCollapsed] = useState(() => readCollapsed().has(categoryId));
+  const toggle = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      const all = readCollapsed();
+      if (next) all.add(categoryId);
+      else all.delete(categoryId);
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...all]));
+    } catch {
+      // sem armazenamento (aba anônima etc.): recolhe só até recarregar
+    }
+  };
+  return [collapsed, toggle] as const;
+}
+
+function CategorySection({ detail, category }: { detail: ServerDetail; category: Category }) {
+  const serverId = detail.server.id;
+  const [collapsed, toggle] = useCollapsed(category.id);
+  const openModal = useApp((s) => s.openModal);
+  const activeId = useApp((s) => s.activeChannels[serverId]);
+  const states = useApp((s) => s.voiceStates[serverId]) ?? [];
+  const myRoom = useVoice((s) => (s.status !== 'idle' ? s.channelId : null));
+  const canManage = has(detail.permissions, P.MANAGE_CHANNELS);
+  const all = detail.channels
+    .filter((c) => c.categoryId === category.id)
+    .sort((a, b) => KIND_ORDER[a.type] - KIND_ORDER[b.type] || a.position - b.position);
+  // recolhida, continua à vista o canal aberto e as salas com gente (como quem está na call sabe onde está)
+  const shown = collapsed ? all.filter((c) => c.id === activeId || c.id === myRoom || (c.type === 'voice' && states.some((v) => v.channelId === c.id))) : all;
+
+  return (
+    <section>
+      <div className="group mb-1.5 flex items-center gap-1 px-1">
+        <button
+          onClick={toggle}
+          aria-expanded={!collapsed}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-0.5 text-left text-fg-subtle hover:text-fg"
+        >
+          <ChevronDown size={14} className={cx('shrink-0 transition-transform', collapsed && '-rotate-90')} />
+          <h2 className="truncate font-sans text-xs font-bold">{category.name}</h2>
+        </button>
+        {canManage && (
+          <>
+            <IconButton
+              label="Editar categoria"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
+              onClick={() => openModal({ type: 'category', serverId, categoryId: category.id })}
+            >
+              <Settings size={13} />
+            </IconButton>
+            <IconButton
+              label={`Criar canal em ${category.name}`}
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
+              onClick={() => openModal({ type: 'createChannel', serverId, kind: 'text', categoryId: category.id })}
+            >
+              <Plus size={15} />
+            </IconButton>
+          </>
+        )}
+      </div>
+      {shown.length > 0 ? (
+        <div className="space-y-0.5">
+          {shown.map((c) =>
+            c.type === 'voice' ? (
+              <div key={c.id} className="py-1">
+                <RoomCard detail={detail} channel={c} />
+              </div>
+            ) : (
+              <TextChannelRow key={c.id} detail={detail} channel={c} />
+            ),
+          )}
+        </div>
+      ) : (
+        !collapsed && canManage && <p className="px-3 py-1 text-xs text-fg-subtle">Sem canais ainda. Use o + para criar.</p>
+      )}
     </section>
   );
 }

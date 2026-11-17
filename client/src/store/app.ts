@@ -52,7 +52,8 @@ export type Modal =
   | { type: 'invite'; serverId: string }
   | { type: 'serverSettings'; serverId: string; tab?: string }
   | { type: 'channelSettings'; channelId: string; serverId: string }
-  | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum' }
+  | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum'; categoryId?: string | null }
+  | { type: 'category'; serverId: string; categoryId?: string }
   | { type: 'userSettings'; tab?: SettingsTab | 'style' }
   | { type: 'support' }
   | { type: 'shareScreen' }
