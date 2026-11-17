@@ -48,7 +48,7 @@ export function WebhooksTab({ channelId }: { channelId: string }) {
     <div className="space-y-4">
       <p className="text-sm text-fg-muted">
         Um webhook é um endereço secreto que outro app usa para mandar mensagens neste canal: alertas do Grafana, avisos do Uptime Kuma, um script seu. Ele
-        aceita o formato de webhook do Discord e do Slack.{' '}
+        aceita o formato de webhook do Discord e do Slack. Se quem criou sair do servidor, o webhook para de funcionar.{' '}
         <a href={DOCS_URL} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-accent hover:underline">
           Como usar <ExternalLink size={12} />
         </a>

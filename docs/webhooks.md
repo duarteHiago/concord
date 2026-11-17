@@ -17,6 +17,10 @@ avisos do Uptime Kuma, o resultado de um deploy, um script seu. Não precisa de 
 
 Apagar o webhook não apaga as mensagens que ele já mandou.
 
+O webhook é de quem criou: se essa pessoa sair do servidor (por conta própria, expulsa ou banida) ou apagar
+a conta, os webhooks dela param de funcionar. Assim quem saiu com o endereço guardado não posta mais. Para
+uma integração da equipe, crie o webhook com uma conta que vai continuar no servidor.
+
 ## 2. Mandar uma mensagem
 
 O corpo segue o formato de webhook do **Discord**. Ferramentas que já mandam para o Discord funcionam colando

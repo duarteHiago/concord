@@ -192,4 +192,20 @@ describe('webhooks de entrada', () => {
     await postJson(pathOf(hook.url), { content: 'x', username: sneaky });
     assert.equal((await lastMessage(member, channel)).data.webhook.name, 'Ana damoderação');
   });
+
+  it('quem criou sai do servidor (ou é expulso): os webhooks dele param, as mensagens ficam', async () => {
+    const { owner, member, serverId, channel } = await setup();
+    const role = (await owner.post(`/servers/${serverId}/roles`, { name: 'Ops' })).body;
+    await owner.patch(`/roles/${role.id}`, { permissions: P.MANAGE_CHANNELS | P.VIEW_CHANNEL | P.SEND_MESSAGES });
+    await owner.put(`/servers/${serverId}/members/${member.id}/roles`, { roleIds: [role.id] });
+    const mine = (await member.post(`/channels/${channel}/webhooks`, { name: 'Do membro' })).body;
+    assert.equal((await postJson(pathOf(mine.url), { content: 'antes de sair' })).status, 204);
+
+    assert.equal((await owner.del(`/servers/${serverId}/members/${member.id}`)).status, 200);
+    assert.equal((await postJson(pathOf(mine.url), { content: 'depois' })).status, 404);
+    const list = (await owner.get(`/channels/${channel}/messages`)).body as { content: string }[];
+    assert.ok(list.some((m) => m.content === 'antes de sair'));
+    // o webhook do dono (criado no setup) continua
+    assert.equal((await owner.get(`/channels/${channel}/webhooks`)).body.length, 1);
+  });
 });

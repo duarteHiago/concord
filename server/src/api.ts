@@ -1619,6 +1619,9 @@ function removeMember(serverId: string, userId: string) {
   // os convites que a pessoa criou saem junto: quem foi expulso ou banido não deixa uma porta aberta para voltar
   // com outra conta (nem para mandar gente para dentro)
   run('DELETE FROM invites WHERE server_id = ? AND creator_id = ?', serverId, userId);
+  // e os webhooks que ela criou param: quem saiu (ou foi banido) com o endereço guardado não posta mais
+  // (as mensagens que eles já mandaram ficam)
+  run('DELETE FROM webhooks WHERE creator_id = ? AND channel_id IN (SELECT id FROM channels WHERE server_id = ?)', userId, serverId);
   leaveServerRoom(userId, serverId);
   serverChanged(serverId);
 }
