@@ -11,8 +11,8 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import express, { type NextFunction, type Request, type Response, type Router } from 'express';
-import { P } from '../../shared/permissions.ts';
-import { getChannel, requireChannelPerm } from './access.ts';
+import { P, has } from '../../shared/permissions.ts';
+import { channelPermissions, getChannel, requireChannelPerm } from './access.ts';
 import { config } from './config.ts';
 import { all, get, run, tx, type ChannelRow, type UserRow } from './db.ts';
 import { fail, humansOnly, optStr, str, uid } from './http.ts';
@@ -228,24 +228,38 @@ async function readBody(req: Request): Promise<{ body: Record<string, unknown>; 
 // ------------------------------------------------------------------ rotas sem login
 
 // token errado: depois de muitas tentativas do mesmo endereço, ele espera (ninguém adivinha 256 bits, mas não
-// deixamos tentar à vontade)
+// deixamos tentar à vontade). Token CERTO passa mesmo com o IP bloqueado: senão alguém na mesma saída de rede
+// (Grafana Cloud, um NAT de empresa) derrubaria os alertas de todo mundo de lá errando de propósito.
 const badTokens = limiter(30, 10 * 60_000);
 const blockedIps = new Map<string, number>();
 // por webhook: 30 mensagens por minuto (o mesmo do Discord), para um alerta em loop não afogar o canal
 const perWebhook = limiter(30, 60_000);
+// e 60 arquivos por hora: sem isso, quem tem o endereço encheria o disco (30/min x 25 MB)
+const filesPerWebhook = limiter(60, 60 * 60_000);
 
 function findWebhook(req: Request<{ id: string; token: string }>): WebhookRow {
-  const ip = clientIp(req);
-  const until = blockedIps.get(ip);
-  if (until && until > Date.now()) fail(429, 'Muitas tentativas com token inválido. Espere alguns minutos.');
   const hook = get<WebhookRow>('SELECT * FROM webhooks WHERE id = ?', String(req.params.id).slice(0, 64));
   const given = hashToken(String(req.params.token));
-  if (!hook || !timingSafeEqual(Buffer.from(hook.token_hash, 'hex'), given)) {
-    if (!badTokens(ip)) blockedIps.set(ip, Date.now() + 10 * 60_000);
-    fail(404, 'Webhook não encontrado');
+  if (hook && timingSafeEqual(Buffer.from(hook.token_hash, 'hex'), given)) return hook;
+  // sem IP conhecido (atrás de um proxy sem o IP real) não bloqueia: viraria um bloqueio de todo mundo
+  const ip = clientIp(req);
+  if (ip) {
+    const now = Date.now();
+    if ((blockedIps.get(ip) ?? 0) > now) fail(429, 'Muitas tentativas com token inválido. Espere alguns minutos.');
+    if (!badTokens(ip)) {
+      for (const [k, until] of blockedIps) if (until <= now) blockedIps.delete(k);
+      blockedIps.set(ip, now + 10 * 60_000);
+    }
   }
-  return hook!;
+  return fail(404, 'Webhook não encontrado');
 }
+
+/** Nome que aparece como autor: sem quebra de linha, caracteres invisíveis nem inversão de direção do texto. */
+export const cleanName = (s: string | undefined) =>
+  s
+    ?.replace(/\s+/g, ' ')
+    .replace(/[\p{Cc}​-‏‪-‮⁠-⁩﻿]/gu, '')
+    .trim() || undefined;
 
 const multipartBody = express.raw({ type: 'multipart/form-data', limit: '25mb' });
 
@@ -272,8 +286,13 @@ export function registerPublicWebhookRoutes(api: Router, deps: Deliver) {
   async function post(req: Request<{ id: string; token: string }>, res: Response, format: 'discord' | 'slack') {
     const hook = res.locals.webhook as WebhookRow;
     const { body, files } = await readBody(req);
-    const { content, name, embeds } = format === 'slack' ? fromSlack(body) : fromDiscord(body);
+    const parsed = format === 'slack' ? fromSlack(body) : fromDiscord(body);
+    const { content, embeds } = parsed;
+    const name = cleanName(parsed.name);
     if (!content && embeds.length === 0 && files.length === 0) fail(400, 'Mensagem vazia: mande content, embeds ou um arquivo');
+    for (let i = 0; i < files.length; i++) {
+      if (!filesPerWebhook(hook.id)) fail(429, 'Muitos arquivos deste webhook na última hora. Mande só o texto ou espere.');
+    }
     const channel = getChannel(hook.channel_id);
     const data: WebhookMessageData = { webhook: name ? { name } : {} };
     if (embeds.length) data.embeds = embeds;
@@ -323,6 +342,9 @@ const AVATAR_COLORS = ['#5865f2', '#3ba55c', '#faa61a', '#ed4245', '#eb459e', '#
 // foto do webhook: o mesmo limite da foto de perfil e dos bots
 const avatarBody = express.raw({ type: () => true, limit: '9mb' });
 
+// criar/apagar em sequência deixaria contas escondidas acumulando: um teto por pessoa
+const createsPerUser = limiter(20, 60 * 60_000);
+
 export function registerWebhookRoutes(api: Router) {
   api.get('/channels/:id/webhooks', humansOnly, (req, res) => {
     const channel = requireChannelPerm(req.params.id, uid(res), P.MANAGE_CHANNELS);
@@ -333,7 +355,10 @@ export function registerWebhookRoutes(api: Router) {
     const me = uid(res);
     const channel = requireChannelPerm(req.params.id, me, P.MANAGE_CHANNELS);
     if (channel.type === 'forum') fail(400, 'Fóruns não recebem webhooks');
-    const name = str(req.body?.name, 'nome', 1, 32);
+    // o webhook escreve no canal: quem não pode escrever ali (ex.: #anúncios só leitura) não cria um para escrever por ele
+    if (!has(channelPermissions(channel, me), P.SEND_MESSAGES)) fail(403, 'Você precisa poder mandar mensagens neste canal para criar um webhook');
+    const name = cleanName(str(req.body?.name, 'nome', 1, 32)) ?? fail(400, 'Nome inválido');
+    if (!createsPerUser(me)) fail(429, 'Você criou muitos webhooks agora há pouco. Espere um pouco.');
     const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM webhooks WHERE channel_id = ?', channel.id)!.n;
     if (count >= MAX_PER_CHANNEL) fail(400, `Até ${MAX_PER_CHANNEL} webhooks por canal`);
     const id = randomUUID();
@@ -367,7 +392,7 @@ export function registerWebhookRoutes(api: Router) {
 
   api.patch('/channels/:id/webhooks/:wid', humansOnly, (req, res) => {
     const { hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
-    const name = optStr(req.body?.name, 'nome', 1, 32);
+    const name = cleanName(optStr(req.body?.name, 'nome', 1, 32));
     if (name) run('UPDATE users SET display_name = ? WHERE id = ?', name, hook.user_id);
     res.json(webhookJson(hook));
   });
@@ -389,10 +414,17 @@ export function registerWebhookRoutes(api: Router) {
     res.json({ webhook: webhookJson(hook), url: webhookUrl(req, hook.id, token) });
   });
 
-  // as mensagens que ele já mandou ficam (a conta que as assina continua existindo)
+  // as mensagens que ele já mandou ficam (a conta que as assina continua existindo); sem mensagem nenhuma,
+  // a conta sai junto
   api.delete('/channels/:id/webhooks/:wid', humansOnly, (req, res) => {
     const { hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
-    run('DELETE FROM webhooks WHERE id = ?', hook.id);
+    const user = get<UserRow>('SELECT * FROM users WHERE id = ?', hook.user_id);
+    const used = !!get('SELECT 1 FROM messages WHERE author_id = ? LIMIT 1', hook.user_id);
+    tx(() => {
+      run('DELETE FROM webhooks WHERE id = ?', hook.id);
+      if (!used) run('DELETE FROM users WHERE id = ? AND is_webhook = 1', hook.user_id);
+    });
+    if (!used) removeUpload(user?.avatar_url);
     res.json({ ok: true });
   });
 }

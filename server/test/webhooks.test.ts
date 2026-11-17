@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
+import { P } from '../../shared/permissions.ts';
 import { signUp, startServer, type Client, type TestServer } from './helpers.ts';
 
 async function connect(c: Client) {
@@ -170,5 +171,23 @@ describe('webhooks de entrada', () => {
     const author = (await lastMessage(member, channel)).author;
     assert.notEqual((await member.post('/dms', { userId: author.id })).status, 200);
     assert.notEqual((await member.post('/friends', { username: author.username })).status, 200);
+  });
+
+  it('quem gerencia canais mas não pode escrever no canal não cria webhook para escrever por ele', async () => {
+    const { owner, member, serverId, channel } = await setup();
+    const role = (await owner.post(`/servers/${serverId}/roles`, { name: 'Organiza' })).body;
+    await owner.patch(`/roles/${role.id}`, { permissions: P.MANAGE_CHANNELS | P.VIEW_CHANNEL | P.SEND_MESSAGES });
+    await owner.put(`/servers/${serverId}/members/${member.id}/roles`, { roleIds: [role.id] });
+    // canal só leitura para o cargo
+    assert.equal((await owner.put(`/channels/${channel}/overwrites/${role.id}`, { allow: 0, deny: P.SEND_MESSAGES })).status, 200);
+    assert.equal((await member.post(`/channels/${channel}/webhooks`, { name: 'Atalho' })).status, 403);
+    assert.equal((await owner.put(`/channels/${channel}/overwrites/${role.id}`, { allow: 0, deny: 0 })).status, 200);
+    assert.equal((await member.post(`/channels/${channel}/webhooks`, { name: 'Atalho' })).status, 200);
+  });
+
+  it('o nome trocado não leva quebra de linha nem caractere invisível', async () => {
+    const { member, channel, hook } = await setup();
+    await postJson(pathOf(hook.url), { content: 'x', username: 'Ana\n​da‮moderação' });
+    assert.equal((await lastMessage(member, channel)).data.webhook.name, 'Ana damoderação');
   });
 });

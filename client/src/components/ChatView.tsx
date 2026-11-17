@@ -255,6 +255,11 @@ function Bubble({
                   APP
                 </span>
               )}
+              {/* o app pode mandar outro nome em cada mensagem: o nome real do webhook fica à vista, para ninguém
+                  se passar por uma pessoa do servidor */}
+              {hook?.webhook.name && hook.webhook.name !== message.author.displayName && (
+                <span className="text-[11px] font-normal text-fg-subtle">via {message.author.displayName}</span>
+              )}
             </span>
             <span className="text-[11px] text-fg-subtle">{time}</span>
           </div>

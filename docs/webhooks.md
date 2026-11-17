@@ -8,7 +8,7 @@ avisos do Uptime Kuma, o resultado de um deploy, um script seu. Não precisa de 
 ## 1. Criar o webhook
 
 1. Abra as configurações do canal (a engrenagem ao lado do nome) e vá em **Integrações**.
-   Precisa da permissão "Gerenciar canais".
+   Precisa da permissão "Gerenciar canais" e de poder mandar mensagens no canal.
 2. Dê um nome (ele aparece como autor das mensagens) e clique em **Criar**.
 3. **Copie o endereço.** Ele aparece uma vez só. Se perder ou vazar, use **Novo endereço**: o antigo para
    de funcionar na hora.
@@ -70,9 +70,9 @@ curl -X POST "https://seu-concord.com/api/webhooks/ID/TOKEN" \
   -F "files[0]=@grafico.png"
 ```
 
-`embeds[].image`, `embeds[].thumbnail` e `avatar_url` com link externo são **ignorados**: para mostrar a
-imagem, o app de quem lê o canal teria que buscar o endereço, e isso entregaria o IP da pessoa ao site. A
-foto do webhook se troca nas configurações do canal.
+Os campos `embeds[].image`, `embeds[].thumbnail` e `avatar_url` (imagem por link) são **ignorados**. A foto
+do webhook se troca nas configurações do canal. Um link de imagem escrito no texto (`content` ou
+`description`) aparece como em qualquer mensagem do chat.
 
 ## 3. Formato do Slack
 
@@ -102,6 +102,9 @@ Os webhooks do próprio GitHub (Settings → Webhooks) mandam um formato só del
 ## 5. Limites
 
 - 30 mensagens por minuto por webhook. Passou disso, a resposta é `429` com `Retry-After`.
-- 10 webhooks por canal. Fóruns não recebem webhooks.
+- 60 arquivos por hora por webhook.
+- 10 webhooks por canal. Fóruns não recebem webhooks. Para criar, além de "Gerenciar canais" é preciso
+  poder mandar mensagens no canal.
+- Quando o app manda um `username`, o nome real do webhook aparece ao lado ("via Grafana").
 - `@todos`/`@everyone` não avisa ninguém. `@usuario` avisa quem tem acesso ao canal.
 - Muitas tentativas com token errado do mesmo endereço de IP bloqueiam esse IP por 10 minutos.
