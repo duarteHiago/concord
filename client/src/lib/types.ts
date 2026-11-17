@@ -16,6 +16,8 @@ export interface User {
   bannerUrl?: string | null;
   bio: string;
   bot?: boolean;
+  /** conta que assina as mensagens de um webhook: não tem perfil nem DM */
+  webhook?: true;
   /** selo de verificado: concedido pela autoridade da instalação, não pela pessoa nem pelo servidor */
   verified?: boolean;
   /** moldura animada da foto */
@@ -443,14 +445,45 @@ export interface Message {
   channelId: string;
   content: string;
   kind?: 'text' | 'game' | 'clip' | 'sticker';
-  /** jogo (kind "game") ou figurinha (kind "sticker") */
-  data?: GameData | StickerMessageData | null;
+  /** jogo (kind "game"), figurinha (kind "sticker") ou cartões de webhook (texto vindo de outro app) */
+  data?: GameData | StickerMessageData | WebhookMessageData | null;
   attachments?: Attachment[];
   createdAt: number;
   editedAt: number | null;
   author: User;
   /** mensagem que esta responde (prévia), ou null */
   replyTo?: ReplyPreview | null;
+}
+
+/** Cartão de uma mensagem de webhook (o "embed" do Discord). Ver server/src/webhooks.ts. */
+export interface WebhookEmbed {
+  title?: string;
+  url?: string;
+  description?: string;
+  /** cor da faixa lateral, 0xRRGGBB */
+  color?: number;
+  author?: string;
+  fields?: { name: string; value: string; inline: boolean }[];
+  footer?: string;
+  timestamp?: number;
+}
+
+export interface WebhookMessageData {
+  /** nome que o app mandou para esta mensagem (troca o nome do webhook só nela) */
+  webhook: { name?: string };
+  embeds?: WebhookEmbed[];
+}
+
+/** Webhook de um canal, como aparece nas configurações (o token só vem ao criar ou trocar). */
+export interface Webhook {
+  id: string;
+  channelId: string;
+  name: string;
+  avatarUrl: string | null;
+  avatarColor: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  creator: { id: string; displayName: string } | null;
 }
 
 /** Como eu vejo a pessoa: amigo, pedido que eu mandei, pedido que recebi, ou bloqueada por mim. */

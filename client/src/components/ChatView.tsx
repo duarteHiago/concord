@@ -6,7 +6,8 @@ import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, 
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
-import { memberName, type Channel, type GameData, type Message, type ServerDetail, type StickerMessageData } from '../lib/types';
+import { memberName, type Channel, type GameData, type Message, type ServerDetail, type StickerMessageData, type WebhookMessageData } from '../lib/types';
+import { WebhookEmbeds } from './WebhookEmbeds';
 import { onVisibilityChange } from '../lib/visibility';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { profileTriggers } from '../store/popover';
@@ -162,7 +163,9 @@ function Bubble({
   const mine = message.author.id === me.id;
   const canDelete = mine || has(channel.permissions, P.MANAGE_MESSAGES);
   const member = detail.members.find((x) => x.id === message.author.id);
-  const name = member ? memberName(member) : message.author.displayName;
+  // mensagem de outro app (webhook): pode trazer o próprio nome, não tem perfil para abrir
+  const hook = message.author.webhook ? ((message.data as WebhookMessageData | null) ?? { webhook: {} }) : null;
+  const name = hook?.webhook.name || (member ? memberName(member) : message.author.displayName);
   const avatarUrl = member?.avatarUrl ?? message.author.avatarUrl;
   const frame = member ? member.frame : message.author.frame;
   const avatarColor = member?.avatarColor ?? message.author.avatarColor;
@@ -228,14 +231,17 @@ function Bubble({
     >
       {actions}
       <div className="shrink-0" style={{ width: size }}>
-        {(!grouped || message.replyTo) && (
-          <button
-            aria-label={`Perfil de ${name}`}
-            {...profileTriggers(message.author.id, detail.server.id, () => useApp.getState().openProfile(message.author.id, detail.server.id))}
-          >
-            <Avatar name={name} color={avatarColor} src={avatarUrl} frame={frame} size={size} />
-          </button>
-        )}
+        {(!grouped || message.replyTo) &&
+          (hook ? (
+            <Avatar name={name} color={avatarColor} src={avatarUrl} size={size} />
+          ) : (
+            <button
+              aria-label={`Perfil de ${name}`}
+              {...profileTriggers(message.author.id, detail.server.id, () => useApp.getState().openProfile(message.author.id, detail.server.id))}
+            >
+              <Avatar name={name} color={avatarColor} src={avatarUrl} frame={frame} size={size} />
+            </button>
+          ))}
       </div>
       <div className={cx('flex min-w-0 flex-col items-start', compact ? 'max-w-[82%]' : 'max-w-[85%] md:max-w-[70%]')}>
         {message.replyTo && <ReplyQuote reply={message.replyTo} nameOf={nameOf} />}
@@ -244,6 +250,11 @@ function Bubble({
             <span className="flex items-center gap-1 text-[13px] font-bold" style={{ color: memberColor(detail, message.author.id) }}>
               {name}
               {verified && <VerifiedBadge size={13} />}
+              {hook && (
+                <span title="Mensagem enviada por outro app (webhook)" className="rounded bg-accent-2/20 px-1 text-[9px] leading-4 font-bold text-accent-2">
+                  APP
+                </span>
+              )}
             </span>
             <span className="text-[11px] text-fg-subtle">{time}</span>
           </div>
@@ -294,6 +305,7 @@ function Bubble({
             </div>
           )
         )}
+        {!editing && hook?.embeds && <WebhookEmbeds embeds={hook.embeds} />}
         {!editing && jamLink && !onlyJamLink && <JamCard url={jamLink.url} jam={jamLink.jam} authorName={name} mine={mine} />}
         {!editing && <MessageAttachments items={message.attachments} />}
       </div>
