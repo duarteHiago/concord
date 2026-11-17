@@ -3445,7 +3445,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 // ============================================================ Fórum
 
 registerForumRoutes(api, authorJson);
-registerWebhookRoutes(api, { imageBody });
+registerWebhookRoutes(api);
 registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);
 registerSupportRoutes(api);

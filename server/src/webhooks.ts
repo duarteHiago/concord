@@ -10,7 +10,7 @@
 // não tem senha que alguém saiba nem token de bot. Só o hash do token fica no banco.
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import express, { type NextFunction, type Request, type RequestHandler, type Response, type Router } from 'express';
+import express, { type NextFunction, type Request, type Response, type Router } from 'express';
 import { P } from '../../shared/permissions.ts';
 import { getChannel, requireChannelPerm } from './access.ts';
 import { config } from './config.ts';
@@ -320,7 +320,10 @@ function requireWebhook(channelId: string, webhookId: string, me: string) {
 
 const AVATAR_COLORS = ['#5865f2', '#3ba55c', '#faa61a', '#ed4245', '#eb459e', '#00a8fc'];
 
-export function registerWebhookRoutes(api: Router, deps: { imageBody: RequestHandler }) {
+// foto do webhook: o mesmo limite da foto de perfil e dos bots
+const avatarBody = express.raw({ type: () => true, limit: '9mb' });
+
+export function registerWebhookRoutes(api: Router) {
   api.get('/channels/:id/webhooks', humansOnly, (req, res) => {
     const channel = requireChannelPerm(req.params.id, uid(res), P.MANAGE_CHANNELS);
     res.json(all<WebhookRow>('SELECT * FROM webhooks WHERE channel_id = ? ORDER BY created_at', channel.id).map(webhookJson));
@@ -369,7 +372,7 @@ export function registerWebhookRoutes(api: Router, deps: { imageBody: RequestHan
     res.json(webhookJson(hook));
   });
 
-  api.post('/channels/:id/webhooks/:wid/avatar', humansOnly, deps.imageBody, (req, res) => {
+  api.post('/channels/:id/webhooks/:wid/avatar', humansOnly, avatarBody, (req, res) => {
     const { hook } = requireWebhook(String(req.params.id), String(req.params.wid), uid(res));
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', hook.user_id)!;
     const url = saveImage('avatars', user.id, req.body);
