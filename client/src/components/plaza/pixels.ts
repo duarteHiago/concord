@@ -705,7 +705,8 @@ function bed(ctx: Ctx, x: number, y: number, sleeper: PlazaAvatar | null, t: num
   if (sleeper) {
     const head = avatarSprite(sleeper, 0, 'stand');
     const p = at(x + 0.5, y + 0.5, 11);
-    ctx.drawImage(head, 0, 0, SPRITE_W, 13, Math.round(p.x) - SPRITE_W / 2, Math.round(p.y) - 12, SPRITE_W, 13);
+    const h = 13 + HEAD_ROOM;
+    ctx.drawImage(head, 0, 0, SPRITE_W, h, Math.round(p.x) - SPRITE_W / 2, Math.round(p.y) - 12 - HEAD_ROOM, SPRITE_W, h);
   }
   box(ctx, x + 0.66, y + 0.12, 1.28, 0.76, 9, sleeper ? 3.5 : 1.5, { top: blanket, left: hexShade(blanket, -0.15), right: hexShade(blanket, -0.3) });
   if (sleeper && !mirrored) {
@@ -1469,16 +1470,226 @@ const shade = (hex: string, amt: number) => {
   return `rgb(${f(n >> 16)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
 };
 
+type Px = (x: number, y: number, w: number, h: number, color: string) => void;
+const INK = '#1b1430';
+
+/** O que vai no rosto (FACES). Coordenadas do boneco de frente: olhos em x 7 e 11, linha 8. */
+function drawFace(px: Px, face: number, back: boolean, oy: number, hair: string) {
+  const p = (x: number, y: number, w: number, h: number, c: string) => px(x, y + oy, w, h, c);
+  if (face === 1) {
+    // máscara de goleiro de hóquei: branca encardida, com furinhos para respirar
+    if (back) return p(4, 7, 10, 1, '#5b5040');
+    const m = '#ece6d2';
+    p(5, 3, 8, 9, m);
+    p(4, 5, 1, 5, m);
+    p(6, 12, 6, 1, m);
+    p(12, 3, 1, 9, '#cfc6ab');
+    p(6, 8, 2, 2, INK);
+    p(10, 8, 2, 2, INK);
+    for (const [hx, hy] of [
+      [7, 11],
+      [9, 11],
+      [11, 11],
+      [8, 10],
+      [10, 10],
+      [8, 5],
+      [10, 5],
+      [9, 4],
+    ])
+      p(hx, hy, 1, 1, '#8a8170');
+  } else if (face === 2) {
+    // fantasma de lençol: a cabeça toda coberta, dois buracos ovais para os olhos
+    const w = '#f4f4f0';
+    const wD = '#d6d6d0';
+    p(4, 1, 10, 14, w);
+    p(3, 3, 12, 12, w);
+    p(12, 1, 2, 14, wD);
+    p(14, 3, 1, 12, wD);
+    if (back) return;
+    p(6, 7, 2, 3, INK);
+    p(10, 7, 2, 3, INK);
+    p(8, 11, 2, 1, wD);
+  } else if (face === 3) {
+    // caveira pintada
+    if (back) return;
+    p(5, 4, 8, 8, '#f2efe6');
+    p(12, 4, 1, 8, '#d9d4c6');
+    p(6, 7, 2, 3, INK);
+    p(10, 7, 2, 3, INK);
+    p(8, 10, 2, 1, INK);
+    p(6, 12, 6, 1, '#f2efe6');
+    p(7, 12, 1, 1, INK);
+    p(9, 12, 1, 1, INK);
+    p(11, 12, 1, 1, INK);
+  } else if (face === 4) {
+    // máscara cirúrgica
+    if (back) return p(4, 9, 10, 1, '#e9e9e9');
+    p(5, 10, 8, 3, '#a9d8ea');
+    p(12, 10, 1, 3, '#86bcd1');
+    p(6, 11, 6, 1, '#93c8dc');
+    p(4, 9, 1, 2, '#e9e9e9');
+    p(13, 9, 1, 2, '#e9e9e9');
+  } else if (face === 5) {
+    // bandana de bandido, com o nó atrás
+    const red = '#d4483b';
+    if (back) {
+      p(7, 9, 4, 2, red);
+      p(8, 11, 2, 2, '#a8352b');
+      return;
+    }
+    p(4, 10, 10, 3, red);
+    p(5, 13, 8, 1, red);
+    p(7, 14, 4, 1, red);
+    p(12, 10, 2, 4, '#a8352b');
+    p(6, 11, 1, 1, PAL.cream);
+    p(10, 11, 1, 1, PAL.cream);
+    p(8, 13, 1, 1, PAL.cream);
+  } else if (face === 6) {
+    // bigodão da cor do cabelo
+    if (back) return;
+    const d = shade(hair, -0.15);
+    p(7, 10, 5, 1, d);
+    p(6, 11, 2, 1, d);
+    p(11, 11, 2, 1, d);
+  } else if (face === 7) {
+    // tapa-olho de pirata
+    if (back) return p(4, 5, 10, 1, INK);
+    p(10, 7, 3, 3, INK);
+    p(9, 7, 1, 1, INK);
+    p(8, 6, 1, 1, INK);
+    p(7, 5, 1, 1, INK);
+    p(5, 4, 2, 1, INK);
+    p(13, 8, 1, 1, INK);
+  } else if (face === 8) {
+    // nariz de palhaço e bochecha corada
+    if (back) return;
+    p(8, 9, 2, 2, '#e0302a');
+    p(8, 9, 1, 1, '#ff8a80');
+    p(6, 10, 1, 1, '#ff6b6b');
+    p(12, 10, 1, 1, '#ff6b6b');
+  } else if (face === 9) {
+    // óculos escuros
+    if (back) {
+      p(4, 8, 1, 1, '#111111');
+      p(13, 8, 1, 1, '#111111');
+      return;
+    }
+    p(5, 7, 8, 1, '#111111');
+    p(5, 8, 3, 2, '#111111');
+    p(10, 8, 3, 2, '#111111');
+    p(6, 8, 1, 1, '#5a5a7a');
+    p(11, 8, 1, 1, '#5a5a7a');
+  }
+}
+
+/** Chapéus e afins a partir do índice 6 de ACCESSORIES (os primeiros ficam no próprio avatarSprite). */
+function drawHeadwear(px: Px, acc: number, back: boolean, oy: number, hair: string, hairD: string) {
+  const p = (x: number, y: number, w: number, h: number, c: string) => px(x, y + oy, w, h, c);
+  const gold = '#f5c451';
+  const goldD = '#c9953f';
+  if (acc === 6) {
+    // coroa
+    p(4, 1, 10, 3, gold);
+    p(12, 1, 2, 3, goldD);
+    p(4, -1, 1, 2, gold);
+    p(8, -2, 2, 3, gold);
+    p(13, -1, 1, 2, goldD);
+    if (!back) {
+      p(6, 2, 1, 1, '#d4483b');
+      p(9, 2, 1, 1, '#3fb8c9');
+      p(11, 2, 1, 1, '#d4483b');
+    }
+  } else if (acc === 7) {
+    // cartola
+    const k = '#22202c';
+    p(2, 2, 14, 1, k);
+    p(5, -4, 8, 6, k);
+    p(6, -4, 1, 4, '#3a3748');
+    p(5, 0, 8, 1, PAL.coral);
+  } else if (acc === 8) {
+    // chapéu de bruxa, com a ponta torta
+    const pu = '#5b3f9e';
+    const puD = '#3f2a75';
+    p(1, 2, 16, 1, puD);
+    p(4, 0, 10, 2, pu);
+    p(5, -1, 8, 1, pu);
+    p(6, -2, 6, 1, pu);
+    p(8, -3, 4, 1, pu);
+    p(10, -4, 3, 1, pu);
+    p(12, -1, 1, 3, puD);
+    p(4, 1, 10, 1, gold);
+  } else if (acc === 9) {
+    // chifrinhos
+    const r = '#c62f2a';
+    const rD = '#8f1d1a';
+    p(4, 1, 2, 2, r);
+    p(3, -1, 2, 2, r);
+    p(3, -2, 1, 1, rD);
+    p(12, 1, 2, 2, rD);
+    p(13, -1, 2, 2, rD);
+    p(14, -2, 1, 1, rD);
+  } else if (acc === 10) {
+    // auréola flutuando
+    p(5, -3, 8, 1, '#fff1a8');
+    p(4, -2, 10, 1, gold);
+    p(5, -1, 8, 1, goldD);
+  } else if (acc === 11) {
+    // orelhas de gato, da cor do cabelo
+    p(4, 0, 3, 3, hair);
+    p(4, -1, 1, 1, hair);
+    p(11, 0, 3, 3, hairD);
+    p(13, -1, 1, 1, hairD);
+    if (!back) {
+      p(5, 1, 1, 1, '#f08fb0');
+      p(12, 1, 1, 1, '#f08fb0');
+    }
+  } else if (acc === 12) {
+    // capacete viking
+    const m = '#9aa0b5';
+    p(4, 0, 10, 4, m);
+    p(5, -1, 8, 1, m);
+    p(12, 0, 2, 4, '#6b7088');
+    p(4, 3, 10, 1, goldD);
+    p(2, 1, 2, 2, PAL.cream);
+    p(1, -1, 2, 2, PAL.cream);
+    p(1, -2, 1, 1, PAL.cream);
+    p(14, 1, 2, 2, '#d8cdb5');
+    p(15, -1, 2, 2, '#d8cdb5');
+    p(16, -2, 1, 1, '#d8cdb5');
+  } else if (acc === 13) {
+    // cabeça de abóbora (cobre a cabeça toda, máscara inclusive)
+    const o = '#f08a24';
+    const oD = '#c2601a';
+    p(3, 2, 12, 11, o);
+    p(4, 1, 10, 1, o);
+    p(13, 2, 2, 11, oD);
+    p(6, 2, 1, 11, oD);
+    p(10, 2, 1, 11, oD);
+    p(8, -1, 2, 3, PAL.leafDark);
+    if (!back) {
+      const glow = '#ffd23f';
+      p(5, 7, 3, 1, glow);
+      p(6, 6, 1, 1, glow);
+      p(10, 7, 3, 1, glow);
+      p(11, 6, 1, 1, glow);
+      p(5, 10, 8, 1, glow);
+      for (const mx of [6, 8, 10, 12]) p(mx, 11, 1, 1, glow);
+    }
+  }
+}
+
 const spriteCache = new Map<string, HTMLCanvasElement>();
 export const SPRITE_W = 18;
-export const SPRITE_H = 30;
+/** Linhas a mais em cima do boneco para chapéu alto (cartola, chifres, auréola). */
+export const HEAD_ROOM = 4;
+export const SPRITE_H = 30 + HEAD_ROOM;
 
 /**
- * Boneco em pixel art (18×30, pés no meio da última linha), com contorno escuro. `facing` 0/1 de frente,
- * 2/3 de costas; 1 e 3 são o espelho de 0 e 2.
+ * Boneco em pixel art (18×30 mais HEAD_ROOM em cima para o chapéu, pés no meio da última linha), com contorno
+ * escuro. `facing` 0/1 de frente, 2/3 de costas; 1 e 3 são o espelho de 0 e 2.
  */
 export function avatarSprite(av: PlazaAvatar, facing: Facing, pose: Pose): HTMLCanvasElement {
-  const key = `${av.skin}.${av.hair}.${av.hairColor}.${av.top}.${av.topColor}.${av.bottomColor}.${av.accessory}|${facing}|${pose}`;
+  const key = `${av.skin}.${av.hair}.${av.hairColor}.${av.top}.${av.topColor}.${av.bottomColor}.${av.accessory}.${av.face}|${facing}|${pose}`;
   const hit = spriteCache.get(key);
   if (hit) return hit;
   const canvas = document.createElement('canvas');
@@ -1501,7 +1712,7 @@ export function avatarSprite(av: PlazaAvatar, facing: Facing, pose: Pose): HTMLC
   const bottomD = shade(bottom, -0.25);
   const shoe = '#2a2238';
   const sit = pose === 'sit';
-  const oy = 1; // margem de cima para o contorno
+  const oy = 1 + HEAD_ROOM; // margem de cima para o contorno e o chapéu
 
   // pernas
   if (sit) {
@@ -1602,6 +1813,9 @@ export function avatarSprite(av: PlazaAvatar, facing: Facing, pose: Pose): HTMLC
     px(12, 10 + oy, 1, 1, '#e07d7d');
   }
 
+  // rosto (máscaras e afins), por baixo do que vai na cabeça
+  drawFace(px, av.face, back, oy, hair);
+
   // acessórios
   const acc = av.accessory;
   if (acc === 1) {
@@ -1626,6 +1840,8 @@ export function avatarSprite(av: PlazaAvatar, facing: Facing, pose: Pose): HTMLC
   } else if (acc === 5) {
     px(11, 1 + oy, 3, 3, '#f08fb0');
     px(12, 2 + oy, 1, 1, '#f5c451');
+  } else if (acc >= 6) {
+    drawHeadwear(px, acc, back, oy, hair, hairD);
   }
 
   // contorno: todo pixel vazio encostado num pixel pintado fica escuro
@@ -1690,8 +1906,9 @@ export function drawAvatar(
   // dormindo: vira para a mesa (de costas para quem olha), como se apoiasse a cabeça nos braços
   const sprite = avatarSprite(av, opts.sleeping ? ((facing === 0 ? 3 : facing === 1 ? 2 : facing) as Facing) : facing, pose);
   if (opts.ghost) ctx.globalAlpha = 0.75;
-  const top = y - SPRITE_H + 1 + Math.round(opts.bob ?? 0);
-  ctx.drawImage(sprite, x - SPRITE_W / 2, top);
+  // `top` é o alto da cabeça, sem a folga do chapéu: os "z", o console e o copo se medem dele
+  const top = y - SPRITE_H + 1 + HEAD_ROOM + Math.round(opts.bob ?? 0);
+  ctx.drawImage(sprite, x - SPRITE_W / 2, top - HEAD_ROOM);
   ctx.globalAlpha = 1;
   // cochilando: os "z" subindo em cima da cabeça, no próprio mapa (o nome pode estar escondido na mesa cheia)
   if (opts.sleeping) {

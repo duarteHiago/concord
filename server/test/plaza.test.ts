@@ -31,6 +31,9 @@ describe('praça: mapa e validação (shared)', () => {
     assert.equal(a.skin, base.skin);
     assert.equal(a.hair, base.hair);
     assert.equal(a.accessory, 2);
+    assert.equal(a.face, 0, 'avatar salvo antes do rosto existir fica sem máscara');
+    assert.equal(sanitizeAvatar({ face: 1, accessory: 13 }, 'alguem').face, 1);
+    assert.equal(sanitizeAvatar({ face: 999 }, 'alguem').face, 0);
     assert.equal(cleanSay('  oi\n\ntudo‮ bem?  '), 'oi tudo bem?');
     assert.equal(cleanSay('x'.repeat(500)).length, 120);
     assert.equal(cleanSay(42), '');

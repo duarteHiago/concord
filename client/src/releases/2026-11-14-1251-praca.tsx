@@ -8,14 +8,14 @@ function PracaArt() {
     <Frame className="h-[170px] bg-[#231a3a]">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_80%,#6670c4_0,#3d3166_45%,#231a3a_75%)]" />
       <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-end gap-3">
-        <AvatarPreview size={3} spin={false} avatar={{ skin: 1, hair: 1, hairColor: 5, top: 1, topColor: 0, bottomColor: 6, accessory: 3 }} />
+        <AvatarPreview size={3} spin={false} avatar={{ skin: 1, hair: 1, hairColor: 5, top: 1, topColor: 0, bottomColor: 6, accessory: 3, face: 0 }} />
         <div className="relative">
           <div className="absolute -top-7 left-1/2 w-max -translate-x-1/2 rounded-md border-2 border-[#1b1430] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#1b1430] shadow-[2px_2px_0_#1b1430]">
             bora pra mesa?
           </div>
-          <AvatarPreview size={3} spin={false} avatar={{ skin: 4, hair: 2, hairColor: 0, top: 2, topColor: 1, bottomColor: 9, accessory: 1 }} />
+          <AvatarPreview size={3} spin={false} avatar={{ skin: 4, hair: 2, hairColor: 0, top: 2, topColor: 1, bottomColor: 9, accessory: 1, face: 0 }} />
         </div>
-        <AvatarPreview size={3} spin={false} avatar={{ skin: 0, hair: 4, hairColor: 3, top: 0, topColor: 4, bottomColor: 6, accessory: 5 }} />
+        <AvatarPreview size={3} spin={false} avatar={{ skin: 0, hair: 4, hairColor: 3, top: 0, topColor: 4, bottomColor: 6, accessory: 5, face: 0 }} />
       </div>
       <Spot className="absolute top-3 right-3 h-12 w-12 bg-[#1b1430]">
         <Globe size={38} />
