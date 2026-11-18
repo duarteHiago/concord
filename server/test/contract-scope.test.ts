@@ -12,14 +12,21 @@ const DB_PATH = join(dir, 'concord.db');
 const env = { DB_PATH, PAYMENTS_FAKE: 'true' };
 let server: TestServer;
 let official = '';
+let officialCode = '';
+let authority = '';
+let authorityCode = '';
 
-// o servidor oficial precisa existir antes de o app saber qual é: cria, reinicia com AUTHORITY_SERVER_ID
+// o servidor oficial (o do convite da comunidade) precisa existir antes de o app saber qual é: cria e reinicia com
+// COMMUNITY_INVITE. O da autoridade (selo de verificado, ex.: o founders) não é o oficial e pode entrar em contratos.
 before(async () => {
   const first = await startServer(env);
   const staff = await signUp(first, 'equipe');
   official = (await staff.post('/servers', { name: 'Concord oficial' })).body.id;
+  officialCode = (await staff.post(`/servers/${official}/invites`, {})).body.code;
+  authority = (await staff.post('/servers', { name: 'founders' })).body.id;
+  authorityCode = (await staff.post(`/servers/${authority}/invites`, {})).body.code;
   await first.stop();
-  server = await startServer({ ...env, AUTHORITY_SERVER_ID: official });
+  server = await startServer({ ...env, COMMUNITY_INVITE: officialCode, AUTHORITY_SERVER_ID: authority });
 });
 after(async () => {
   await server.stop();
@@ -43,6 +50,15 @@ async function serverWith(owner: Client, guest: Client, name: string) {
 }
 
 describe('servidores do contrato', () => {
+  it('o servidor oficial da comunidade fica de fora; o da autoridade (founders) entra', async () => {
+    const p = await signUp(server, 'esc_p');
+    assert.equal((await p.post(`/invites/${officialCode}`)).status, 200);
+    assert.equal((await p.post(`/invites/${authorityCode}`)).status, 200);
+    const ids = ((await p.get('/contracts/me')).body.eligibleServers as { id: string }[]).map((s) => s.id);
+    assert.ok(!ids.includes(official), 'o oficial não aparece');
+    assert.ok(ids.includes(authority), 'o founders aparece');
+  });
+
   it('pelo menos 1 servidor de quem propõe, e nunca o oficial', async () => {
     const [a, b] = [await signUp(server, 'esc_a'), await signUp(server, 'esc_b')];
     await support(a, 500);

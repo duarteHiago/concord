@@ -67,10 +67,12 @@ const byId = (id: string) => get<ContractRow>('SELECT * FROM contracts WHERE id 
 
 // ---- servidores do contrato: os poderes do Mecenas só valem neles, e nunca no servidor oficial do Concord
 
-/** O servidor oficial (o da comunidade e o que dá o selo de verificado): fica fora de todo contrato. */
+/**
+ * O servidor oficial do Concord (o da comunidade, do COMMUNITY_INVITE): fica fora de todo contrato. O servidor da
+ * autoridade (AUTHORITY_SERVER_ID, o que dá o selo de verificado, como o founders) entra normalmente.
+ */
 export function officialServerIds(): Set<string> {
   const ids = new Set<string>();
-  if (config.authorityServerId) ids.add(config.authorityServerId);
   const community = config.communityInvite ? get<{ server_id: string }>('SELECT server_id FROM invites WHERE code = ?', config.communityInvite) : undefined;
   if (community) ids.add(community.server_id);
   return ids;
