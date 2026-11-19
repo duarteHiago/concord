@@ -116,16 +116,22 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
   return (
     <div ref={ref} className="relative px-5 pt-5 pb-3">
       <button onClick={() => setOpen(!open)} className="group flex w-full items-center gap-2 text-left" aria-expanded={open}>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <div className="truncate font-display text-[22px] leading-tight font-bold">{detail.server.name}</div>
-            {detail.server.verified && <VerifiedBadge size={17} className="shrink-0" />}
-          </div>
-          <div className="text-[13px] text-fg-muted">
-            {onlineCount} {onlineCount === 1 ? 'pessoa online' : 'pessoas online'}
-          </div>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <div className="truncate font-display text-[22px] leading-tight font-bold">{detail.server.name}</div>
+          {detail.server.verified && <VerifiedBadge size={17} className="shrink-0" />}
         </div>
         <ChevronDown size={20} className={cx('shrink-0 text-fg-muted transition-transform group-hover:text-fg', open && 'rotate-180')} />
+      </button>
+      {/* quem está online agora: abre a lista de membros só com quem está conectado */}
+      <button
+        onClick={() => useApp.getState().showOnlineMembers()}
+        title="Ver quem está online"
+        className="flex items-center gap-1.5 rounded-full text-[13px] text-fg-muted transition-colors hover:text-fg"
+      >
+        <span className="h-2 w-2 rounded-full bg-ok" />
+        <span className="underline-offset-2 hover:underline">
+          {onlineCount} {onlineCount === 1 ? 'pessoa online' : 'pessoas online'}
+        </span>
       </button>
       {/* a Praça do servidor (quando ele tem): sempre à vista, logo abaixo do nome */}
       {detail.plaza && <PlazaButton serverId={detail.server.id} initialCount={detail.plaza.count} />}

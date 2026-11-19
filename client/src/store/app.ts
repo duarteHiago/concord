@@ -63,6 +63,7 @@ export type Modal =
   | { type: 'image'; src: string; alt: string }
   | { type: 'roulette'; target: { kind: 'channel' | 'dm'; id: string } }
   | { type: 'quickSwitch' }
+  | { type: 'members' }
   | { type: 'onboarding' }
   | { type: 'whatsNew'; ids: string[] }
   | { type: 'emailPrompt' }
@@ -94,6 +95,10 @@ interface AppState {
   typing: Record<string, Record<string, number>>;
   modal: Modal | null;
   memberListOpen: boolean;
+  /** lista de membros mostrando só quem está online */
+  membersOnlineOnly: boolean;
+  /** abre a lista de membros (só online) numa janela: funciona em qualquer tamanho de tela */
+  showOnlineMembers: () => void;
   /** página "Novidades" aberta no lugar da conversa (abrir um servidor, canal ou conversa fecha) */
   releasesOpen: boolean;
   openReleases: () => void;
@@ -416,6 +421,8 @@ export const useApp = create<AppState>((set, get) => {
     typing: {},
     modal: null,
     memberListOpen: true,
+    membersOnlineOnly: false,
+    showOnlineMembers: () => set({ membersOnlineOnly: true, modal: { type: 'members' } }),
     pendingInvite: null,
     googleSignup: null,
     emailReset: null,

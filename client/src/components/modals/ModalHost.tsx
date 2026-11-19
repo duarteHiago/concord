@@ -22,6 +22,7 @@ import { SupportModal } from '../Support';
 import { MecenasModal } from '../Mecenas';
 import { FinePixModal, PranksModal, RenewalModal } from '../Mecenato';
 import { BackupCodesModal } from '../TwoFactor';
+import { MembersModal } from '../MemberList';
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
@@ -79,6 +80,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <RecoveryCodeModal {...modal} />;
     case 'backupCodes':
       return <BackupCodesModal {...modal} />;
+    case 'members':
+      return <MembersModal />;
     case 'quickSwitch':
       return <QuickSwitch />;
     case 'roulette':

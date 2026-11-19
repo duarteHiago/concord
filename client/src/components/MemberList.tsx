@@ -1,9 +1,21 @@
-import { Crown, Gamepad2, Headphones, MonitorUp, Search } from 'lucide-react';
+import { Crown, Gamepad2, Headphones, MonitorUp, Search, Volume2 } from 'lucide-react';
 import { useState } from 'react';
 import { memberName, type Activity, type Member, type Presence, type ServerDetail } from '../lib/types';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { profileTriggers } from '../store/popover';
-import { Avatar, VerifiedBadge, cx } from './ui';
+import { Avatar, Modal, VerifiedBadge, cx } from './ui';
+
+/** A lista de membros numa janela (o "N pessoas online" do topo, e telas onde o painel lateral não cabe). */
+export function MembersModal() {
+  const close = useApp((s) => s.closeModal);
+  return (
+    <Modal title="Membros" onClose={close} width={420}>
+      <div className="-mx-3 flex h-[min(70vh,640px)] flex-col">
+        <MemberListBody />
+      </div>
+    </Modal>
+  );
+}
 
 /** Painel lateral com a lista de membros (canais de texto). */
 export function MemberList() {
@@ -22,6 +34,7 @@ export function activityLabel(a: Activity): string {
 export function MemberListBody() {
   const detail = useActiveDetail();
   const online = useApp((s) => s.online);
+  const onlyOnline = useApp((s) => s.membersOnlineOnly);
   const [query, setQuery] = useState('');
   if (!detail) return null;
 
@@ -29,6 +42,7 @@ export function MemberListBody() {
   const visible = q
     ? detail.members.filter((m) => `${m.displayName} ${m.nickname ?? ''} ${m.username}`.toLowerCase().includes(q))
     : detail.members;
+  const onlineCount = detail.members.filter((m) => online[m.id]).length;
 
   const hoisted = detail.roles.filter((r) => r.hoist && !r.isDefault).sort((a, b) => b.position - a.position);
   const groups: { title: string; members: Member[] }[] = [];
@@ -38,12 +52,13 @@ export function MemberListBody() {
   for (const role of hoisted) {
     const ms = visible.filter((m) => online[m.id] && !placed.has(m.id) && m.roleIds.includes(role.id)).sort(sortByName);
     ms.forEach((m) => placed.add(m.id));
-    if (ms.length) groups.push({ title: role.name, members: ms });
+    // o cargo em destaque só junta quem está online: o título diz isso
+    if (ms.length) groups.push({ title: `${role.name} · online`, members: ms });
   }
   const restOnline = visible.filter((m) => online[m.id] && !placed.has(m.id)).sort(sortByName);
   if (restOnline.length) groups.push({ title: 'Online', members: restOnline });
   const offline = visible.filter((m) => !online[m.id]).sort(sortByName);
-  if (offline.length) groups.push({ title: 'Offline', members: offline });
+  if (offline.length && !onlyOnline) groups.push({ title: 'Offline', members: offline });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -60,8 +75,29 @@ export function MemberListBody() {
           className="h-10 w-full rounded-full bg-surface-3 pr-3 pl-9 text-sm outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60"
         />
       </div>
+      <div className="flex items-center gap-1.5 px-3 pb-1">
+        {(
+          [
+            [false, `Todos · ${detail.members.length}`],
+            [true, `Só online · ${onlineCount}`],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={label}
+            onClick={() => useApp.setState({ membersOnlineOnly: value })}
+            aria-pressed={onlyOnline === value}
+            className={cx(
+              'flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-bold transition-colors',
+              onlyOnline === value ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:text-fg',
+            )}
+          >
+            {value && <span className="h-2 w-2 rounded-full bg-ok" />}
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-        {groups.length === 0 && <p className="px-2 py-4 text-sm text-fg-muted">Ninguém encontrado.</p>}
+        {groups.length === 0 && <p className="px-2 py-4 text-sm text-fg-muted">{onlyOnline && !q ? 'Ninguém online agora.' : 'Ninguém encontrado.'}</p>}
         {groups.map((g) => (
           <section key={g.title} className="mt-3">
             <h3 className="mb-1.5 px-2 font-sans text-xs font-bold text-fg-subtle">
@@ -78,7 +114,8 @@ export function MemberListBody() {
 }
 
 function MemberRow({ detail, member, presence }: { detail: ServerDetail; member: Member; presence: Presence | undefined }) {
-  const streaming = useApp((s) => s.voiceStates[detail.server.id]?.find((v) => v.userId === member.id)?.streaming);
+  const voice = useApp((s) => s.voiceStates[detail.server.id]?.find((v) => v.userId === member.id));
+  const room = voice ? detail.channels.find((c) => c.id === voice.channelId)?.name : undefined;
   const online = !!presence;
   // até 2 atividades ao mesmo tempo (ex.: jogando e ouvindo Spotify), já vêm limitadas pelo servidor
   const activities = presence?.activities ?? [];
@@ -98,9 +135,13 @@ function MemberRow({ detail, member, presence }: { detail: ServerDetail; member:
           {member.bot && <span className="shrink-0 rounded bg-accent-2/20 px-1 text-[9px] leading-4 font-bold text-accent-2">BOT</span>}
           {detail.server.ownerId === member.id && <Crown size={13} className="shrink-0 text-warn" />}
         </div>
-        {streaming ? (
+        {voice?.streaming ? (
           <div className="flex items-center gap-1 text-xs text-accent">
-            <MonitorUp size={12} className="shrink-0" /> Transmitindo
+            <MonitorUp size={12} className="shrink-0" /> <span className="truncate">Transmitindo{room ? ` em ${room}` : ''}</span>
+          </div>
+        ) : voice ? (
+          <div className="flex items-center gap-1 text-xs text-ok">
+            <Volume2 size={12} className="shrink-0" /> <span className="truncate">{room ? `Na sala ${room}` : 'Em chamada'}</span>
           </div>
         ) : activities.length ? (
           activities.map((a, i) => (

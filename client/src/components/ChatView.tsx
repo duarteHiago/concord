@@ -37,7 +37,13 @@ export function ChatView({ channel }: { channel: Channel }) {
           <h1 className="truncate text-xl font-bold md:text-2xl">{channel.name}</h1>
           {channel.topic && <p className="truncate text-sm text-fg-muted">{channel.topic}</p>}
         </div>
-        <IconButton label="Lista de membros" active={memberListOpen} className="hidden h-10 w-10 md:flex" onClick={toggleMemberList}>
+        <IconButton
+          label="Lista de membros"
+          active={memberListOpen}
+          className="h-10 w-10"
+          // o painel lateral só cabe em telas largas (xl); nas outras, a lista abre numa janela
+          onClick={() => (window.matchMedia('(min-width: 1280px)').matches ? toggleMemberList() : useApp.getState().openModal({ type: 'members' }))}
+        >
           <Users size={20} />
         </IconButton>
       </header>
