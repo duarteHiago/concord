@@ -9,7 +9,7 @@ import { RouletteModal } from '../Games';
 import { QuickSwitch } from './QuickSwitch';
 import { Button, Input, Modal } from '../ui';
 import { AddServerModal } from './AddServerModal';
-import { ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
+import { CategoryModal, ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
 import { InviteModal } from './InviteModal';
 import { OnboardingModal } from './OnboardingModal';
 import { WhatsNewModal } from './WhatsNewModal';
@@ -47,7 +47,9 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
     case 'serverSettings':
       return <ServerSettingsModal serverId={modal.serverId} initialTab={modal.tab} />;
     case 'createChannel':
-      return <CreateChannelModal serverId={modal.serverId} kind={modal.kind} />;
+      return <CreateChannelModal serverId={modal.serverId} kind={modal.kind} categoryId={modal.categoryId} />;
+    case 'category':
+      return <CategoryModal serverId={modal.serverId} categoryId={modal.categoryId} />;
     case 'channelSettings':
       return <ChannelSettingsModal serverId={modal.serverId} channelId={modal.channelId} />;
     case 'userSettings':

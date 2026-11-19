@@ -219,6 +219,8 @@ export interface Channel {
   type: 'text' | 'voice' | 'forum';
   topic: string;
   position: number;
+  /** categoria da barra lateral (null = fora de qualquer categoria) */
+  categoryId: string | null;
   userLimit: number;
   overwrites: Overwrite[];
   permissions: number;
@@ -228,6 +230,13 @@ export interface Channel {
   canRecord?: boolean;
   /** exigências de confiança do servidor/canal que a pessoa não alcança aqui (ver shared/trust.ts) */
   trustBlock?: Partial<Record<'speak' | 'stream', TrustRequirement>>;
+}
+
+/** Categoria de canais: só organiza a barra lateral (as permissões ficam em cada canal). */
+export interface Category {
+  id: string;
+  name: string;
+  position: number;
 }
 
 export interface Member extends User {
@@ -384,6 +393,7 @@ export interface ServerDetail {
   permissions: number;
   highestPosition: number;
   roles: Role[];
+  categories?: Category[];
   channels: Channel[];
   members: Member[];
   voiceStates: VoiceState[];

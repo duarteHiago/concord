@@ -321,6 +321,19 @@ db.exec(`
   );
 `);
 
+// Categorias de canais: só organizam a barra lateral (as permissões continuam em cada canal).
+// Apagar a categoria não apaga os canais: eles voltam para fora de qualquer categoria.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS channel_categories (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_channel_categories ON channel_categories(server_id, position);
+`);
+addColumn('channels', 'category_id', 'TEXT REFERENCES channel_categories(id) ON DELETE SET NULL');
+
 // Patches de presente: quem criou o patch gera um link; cada pessoa resgata uma vez.
 db.exec(`
   CREATE TABLE IF NOT EXISTS patch_drops (
@@ -916,6 +929,14 @@ export interface ChannelRow {
   topic: string;
   position: number;
   user_limit: number;
+  category_id: string | null;
+}
+
+export interface CategoryRow {
+  id: string;
+  server_id: string;
+  name: string;
+  position: number;
 }
 
 export interface OverwriteRow {
