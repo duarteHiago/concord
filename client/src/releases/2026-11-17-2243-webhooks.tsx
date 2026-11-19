@@ -11,17 +11,24 @@ function WebhookArt() {
             Grafana
             <span className="rounded bg-accent-2/20 px-1 text-[8px] leading-4 text-accent-2">APP</span>
           </div>
-          <div className="rounded-lg border-l-4 border-[#e01e5a] bg-surface-2 px-2.5 py-2 ring-1 ring-line">
-            <div className="text-[11px] font-bold text-accent">API de pagamentos com 40% de erro</div>
-            <div className="mt-0.5 text-[10px] text-fg-muted">Desde 14:02 · limite 5%</div>
-            <div className="mt-1.5 flex gap-4 text-[9px]">
-              <div>
-                <div className="font-bold text-fg-muted">Serviço</div>
-                pagamentos
+          {/* o mesmo desenho do cartão de verdade (WebhookEmbeds), em miniatura */}
+          <div className="flex gap-2 rounded-2xl bg-surface-2 p-2.5 ring-1 ring-line">
+            <span className="w-0.5 shrink-0 rounded-full bg-[#e01e5a]" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1 text-[8px] font-bold text-fg-muted">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#e01e5a]" /> Alerting
               </div>
-              <div>
-                <div className="font-bold text-fg-muted">Região</div>
-                sa-east
+              <div className="font-display text-[11px] leading-tight font-bold">API de pagamentos com 40% de erro</div>
+              <div className="mt-0.5 text-[9px] text-fg-muted">Desde 14:02 · limite 5%</div>
+              <div className="mt-1.5 grid grid-cols-2 gap-1">
+                <div className="rounded-lg bg-surface-3 px-1.5 py-1 text-[9px] font-semibold">
+                  <div className="text-[7px] font-bold text-fg-subtle">Serviço</div>
+                  pagamentos
+                </div>
+                <div className="rounded-lg bg-surface-3 px-1.5 py-1 text-[9px] font-semibold">
+                  <div className="text-[7px] font-bold text-fg-subtle">Região</div>
+                  sa-east
+                </div>
               </div>
             </div>
           </div>
