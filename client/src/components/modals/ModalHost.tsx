@@ -29,9 +29,17 @@ export function ModalHost() {
   return (
     <>
       {me && <MemberPopover />}
-      {me && modal && <ModalSwitch modal={modal} />}
+      {/* a key muda quando o modal passa a ser de outro canal/servidor/pessoa: o formulário monta de novo com os
+          dados certos (sem ela, abrir "Editar" de outro canal com o modal aberto mantinha os campos do anterior) */}
+      {me && modal && <ModalSwitch key={modalKey(modal)} modal={modal} />}
     </>
   );
+}
+
+/** O tipo do modal e de quem/o quê ele é (os ids). Abrir de novo o mesmo item mantém o estado. */
+function modalKey(modal: ModalState): string {
+  const m = modal as Partial<Record<'serverId' | 'channelId' | 'categoryId' | 'userId' | 'fineId' | 'src', unknown>>;
+  return [modal.type, m.serverId, m.channelId, m.categoryId, m.userId, m.fineId, m.src].map((v) => (typeof v === 'string' ? v : '')).join('|');
 }
 
 function ModalSwitch({ modal }: { modal: ModalState }) {
