@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import bcrypt from 'bcryptjs';
 import express, { Router } from 'express';
 import { ALL_PERMISSIONS, DEFAULT_EVERYONE, DEFAULT_MODERATOR, P, has } from '../../shared/permissions.ts';
+import { CHANNEL_NAME_MAX } from '../../shared/channels.ts';
 import {
   channelOverwrites,
   channelPermissions,
@@ -1635,7 +1636,7 @@ function normalizeChannelName(name: string, type: string) {
 api.post('/servers/:id/channels', (req, res) => {
   const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_CHANNELS);
   const type = req.body?.type === 'voice' || req.body?.type === 'forum' ? req.body.type : 'text';
-  const name = normalizeChannelName(str(req.body?.name, 'nome', 1, 50), type);
+  const name = normalizeChannelName(str(req.body?.name, 'nome', 1, CHANNEL_NAME_MAX), type);
   const topic = optStr(req.body?.topic, 'tópico', 0, 300) ?? '';
   const categoryId = categoryIn(server.id, req.body?.categoryId);
   const id = randomUUID();
@@ -1658,7 +1659,7 @@ api.post('/servers/:id/channels', (req, res) => {
 
 api.patch('/channels/:id', (req, res) => {
   const channel = requireChannelPerm(req.params.id, uid(res), P.MANAGE_CHANNELS);
-  const name = optStr(req.body?.name, 'nome', 1, 50);
+  const name = optStr(req.body?.name, 'nome', 1, CHANNEL_NAME_MAX);
   if (name) run('UPDATE channels SET name = ? WHERE id = ?', normalizeChannelName(name, channel.type), channel.id);
   const topic = optStr(req.body?.topic, 'tópico', 0, 300);
   if (topic !== undefined) run('UPDATE channels SET topic = ? WHERE id = ?', topic, channel.id);
@@ -1729,7 +1730,7 @@ function requireCategory(id: string, userId: string) {
 
 api.post('/servers/:id/categories', (req, res) => {
   const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_CHANNELS);
-  const name = str(req.body?.name, 'nome', 1, 50);
+  const name = str(req.body?.name, 'nome', 1, CHANNEL_NAME_MAX);
   const count = get<{ n: number }>('SELECT COUNT(*) AS n FROM channel_categories WHERE server_id = ?', server.id)!.n;
   if (count >= MAX_CATEGORIES) fail(400, `O servidor já tem ${MAX_CATEGORIES} categorias`);
   const pos = get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM channel_categories WHERE server_id = ?', server.id)!.p;
@@ -1741,7 +1742,7 @@ api.post('/servers/:id/categories', (req, res) => {
 
 api.patch('/categories/:id', (req, res) => {
   const cat = requireCategory(req.params.id, uid(res));
-  const name = optStr(req.body?.name, 'nome', 1, 50);
+  const name = optStr(req.body?.name, 'nome', 1, CHANNEL_NAME_MAX);
   if (name) run('UPDATE channel_categories SET name = ? WHERE id = ?', name, cat.id);
   if (req.body?.move === 'up' || req.body?.move === 'down') {
     const siblings = all<CategoryRow>('SELECT * FROM channel_categories WHERE server_id = ? ORDER BY position, name', cat.server_id);

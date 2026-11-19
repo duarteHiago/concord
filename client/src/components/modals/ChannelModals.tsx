@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, Check, Hash, MessagesSquare, Slash, Trash2, Volume2, X } from 'lucide-react';
+import { CHANNEL_NAME_MAX } from '../../../../shared/channels.ts';
 import { useState, type FormEvent } from 'react';
 import { P, PERMISSION_INFO, has } from '../../../../shared/permissions.ts';
 import { api } from '../../lib/api';
@@ -34,6 +35,28 @@ function CategorySelect({ serverId, value, onChange }: { serverId: string; value
         ))}
       </select>
     </label>
+  );
+}
+
+const tooLong = (name: string) => name.trim().length > CHANNEL_NAME_MAX;
+
+/**
+ * Nome de canal, sala ou categoria com contador ("58/100"). Sem o maxLength do navegador, que cortava o que
+ * passava do limite em silêncio (inclusive ao colar): passou, o contador fica vermelho e o botão não envia.
+ */
+function NameField({ label, value, onChange, placeholder, autoFocus }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean }) {
+  const len = value.trim().length;
+  const over = len > CHANNEL_NAME_MAX;
+  return (
+    <div>
+      <Input label={label} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoFocus={autoFocus} required aria-invalid={over || undefined} />
+      <p className={cx('mt-1 flex justify-between gap-2 text-xs', over ? 'font-semibold text-danger' : 'text-fg-subtle')}>
+        <span>{over ? `Passou do limite: tire ${len - CHANNEL_NAME_MAX} ${len - CHANNEL_NAME_MAX === 1 ? 'caractere' : 'caracteres'}.` : ''}</span>
+        <span className="tabular-nums">
+          {len}/{CHANNEL_NAME_MAX}
+        </span>
+      </p>
+    </div>
   );
 }
 
@@ -82,7 +105,7 @@ export function CreateChannelModal({ serverId, kind, categoryId: initialCategory
             </button>
           ))}
         </div>
-        <Input label="Nome do canal" value={name} onChange={(e) => setName(e.target.value)} placeholder={type === 'voice' ? 'Nova sala' : type === 'forum' ? 'ideias' : 'novo-canal'} autoFocus required maxLength={50} />
+        <NameField label="Nome do canal" value={name} onChange={setName} placeholder={type === 'voice' ? 'Nova sala' : type === 'forum' ? 'ideias' : 'novo-canal'} autoFocus />
         <CategorySelect serverId={serverId} value={categoryId} onChange={setCategoryId} />
         <div className="flex items-center justify-between rounded-xl bg-surface-0 p-3">
           <div>
@@ -91,7 +114,7 @@ export function CreateChannelModal({ serverId, kind, categoryId: initialCategory
           </div>
           <Toggle checked={isPrivate} onChange={setPrivate} />
         </div>
-        <Button type="submit" loading={loading} className="w-full" disabled={!name.trim()}>
+        <Button type="submit" loading={loading} className="w-full" disabled={!name.trim() || tooLong(name)}>
           Criar canal
         </Button>
       </form>
@@ -139,7 +162,7 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
 
       {tab === 'overview' ? (
         <div className="space-y-4">
-          <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
+          <NameField label="Nome" value={name} onChange={setName} />
           {channel.type !== 'voice' ? (
             <Input label="Tópico" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={300} placeholder="Do que se trata este canal?" />
           ) : (
@@ -152,7 +175,7 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
           )}
           <CategorySelect serverId={serverId} value={categoryId} onChange={setCategoryId} />
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={save} loading={saving}>
+            <Button onClick={save} loading={saving} disabled={!name.trim() || tooLong(name)}>
               Salvar alterações
             </Button>
             <Button variant="secondary" onClick={() => void api.patch(`/channels/${channelId}`, { move: 'up' }).catch(toast.error)}>
@@ -297,10 +320,10 @@ export function CategoryModal({ serverId, categoryId }: { serverId: string; cate
   return (
     <Modal title={categoryId ? 'Editar categoria' : 'Criar categoria'} subtitle="Agrupa canais e salas na barra lateral. As permissões continuam em cada canal." onClose={close}>
       <form onSubmit={submit} className="space-y-4">
-        <Input label="Nome da categoria" value={name} onChange={(e) => setName(e.target.value)} placeholder="Incidentes" autoFocus required maxLength={50} />
+        <NameField label="Nome da categoria" value={name} onChange={setName} placeholder="Incidentes" autoFocus />
         {categoryId ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" loading={loading} disabled={!name.trim()}>
+            <Button type="submit" loading={loading} disabled={!name.trim() || tooLong(name)}>
               Salvar
             </Button>
             <Button type="button" variant="secondary" onClick={() => move('up')}>
@@ -330,7 +353,7 @@ export function CategoryModal({ serverId, categoryId }: { serverId: string; cate
             </Button>
           </div>
         ) : (
-          <Button type="submit" loading={loading} className="w-full" disabled={!name.trim()}>
+          <Button type="submit" loading={loading} className="w-full" disabled={!name.trim() || tooLong(name)}>
             Criar categoria
           </Button>
         )}
