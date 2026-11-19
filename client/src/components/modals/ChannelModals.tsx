@@ -6,6 +6,7 @@ import { useApp } from '../../store/app';
 import { toast } from '../../store/toast';
 import { Button, Input, Modal, RoleDot, Toggle, cx } from '../ui';
 import { TrustRulesEditor } from '../TrustRules';
+import { WebhooksTab } from './WebhooksTab';
 
 const TYPE_INFO = {
   text: { icon: <Hash size={22} />, label: 'Texto', hint: 'Mensagens, links e imagens' },
@@ -103,7 +104,7 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
   const openModal = useApp((s) => s.openModal);
   const detail = useApp((s) => s.details[serverId]);
   const channel = detail?.channels.find((c) => c.id === channelId);
-  const [tab, setTab] = useState<'overview' | 'perms' | 'trust'>('overview');
+  const [tab, setTab] = useState<'overview' | 'perms' | 'trust' | 'hooks'>('overview');
   const [name, setName] = useState(channel?.name ?? '');
   const [topic, setTopic] = useState(channel?.topic ?? '');
   const [userLimit, setUserLimit] = useState(channel?.userLimit ?? 0);
@@ -125,13 +126,13 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
   return (
     <Modal title={<span className="flex items-center gap-2">{channel.type === 'voice' ? <Volume2 size={20} /> : channel.type === 'forum' ? <MessagesSquare size={20} /> : <Hash size={20} />} {channel.name}</span>} onClose={close} width={720}>
       <div className="mb-5 flex gap-1 border-b border-line">
-        {(['overview', 'perms', 'trust'] as const).map((t) => (
+        {(channel.type === 'forum' ? (['overview', 'perms', 'trust'] as const) : (['overview', 'perms', 'trust', 'hooks'] as const)).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={cx('-mb-px border-b-2 px-3 pb-2 text-sm font-semibold', tab === t ? 'border-accent text-fg' : 'border-transparent text-fg-muted hover:text-fg')}
           >
-            {t === 'overview' ? 'Visão geral' : t === 'perms' ? 'Permissões' : 'Segurança'}
+            {t === 'overview' ? 'Visão geral' : t === 'perms' ? 'Permissões' : t === 'trust' ? 'Segurança' : 'Integrações'}
           </button>
         ))}
       </div>
@@ -182,8 +183,10 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
         </div>
       ) : tab === 'perms' ? (
         <ChannelPermissions serverId={serverId} channelId={channelId} />
-      ) : (
+      ) : tab === 'trust' ? (
         <TrustRulesEditor serverId={serverId} channelId={channelId} />
+      ) : (
+        <WebhooksTab channelId={channelId} />
       )}
     </Modal>
   );

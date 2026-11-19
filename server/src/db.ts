@@ -334,6 +334,24 @@ db.exec(`
 `);
 addColumn('channels', 'category_id', 'TEXT REFERENCES channel_categories(id) ON DELETE SET NULL');
 
+// Webhooks de entrada (ver webhooks.ts): outro app manda mensagem num canal por um endereço secreto.
+// Cada webhook tem uma conta escondida que assina as mensagens (is_webhook = 1): não entra em servidor,
+// não faz login e continua existindo quando o webhook é apagado, para as mensagens dele não sumirem.
+// O webhook é de quem criou: some quando a conta dela some, e quando ela sai do servidor (ver removeMember).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS webhooks (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_webhooks_channel ON webhooks(channel_id);
+`);
+addColumn('users', 'is_webhook', 'INTEGER NOT NULL DEFAULT 0');
+
 // Patches de presente: quem criou o patch gera um link; cada pessoa resgata uma vez.
 db.exec(`
   CREATE TABLE IF NOT EXISTS patch_drops (
@@ -799,6 +817,8 @@ export interface UserRow {
   recovery_hash: string | null;
   banner_url: string | null;
   is_bot: number;
+  /** conta que assina as mensagens de um webhook (ver webhooks.ts) */
+  is_webhook?: number;
   bot_owner_id: string | null;
   bot_token_hash: string | null;
   profile_style: string;

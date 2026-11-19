@@ -73,6 +73,7 @@ import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerFeedbackRoutes } from './feedback.ts';
 import { signFileUrl } from './fileLinks.ts';
 import { registerForumRoutes } from './forum.ts';
+import { registerPublicWebhookRoutes, registerWebhookRoutes, type WebhookFile } from './webhooks.ts';
 import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
 import { registerSupportRoutes, registerSupportWebhook, setSupportHooks, supportPublicConfig, supporterJson } from './support.ts';
@@ -140,6 +141,7 @@ type PublicUser = Pick<
   | 'bio'
   | 'banner_url'
   | 'is_bot'
+  | 'is_webhook'
   | 'profile_style'
   | 'verified'
 >;
@@ -208,6 +210,8 @@ const userJson = (u: PublicUser) => ({
   bio: u.bio,
   bannerUrl: u.banner_url,
   bot: !!u.is_bot,
+  // mensagem de webhook: o app não abre perfil nem oferece DM (a conta não é de ninguém)
+  ...(u.is_webhook ? { webhook: true } : {}),
   verified: !!u.verified,
   // cargo de Mecenas: quem é, e quem tem um (ver contracts.ts)
   ...mecenasBadge(u.id),
@@ -332,7 +336,7 @@ function replyJson(m: MessageWithAuthor) {
 const REPLY_COLUMNS = `r.id AS r_id, r.content AS r_content, r.kind AS r_kind, r.attachments AS r_attachments,
   ru.id AS r_author_id, ru.display_name AS r_author_name`;
 
-const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.profile_style,
+const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.is_webhook, u.profile_style,
   ${REPLY_COLUMNS}
   FROM messages m JOIN users u ON u.id = m.author_id
   LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN users ru ON ru.id = r.author_id`;
@@ -966,6 +970,8 @@ api.get('/drops/:code', (req, res) => {
 
 // Pix do apoio: quem chama o webhook é o Mercado Pago, sem login
 registerSupportWebhook(api);
+// webhooks de entrada: quem chama é outro app, com o token no endereço, sem login (ver webhooks.ts)
+registerPublicWebhookRoutes(api, { deliver: deliverWebhookMessage });
 
 // a volta do login da Steam chega pelo navegador, sem o token (ver integrations.ts)
 registerPublicIntegrationRoutes(api, {
@@ -1613,6 +1619,9 @@ function removeMember(serverId: string, userId: string) {
   // os convites que a pessoa criou saem junto: quem foi expulso ou banido não deixa uma porta aberta para voltar
   // com outra conta (nem para mandar gente para dentro)
   run('DELETE FROM invites WHERE server_id = ? AND creator_id = ?', serverId, userId);
+  // e os webhooks que ela criou param: quem saiu (ou foi banido) com o endereço guardado não posta mais
+  // (as mensagens que eles já mandaram ficam)
+  run('DELETE FROM webhooks WHERE creator_id = ? AND channel_id IN (SELECT id FROM channels WHERE server_id = ?)', userId, serverId);
   leaveServerRoom(userId, serverId);
   serverChanged(serverId);
 }
@@ -2314,6 +2323,48 @@ function claimAttachments(rows: AttachmentRow[], messageId: string) {
 function deleteAttachments(messageId: string) {
   for (const a of all<AttachmentRow>('SELECT * FROM attachments WHERE message_id = ?', messageId)) removeUpload(a.url);
   run('DELETE FROM attachments WHERE message_id = ?', messageId);
+}
+
+/**
+ * Mensagem de um webhook (ver webhooks.ts): os arquivos chegam junto no pedido, então são gravados aqui,
+ * já presos à mensagem. Avisa quem foi mencionado por @usuario (o @todos não vale: a conta não é membro).
+ */
+async function deliverWebhookMessage(channel: ChannelRow, authorId: string, content: string, files: WebhookFile[], data: unknown) {
+  const id = randomUUID();
+  const rows: AttachmentRow[] = files.map((f) => {
+    const name = cleanFileName(f.name);
+    const { url, image } = saveAttachment(authorId, f.buf, name);
+    return { id: randomUUID(), uploader_id: authorId, url, name, size: f.buf.length, image: image ? 1 : 0, message_id: id, created_at: now() };
+  });
+  tx(() => {
+    run(
+      "INSERT INTO messages (id, channel_id, author_id, content, kind, data, attachments, created_at) VALUES (?, ?, ?, ?, 'text', ?, ?, ?)",
+      id,
+      channel.id,
+      authorId,
+      content,
+      data ? JSON.stringify(data) : null,
+      attachmentsField(rows),
+      now(),
+    );
+    for (const r of rows) {
+      run(
+        'INSERT INTO attachments (id, uploader_id, url, name, size, image, message_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        r.id,
+        r.uploader_id,
+        r.url,
+        r.name,
+        r.size,
+        r.image,
+        r.message_id,
+        r.created_at,
+      );
+    }
+  });
+  const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
+  await emitToChannel(channel, 'message:new', msg);
+  if (content) notifyMentions(channel, authorId, content, msg);
+  return msg;
 }
 
 /** Texto da mensagem: pode ficar vazio quando vai só com anexos. */
@@ -3397,6 +3448,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 // ============================================================ Fórum
 
 registerForumRoutes(api, authorJson);
+registerWebhookRoutes(api);
 registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);
 registerSupportRoutes(api);
