@@ -212,7 +212,7 @@ function ChannelGroup({ detail, kind }: { detail: ServerDetail; kind: 'text' | '
           </IconButton>
         )}
       </div>
-      <div className={kind === 'voice' ? 'space-y-2' : 'space-y-0.5'}>
+      <div className="space-y-0.5">
         {channels.map((c) => (kind === 'voice' ? <RoomCard key={c.id} detail={detail} channel={c} /> : <TextChannelRow key={c.id} detail={detail} channel={c} />))}
       </div>
     </section>
@@ -377,16 +377,18 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      // mesma altura e espaçamento de um canal de texto; quem está na sala aparece embaixo só quando tem alguém
       className={cx(
-        'group cursor-pointer rounded-[20px] p-3.5 transition-colors',
+        'group cursor-pointer rounded-2xl transition-colors',
         expanded ? 'bg-surface-3' : 'hover:bg-surface-3/60',
         connectedHere && 'ring-1 ring-accent/40',
+        participants.length > 0 && 'pb-1.5',
       )}
     >
-      {channel.recording && <RecordingPill className="mb-1.5" />}
-      <div className="flex items-center gap-2">
-        {!participants.length && <Volume2 size={17} className="shrink-0 text-fg-subtle" />}
-        <span className={cx('flex-1 truncate text-[15px] font-bold', expanded || participants.length ? 'text-fg' : 'text-fg-muted')}>{channel.name}</span>
+      <div className="flex h-11 items-center gap-2 px-3 text-[15px]">
+        <Volume2 size={17} className={cx('shrink-0', participants.length ? 'text-fg' : 'opacity-70')} />
+        <span className={cx('flex-1 truncate font-semibold', expanded || participants.length ? 'text-fg' : 'text-fg-muted')}>{channel.name}</span>
+        {channel.recording && <RecordingPill className="shrink-0" />}
         {isPrivate && <Lock size={13} className="shrink-0 text-fg-subtle" />}
         {streamer ? (
           <LivePill />
@@ -400,7 +402,7 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
 
       {/* quem está na sala aparece sempre, uma pessoa por linha (como no Discord), mesmo sem você estar nela */}
       {participants.length > 0 && (
-        <div className="mt-2.5 space-y-0.5">
+        <div className="space-y-0.5 pr-1.5 pl-6">
           {participants.map((v) => (
             <VoiceParticipant key={v.userId} detail={detail} state={v} speaking={!!speaking?.[v.userId]} />
           ))}
