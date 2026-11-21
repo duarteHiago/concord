@@ -21,6 +21,7 @@ import { JamCard, useJamInMessage } from './Jam';
 import { ReplyBar, ReplyQuote, startReply } from './Replies';
 import { MobileBackButton } from './MobileNav';
 import { trustBlockMessage } from '../lib/trust';
+import { SearchButton } from './modals/SearchMessages';
 
 const EMPTY: Message[] = [];
 
@@ -37,6 +38,7 @@ export function ChatView({ channel }: { channel: Channel }) {
           <h1 className="truncate text-xl font-bold md:text-2xl">{channel.name}</h1>
           {channel.topic && <p className="truncate text-sm text-fg-muted">{channel.topic}</p>}
         </div>
+        <SearchButton />
         <IconButton
           label="Lista de membros"
           active={memberListOpen}

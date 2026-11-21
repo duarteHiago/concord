@@ -18,6 +18,7 @@ import { MobileBackButton } from './MobileNav';
 import { FriendsView } from './Friends';
 import { usePendingCount } from '../lib/friends';
 import { Avatar, IconButton, Spinner, cx } from './ui';
+import { SearchButton } from './modals/SearchMessages';
 
 const EMPTY: Message[] = [];
 
@@ -168,6 +169,7 @@ function DmHeader({ dm }: { dm: DirectChannel }) {
           {subtitle}
         </p>
       </div>
+      <SearchButton />
       {sharedServer && presence && presence.status !== 'dnd' && (
         <IconButton
           label="Chamar atenção"

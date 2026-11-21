@@ -47,6 +47,7 @@ import { toast } from '../store/toast';
 import { onVisibilityChange } from '../lib/visibility';
 import { MobileBackButton } from './MobileNav';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
+import { SearchButton } from './modals/SearchMessages';
 
 /**
  * Fotos (sem movimento de GIF) de quem mais está vendo essa transmissão com você: recolhidas,
@@ -133,6 +134,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
           </span>
           <div className="ml-auto flex items-center gap-2">
             <RecordingControls detail={detail} channel={channel} />
+            {canChat && <SearchButton />}
             <DeckQrButton />
             <JamButton detail={detail} channel={channel} />
             {status === 'connected' && <ConnectionQuality />}

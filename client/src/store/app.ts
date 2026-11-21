@@ -64,6 +64,7 @@ export type Modal =
   | { type: 'image'; src: string; alt: string }
   | { type: 'roulette'; target: { kind: 'channel' | 'dm'; id: string } }
   | { type: 'quickSwitch' }
+  | { type: 'searchMessages' }
   | { type: 'members' }
   | { type: 'onboarding' }
   | { type: 'whatsNew'; ids: string[] }

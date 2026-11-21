@@ -2296,6 +2296,105 @@ api.get('/channels/:id/messages', (req, res) => {
   res.json(rows.reverse().map(messageJson));
 });
 
+// ---- Busca de mensagens (lupa / Ctrl+F) ----
+// Varre todos os canais de texto e os chats das salas de voz que a pessoa vê no servidor, ou todas as conversas
+// privadas dela. Só o texto das mensagens (figurinha e jogo ficam de fora), das mais novas para as mais antigas,
+// 25 por página (`before` = data da última recebida).
+
+const SEARCH_PAGE = 25;
+const searchRate = limiter(40, 60_000);
+
+/** O termo da busca (2 a 100 letras) no formato do LIKE, com % e _ escapados. */
+function searchPattern(raw: unknown): string {
+  const q = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
+  if (q.length < 2) fail(400, 'Digite pelo menos 2 letras');
+  if (q.length > 100) fail(400, 'Busca grande demais');
+  return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+interface SearchRow {
+  id: string;
+  content: string;
+  created_at: number;
+  author_id: string;
+  display_name: string;
+  username: string;
+  avatar_color: string;
+  avatar_url: string | null;
+}
+const searchAuthor = (r: SearchRow & { nickname?: string | null }) => ({
+  id: r.author_id,
+  name: r.nickname || r.display_name,
+  username: r.username,
+  avatarColor: r.avatar_color,
+  avatarUrl: r.avatar_url,
+});
+
+api.get('/servers/:id/search', (req, res) => {
+  const me = uid(res);
+  const server = requireMember(req.params.id, me);
+  const pattern = searchPattern(req.query.q);
+  if (!searchRate(me)) fail(429, 'Muitas buscas em pouco tempo. Espere um pouco.');
+  const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
+  const channels = all<ChannelRow>("SELECT * FROM channels WHERE server_id = ? AND type IN ('text', 'voice')", server.id).filter((c) =>
+    has(channelPermissions(c, me), P.VIEW_CHANNEL),
+  );
+  if (!channels.length) return res.json({ results: [], hasMore: false });
+  const byId = new Map(channels.map((c) => [c.id, c]));
+  const rows = all<SearchRow & { channel_id: string; nickname: string | null }>(
+    `SELECT m.id, m.content, m.created_at, m.channel_id, m.author_id, u.display_name, u.username, u.avatar_color, u.avatar_url, mb.nickname
+     FROM messages m JOIN users u ON u.id = m.author_id
+     LEFT JOIN members mb ON mb.server_id = ? AND mb.user_id = m.author_id
+     WHERE m.channel_id IN (${channels.map(() => '?').join(',')}) AND m.kind = 'text' AND m.content LIKE ? ESCAPE '\\' AND m.created_at < ?
+     ORDER BY m.created_at DESC LIMIT ?`,
+    server.id,
+    ...channels.map((c) => c.id),
+    pattern,
+    before,
+    SEARCH_PAGE + 1,
+  );
+  res.json({
+    hasMore: rows.length > SEARCH_PAGE,
+    results: rows.slice(0, SEARCH_PAGE).map((r) => ({
+      id: r.id,
+      content: r.content,
+      createdAt: r.created_at,
+      author: searchAuthor(r),
+      place: { kind: 'channel' as const, serverId: server.id, id: r.channel_id, name: byId.get(r.channel_id)!.name, type: byId.get(r.channel_id)!.type },
+    })),
+  });
+});
+
+api.get('/dms/search', (req, res) => {
+  const me = uid(res);
+  const pattern = searchPattern(req.query.q);
+  if (!searchRate(me)) fail(429, 'Muitas buscas em pouco tempo. Espere um pouco.');
+  const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
+  const rows = all<SearchRow & { dm_id: string; other_name: string }>(
+    `SELECT m.id, m.content, m.created_at, m.dm_id, m.author_id, u.display_name, u.username, u.avatar_color, u.avatar_url, o.display_name AS other_name
+     FROM dm_messages m JOIN dm_channels d ON d.id = m.dm_id JOIN users u ON u.id = m.author_id
+     JOIN users o ON o.id = CASE WHEN d.user_a = ? THEN d.user_b ELSE d.user_a END
+     WHERE (d.user_a = ? OR d.user_b = ?) AND m.kind = 'text' AND m.content LIKE ? ESCAPE '\\' AND m.created_at < ?
+     ORDER BY m.created_at DESC LIMIT ?`,
+    me,
+    me,
+    me,
+    pattern,
+    before,
+    SEARCH_PAGE + 1,
+  );
+  res.json({
+    hasMore: rows.length > SEARCH_PAGE,
+    results: rows.slice(0, SEARCH_PAGE).map((r) => ({
+      id: r.id,
+      content: r.content,
+      createdAt: r.created_at,
+      author: searchAuthor(r),
+      place: { kind: 'dm' as const, id: r.dm_id, name: r.other_name },
+    })),
+  });
+});
+
 // ---- Anexos ----
 
 interface AttachmentJson {

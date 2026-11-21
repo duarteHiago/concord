@@ -7,6 +7,7 @@ import { MemberPopover } from '../MemberPopover';
 import { api } from '../../lib/api';
 import { RouletteModal } from '../Games';
 import { QuickSwitch } from './QuickSwitch';
+import { SearchMessagesModal } from './SearchMessages';
 import { Button, Input, Modal } from '../ui';
 import { AddServerModal } from './AddServerModal';
 import { CategoryModal, ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
@@ -84,6 +85,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <MembersModal />;
     case 'quickSwitch':
       return <QuickSwitch />;
+    case 'searchMessages':
+      return <SearchMessagesModal />;
     case 'roulette':
       return <RouletteModal target={modal.target} />;
     case 'image':

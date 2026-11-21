@@ -5,7 +5,7 @@ import { desktop } from './desktop';
 import { toast } from '../store/toast';
 import { useDevRecording } from './devRecording';
 
-export type ShortcutAction = 'toggleMute' | 'toggleDeafen' | 'toggleCamera' | 'toggleShare' | 'leaveRoom' | 'quickSwitch' | 'openMessages' | 'devMark';
+export type ShortcutAction = 'toggleMute' | 'toggleDeafen' | 'toggleCamera' | 'toggleShare' | 'leaveRoom' | 'quickSwitch' | 'searchMessages' | 'openMessages' | 'devMark';
 
 export const SHORTCUTS: { id: ShortcutAction; label: string; global: boolean }[] = [
   { id: 'toggleMute', label: 'Silenciar / ativar microfone', global: true },
@@ -14,6 +14,7 @@ export const SHORTCUTS: { id: ShortcutAction; label: string; global: boolean }[]
   { id: 'toggleShare', label: 'Transmitir tela / parar', global: false },
   { id: 'leaveRoom', label: 'Sair da sala de voz', global: false },
   { id: 'quickSwitch', label: 'Busca rápida (canais, servidores e conversas)', global: false },
+  { id: 'searchMessages', label: 'Buscar mensagens (no servidor ou nas conversas privadas)', global: false },
   { id: 'openMessages', label: 'Abrir mensagens privadas', global: false },
   // global: dá para marcar o instante de um problema sem sair do jogo
   { id: 'devMark', label: 'Marcar momento na gravação de diagnóstico', global: true },
@@ -26,6 +27,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
   toggleShare: 'Ctrl+Shift+S',
   leaveRoom: 'Ctrl+Shift+E',
   quickSwitch: 'Ctrl+K',
+  searchMessages: 'Ctrl+F',
   openMessages: 'Ctrl+Shift+H',
   devMark: 'Ctrl+Shift+F9',
 };
@@ -77,6 +79,9 @@ export function runShortcut(action: ShortcutAction) {
       break;
     case 'quickSwitch':
       app.openModal({ type: 'quickSwitch' });
+      break;
+    case 'searchMessages':
+      app.openModal({ type: 'searchMessages' });
       break;
     case 'openMessages':
       app.openServer(HOME);
