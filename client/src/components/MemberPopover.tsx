@@ -1,4 +1,4 @@
-import { Ban, BadgeCheck, Bell, BellOff, Crown, Flag, Gamepad2, Gem, Headphones, MessageCircle, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserRound, UserX, Volume2, X, Zap } from 'lucide-react';
+import { Ban, BadgeCheck, Bell, BellOff, Crown, Flag, Gamepad2, Gem, Headphones, MessageSquare, MessageSquarePlus, MicOff, MonitorX, Pencil, PhoneOff, Plus, Send, UserRound, UserX, Volume2, X, Zap } from 'lucide-react';
 import { sendNudge } from '../lib/nudge';
 import { memberName } from '../lib/types';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -328,7 +328,7 @@ export function MemberPopover() {
                   aria-label={`Mensagem para ${name}`}
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-3 text-fg-muted transition-colors hover:text-fg"
                 >
-                  <MessageCircle size={16} />
+                  <MessageSquare size={16} />
                 </button>
                 <FriendButton user={member} variant="icon" />
                 <button
