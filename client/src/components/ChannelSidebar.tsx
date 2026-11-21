@@ -43,6 +43,7 @@ import { canRecord } from '../lib/callRecorder';
 import { useRecording } from '../store/recording';
 import { SourcePicker } from './RecordSources';
 import { Avatar, IconButton, LivePill, VerifiedBadge, cx } from './ui';
+import { RoomChatButton } from './RoomChatDock';
 
 export function ChannelSidebar() {
   const detail = useActiveDetail();
@@ -404,6 +405,7 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
         ) : channel.userLimit ? (
           <span className="text-[13px] text-fg-subtle">0/{channel.userLimit}</span>
         ) : null}
+        <RoomChatButton serverId={serverId} channelId={channel.id} name={channel.name} />
         {settingsButton}
       </div>
 

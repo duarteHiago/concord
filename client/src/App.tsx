@@ -38,6 +38,7 @@ import { setMotionPref } from './lib/motion';
 import { useVoice } from './store/voice';
 import { usePlaza } from './store/plaza';
 import { PeekNotice } from './components/plaza/PeekNotice';
+import { RoomChatDock } from './components/RoomChatDock';
 import './lib/visibility';
 
 const PATH = location.pathname.replace(/\/+$/, '');
@@ -174,6 +175,8 @@ function MainApp() {
       {me && <PatchInspectorHost />}
       {me && <SpotlightHost />}
       {me && <PeekNotice />}
+      {/* papo de uma sala de voz numa janelinha, sem entrar nela (balão na lista de canais) */}
+      {me && <RoomChatDock />}
       {me && plazaOpen && (
         <div className="plaza-root fixed inset-0 z-[60] flex bg-[#231a3a]">
           <ErrorBoundary area="painel" resetKey="praca">
