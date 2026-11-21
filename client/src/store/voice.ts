@@ -361,6 +361,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
   function setSpeaking(id: string, on: boolean) {
     const timer = offTimers.get(id);
     if (on) {
+      // eu falando: conta como atividade na call (sala AFK)
+      if (id === get().room?.localParticipant.identity) reportVoiceActivity();
       if (timer) {
         clearTimeout(timer);
         offTimers.delete(id);
@@ -836,6 +838,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
       const s = get();
       if (!s.room) return;
       if (s.serverMuted) return toast.info('Você foi silenciado por um moderador.');
+      if (await isAfkRoom(s.serverId, s.channelId)) return toast.info('Na sala AFK o microfone fica desligado. Entre em outra sala para falar.');
       if (!has(s.permissions, P.SPEAK)) return toast.info(await voiceBlockMessage(s.serverId, s.channelId, 'speak', 'Você não tem permissão para falar nesta sala.'));
       const next = !s.micOn;
       try {
@@ -1054,6 +1057,12 @@ export const useVoice = create<VoiceStore>((set, get) => {
     },
 
     bindSocket: (socket) => {
+      // ficou parado o tempo que o servidor escolheu: vai para a sala AFK (lá o microfone fica desligado)
+      socket.on('voice:afk', ({ serverId, channelId, minutes }: { serverId: string; channelId: string; minutes: number }) => {
+        if (get().channelId === channelId) return;
+        toast.info(`Você ficou  min parado e foi para a sala AFK.`);
+        void get().join(serverId, channelId);
+      });
       socket.on('voice:force-disconnect', ({ reason }: { reason: string }) => {
         void get().leave();
         toast.info(reason);
@@ -1187,4 +1196,27 @@ function loadAudioSettings(): AudioSettings {
   }
   delete saved.noiseSuppression;
   return saved;
+}
+
+// ---- sala AFK (ver server/src/realtime.ts#sweepAfk) ----
+
+/** A sala é a sala AFK do servidor? (lá o microfone fica desligado) */
+async function isAfkRoom(serverId: string | null, channelId: string | null) {
+  if (!serverId || !channelId) return false;
+  // import dinâmico: o store do app importa este
+  const { useApp } = await import('./app');
+  return useApp.getState().details[serverId]?.server.afkChannelId === channelId;
+}
+
+// Avisa o servidor que a pessoa está ativa na call (falou, clicou, digitou ou rolou a tela), no máximo 1 vez a cada
+// 30 s. Quem fica parado o tempo que o servidor escolheu vai para a sala AFK.
+let activityAt = 0;
+function reportVoiceActivity() {
+  const now = Date.now();
+  if (now - activityAt < 30_000 || useVoice.getState().status !== 'connected') return;
+  activityAt = now;
+  getSocket()?.emit('voice:activity');
+}
+if (typeof window !== 'undefined') {
+  for (const ev of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(ev, reportVoiceActivity, { passive: true, capture: true });
 }

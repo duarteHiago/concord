@@ -204,6 +204,9 @@ export interface ServerSummary {
   public?: boolean;
   /** descrição curta (mostrada em "Descobrir") */
   description?: string;
+  /** sala AFK: para onde vai quem fica parado numa call (null = desligado) e depois de quantos minutos */
+  afkChannelId?: string | null;
+  afkTimeout?: number;
 }
 
 export interface Role {

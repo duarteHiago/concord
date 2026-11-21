@@ -121,6 +121,7 @@ import {
   broadcastStatus,
   isVisiblyOnline,
   visibleOnlineIds,
+  resyncServerVoice,
 } from './realtime.ts';
 
 export const api = Router();
@@ -268,6 +269,10 @@ const meJson = (u: UserRow) => {
   };
 };
 
+/** Sala AFK: o tempo parado mínimo e máximo que o dono pode escolher (em minutos). */
+const AFK_MIN_MINUTES = 10;
+const AFK_MAX_MINUTES = 120;
+
 const serverJson = (s: ServerRow) => ({
   id: s.id,
   name: s.name,
@@ -277,6 +282,9 @@ const serverJson = (s: ServerRow) => ({
   verified: !!s.verified,
   public: !!s.public,
   description: s.description ?? '',
+  // sala AFK: para onde vai quem fica parado numa call, e depois de quantos minutos (null = desligado)
+  afkChannelId: s.afk_channel_id ?? null,
+  afkTimeout: s.afk_timeout ?? 15,
 });
 
 const roleJson = (r: RoleRow) => ({
@@ -1382,7 +1390,7 @@ api.post('/servers', humansOnly, (req, res) => {
   if (owned >= MAX_OWNED_SERVERS) fail(400, `Você já é dono de ${MAX_OWNED_SERVERS} servidores. Apague algum antes de criar outro.`);
   if (!serverCreateRate(me)) fail(429, 'Você já criou servidores agora há pouco. Espere um pouco.');
   const name = str(req.body?.name, 'nome', 2, 50);
-  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, verified: 0, public: 0, description: '', created_at: now() };
+  const server: ServerRow = { id: randomUUID(), name, owner_id: me, icon_color: pickColor(), icon_url: null, verified: 0, public: 0, description: '', afk_channel_id: null, afk_timeout: 15, created_at: now() };
 
   tx(() => {
     run('INSERT INTO servers (id, name, owner_id, icon_color, created_at) VALUES (?, ?, ?, ?, ?)', server.id, name, me, server.icon_color, server.created_at);
@@ -1521,6 +1529,24 @@ api.patch('/servers/:id', (req, res) => {
   if (typeof req.body?.description === 'string') {
     run('UPDATE servers SET description = ? WHERE id = ?', req.body.description.replace(/\s+/g, ' ').trim().slice(0, 200), server.id);
   }
+  // sala AFK (opcional): uma sala de voz deste servidor, ou null para desligar
+  if (req.body?.afkChannelId !== undefined) {
+    const id = req.body.afkChannelId;
+    if (id === null || id === '') run('UPDATE servers SET afk_channel_id = NULL WHERE id = ?', server.id);
+    else {
+      const ch = get<ChannelRow>("SELECT * FROM channels WHERE id = ? AND server_id = ? AND type = 'voice'", String(id), server.id);
+      if (!ch) fail(400, 'Escolha uma sala de voz deste servidor');
+      run('UPDATE servers SET afk_channel_id = ? WHERE id = ?', ch!.id, server.id);
+    }
+  }
+  // tempo parado até ir para a sala AFK: de 10 minutos a 2 horas
+  if (req.body?.afkTimeout !== undefined) {
+    const min = Number(req.body.afkTimeout);
+    if (!Number.isInteger(min) || min < AFK_MIN_MINUTES || min > AFK_MAX_MINUTES) fail(400, `O tempo da sala AFK vai de ${AFK_MIN_MINUTES} a ${AFK_MAX_MINUTES} minutos`);
+    run('UPDATE servers SET afk_timeout = ? WHERE id = ?', min, server.id);
+  }
+  // a sala AFK mudou: quem está nas salas recebe as permissões novas (na AFK ninguém fala)
+  if (req.body?.afkChannelId !== undefined) resyncServerVoice(server.id);
   serverChanged(server.id);
   res.json(serverJson(getServer(server.id)));
 });
@@ -1776,6 +1802,8 @@ api.delete('/channels/:id', (req, res) => {
   }
   run('DELETE FROM channels WHERE id = ?', channel.id);
   forgetChannelRules(channel.server_id, channel.id);
+  // era a sala AFK do servidor: a função desliga (ninguém é movido para uma sala que não existe)
+  run('UPDATE servers SET afk_channel_id = NULL WHERE id = ? AND afk_channel_id = ?', channel.server_id, channel.id);
   serverChanged(channel.server_id);
   res.json({ ok: true });
 });

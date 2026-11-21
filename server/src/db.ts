@@ -127,6 +127,10 @@ addColumn('servers', 'verified', 'INTEGER NOT NULL DEFAULT 0');
 // servidor público: aparece em "Descobrir" e qualquer um entra sem convite (quem gerencia liga), com uma descrição curta
 addColumn('servers', 'public', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('servers', 'description', "TEXT NOT NULL DEFAULT ''");
+// Sala AFK (ver realtime.ts#sweepAfk): quem fica parado numa call por afk_timeout minutos vai para ela, sem microfone.
+// Opcional: sem sala, ninguém é movido.
+addColumn('servers', 'afk_channel_id', 'TEXT');
+addColumn('servers', 'afk_timeout', 'INTEGER NOT NULL DEFAULT 15');
 // anexos das mensagens (lista em JSON) e os arquivos enviados, ainda sem mensagem ou já anexados
 addColumn('messages', 'attachments', 'TEXT');
 db.exec(`
@@ -927,6 +931,9 @@ export interface ServerRow {
   verified: number;
   public: number;
   description: string;
+  /** sala AFK (null = desligado) e depois de quantos minutos parado a pessoa vai para ela */
+  afk_channel_id: string | null;
+  afk_timeout: number;
   created_at: number;
 }
 

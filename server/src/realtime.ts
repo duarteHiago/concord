@@ -433,6 +433,54 @@ const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave'
 // pelo app (aparece na lista dela) e ainda pode conectar nela. Sai quem foi expulso do servidor, perdeu a
 // permissão, teve a sala apagada ou entrou "invisível" (direto no LiveKit, sem avisar o app). Uma volta de
 // folga antes de tirar: quem acabou de entrar, ou teve a conexão do app caindo por um instante, ainda não aparece.
+// ---- sala AFK ----
+// Quem fica parado numa call pelo tempo que o servidor escolheu (10 min a 2 h) vai para a sala AFK, onde ninguém
+// fala (ver access.ts#channelPermissions). "Parado" = sem falar, sem mexer no microfone/fone, sem transmitir e sem
+// usar o app; o app avisa a atividade (voice:activity, no máximo 1 vez a cada 30 s). Quem transmite ou está com a
+// câmera ligada nunca é movido. Um app modificado pode se manter "ativo": não é segurança, é conveniência.
+const lastActive = new Map<string, number>(); // userId -> última atividade numa call
+const AFK_GRACE_MS = 45_000; // o app tem esse tempo para trocar de sala sozinho; depois, a sala antiga é fechada para ele
+
+const afkPending = new Map<string, { channelId: string; at: number }>(); // quem foi mandado para a AFK e ainda não chegou
+
+function sweepAfk() {
+  const now = Date.now();
+  const configs = new Map<string, { channel: string | null; timeoutMs: number }>();
+  for (const v of voice.values()) {
+    let cfg = configs.get(v.serverId);
+    if (!cfg) {
+      const s = get<{ afk_channel_id: string | null; afk_timeout: number }>('SELECT afk_channel_id, afk_timeout FROM servers WHERE id = ?', v.serverId);
+      cfg = { channel: s?.afk_channel_id ?? null, timeoutMs: Math.max(10, s?.afk_timeout ?? 15) * 60_000 };
+      configs.set(v.serverId, cfg);
+    }
+    const pending = afkPending.get(v.userId);
+    if (!cfg.channel || v.channelId === cfg.channel) {
+      afkPending.delete(v.userId);
+      continue;
+    }
+    if (v.streaming || v.camera) continue;
+    if (pending && pending.channelId === v.channelId) {
+      // mandado para a AFK e não foi (app antigo ou travado): sai da sala onde estava
+      if (now - pending.at > AFK_GRACE_MS) {
+        afkPending.delete(v.userId);
+        voice.delete(v.userId);
+        lastActive.delete(v.userId);
+        io.to(v.socketId).emit('voice:force-disconnect', { reason: 'Você ficou um tempo parado e saiu da sala.' });
+        void removeFromRoom(v.channelId, v.userId);
+        broadcastVoice(v.serverId);
+      }
+      continue;
+    }
+    const since = lastActive.get(v.userId) ?? now;
+    if (!lastActive.has(v.userId)) lastActive.set(v.userId, now);
+    if (now - since < cfg.timeoutMs) continue;
+    afkPending.set(v.userId, { channelId: v.channelId, at: now });
+    io.to(v.socketId).emit('voice:afk', { serverId: v.serverId, channelId: cfg.channel, minutes: Math.round(cfg.timeoutMs / 60_000) });
+  }
+  for (const id of [...lastActive.keys()]) if (!voice.has(id)) lastActive.delete(id);
+  for (const id of [...afkPending.keys()]) if (!voice.has(id)) afkPending.delete(id);
+}
+
 let voiceStrikes = new Set<string>();
 async function sweepVoiceRooms() {
   let list: { room: string; identity: string }[];
@@ -465,6 +513,7 @@ async function sweepVoiceRooms() {
 
 export function setupRealtime(httpServer: HttpServer) {
   setInterval(() => void sweepVoiceRooms(), 30_000).unref();
+  setInterval(sweepAfk, 30_000).unref();
 
   io = new Server(httpServer, { path: '/socket.io', serveClient: false });
   setupPlaza(io);
@@ -528,6 +577,8 @@ export function setupRealtime(httpServer: HttpServer) {
           // trocar de sala para a gravação: o consentimento é por sala, quem grava liga de novo
           recording: false,
         });
+        // entrou numa sala: conta como atividade (a sala AFK começa a contar daqui)
+        lastActive.set(userId, Date.now());
         if (prev && prev.serverId !== channel.server_id) broadcastVoice(prev.serverId);
         broadcastVoice(channel.server_id);
         ack?.({ ok: true, serverDeafened });
@@ -543,7 +594,20 @@ export function setupRealtime(httpServer: HttpServer) {
       if (typeof data.deafened === 'boolean') v.deafened = data.deafened || v.serverDeafened;
       if (typeof data.streaming === 'boolean') v.streaming = data.streaming;
       if (typeof data.camera === 'boolean') v.camera = data.camera;
+      // mexer no microfone, no fone ou transmitir é atividade (sala AFK)
+      lastActive.set(userId, Date.now());
       broadcastVoice(v.serverId);
+    });
+
+    // o app avisa que a pessoa está ativa na call (falou ou usou o app), no máximo 1 vez a cada 30 s
+    let activityAt = 0;
+    socket.on('voice:activity', () => {
+      const v = voice.get(userId);
+      if (!v || v.socketId !== socket.id) return;
+      const now = Date.now();
+      if (now - activityAt < 30_000) return;
+      activityAt = now;
+      lastActive.set(userId, now);
     });
 
     // Gravação da sala: o áudio fica no aparelho de quem grava. O servidor só guarda o aviso (o selo

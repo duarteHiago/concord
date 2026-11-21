@@ -55,7 +55,9 @@ export function channelPermissions(channel: ChannelRow, userId: string): number 
   const base = serverPermissions(channel.server_id, userId);
   if (!base) return 0;
   const server = getServer(channel.server_id);
-  if (server.owner_id === userId) return ALL_PERMISSIONS;
+  // na sala AFK ninguém fala nem transmite (nem o dono): é a sala de quem ficou parado
+  const afk = server.afk_channel_id === channel.id ? ~(P.SPEAK | P.STREAM) : ~0;
+  if (server.owner_id === userId) return ALL_PERMISSIONS & afk;
   const perms = computeChannelPermissions(
     base,
     channelOverwrites(channel.id),
@@ -63,7 +65,7 @@ export function channelPermissions(channel: ChannelRow, userId: string): number 
     memberRoles(channel.server_id, userId).map((r) => r.id),
   );
   // exigências de confiança do servidor/canal (ver trust.ts): tira falar/transmitir de quem não alcança o mínimo
-  return trustMask(channel.server_id, channel.id, userId, base, perms);
+  return trustMask(channel.server_id, channel.id, userId, base, perms) & afk;
 }
 
 /** Posição do cargo mais alto do membro (dono = infinito). */

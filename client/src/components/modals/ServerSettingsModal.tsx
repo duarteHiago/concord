@@ -168,6 +168,7 @@ function Overview({ detail }: { detail: ServerDetail }) {
           >
             Salvar alterações
           </Button>
+          <AfkSettings detail={detail} />
         </>
       )}
       {isAuthority && (
@@ -185,6 +186,52 @@ function Overview({ detail }: { detail: ServerDetail }) {
         </div>
       )}
     </section>
+  );
+}
+
+const AFK_TIMES = [10, 15, 30, 60, 120];
+
+/** Sala AFK (opcional): quem fica parado numa call por um tempo vai para ela, e lá o microfone fica desligado. */
+function AfkSettings({ detail }: { detail: ServerDetail }) {
+  const voiceRooms = detail.channels.filter((c) => c.type === 'voice');
+  const channelId = detail.server.afkChannelId ?? '';
+  const timeout = detail.server.afkTimeout ?? 15;
+  const save = (patch: { afkChannelId?: string | null; afkTimeout?: number }) =>
+    void api.patch(`/servers/${detail.server.id}`, patch).then(() => toast.success('Sala AFK atualizada'), toast.error);
+  const select = 'h-10 w-full rounded-xl bg-surface-0 px-3 text-sm font-medium text-fg outline-none focus:ring-1 focus:ring-accent disabled:opacity-50';
+  return (
+    <div className="space-y-3 rounded-xl bg-surface-0/60 p-4 ring-1 ring-line">
+      <div>
+        <div className="text-sm font-semibold">Sala AFK</div>
+        <div className="text-xs text-fg-muted">
+          Quem fica parado numa call (sem falar nem usar o app) vai sozinho para esta sala, e lá o microfone fica desligado. Quem está transmitindo
+          ou com a câmera ligada não é movido.
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-bold tracking-wide text-fg-muted uppercase">Sala</span>
+          <select className={select} value={channelId} onChange={(e) => save({ afkChannelId: e.target.value || null })}>
+            <option value="">Nenhuma (desligado)</option>
+            {voiceRooms.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-bold tracking-wide text-fg-muted uppercase">Depois de parado por</span>
+          <select className={select} value={timeout} disabled={!channelId} onChange={(e) => save({ afkTimeout: Number(e.target.value) })}>
+            {AFK_TIMES.map((m) => (
+              <option key={m} value={m}>
+                {m < 60 ? `${m} minutos` : m === 60 ? '1 hora' : `${m / 60} horas`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </div>
   );
 }
 

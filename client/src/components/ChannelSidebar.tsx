@@ -397,6 +397,11 @@ function RoomCard({ detail, channel }: { detail: ServerDetail; channel: Channel 
         <span className={cx('flex-1 truncate font-semibold', expanded || participants.length ? 'text-fg' : 'text-fg-muted')}>{channel.name}</span>
         {channel.recording && <RecordingPill className="shrink-0" />}
         {isPrivate && <Lock size={13} className="shrink-0 text-fg-subtle" />}
+        {detail.server.afkChannelId === channel.id && (
+          <span title="Sala AFK: quem fica parado numa call vem para cá, sem microfone" className="shrink-0 rounded-full bg-surface-4 px-1.5 py-px text-[10px] font-bold tracking-wide text-fg-muted">
+            AFK
+          </span>
+        )}
         {streamer ? (
           <LivePill />
         ) : participants.length ? (
