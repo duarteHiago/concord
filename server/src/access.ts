@@ -55,8 +55,9 @@ export function channelPermissions(channel: ChannelRow, userId: string): number 
   const base = serverPermissions(channel.server_id, userId);
   if (!base) return 0;
   const server = getServer(channel.server_id);
-  // na sala AFK ninguém fala nem transmite (nem o dono): é a sala de quem ficou parado
-  const afk = server.afk_channel_id === channel.id ? ~(P.SPEAK | P.STREAM) : ~0;
+  // na sala AFK ninguém fala nem transmite (nem o dono): é a sala de quem ficou parado. Sai também o bit de
+  // Administrador, que no has() vale "pode tudo"; as outras permissões de quem administra continuam, uma por uma.
+  const afk = server.afk_channel_id === channel.id ? ~(P.SPEAK | P.STREAM | P.ADMINISTRATOR) : ~0;
   if (server.owner_id === userId) return ALL_PERMISSIONS & afk;
   const perms = computeChannelPermissions(
     base,
