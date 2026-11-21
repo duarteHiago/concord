@@ -127,16 +127,21 @@ export function AvatarEditor({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="absolute inset-0 z-[70] grid place-items-center bg-black/50 p-4 backdrop-blur-sm" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-label="Meu boneco" className={cx(hud.panel, 'animate-pop-in flex max-h-[92vh] w-[min(96vw,640px)] flex-col overflow-hidden rounded-[28px] sm:flex-row')}>
-        <div className="flex flex-col items-center justify-center gap-2 bg-[radial-gradient(circle_at_50%_70%,#3b3166,#231a3a)] p-5 sm:w-[220px]">
+    // celular: sobe de baixo na largura toda (antes passava da borda direita); o boneco fica menor para sobrar lista
+    <div className="absolute inset-0 z-[70] grid items-end bg-black/50 backdrop-blur-sm sm:place-items-center sm:p-4" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div
+        role="dialog"
+        aria-label="Meu boneco"
+        className={cx(hud.panel, 'flex max-h-[92dvh] w-full animate-slide-up flex-col overflow-hidden rounded-[28px] max-sm:rounded-b-none max-sm:pb-[env(safe-area-inset-bottom)] sm:w-[min(96vw,640px)] sm:animate-pop-in sm:flex-row')}
+      >
+        <div className="flex flex-col items-center justify-center gap-2 bg-[radial-gradient(circle_at_50%_70%,#3b3166,#231a3a)] p-5 max-sm:py-3 sm:w-[220px]">
           <AvatarPreview avatar={av} />
           <div className="flex gap-1.5">
             <button onClick={random} className={soft()}>
               <Dices size={13} /> Sortear
             </button>
             <span className="flex items-center gap-1 px-1 text-[11px] text-fg-subtle">
-              <RotateCw size={11} /> clique para girar
+              <RotateCw size={11} /> {matchMedia('(hover: none)').matches ? 'toque' : 'clique'} para girar
             </span>
           </div>
         </div>
