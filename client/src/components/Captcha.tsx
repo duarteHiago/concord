@@ -1,6 +1,6 @@
-// Captcha do cadastro e do "esqueci a senha" (Cloudflare Turnstile). Quase sempre invisível: só aparece uma caixinha
-// quando a Cloudflare desconfia. Gera um token de uso único que o servidor confere (server/src/signupGuard.ts);
-// depois de cada tentativa, quem usa troca o `resetKey` para pedir um token novo.
+// Captcha do cadastro e do "esqueci a senha" (Cloudflare Turnstile). Sempre visível para dar confiança visual;
+// gera um token de uso único que o servidor confere (server/src/signupGuard.ts).
+// Depois de cada tentativa, quem usa troca o `resetKey` para pedir um token novo.
 import { useEffect, useRef, useState } from 'react';
 
 interface Turnstile {
@@ -46,7 +46,7 @@ export function Captcha({ siteKey, onToken, resetKey = 0 }: { siteKey: string; o
           sitekey: siteKey,
           theme: 'auto',
           language: 'pt-br',
-          appearance: 'interaction-only',
+          appearance: 'always',
           // token vencido: pede outro sozinho (antes, o botão ficava travado esperando)
           'refresh-expired': 'auto',
           'retry': 'auto',
