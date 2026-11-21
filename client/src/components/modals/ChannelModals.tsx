@@ -173,6 +173,9 @@ export function ChannelSettingsModal({ serverId, channelId }: { serverId: string
               <input type="range" min={0} max={99} value={userLimit} onChange={(e) => setUserLimit(Number(e.target.value))} className="w-full" />
             </label>
           )}
+          {channel.type === 'voice' && has(detail.permissions, P.MANAGE_SERVER) && (
+            <AfkRoomToggle serverId={serverId} channelId={channelId} afkChannelId={detail.server.afkChannelId ?? null} timeout={detail.server.afkTimeout ?? 15} />
+          )}
           <CategorySelect serverId={serverId} value={categoryId} onChange={setCategoryId} />
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={save} loading={saving} disabled={!name.trim() || tooLong(name)}>
@@ -359,5 +362,47 @@ export function CategoryModal({ serverId, categoryId }: { serverId: string; cate
         )}
       </form>
     </Modal>
+  );
+}
+
+const AFK_TIMES = [10, 15, 30, 60, 120];
+
+/**
+ * Usar esta sala de voz como a sala AFK do servidor (a mesma opção de Configurações do servidor → Visão geral). Só
+ * uma por servidor: ligar aqui troca a sala AFK anterior por esta.
+ */
+function AfkRoomToggle({ serverId, channelId, afkChannelId, timeout }: { serverId: string; channelId: string; afkChannelId: string | null; timeout: number }) {
+  const isAfk = afkChannelId === channelId;
+  const save = (patch: { afkChannelId?: string | null; afkTimeout?: number }) =>
+    void api.patch(`/servers/${serverId}`, patch).then(() => toast.success('Sala AFK atualizada'), toast.error);
+  return (
+    <div className="space-y-3 rounded-xl bg-surface-0 p-3">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-sm font-semibold">Sala AFK</div>
+          <div className="text-xs text-fg-muted">
+            Quem fica parado numa call vem sozinho para esta sala, e aqui o microfone fica desligado.
+            {afkChannelId && !isAfk && ' Ligar aqui troca a sala AFK atual por esta.'}
+          </div>
+        </div>
+        <Toggle checked={isAfk} onChange={(on) => save({ afkChannelId: on ? channelId : null })} />
+      </div>
+      {isAfk && (
+        <label className="block">
+          <span className="mb-1 block text-xs font-bold tracking-wide text-fg-muted uppercase">Depois de parado por</span>
+          <select
+            className="h-10 w-full rounded-xl bg-surface-2 px-3 text-sm font-medium text-fg outline-none focus:ring-1 focus:ring-accent"
+            value={timeout}
+            onChange={(e) => save({ afkTimeout: Number(e.target.value) })}
+          >
+            {AFK_TIMES.map((m) => (
+              <option key={m} value={m}>
+                {m < 60 ? `${m} minutos` : m === 60 ? '1 hora' : `${m / 60} horas`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
   );
 }
