@@ -41,17 +41,27 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
   const current = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id;
 
   return (
-    <div className="fixed inset-0 z-50 flex animate-fade-in bg-surface-2">
-      <nav className="flex w-[30%] min-w-56 justify-end bg-surface-1 py-14 pr-2">
-        <div className="w-52 space-y-0.5">
-          <div className="mb-2 truncate px-2.5 text-[11px] font-bold tracking-wider text-fg-subtle uppercase">{detail.server.name}</div>
+    // celular: cabeçalho com o nome e o fechar, abas numa fileira que rola de lado e o conteúdo na largura toda
+    <div className="fixed inset-0 z-50 flex animate-fade-in flex-col bg-surface-2 pt-[env(safe-area-inset-top)] md:flex-row md:pt-0">
+      <div className="flex shrink-0 items-center gap-2 pt-3 pr-3 pl-5 md:hidden">
+        <h1 className="min-w-0 flex-1 truncate text-lg font-bold">{detail.server.name}</h1>
+        <IconButton label="Fechar" className="h-10 w-10" onClick={close}>
+          <X size={20} />
+        </IconButton>
+      </div>
+      <nav className="flex shrink-0 border-b border-line bg-surface-2 md:w-[30%] md:min-w-56 md:justify-end md:border-0 md:bg-surface-1 md:py-14 md:pr-2">
+        <div className="no-scrollbar flex min-w-0 gap-1.5 overflow-x-auto px-4 py-3 md:block md:w-52 md:space-y-0.5 md:overflow-visible md:p-0">
+          <div className="mb-2 hidden truncate px-2.5 text-[11px] font-bold tracking-wider text-fg-subtle uppercase md:block">{detail.server.name}</div>
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
+              aria-current={current === t.id ? 'page' : undefined}
               className={cx(
-                'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium',
-                current === t.id ? 'bg-white/10 text-fg' : 'text-fg-muted hover:bg-white/5 hover:text-fg',
+                'flex h-9 shrink-0 items-center gap-2 rounded-full px-3.5 text-sm font-medium whitespace-nowrap md:h-auto md:w-full md:rounded-md md:px-2.5 md:py-2',
+                current === t.id
+                  ? 'bg-accent text-on-accent md:bg-white/10 md:text-fg'
+                  : 'bg-surface-3 text-fg-muted hover:text-fg md:bg-transparent md:hover:bg-white/5',
               )}
             >
               {t.icon}
@@ -60,7 +70,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
           ))}
         </div>
       </nav>
-      <div className="relative flex-1 overflow-y-auto py-14 pr-6 pl-10">
+      <div className="relative flex-1 overflow-y-auto px-5 pt-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:py-14 md:pr-6 md:pl-10">
         <div className="max-w-3xl">
           {current === 'overview' && <Overview detail={detail} />}
           {current === 'roles' && <Roles detail={detail} />}
@@ -87,7 +97,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
         </div>
         <button
           onClick={close}
-          className="fixed top-14 right-10 flex flex-col items-center gap-1 text-xs font-semibold text-fg-muted hover:text-fg"
+          className="fixed top-14 right-10 hidden flex-col items-center gap-1 text-xs font-semibold text-fg-muted hover:text-fg md:flex"
         >
           <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-current">
             <X size={18} />
@@ -279,8 +289,8 @@ function Roles({ detail }: { detail: ServerDetail }) {
 
   return (
     <section>
-      <div className="mb-5 flex items-center justify-between">
-        <div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-60">
           <h2 className="text-xl font-bold">Cargos</h2>
           <p className="text-sm text-fg-muted">Use cargos para organizar membros e definir o que cada um pode fazer. Cargos mais acima têm prioridade.</p>
         </div>
@@ -288,15 +298,16 @@ function Roles({ detail }: { detail: ServerDetail }) {
           <Plus size={16} /> Criar cargo
         </Button>
       </div>
-      <div className="flex gap-6">
-        <div className="w-52 shrink-0 space-y-0.5">
+      {/* celular: a lista em cima e o cargo escolhido embaixo, na largura toda */}
+      <div className="flex flex-col gap-6 md:flex-row">
+        <div className="w-full shrink-0 space-y-0.5 md:w-52">
           {detail.roles.map((r) => {
             const count = r.isDefault ? detail.members.length : detail.members.filter((m) => m.roleIds.includes(r.id)).length;
             return (
               <button
                 key={r.id}
                 onClick={() => setSelected(r.id)}
-                className={cx('flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm', role?.id === r.id ? 'bg-white/10' : 'hover:bg-white/5')}
+                className={cx('flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 text-left text-sm md:rounded-md md:py-2', role?.id === r.id ? 'bg-surface-3' : 'hover:bg-surface-3/60')}
               >
                 <RoleDot color={r.color} />
                 <span className="flex-1 truncate font-medium">{r.name}</span>

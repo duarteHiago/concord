@@ -68,10 +68,14 @@ export function DeviceSplitButton({
         title={label}
         aria-label={label}
         onClick={onClick}
-        className={cx('flex h-9 w-8 items-center justify-center rounded-l-full transition-colors', danger ? 'text-danger' : 'text-fg-muted hover:text-fg')}
+        className={cx(
+          'flex h-9 w-8 items-center justify-center rounded-l-full transition-colors max-md:h-10 max-md:w-10 max-md:rounded-full',
+          danger ? 'text-danger' : 'text-fg-muted hover:text-fg',
+        )}
       >
         {children}
       </button>
+      {/* celular: a setinha (16px, difícil de acertar com o dedo) sai; o aparelho se escolhe em Ajustes > Voz e vídeo */}
       <button
         title={`Escolher ${TITLES[kind].toLowerCase()}`}
         aria-label={`Escolher ${TITLES[kind].toLowerCase()}`}
@@ -80,7 +84,7 @@ export function DeviceSplitButton({
           setAnchor(ref.current?.getBoundingClientRect() ?? null);
           setOpen(!open);
         }}
-        className="flex h-9 w-4 items-center justify-center rounded-r-full text-fg-subtle hover:text-fg"
+        className="flex h-9 w-4 items-center justify-center rounded-r-full text-fg-subtle hover:text-fg max-md:hidden"
       >
         <ChevronUp size={13} className={cx('transition-transform', !open && 'rotate-180')} />
       </button>

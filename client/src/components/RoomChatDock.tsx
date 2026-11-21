@@ -34,7 +34,7 @@ export function RoomChatButton({ serverId, channelId, name }: { serverId: string
       className={
         open
           ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent'
-          : 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-fg-muted opacity-0 transition-colors group-hover:opacity-100 hover:bg-surface-4 hover:text-fg focus:opacity-100'
+          : 'touch-show flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-fg-muted opacity-0 transition-colors group-hover:opacity-100 hover:bg-surface-4 hover:text-fg focus:opacity-100 [@media(hover:none)]:h-9 [@media(hover:none)]:w-9'
       }
     >
       <MessageSquare size={14} />
@@ -42,7 +42,7 @@ export function RoomChatButton({ serverId, channelId, name }: { serverId: string
   );
 }
 
-/** A janelinha em si: no canto de baixo, por cima de tudo, sem escurecer nem bloquear o resto do app. */
+/** A janelinha em si: no canto de baixo, por cima de tudo, sem escurecer nem bloquear o resto do app (no celular, sobe de baixo na largura toda). */
 export function RoomChatDock() {
   const open = useRoomChat((s) => s.open);
   const close = useRoomChat((s) => s.close);
@@ -53,7 +53,7 @@ export function RoomChatDock() {
   return (
     <section
       aria-label={`Papo de ${channel.name}`}
-      className="fixed right-2 bottom-2 left-2 z-40 flex h-[min(560px,70vh)] animate-pop-in flex-col overflow-hidden rounded-[24px] bg-surface-2 shadow-2xl ring-1 ring-line-strong sm:left-auto sm:w-[400px] md:right-4 md:bottom-4"
+      className="fixed inset-x-0 bottom-0 z-40 flex h-[min(620px,78dvh)] animate-slide-up flex-col overflow-hidden rounded-t-[24px] bg-surface-2 shadow-2xl ring-1 ring-line-strong md:inset-x-auto md:right-4 md:bottom-4 md:h-[min(560px,70vh)] md:w-[400px] md:animate-pop-in md:rounded-[24px]"
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
         <Volume2 size={16} className="shrink-0 text-fg-muted" />

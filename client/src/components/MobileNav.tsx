@@ -19,8 +19,25 @@ export function MobileBackButton({ onClick }: { onClick?: () => void }) {
   );
 }
 
+/**
+ * Dentro de uma conversa (canal, DM, sala, fórum) a barra de abas some, como nos apps de mensagem: sobra altura
+ * para as mensagens e ela não fica entre o campo de texto e o teclado. Para sair, a seta de voltar do cabeçalho.
+ */
+export function useInConversation() {
+  return useApp(
+    (s) =>
+      s.mobileView === 'chat' &&
+      !s.settings &&
+      !s.profile &&
+      !s.releasesOpen &&
+      !!s.activeServerId &&
+      (s.activeServerId !== HOME || !!s.activeDmId),
+  );
+}
+
 export function MobileBottomNav() {
   const mobile = useMobile();
+  const inConversation = useInConversation();
   const activeServerId = useApp((s) => s.activeServerId);
   const settingsOpen = useApp((s) => !!s.settings);
   const openServer = useApp((s) => s.openServer);
@@ -30,7 +47,7 @@ export function MobileBottomNav() {
   const pending = usePendingCount();
   const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0)) + pending;
 
-  if (!mobile) return null;
+  if (!mobile || inConversation) return null;
 
   const tab = settingsOpen ? 'settings' : activeServerId === HOME ? 'dms' : 'servers';
 

@@ -70,22 +70,31 @@ export function ForumView({ channel }: { channel: Channel }) {
     <>
       <header className="flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-6 md:pt-5">
         <MobileBackButton />
-        <MessagesSquare size={24} className="text-fg-subtle" />
+        <MessagesSquare size={24} className="shrink-0 text-fg-subtle max-sm:hidden" />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl font-bold md:text-2xl">{channel.name}</h1>
           {channel.topic && <p className="truncate text-sm text-fg-muted">{channel.topic}</p>}
         </div>
         {canPost && !composing && (
+          // celular: só o "+", senão o nome do fórum vira "fórum-…"
           <Button
+            aria-label="Novo post"
+            className="max-sm:h-10 max-sm:w-10 max-sm:px-0"
             onClick={() => {
               setOpenId(null);
               setComposing(true);
             }}
           >
-            <Plus size={16} /> Novo post
+            <Plus size={16} /> <span className="max-sm:hidden">Novo post</span>
           </Button>
         )}
-        <IconButton label="Lista de membros" active={memberListOpen} className="h-10 w-10" onClick={toggleMemberList}>
+        <IconButton
+          label="Lista de membros"
+          active={memberListOpen}
+          className="h-10 w-10"
+          // o painel lateral só cabe em telas largas (xl); nas outras, a lista abre numa janela (antes não abria nada)
+          onClick={() => (window.matchMedia('(min-width: 1280px)').matches ? toggleMemberList() : useApp.getState().openModal({ type: 'members' }))}
+        >
           <Users size={20} />
         </IconButton>
       </header>
@@ -140,15 +149,18 @@ function PostList({ channel, onOpen, onCompose }: { channel: Channel; onOpen: (i
     cx('h-8 shrink-0 rounded-full px-3 text-sm font-semibold transition-colors', on ? 'bg-fg text-surface-1' : 'bg-surface-3 text-fg-muted hover:text-fg');
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-      <div className="sticky top-0 z-10 -mx-6 space-y-2 bg-surface-2/95 px-6 pt-1 pb-3 backdrop-blur">
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:px-6 md:pb-6">
+      {/* celular: cada fileira de filtros rola de lado, em vez de quebrar em cinco linhas que comiam meia tela */}
+      <div className="sticky top-0 z-10 -mx-4 space-y-2 bg-surface-2/95 px-4 pt-1 pb-3 backdrop-blur md:-mx-6 md:px-6">
         <div className="flex flex-wrap items-center gap-2">
-          {SORTS.map((s) => (
-            <button key={s.id} className={pill(sort === s.id)} onClick={() => setSort(s.id)} aria-pressed={sort === s.id}>
-              {s.label}
-            </button>
-          ))}
-          <label className="ml-auto flex h-8 min-w-[180px] flex-1 items-center gap-2 rounded-full bg-surface-3 px-3 sm:max-w-[260px]">
+          <div className="no-scrollbar -mx-4 flex basis-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 md:contents">
+            {SORTS.map((s) => (
+              <button key={s.id} className={pill(sort === s.id)} onClick={() => setSort(s.id)} aria-pressed={sort === s.id}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <label className="ml-auto flex h-8 min-w-[180px] flex-1 items-center gap-2 rounded-full bg-surface-3 px-3 max-md:h-10 max-md:basis-full sm:max-w-[260px] max-sm:max-w-none">
             <Search size={14} className="shrink-0 text-fg-subtle" />
             <input
               value={q}
@@ -159,7 +171,7 @@ function PostList({ channel, onOpen, onCompose }: { channel: Channel; onOpen: (i
             />
           </label>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="no-scrollbar -mx-4 flex items-center gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
           <button className={pill(tag === null)} onClick={() => setTag(null)} aria-pressed={tag === null}>
             Todas
           </button>
@@ -172,7 +184,7 @@ function PostList({ channel, onOpen, onCompose }: { channel: Channel; onOpen: (i
             value={status}
             onChange={(e) => setStatus(e.target.value)}
             aria-label="Filtrar por status"
-            className="ml-auto h-8 rounded-full bg-surface-3 px-3 text-sm font-semibold text-fg-muted outline-none"
+            className="h-8 shrink-0 rounded-full bg-surface-3 px-3 text-sm font-semibold text-fg-muted outline-none max-md:order-first md:ml-auto"
           >
             <option value="">Qualquer status</option>
             {FORUM_STATUSES.map((s) => (
@@ -582,7 +594,7 @@ function ReplyItem({ reply, mine, mod, onChanged }: { reply: ForumReply; mine: b
     <li className="group rounded-[20px] bg-surface-3/30 p-4">
       <div className="flex items-center justify-between gap-2">
         <AuthorLine author={reply.author} at={reply.createdAt} edited={reply.editedAt} />
-        <div className="flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <div className="touch-show flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {mine && !editing && (
             <IconButton label="Editar resposta" className="h-8 w-8" onClick={() => setEditing(true)}>
               <Pencil size={14} />

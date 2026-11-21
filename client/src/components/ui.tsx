@@ -297,23 +297,28 @@ export function Modal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={onClose}>
+    // no celular a janela sobe da parte de baixo (perto do polegar) e respeita a barrinha do iPhone;
+    // dvh: a altura que sobra de verdade com a barra do navegador e o teclado abertos
+    <div
+      className="fixed inset-0 z-50 flex animate-fade-in items-end justify-center bg-black/70 backdrop-blur-sm md:items-center md:p-4"
+      onMouseDown={onClose}
+    >
       <div
-        className="flex max-h-[90vh] w-full animate-pop-in flex-col overflow-hidden rounded-[28px] bg-surface-2 shadow-2xl ring-1 ring-line"
+        className="flex max-h-[92dvh] w-full animate-slide-up flex-col overflow-hidden rounded-t-[28px] bg-surface-2 pb-[env(safe-area-inset-bottom)] shadow-2xl ring-1 ring-line md:max-h-[90vh] md:animate-pop-in md:rounded-[28px] md:pb-0"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {(title || subtitle) && (
-          <div className="relative px-6 pt-6 pb-2">
-            {title && <h2 className="pr-8 text-xl font-bold">{title}</h2>}
+          <div className="relative px-5 pt-6 pb-2 md:px-6">
+            {title && <h2 className="pr-10 text-xl font-bold">{title}</h2>}
             {subtitle && <p className="mt-1 text-sm text-fg-muted">{subtitle}</p>}
-            <IconButton label="Fechar" className="absolute top-5 right-5 h-8 w-8" onClick={onClose}>
+            <IconButton label="Fechar" className="absolute top-4 right-4 h-10 w-10 md:top-5 md:right-5 md:h-8 md:w-8" onClick={onClose}>
               <X size={20} />
             </IconButton>
           </div>
         )}
-        <div className="overflow-y-auto px-6 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 px-6 pt-2 pb-6">{footer}</div>}
+        <div className="overflow-y-auto px-5 py-4 md:px-6">{children}</div>
+        {footer && <div className="flex flex-wrap justify-end gap-2 px-5 pt-2 pb-5 md:px-6 md:pb-6">{footer}</div>}
       </div>
     </div>
   );
@@ -322,7 +327,8 @@ export function Modal({
 export function Toasts() {
   const { toasts, dismiss } = useToasts();
   return (
-    <div className="pointer-events-none fixed bottom-16 left-1/2 z-[100] flex -translate-x-1/2 flex-col items-center gap-2 md:bottom-6">
+    // celular: no topo, como os avisos do sistema (embaixo cobriam o campo de mensagem e a barra de abas)
+    <div className="pointer-events-none fixed top-[calc(env(safe-area-inset-top)+0.75rem)] left-1/2 z-[100] flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2 text-center md:top-auto md:bottom-6">
       {toasts.map((t) => (
         <button
           key={t.id}

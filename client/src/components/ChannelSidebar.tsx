@@ -213,7 +213,7 @@ function ChannelGroup({ detail, kind }: { detail: ServerDetail; kind: 'text' | '
         {canManage && (
           <IconButton
             label={CREATE_LABEL[kind]}
-            className="h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
+            className="touch-show h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:h-8 [@media(hover:none)]:w-8"
             onClick={() => openModal({ type: 'createChannel', serverId: detail.server.id, kind })}
           >
             <Plus size={15} />
@@ -284,14 +284,14 @@ function CategorySection({ detail, category }: { detail: ServerDetail; category:
           <>
             <IconButton
               label="Editar categoria"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
+              className="touch-show h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:h-8 [@media(hover:none)]:w-8"
               onClick={() => openModal({ type: 'category', serverId, categoryId: category.id })}
             >
               <Settings size={13} />
             </IconButton>
             <IconButton
               label={`Criar canal em ${category.name}`}
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
+              className="touch-show h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:h-8 [@media(hover:none)]:w-8"
               onClick={() => openModal({ type: 'createChannel', serverId, kind: 'text', categoryId: category.id })}
             >
               <Plus size={15} />
@@ -328,7 +328,7 @@ function useChannelBasics(detail: ServerDetail, channel: Channel) {
   const settingsButton = has(channel.permissions, P.MANAGE_CHANNELS) && (
     <IconButton
       label="Editar"
-      className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100"
+      className={cx('h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100', active ? 'touch-show [@media(hover:none)]:h-9 [@media(hover:none)]:w-9' : 'touch-hide')}
       onClick={(e) => {
         e.stopPropagation();
         openModal({ type: 'channelSettings', channelId: channel.id, serverId });
@@ -644,10 +644,11 @@ function UserCard() {
       <DeviceSplitButton kind="audiooutput" label={deafened ? 'Ativar áudio' : 'Ensurdecer'} danger={deafened} onClick={() => void toggleDeafen()}>
         {deafened ? <HeadphoneOff size={18} /> : <Headphones size={18} />}
       </DeviceSplitButton>
-      <IconButton label="Como o Concord funciona" className="h-9 w-8 shrink-0" onClick={() => openModal({ type: 'onboarding' })}>
+      <IconButton label="Como o Concord funciona" className="h-9 w-8 shrink-0 max-md:h-10 max-md:w-10" onClick={() => openModal({ type: 'onboarding' })}>
         <HelpCircle size={18} />
       </IconButton>
-      <IconButton label="Configurações" className="h-9 w-8 shrink-0" onClick={() => openModal({ type: 'userSettings' })}>
+      {/* no celular as configurações já são uma aba da barra de baixo */}
+      <IconButton label="Configurações" className="h-9 w-8 shrink-0 max-md:hidden" onClick={() => openModal({ type: 'userSettings' })}>
         <Settings size={18} />
       </IconButton>
     </div>
