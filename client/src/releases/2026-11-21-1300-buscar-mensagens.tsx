@@ -7,6 +7,7 @@ export default {
   also: [
     'Lupa no topo de cada conversa (ou Ctrl+F): num servidor, procura em todos os canais de texto e nos chats das salas; nas mensagens privadas, em todas as suas conversas.',
     'A lista mostra em qual canal ou conversa está cada mensagem, quem escreveu e quando. Clicando, o Concord abre a conversa e pula até a mensagem, mesmo se for antiga.',
+    'Não importa acento nem maiúscula: "epico" acha "ÉPICO" e "acao" acha "ação".',
     'O atalho pode ser trocado em Configurações → Atalhos.',
   ],
   fixes: [],

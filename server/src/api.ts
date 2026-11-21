@@ -25,6 +25,7 @@ import {
 import { config } from './config.ts';
 import {
   all,
+  foldText,
   get,
   run,
   tx,
@@ -2309,7 +2310,8 @@ function searchPattern(raw: unknown): string {
   const q = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
   if (q.length < 2) fail(400, 'Digite pelo menos 2 letras');
   if (q.length > 100) fail(400, 'Busca grande demais');
-  return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  // dobrado como o texto das mensagens no SQL (fold): sem acento e em minúsculas
+  return `%${foldText(q).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
 interface SearchRow {
@@ -2345,7 +2347,7 @@ api.get('/servers/:id/search', (req, res) => {
     `SELECT m.id, m.content, m.created_at, m.channel_id, m.author_id, u.display_name, u.username, u.avatar_color, u.avatar_url, mb.nickname
      FROM messages m JOIN users u ON u.id = m.author_id
      LEFT JOIN members mb ON mb.server_id = ? AND mb.user_id = m.author_id
-     WHERE m.channel_id IN (${channels.map(() => '?').join(',')}) AND m.kind = 'text' AND m.content LIKE ? ESCAPE '\\' AND m.created_at < ?
+     WHERE m.channel_id IN (${channels.map(() => '?').join(',')}) AND m.kind = 'text' AND fold(m.content) LIKE ? ESCAPE '\\' AND m.created_at < ?
      ORDER BY m.created_at DESC LIMIT ?`,
     server.id,
     ...channels.map((c) => c.id),
@@ -2374,7 +2376,7 @@ api.get('/dms/search', (req, res) => {
     `SELECT m.id, m.content, m.created_at, m.dm_id, m.author_id, u.display_name, u.username, u.avatar_color, u.avatar_url, o.display_name AS other_name
      FROM dm_messages m JOIN dm_channels d ON d.id = m.dm_id JOIN users u ON u.id = m.author_id
      JOIN users o ON o.id = CASE WHEN d.user_a = ? THEN d.user_b ELSE d.user_a END
-     WHERE (d.user_a = ? OR d.user_b = ?) AND m.kind = 'text' AND m.content LIKE ? ESCAPE '\\' AND m.created_at < ?
+     WHERE (d.user_a = ? OR d.user_b = ?) AND m.kind = 'text' AND fold(m.content) LIKE ? ESCAPE '\\' AND m.created_at < ?
      ORDER BY m.created_at DESC LIMIT ?`,
     me,
     me,

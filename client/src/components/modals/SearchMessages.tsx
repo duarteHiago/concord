@@ -18,21 +18,35 @@ interface SearchResult {
 
 const fmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-/** O texto com o termo buscado destacado (sem diferenciar maiúsculas e acentos simples). */
+/**
+ * Dobra letra por letra (sem acento e em minúscula), mantendo o mesmo tamanho do texto, para achar onde o termo
+ * está no texto original. O servidor busca do mesmo jeito (ver server/src/db.ts#foldText).
+ */
+const fold = (s: string) => Array.from(s, (c) => c.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase()[0] ?? c).join('');
+
+/** O texto com o termo buscado destacado (sem diferenciar maiúsculas nem acentos). */
 function Highlight({ text, term }: { text: string; term: string }) {
-  const clean = text.replace(/\s+/g, ' ');
-  const i = term ? clean.toLowerCase().indexOf(term.toLowerCase()) : -1;
-  if (i < 0) return <>{clean}</>;
-  // mostra um pedaço em volta do termo quando a mensagem é longa
-  const start = Math.max(0, i - 60);
-  return (
-    <>
-      {start > 0 && '…'}
-      {clean.slice(start, i)}
-      <mark className="rounded bg-accent/25 px-0.5 text-fg">{clean.slice(i, i + term.length)}</mark>
-      {clean.slice(i + term.length)}
-    </>
-  );
+  // Array.from separa por letra (emoji conta como uma): os índices batem com o texto dobrado
+  const chars = Array.from(text.replace(/\s+/g, ' '));
+  const clean = chars.join('');
+  const folded = Array.from(fold(clean));
+  const needle = Array.from(fold(term));
+  let i = -1;
+  for (let k = 0; needle.length && k + needle.length <= folded.length && i < 0; k++) {
+    if (needle.every((c, j) => folded[k + j] === c)) i = k;
+  }
+  if (i >= 0) {
+    const start = Math.max(0, i - 60);
+    return (
+      <>
+        {start > 0 && '…'}
+        {chars.slice(start, i).join('')}
+        <mark className="rounded bg-accent/25 px-0.5 text-fg">{chars.slice(i, i + needle.length).join('')}</mark>
+        {chars.slice(i + needle.length).join('')}
+      </>
+    );
+  }
+  return <>{clean}</>;
 }
 
 /** Abre a conversa do resultado e pula até a mensagem, carregando páginas mais antigas até ela aparecer. */

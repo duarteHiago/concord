@@ -8,6 +8,11 @@ mkdirSync(dirname(config.dbPath), { recursive: true });
 
 const db = new DatabaseSync(config.dbPath);
 
+/** Texto "dobrado" para comparar: sem acento e em minúsculas ("Épico" e "epico" viram "epico"). Ver fold() no SQL. */
+export const foldText = (s: string) => s.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase();
+// fold(texto) no SQL: a busca de mensagens compara o texto dobrado (o LIKE do SQLite só ignora maiúsculas sem acento)
+db.function('fold', { deterministic: true }, (s) => (typeof s === 'string' ? foldText(s) : s));
+
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;

@@ -37,6 +37,15 @@ describe('busca de mensagens', () => {
     assert.equal(res.body.results[0].content, 'Valorant na sala agora', 'a mais nova primeiro');
   });
 
+  it('não liga para acento nem para maiúsculas', async () => {
+    const { dono, serverId, geral } = await scene();
+    assert.equal((await dono.post(`/channels/${geral}/messages`, { content: 'Foi ÉPICO demais, que ação!' })).status, 200);
+    for (const q of ['épico', 'epico', 'ÉPICO', 'Epico', 'acao', 'AÇÃO']) {
+      const res = await dono.get(`/servers/${serverId}/search?q=${encodeURIComponent(q)}`);
+      assert.equal(res.body.results.length, 1, `"${q}" acha`);
+    }
+  });
+
   it('canal escondido não aparece para quem não vê', async () => {
     const { dono, membro, serverId, secreto } = await scene();
     assert.equal((await dono.post(`/channels/${secreto}/messages`, { content: 'senha do wifi é abacaxi' })).status, 200);
