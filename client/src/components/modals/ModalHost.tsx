@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { RouletteModal } from '../Games';
 import { QuickSwitch } from './QuickSwitch';
 import { SearchMessagesModal } from './SearchMessages';
+import { ConfirmCloseModal } from './ConfirmCloseModal';
 import { Button, Input, Modal } from '../ui';
 import { AddServerModal } from './AddServerModal';
 import { CategoryModal, ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
@@ -87,6 +88,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <QuickSwitch />;
     case 'searchMessages':
       return <SearchMessagesModal />;
+    case 'confirmClose':
+      return <ConfirmCloseModal reason={modal.reason} />;
     case 'roulette':
       return <RouletteModal target={modal.target} />;
     case 'image':

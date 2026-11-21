@@ -76,8 +76,10 @@ interface DesktopBridge {
   /** troca o ícone da janela/barra de tarefas (PNG em data URL); null volta ao ícone padrão */
   setAppIcon?(pngDataUrl: string | null): Promise<void>;
   /** barra de título própria (a janela vem sem a do sistema); ausente em versões antigas do app desktop */
-  windowControl?(action: 'minimize' | 'maximize' | 'close' | 'state'): Promise<{ maximized: boolean; fullscreen: boolean; platform: string } | null>;
+  windowControl?(action: 'minimize' | 'maximize' | 'close' | 'close-ack' | 'state'): Promise<{ maximized: boolean; fullscreen: boolean; platform: string } | null>;
   onWindowState?(cb: (s: { maximized: boolean; fullscreen: boolean }) => void): () => void;
+  /** Alt+F4 ou fechar pela barra de tarefas: o app pergunta à página antes (ver lib/closeGuard.ts) */
+  onCloseRequest?(cb: () => void): () => void;
   showClip?(data: { text: string; from: string; autoCopy: boolean }): Promise<boolean>;
   /** mensagem opcional da tremida: janelinha por cima de tudo, igual à do código compartilhado, sem copiar */
   showNudgeMessage?(data: { text: string; from: string }): Promise<boolean>;

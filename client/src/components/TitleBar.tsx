@@ -4,6 +4,7 @@
 // Só aparece com o app desktop novo (que tem `windowControl`); no navegador e em versões antigas, nada muda.
 import { useEffect, useState, type ReactNode } from 'react';
 import { desktop } from '../lib/desktop';
+import { installCloseGuard, requestClose } from '../lib/closeGuard';
 import { cx } from './ui';
 
 export const TITLE_BAR_HEIGHT = 36;
@@ -13,6 +14,7 @@ export function TitleBar() {
 
   useEffect(() => {
     if (!desktop?.windowControl) return;
+    installCloseGuard();
     void desktop.windowControl('state').then((s) => s && setState(s));
     return desktop.onWindowState?.((s) => setState((prev) => ({ platform: prev?.platform ?? '', ...s })));
   }, []);
@@ -26,7 +28,8 @@ export function TitleBar() {
 
   if (!visible || !state) return null;
   const mac = state.platform === 'darwin';
-  const act = (action: 'minimize' | 'maximize' | 'close') => () => void desktop?.windowControl?.(action);
+  // fechar passa pela confirmação (numa call ou na Praça, pergunta antes; ver lib/closeGuard.ts)
+  const act = (action: 'minimize' | 'maximize' | 'close') => () => (action === 'close' ? requestClose() : void desktop?.windowControl?.(action));
 
   return (
     <div

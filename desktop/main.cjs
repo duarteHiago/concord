@@ -100,6 +100,9 @@ app.commandLine.appendSwitch('disable-background-timer-throttling');
 if (process.platform === 'win32') app.setAppUserModelId('com.duartehiago.concord');
 
 let win = null;
+// fechar a janela principal: liberado (a página já decidiu ou o app está saindo) e se a página respondeu ao pedido
+let closeAllowed = false;
+let closeAcked = false;
 let pendingSourceId = null;
 let capture = null;
 
@@ -154,6 +157,25 @@ function createWindow() {
     saveConfig();
   };
   win.on('close', remember);
+  // Fechar pelo Alt+F4 ou pela barra de tarefas: antes, pergunta à página (ela confirma se a pessoa está numa call ou
+  // na Praça, ver client/src/lib/closeGuard.ts). A página responde "close-ack" na hora; sem resposta em 1,5 s
+  // (versão antiga da página, travada ou a tela offline), fecha como sempre, para o app nunca ficar sem fechar.
+  closeAllowed = false;
+  // Windows desligando ou saindo da conta: fecha sem perguntar
+  win.on('session-end', () => {
+    closeAllowed = true;
+  });
+  win.on('close', (e) => {
+    if (closeAllowed || !win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    e.preventDefault();
+    closeAcked = false;
+    win.webContents.send('concord:close-request');
+    setTimeout(() => {
+      if (closeAcked || closeAllowed || !win || win.isDestroyed()) return;
+      closeAllowed = true;
+      win.close();
+    }, 1500);
+  });
   win.on('focus', () => win?.flashFrame(false));
   // a janelinha da mensagem da tremida (escondida, pronta pra uso) é "filha" da janela principal: sem
   // isso, ela continuaria aberta (só escondida) depois de fechar o Concord, e o app nunca terminaria
@@ -326,11 +348,20 @@ function handle(channel, fn) {
 handle('concord:window', (event, action) => {
   const w = BrowserWindow.fromWebContents(event.sender);
   if (!w || w.isDestroyed()) return null;
+  // a página recebeu o pedido de fechar (Alt+F4, barra de tarefas) e vai decidir: perguntar ou fechar
+  if (action === 'close-ack') {
+    closeAcked = true;
+    return null;
+  }
   if (action === 'minimize') w.minimize();
   else if (action === 'maximize') {
     if (w.isMaximized()) w.unmaximize();
     else w.maximize();
-  } else if (action === 'close') w.close();
+  } else if (action === 'close') {
+    // a página já decidiu (ou a pessoa confirmou): fecha de verdade
+    if (w === win) closeAllowed = true;
+    w.close();
+  }
   return { maximized: w.isMaximized(), fullscreen: w.isFullScreen(), platform: process.platform };
 });
 
@@ -1175,5 +1206,9 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', stopCapture);
+// sair do app de verdade (atualização, sistema desligando): a janela fecha sem perguntar
+app.on('before-quit', () => {
+  closeAllowed = true;
+});
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());

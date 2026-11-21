@@ -1,6 +1,7 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { STATUSES, STATUS_INFO, asStatus } from '../../lib/status';
+import { closeAskDisabled, setCloseAsk } from '../../lib/closeGuard';
 import { clipSettings } from '../../lib/clip';
 import { NOISE_LABEL, NOISE_MODES, canVoiceIsolation, micLevels, preloadDfn, startMicTest, type ActiveNotice, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
@@ -1134,6 +1135,27 @@ function DesktopServer() {
         Conectar a este servidor
       </Button>
       <UpdateRow />
+      <AskBeforeClose />
+    </div>
+  );
+}
+
+/** "Fechar o Concord?" numa call ou na Praça (ver lib/closeGuard.ts): quem marcou "Não perguntar novamente" volta aqui. */
+function AskBeforeClose() {
+  const [ask, setAsk] = useState(() => !closeAskDisabled());
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-line pt-3">
+      <div>
+        <div className="text-sm font-semibold">Perguntar antes de fechar</div>
+        <div className="text-xs text-fg-muted">Ao fechar o app durante uma call ou na Praça, o Concord confirma antes.</div>
+      </div>
+      <Toggle
+        checked={ask}
+        onChange={(v) => {
+          setCloseAsk(v);
+          setAsk(v);
+        }}
+      />
     </div>
   );
 }
