@@ -119,7 +119,8 @@ import {
   jamsFor,
   setJam,
   broadcastStatus,
-  isOnline,
+  isVisiblyOnline,
+  visibleOnlineIds,
 } from './realtime.ts';
 
 export const api = Router();
@@ -1505,7 +1506,8 @@ api.get('/servers/:id', (req, res) => {
     recording: !config.recordingServers || config.recordingServers.has(server.id),
     // Praça do servidor (ver plaza.ts): liberada aqui? e quantas pessoas estão andando por ela agora
     plaza: plazaEnabled(server.id) ? { count: plazaCount(server.id) } : null,
-    online: onlineUserIds().filter((id) => members.some((m) => m.id === id)),
+    // quem está invisível conta como offline (menos a própria pessoa)
+    online: onlineUserIds().filter((id) => members.some((m) => m.id === id) && (id === me || isVisiblyOnline(id))),
   });
 });
 
@@ -2074,7 +2076,8 @@ api.post('/servers/:id/members/:userId/nudge', (req, res) => {
   const targetUser = get<UserRow>('SELECT * FROM users WHERE id = ?', target);
   if (!targetUser || !isMember(server.id, target)) fail(404, 'Membro não encontrado');
   const name = get<{ nickname: string | null }>('SELECT nickname FROM members WHERE server_id = ? AND user_id = ?', server.id, target)?.nickname || targetUser!.display_name;
-  if (!isOnline(target)) fail(409, `${name} está offline`);
+  // invisível: para quem chama, a pessoa está offline
+  if (!isVisiblyOnline(target)) fail(409, `${name} está offline`);
 
   let prefs: NudgePrefs = {};
   try {
@@ -2221,7 +2224,7 @@ api.get('/discover', (req, res) => {
     `%${q}%`,
     `%${q}%`,
   );
-  const online = new Set(onlineUserIds());
+  const online = new Set(visibleOnlineIds());
   res.json(
     rows.map((s) => ({
       ...serverJson(s),

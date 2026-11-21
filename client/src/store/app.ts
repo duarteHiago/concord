@@ -2,6 +2,7 @@ import { useStickers } from './stickers';
 import type { FeedbackKind } from '../../../shared/feedback.ts';
 import { receiveClip, type ClipEvent } from '../lib/clip';
 import type { PlacedSticker } from '../lib/types';
+import { asStatus } from '../lib/status';
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
@@ -283,7 +284,7 @@ export const useApp = create<AppState>((set, get) => {
     });
     type PresencePayload = Partial<Presence> & { userId: string; online?: boolean };
     const toPresence = (p: PresencePayload): Presence => ({
-      status: p.status === 'dnd' ? 'dnd' : 'online',
+      status: asStatus(p.status),
       customStatus: p.customStatus ?? '',
       activities: p.activities ?? [],
     });

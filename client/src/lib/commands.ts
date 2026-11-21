@@ -164,9 +164,27 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: 'ocupado',
+    usage: '/ocupado',
+    description: 'Fica como "Ocupado" (bolinha amarela)',
+    run: async () => {
+      await useApp.getState().saveSettings({ status: 'busy' });
+      toast.info('Você está como Ocupado');
+    },
+  },
+  {
+    name: 'invisivel',
+    usage: '/invisivel',
+    description: 'Fica invisível: os outros veem você offline',
+    run: async () => {
+      await useApp.getState().saveSettings({ status: 'invisible' });
+      toast.info('Você está invisível');
+    },
+  },
+  {
     name: 'online',
     usage: '/online',
-    description: 'Volta a ficar online (desativa o "Não perturbe")',
+    description: 'Volta a ficar online (sai do "Não perturbe", do "Ocupado" e do invisível)',
     run: async () => {
       await useApp.getState().saveSettings({ status: 'online' });
       toast.info('Você está online');

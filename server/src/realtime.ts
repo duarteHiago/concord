@@ -149,7 +149,7 @@ export function joinServerRoom(userId: string, serverId: string) {
   });
   // entrou num servidor: passa a ver quem está online nele, e eles passam a ver a pessoa
   refreshPresence(userId);
-  if (online.has(userId)) io.to(`server:${serverId}`).emit('presence', presenceOf(userId));
+  if (isVisiblyOnline(userId)) io.to(`server:${serverId}`).emit('presence', presenceOf(userId));
 }
 
 export function leaveServerRoom(userId: string, serverId: string) {
@@ -223,16 +223,32 @@ export function setServerDeafen(serverId: string, userId: string, deafened: bool
   }
 }
 
-export type PresenceStatus = 'online' | 'dnd';
+/**
+ * Status escolhido pela pessoa (fica nas preferências do perfil). "Ocupado" é só a cor e o texto; "Não perturbe"
+ * bloqueia chamadas de atenção e notificações; "Invisível" mostra a pessoa como offline para todo mundo (ela continua
+ * usando o app normalmente e vê o próprio status).
+ */
+export type PresenceStatus = 'online' | 'busy' | 'dnd' | 'invisible';
+const STATUSES: PresenceStatus[] = ['online', 'busy', 'dnd', 'invisible'];
+export const asStatus = (raw: unknown): PresenceStatus => (STATUSES.includes(raw as PresenceStatus) ? (raw as PresenceStatus) : 'online');
 
-/** Status escolhido pelo usuário (fica nas preferências do perfil). */
 export function statusOf(userId: string): PresenceStatus {
   const row = get<{ settings: string }>('SELECT settings FROM users WHERE id = ?', userId);
   try {
-    return JSON.parse(row?.settings || '{}').status === 'dnd' ? 'dnd' : 'online';
+    return asStatus(JSON.parse(row?.settings || '{}').status);
   } catch {
     return 'online';
   }
+}
+
+/** Está online e aparece como online para os outros (quem está invisível conta como offline). */
+export function isVisiblyOnline(userId: string) {
+  return online.has(userId) && statusOf(userId) !== 'invisible';
+}
+
+/** Quem está online do ponto de vista dos outros (sem os invisíveis). A equipe (/admin) usa onlineUserIds. */
+export function visibleOnlineIds(): string[] {
+  return onlineUserIds().filter((id) => statusOf(id) !== 'invisible');
 }
 
 // ---- atividades ("Jogando…", "Ouvindo…"): só em memória, enviadas pelo app desktop ----
@@ -282,7 +298,7 @@ export function presenceOf(userId: string) {
   return {
     userId,
     online: true,
-    status: (settings.status === 'dnd' ? 'dnd' : 'online') as PresenceStatus,
+    status: asStatus(settings.status),
     customStatus: typeof settings.customStatus === 'string' ? settings.customStatus.slice(0, 80) : '',
     activities: activities.get(userId) ?? [],
   };
@@ -315,13 +331,26 @@ function presenceContacts(userId: string): { servers: string[]; people: Set<stri
   return { servers, people };
 }
 
-/** Manda um evento de presença de `userId` só para quem pode vê-lo (e para os outros aparelhos dele). */
-function emitPresence(userId: string, payload: unknown) {
+/**
+ * Manda um evento de presença de `userId` só para quem pode vê-lo (e para os outros aparelhos dele). Invisível: os
+ * outros recebem "offline"; só os aparelhos da própria pessoa recebem o status de verdade.
+ */
+function emitPresence(userId: string, payload: { userId: string; online: boolean }) {
   const { servers, people } = presenceContacts(userId);
-  let target = io.to(`user:${userId}`);
-  for (const id of servers) target = target.to(`server:${id}`);
-  for (const id of people) if (online.has(id)) target = target.to(`user:${id}`);
-  target.emit('presence', payload);
+  const hidden = payload.online && statusOf(userId) === 'invisible';
+  io.to(`user:${userId}`).emit('presence', payload);
+  let target = io.except(`user:${userId}`);
+  let any = false;
+  for (const id of servers) {
+    target = target.to(`server:${id}`);
+    any = true;
+  }
+  for (const id of people) {
+    if (!online.has(id)) continue;
+    target = target.to(`user:${id}`);
+    any = true;
+  }
+  if (any) target.emit('presence', hidden ? { userId, online: false } : payload);
 }
 
 /** A lista de quem está online, do ponto de vista de `userId`. */
@@ -335,7 +364,7 @@ function presenceListFor(userId: string) {
     people.add(r.id);
   }
   return onlineUserIds()
-    .filter((id) => people.has(id))
+    .filter((id) => people.has(id) && (id === userId || statusOf(id) !== 'invisible'))
     .map((id) => presenceOf(id));
 }
 
@@ -348,7 +377,7 @@ export function refreshPresence(...userIds: string[]) {
   for (const id of userIds) if (online.has(id)) io.to(`user:${id}`).emit('presence:list', presenceListFor(id));
 }
 
-/** Reenvia a presença quando o usuário troca de status (online / não perturbe). */
+/** Reenvia a presença quando o usuário troca de status (online, ocupado, não perturbe, invisível). */
 export function broadcastStatus(userId: string) {
   if (online.has(userId)) emitPresence(userId, presenceOf(userId));
 }

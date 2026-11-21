@@ -4,6 +4,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEv
 import { api } from '../lib/api';
 import { sendNudge } from '../lib/nudge';
 import type { DirectChannel, GameData, Message, StickerMessageData } from '../lib/types';
+import { STATUS_INFO } from '../lib/status';
 import { useApp } from '../store/app';
 import { profileTriggers } from '../store/popover';
 import { toast } from '../store/toast';
@@ -154,7 +155,7 @@ function DmHeader({ dm }: { dm: DirectChannel }) {
     ? 'Offline'
     : activities.length
       ? activities.map(activityLabel).join(' · ')
-      : presence.customStatus || (presence.status === 'dnd' ? 'Não perturbe' : 'Online');
+      : presence.customStatus || STATUS_INFO[presence.status].label;
 
   return (
     <header className="flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-6 md:pt-5">

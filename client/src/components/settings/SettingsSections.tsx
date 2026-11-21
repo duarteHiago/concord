@@ -1,5 +1,6 @@
 import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
+import { STATUSES, STATUS_INFO, asStatus } from '../../lib/status';
 import { clipSettings } from '../../lib/clip';
 import { NOISE_LABEL, NOISE_MODES, canVoiceIsolation, micLevels, preloadDfn, startMicTest, type ActiveNotice, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
@@ -504,7 +505,7 @@ export function Notifications() {
   const me = useApp((s) => s.me)!;
   const saveSettings = useApp((s) => s.saveSettings);
   const prefs = notifySettings(me);
-  const status = me.settings.status === 'dnd' ? 'dnd' : 'online';
+  const status = asStatus(me.settings.status);
   const clips = clipSettings(me);
   const [permission, setPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
 
@@ -525,12 +526,7 @@ export function Notifications() {
       <div>
         <SectionTitle>Status</SectionTitle>
         <div className="grid grid-cols-2 gap-2">
-          {(
-            [
-              ['online', 'Online', 'Recebe chamadas de atenção', 'bg-ok'],
-              ['dnd', 'Não perturbe', 'Ninguém consegue chamar sua atenção', 'bg-danger'],
-            ] as const
-          ).map(([value, label, hint, dot]) => (
+          {STATUSES.map((value) => (
             <button
               key={value}
               onClick={() => void saveSettings({ status: value })}
@@ -539,10 +535,10 @@ export function Notifications() {
                 status === value ? 'border-accent bg-accent/10' : 'border-transparent bg-surface-0 hover:bg-surface-3',
               )}
             >
-              <span className={cx('mt-1 h-3 w-3 shrink-0 rounded-full', dot)} />
+              <span className={cx('mt-1 h-3 w-3 shrink-0 rounded-full', STATUS_INFO[value].dot)} />
               <span>
-                <span className="block text-sm font-bold">{label}</span>
-                <span className="block text-xs text-fg-muted">{hint}</span>
+                <span className="block text-sm font-bold">{STATUS_INFO[value].label}</span>
+                <span className="block text-xs text-fg-muted">{STATUS_INFO[value].hint}</span>
               </span>
             </button>
           ))}

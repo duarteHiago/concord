@@ -1,6 +1,8 @@
 import { BadgeCheck, Eye, EyeOff, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useToasts } from '../store/toast';
+import { STATUS_INFO } from '../lib/status';
+import type { PresenceStatus } from '../lib/types';
 
 export function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(' ');
@@ -26,7 +28,7 @@ export function Avatar({
   color: string;
   src?: string | null;
   size?: number;
-  status?: 'online' | 'dnd' | 'offline' | null;
+  status?: PresenceStatus | 'offline' | null;
   speaking?: boolean;
   /** moldura animada escolhida no perfil */
   frame?: string | null;
@@ -62,14 +64,16 @@ export function Avatar({
       {frame && <AvatarFrame frame={frame} size={size} />}
       {status && (
         <span
-          title={status === 'dnd' ? 'Não perturbe' : status === 'online' ? 'Online' : 'Offline'}
+          title={status === 'offline' ? 'Offline' : STATUS_INFO[status].label}
           className={cx(
             'absolute -right-0.5 -bottom-0.5 z-[2] flex items-center justify-center rounded-full border-[3px] border-surface-2',
-            status === 'online' ? 'bg-ok' : status === 'dnd' ? 'bg-danger' : 'bg-fg-subtle',
+            status === 'offline' ? 'bg-fg-subtle' : STATUS_INFO[status].dot,
           )}
           style={{ width: Math.max(12, size * 0.34), height: Math.max(12, size * 0.34) }}
         >
           {status === 'dnd' && <span className="h-[2px] w-1/2 rounded-full bg-surface-2" />}
+          {/* invisível: a bolinha cinza vazada (você vê; os outros veem você offline) */}
+          {status === 'invisible' && <span className="h-1/2 w-1/2 rounded-full bg-surface-2" />}
         </span>
       )}
     </div>

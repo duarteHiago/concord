@@ -4,6 +4,7 @@ import { Ban, Check, Clock, MessageCircle, UserCheck, UserPlus, Users, UserX, X 
 import { useState, type FormEvent } from 'react';
 import { acceptFriend, addFriend, confirmBlock, confirmUnfriend, dropRequest, unblock, usePendingCount, useRelation } from '../lib/friends';
 import type { Relationship, User } from '../lib/types';
+import { STATUS_INFO } from '../lib/status';
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
 import { activityLabel } from './MemberList';
@@ -107,7 +108,7 @@ function FriendRow({ rel }: { rel: Relationship }) {
             ? 'Offline'
             : presence.activities?.length
               ? presence.activities.map(activityLabel).join(' · ')
-              : presence.customStatus || (presence.status === 'dnd' ? 'Não perturbe' : 'Online');
+              : presence.customStatus || STATUS_INFO[presence.status].label;
 
   return (
     <li className="group flex items-center gap-3 py-2.5">

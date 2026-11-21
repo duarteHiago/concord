@@ -25,10 +25,11 @@ import {
   Square,
 } from 'lucide-react';
 import { PlazaButton } from './plaza/PlazaButton';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { P, has } from '../../../shared/permissions.ts';
 import { api } from '../lib/api';
-import { memberName, type Category, type Channel, type ServerDetail, type VoiceState } from '../lib/types';
+import { memberName, type Category, type Channel, type PresenceStatus, type ServerDetail, type VoiceState } from '../lib/types';
+import { STATUSES, STATUS_INFO, asStatus } from '../lib/status';
 import { HOME, memberColor, useActiveDetail, useApp } from '../store/app';
 import { DmSidebar } from './DirectMessages';
 import { armPopoverToggle, toggleOrOpenPopover } from '../store/popover';
@@ -555,7 +556,7 @@ function UserCard() {
   const menuRef = useRef<HTMLDivElement>(null);
   const inCall = status !== 'idle';
   const micOff = (inCall && !micOn) || serverMuted;
-  const presence = me.settings.status === 'dnd' ? 'dnd' : 'online';
+  const presence = asStatus(me.settings.status);
 
   useEffect(() => {
     if (!menu) return;
@@ -564,7 +565,7 @@ function UserCard() {
     return () => window.removeEventListener('mousedown', close);
   }, [menu]);
 
-  const option = (value: 'online' | 'dnd', label: string, hint: string) => (
+  const option = (value: PresenceStatus) => (
     <button
       onClick={() => {
         setMenu(false);
@@ -572,10 +573,10 @@ function UserCard() {
       }}
       className={cx('flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left hover:bg-surface-4', presence === value && 'bg-surface-4')}
     >
-      <span className={cx('mt-1 h-3 w-3 shrink-0 rounded-full', value === 'online' ? 'bg-ok' : 'bg-danger')} />
+      <span className={cx('mt-1 h-3 w-3 shrink-0 rounded-full', STATUS_INFO[value].dot)} />
       <span>
-        <span className="block text-sm font-bold">{label}</span>
-        <span className="block text-xs text-fg-muted">{hint}</span>
+        <span className="block text-sm font-bold">{STATUS_INFO[value].label}</span>
+        <span className="block text-xs text-fg-muted">{STATUS_INFO[value].hint}</span>
       </span>
     </button>
   );
@@ -584,8 +585,9 @@ function UserCard() {
     <div ref={menuRef} className="relative mx-3 mb-3 flex items-center gap-1 rounded-[20px] bg-surface-3 p-2.5">
       {menu && (
         <div className="absolute right-0 bottom-full left-0 z-30 mb-2 animate-pop-in space-y-0.5 rounded-3xl bg-popover p-2 shadow-2xl ring-1 ring-line">
-          {option('online', 'Online', 'Recebe chamadas de atenção e avisos')}
-          {option('dnd', 'Não perturbe', 'Ninguém consegue chamar sua atenção')}
+          {STATUSES.map((s) => (
+            <Fragment key={s}>{option(s)}</Fragment>
+          ))}
           <div className="mx-2 my-1 h-px bg-line" />
           <button
             onClick={() => {
@@ -624,8 +626,8 @@ function UserCard() {
       <button onClick={() => setMenu(!menu)} className="flex min-w-0 flex-1 items-center gap-2.5 pl-1.5 text-left" title="Status e perfil" aria-expanded={menu}>
         <div className="min-w-0 leading-tight">
           <div className="truncate text-sm font-bold">{me.displayName}</div>
-          <div className={cx('truncate text-xs', presence === 'dnd' ? 'text-danger' : 'text-fg-muted')}>
-            {presence === 'dnd' ? 'Não perturbe' : me.bio || `@${me.username}`}
+          <div className={cx('truncate text-xs', STATUS_INFO[presence].text)}>
+            {presence === 'online' ? me.bio || `@${me.username}` : STATUS_INFO[presence].label}
           </div>
         </div>
       </button>

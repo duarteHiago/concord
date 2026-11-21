@@ -73,7 +73,7 @@ export interface Activity {
 
 /** Presença de quem está online. */
 export interface Presence {
-  status: 'online' | 'dnd';
+  status: PresenceStatus;
   customStatus: string;
   /** até 2 ao mesmo tempo, ex.: jogando e ouvindo Spotify (ver desktop/main.cjs: pollActivity) */
   activities: Activity[];
@@ -94,7 +94,8 @@ export interface Bot extends User {
   servers: { id: string; name: string }[];
 }
 
-export type PresenceStatus = 'online' | 'dnd';
+/** online, ocupado (amarelo), não perturbe (vermelho) e invisível (aparece offline para os outros) */
+export type PresenceStatus = 'online' | 'busy' | 'dnd' | 'invisible';
 
 /** Preferências de "Chamar atenção" e notificações. */
 export interface NotifySettings {
