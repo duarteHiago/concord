@@ -1,7 +1,8 @@
 import { memberName } from '../../lib/types';
-import { ArrowDown, ArrowUp, Ban, Crown, ImagePlus, Link2, Plus, Search, Shield, ShieldCheck, Shirt, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Ban, Crown, ImagePlus, Link2, Plus, ScrollText, Search, Shield, ShieldCheck, Shirt, Trash2, UserX, Users, Wrench, X } from 'lucide-react';
 import { ServerPatchesPanel } from '../ServerPatches';
 import { TrustRulesEditor } from '../TrustRules';
+import { AuditLog } from '../AuditLog';
 import { pickImage, prepareImage, uploadImage } from '../../lib/upload';
 import { useEffect, useState } from 'react';
 import { P, PERMISSION_INFO, has, type PermissionInfo } from '../../../../shared/permissions.ts';
@@ -34,6 +35,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
     { id: 'invites', label: 'Convites', icon: <Link2 size={16} />, show: has(perms, P.CREATE_INVITE) },
     { id: 'bans', label: 'Banidos', icon: <Ban size={16} />, show: has(perms, P.BAN_MEMBERS) },
     { id: 'trust', label: 'Segurança', icon: <ShieldCheck size={16} />, show: has(perms, P.MANAGE_SERVER) },
+    { id: 'audit', label: 'Auditoria', icon: <ScrollText size={16} />, show: has(perms, P.VIEW_AUDIT_LOG) },
     { id: 'patches', label: 'Patches', icon: <Shirt size={16} />, show: true },
   ].filter((t) => t.show);
   const current = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id;
@@ -65,6 +67,7 @@ export function ServerSettingsModal({ serverId, initialTab }: { serverId: string
           {current === 'members' && <Members detail={detail} />}
           {current === 'invites' && <Invites detail={detail} />}
           {current === 'bans' && <Bans detail={detail} />}
+          {current === 'audit' && <AuditLog serverId={detail.server.id} />}
           {current === 'trust' && (
             <section>
               <h2 className="text-xl font-bold">Segurança</h2>

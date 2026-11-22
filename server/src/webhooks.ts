@@ -18,6 +18,7 @@ import { all, get, run, tx, type ChannelRow, type UserRow } from './db.ts';
 import { fail, humansOnly, optStr, str, uid } from './http.ts';
 import { clientIp, limiter } from './recovery.ts';
 import { removeUpload, saveImage } from './uploads.ts';
+import { audit, change, userName } from './audit.ts';
 
 export interface WebhookFile {
   name: string;
@@ -390,38 +391,48 @@ export function registerWebhookRoutes(api: Router) {
         Date.now(),
       );
     });
+    audit(channel.server_id, me, 'webhook_create', { target: { type: 'webhook', id, name }, changes: change('Canal', null, `#${channel.name}`) });
     res.json({ webhook: webhookJson(get<WebhookRow>('SELECT * FROM webhooks WHERE id = ?', id)!), url: webhookUrl(req, id, token) });
   });
 
   api.patch('/channels/:id/webhooks/:wid', humansOnly, (req, res) => {
-    const { hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
+    const { channel, hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
     const name = cleanName(optStr(req.body?.name, 'nome', 1, 32));
+    const before = userName(hook.user_id);
     if (name) run('UPDATE users SET display_name = ? WHERE id = ?', name, hook.user_id);
+    audit(channel.server_id, uid(res), 'webhook_update', {
+      target: { type: 'webhook', id: hook.id, name: name || before },
+      changes: change('Nome', before, name || before),
+      ifChanged: true,
+    });
     res.json(webhookJson(hook));
   });
 
   api.post('/channels/:id/webhooks/:wid/avatar', humansOnly, avatarBody, (req, res) => {
-    const { hook } = requireWebhook(String(req.params.id), String(req.params.wid), uid(res));
+    const { channel, hook } = requireWebhook(String(req.params.id), String(req.params.wid), uid(res));
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', hook.user_id)!;
     const url = saveImage('avatars', user.id, req.body);
     run('UPDATE users SET avatar_url = ? WHERE id = ?', url, user.id);
     removeUpload(user.avatar_url);
+    audit(channel.server_id, uid(res), 'webhook_update', { target: { type: 'webhook', id: hook.id, name: user.display_name }, changes: change('Foto', null, 'nova') });
     res.json(webhookJson(hook));
   });
 
   // token vazou: troca, e o endereço antigo para de funcionar na hora
   api.post('/channels/:id/webhooks/:wid/token', humansOnly, (req, res) => {
-    const { hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
+    const { channel, hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
     const token = newToken();
     run('UPDATE webhooks SET token_hash = ? WHERE id = ?', hashToken(token).toString('hex'), hook.id);
+    audit(channel.server_id, uid(res), 'webhook_update', { target: { type: 'webhook', id: hook.id, name: userName(hook.user_id) }, changes: change('Endereço', null, 'trocado (o antigo parou de funcionar)') });
     res.json({ webhook: webhookJson(hook), url: webhookUrl(req, hook.id, token) });
   });
 
   // as mensagens que ele já mandou ficam (a conta que as assina continua existindo); sem mensagem nenhuma,
   // a conta sai junto
   api.delete('/channels/:id/webhooks/:wid', humansOnly, (req, res) => {
-    const { hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
+    const { channel, hook } = requireWebhook(req.params.id, req.params.wid, uid(res));
     const user = get<UserRow>('SELECT * FROM users WHERE id = ?', hook.user_id);
+    audit(channel.server_id, uid(res), 'webhook_delete', { target: { type: 'webhook', id: hook.id, name: user?.display_name ?? null }, changes: change('Canal', null, `#${channel.name}`) });
     const used = !!get('SELECT 1 FROM messages WHERE author_id = ? LIMIT 1', hook.user_id);
     tx(() => {
       run('DELETE FROM webhooks WHERE id = ?', hook.id);

@@ -679,6 +679,26 @@ db.exec(`
     PRIMARY KEY (server_id, channel_id)
   );
 `);
+// Registro de auditoria de cada servidor (ver audit.ts): quem fez o quê (cargos, canais, expulsões, banimentos...).
+// Sem chave estrangeira para users: a linha fica mesmo que a conta suma (o nome da época vai junto). Some com o
+// servidor e depois de AUDIT_DAYS dias.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    actor_id TEXT,
+    actor_name TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    target_name TEXT,
+    changes TEXT,
+    reason TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_server ON audit_log(server_id, id);
+  CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+`);
 // Feedback das pessoas para a equipe (ver feedback.ts): bug, sugestão, melhoria. Os prints ficam em arquivos,
 // fora de /uploads; aqui só o texto, o contexto técnico e a situação.
 db.exec(`

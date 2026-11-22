@@ -8,6 +8,7 @@ import { all, get, run, tx, type ChannelRow, type ForumPostRow, type ForumReplyR
 import { fail, str, uid } from './http.ts';
 import { emitToChannel, emitToUser } from './realtime.ts';
 import { limiter } from './recovery.ts';
+import { audit, change, userTarget } from './audit.ts';
 
 type AuthorFields = Pick<
   UserRow,
@@ -173,6 +174,12 @@ export function registerForumRoutes(api: Router, authorJson: AuthorJson) {
     const channel =
       post.author_id === me ? requireForum(post.channel_id, me, P.VIEW_CHANNEL) : requireForum(post.channel_id, me, P.MANAGE_MESSAGES);
     run('DELETE FROM forum_posts WHERE id = ?', post.id);
+    if (post.author_id !== me) {
+      audit(channel.server_id, me, 'forum_post_delete', {
+        target: userTarget(post.author_id),
+        changes: [...change('Fórum', null, `#${channel.name}`), ...change('Título', null, post.title)],
+      });
+    }
     changed(channel, post.id);
     res.json({ ok: true });
   });
@@ -238,6 +245,12 @@ export function registerForumRoutes(api: Router, authorJson: AuthorJson) {
       run('DELETE FROM forum_replies WHERE id = ?', reply.id);
       run('UPDATE forum_posts SET reply_count = MAX(0, reply_count - 1) WHERE id = ?', post.id);
     });
+    if (reply.author_id !== me) {
+      audit(channel.server_id, me, 'forum_reply_delete', {
+        target: userTarget(reply.author_id),
+        changes: [...change('Fórum', null, `#${channel.name}`), ...change('No post', null, post.title)],
+      });
+    }
     changed(channel, post.id);
     res.json({ ok: true });
   });

@@ -22,6 +22,8 @@ export const P = {
   BAN_MEMBERS: 1 << 18,
   /** gravar a sala de voz no próprio aparelho (todos na sala veem o selo "Gravando") */
   RECORD_CALLS: 1 << 19,
+  /** ler o registro de auditoria do servidor (quem fez o quê) */
+  VIEW_AUDIT_LOG: 1 << 20,
 } as const;
 
 export type PermissionKey = keyof typeof P;
@@ -40,7 +42,8 @@ export const DEFAULT_MODERATOR =
   P.BAN_MEMBERS |
   P.RECORD_CALLS |
   P.MANAGE_NICKNAMES |
-  P.MENTION_EVERYONE;
+  P.MENTION_EVERYONE |
+  P.VIEW_AUDIT_LOG;
 
 export interface PermissionInfo {
   key: PermissionKey;
@@ -76,6 +79,13 @@ export const PERMISSION_INFO: PermissionInfo[] = [
   { key: 'MANAGE_CHANNELS', label: 'Gerenciar canais', description: 'Criar, editar e apagar canais e salas.', category: 'Administração', channel: true },
   { key: 'MANAGE_ROLES', label: 'Gerenciar cargos', description: 'Criar e editar cargos abaixo do seu e atribuí-los.', category: 'Administração', channel: false },
   { key: 'MANAGE_SERVER', label: 'Gerenciar servidor', description: 'Alterar nome e aparência do servidor.', category: 'Administração', channel: false },
+  {
+    key: 'VIEW_AUDIT_LOG',
+    label: 'Ver o registro de auditoria',
+    description: 'Permite ver quem fez o quê no servidor: cargos, canais, expulsões, banimentos, convites e mais.',
+    category: 'Administração',
+    channel: false,
+  },
   { key: 'ADMINISTRATOR', label: 'Administrador', description: 'Concede todas as permissões e ignora restrições de canal.', category: 'Administração', channel: false },
 ];
 

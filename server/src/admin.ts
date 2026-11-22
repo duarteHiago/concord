@@ -16,6 +16,7 @@ import { plazaForgetRoom } from './plaza.ts';
 import { dropVoice, getVoiceState, leaveServerRoom, liveStats, onlineUserIds, revokeSockets, serverChanged } from './realtime.ts';
 import { removeUpload } from './uploads.ts';
 import { invalidateTrust, trustOf } from './trust.ts';
+import { forgetInAudit } from './audit.ts';
 
 export function isAdmin(userId: string): boolean {
   if (!config.adminUsers.size) return false;
@@ -231,6 +232,7 @@ export function registerAdminRoutes(api: Router) {
       tx(() => {
         run('DELETE FROM contract_locks WHERE user_id = ?', u.id);
         run('DELETE FROM users WHERE id = ?', u.id);
+        forgetInAudit(u.id);
       });
       for (const url of [u.avatar_url, u.banner_url]) removeUpload(url);
       // quem está com o servidor aberto vê a pessoa sumir na hora (lista de membros e a porta do quarto no corredor

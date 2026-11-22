@@ -84,6 +84,7 @@ import * as twoFactor from './twoFactor.ts';
 import { registerReportRoutes } from './reports.ts';
 import { forgetChannelRules, invalidateTrust, requireJoinTrust, trustMask, unmetRequirements } from './trust.ts';
 import { registerTrustRoutes } from './trustRoutes.ts';
+import { audit, change, listChange, permChange, registerAuditRoutes, userName, userTarget } from './audit.ts';
 import { STAGING_BLOCKED, stagingAllows } from './staging.ts';
 import { inPlaza, plazaCount, plazaEnabled, saveFloors, savePlace, saveRoom } from './plaza.ts';
 import { isPlaceScene, lobbyRoom } from '../../shared/plaza.ts';
@@ -1548,8 +1549,22 @@ api.patch('/servers/:id', (req, res) => {
   }
   // a sala AFK mudou: quem está nas salas recebe as permissões novas (na AFK ninguém fala)
   if (req.body?.afkChannelId !== undefined) resyncServerVoice(server.id);
+  const after = getServer(server.id);
+  const room = (id: string | null) => (id ? (get<{ name: string }>('SELECT name FROM channels WHERE id = ?', id)?.name ?? null) : null);
+  audit(server.id, uid(res), 'server_update', {
+    target: { type: 'server', id: server.id, name: after.name },
+    ifChanged: true,
+    changes: [
+      ...change('Nome', server.name, after.name),
+      ...change('Cor do ícone', server.icon_color, after.icon_color),
+      ...change('Público (em Descobrir)', !!server.public, !!after.public),
+      ...change('Descrição', server.description, after.description),
+      ...change('Sala AFK', room(server.afk_channel_id), room(after.afk_channel_id)),
+      ...change('Tempo até a sala AFK', `${server.afk_timeout} min`, `${after.afk_timeout} min`),
+    ],
+  });
   serverChanged(server.id);
-  res.json(serverJson(getServer(server.id)));
+  res.json(serverJson(after));
 });
 
 const serverIconRate = limiter(5, 60 * 60_000);
@@ -1561,6 +1576,7 @@ api.post('/servers/:id/icon', imageBody, (req, res) => {
   const url = saveImage('icons', server.id, req.body);
   run('UPDATE servers SET icon_url = ? WHERE id = ?', url, server.id);
   removeUpload(server.icon_url);
+  audit(server.id, uid(res), 'server_icon', { target: { type: 'server', id: server.id, name: server.name } });
   serverChanged(server.id);
   res.json(serverJson(getServer(server.id)));
 });
@@ -1569,6 +1585,7 @@ api.delete('/servers/:id/icon', (req, res) => {
   const server = requireServerPerm(req.params.id, uid(res), P.MANAGE_SERVER);
   removeUpload(server.icon_url);
   run('UPDATE servers SET icon_url = NULL WHERE id = ?', server.id);
+  if (server.icon_url) audit(server.id, uid(res), 'server_icon_remove', { target: { type: 'server', id: server.id, name: server.name } });
   serverChanged(server.id);
   res.json(serverJson(getServer(server.id)));
 });
@@ -1591,6 +1608,12 @@ api.put('/users/:id/verified', (req, res) => {
   res.json(userJson(get<UserRow>('SELECT * FROM users WHERE id = ?', target.id)!));
 });
 
+/** Motivo no registro de auditoria quando a ação veio de um contrato de Mecenato (não de um cargo). */
+const MECENATO = 'Pelo contrato de Mecenato';
+/** "Sala: Papo", para as ações de voz no registro de auditoria. */
+const roomChange = (channelId: string | undefined) =>
+  change('Sala', null, channelId ? get<{ name: string }>('SELECT name FROM channels WHERE id = ?', channelId)?.name : null);
+
 /** Apelido por servidor: o próprio (CHANGE_NICKNAME) ou de quem está abaixo (MANAGE_NICKNAMES). */
 api.put('/servers/:id/members/:userId/nickname', (req, res) => {
   const me = uid(res);
@@ -1601,8 +1624,12 @@ api.put('/servers/:id/members/:userId/nickname', (req, res) => {
   const raw = req.body?.nickname;
   const nickname = raw === null || raw === '' ? null : str(raw, 'apelido', 1, 32);
   const mecenas = target === me ? 'no' : mecenasPower(me, target, server.id);
+  const oldNick = get<{ nickname: string | null }>('SELECT nickname FROM members WHERE server_id = ? AND user_id = ?', server.id, target)?.nickname ?? null;
+  const logNick = (reason?: string) =>
+    audit(server.id, me, 'member_nickname', { target: userTarget(target), changes: change('Apelido', oldNick, nickname), ifChanged: true, reason });
   if (mecenas === 'yes') {
     mecenasNickname(me, target, server.id, nickname);
+    logNick(MECENATO);
     return res.json({ ok: true, nickname });
   }
   if (target === me) {
@@ -1613,6 +1640,7 @@ api.put('/servers/:id/members/:userId/nickname', (req, res) => {
     });
   }
   run('UPDATE members SET nickname = ? WHERE server_id = ? AND user_id = ?', nickname, server.id, target);
+  logNick();
   serverChanged(server.id);
   res.json({ ok: true, nickname });
 });
@@ -1658,6 +1686,10 @@ function removeMember(serverId: string, userId: string) {
 
 // ============================================================ Canais
 
+const CHANNEL_KIND = { text: 'texto', voice: 'voz', forum: 'fórum' } as const;
+/** Como o canal aparece no registro de auditoria: "#geral" (texto e fórum) ou "Papo" (sala de voz). */
+const channelLabel = (name: string, type: string) => (type === 'voice' ? name : `#${name}`);
+
 function normalizeChannelName(name: string, type: string) {
   return type !== 'voice' ? name.toLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, '') || 'canal' : name;
 }
@@ -1682,12 +1714,17 @@ api.post('/servers/:id/channels', (req, res) => {
   if (req.body?.private === true) {
     run('INSERT INTO channel_overwrites (channel_id, role_id, allow, deny) VALUES (?, ?, 0, ?)', id, everyoneRole(server.id).id, P.VIEW_CHANNEL);
   }
+  audit(server.id, uid(res), 'channel_create', {
+    target: { type: 'channel', id, name: channelLabel(name, type) },
+    changes: [...change('Tipo', null, CHANNEL_KIND[type as keyof typeof CHANNEL_KIND]), ...(req.body?.private === true ? change('Privado', null, true) : [])],
+  });
   serverChanged(server.id);
   res.json({ id });
 });
 
 api.patch('/channels/:id', (req, res) => {
   const channel = requireChannelPerm(req.params.id, uid(res), P.MANAGE_CHANNELS);
+  const before = { ...channel };
   const name = optStr(req.body?.name, 'nome', 1, CHANNEL_NAME_MAX);
   if (name) run('UPDATE channels SET name = ? WHERE id = ?', normalizeChannelName(name, channel.type), channel.id);
   const topic = optStr(req.body?.topic, 'tópico', 0, 300);
@@ -1718,6 +1755,18 @@ api.patch('/channels/:id', (req, res) => {
     );
     swapAndRenumber(siblings, channel.id, req.body.move, 'channels');
   }
+  const after = getChannel(channel.id);
+  const catName = (id: string | null) => (id ? (get<{ name: string }>('SELECT name FROM channel_categories WHERE id = ?', id)?.name ?? null) : null);
+  audit(channel.server_id, uid(res), 'channel_update', {
+    target: { type: 'channel', id: channel.id, name: channelLabel(after.name, after.type) },
+    ifChanged: true,
+    changes: [
+      ...change('Nome', before.name, after.name),
+      ...change('Tópico', before.topic, after.topic),
+      ...change('Limite de pessoas', before.user_limit || 'sem limite', after.user_limit || 'sem limite'),
+      ...change('Categoria', catName(before.category_id), catName(after.category_id)),
+    ],
+  });
   serverChanged(channel.server_id);
   res.json({ ok: true });
 });
@@ -1765,6 +1814,7 @@ api.post('/servers/:id/categories', (req, res) => {
   const pos = get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM channel_categories WHERE server_id = ?', server.id)!.p;
   const id = randomUUID();
   run('INSERT INTO channel_categories (id, server_id, name, position) VALUES (?, ?, ?, ?)', id, server.id, name, pos);
+  audit(server.id, uid(res), 'category_create', { target: { type: 'category', id, name } });
   serverChanged(server.id);
   res.json({ id });
 });
@@ -1777,6 +1827,11 @@ api.patch('/categories/:id', (req, res) => {
     const siblings = all<CategoryRow>('SELECT * FROM channel_categories WHERE server_id = ? ORDER BY position, name', cat.server_id);
     swapAndRenumber(siblings, cat.id, req.body.move, 'channel_categories');
   }
+  audit(cat.server_id, uid(res), 'category_update', {
+    target: { type: 'category', id: cat.id, name: name || cat.name },
+    changes: change('Nome', cat.name, name || cat.name),
+    ifChanged: true,
+  });
   serverChanged(cat.server_id);
   res.json({ ok: true });
 });
@@ -1790,6 +1845,7 @@ api.delete('/categories/:id', (req, res) => {
     }
     run('DELETE FROM channel_categories WHERE id = ?', cat.id);
   });
+  audit(cat.server_id, uid(res), 'category_delete', { target: { type: 'category', id: cat.id, name: cat.name } });
   serverChanged(cat.server_id);
   res.json({ ok: true });
 });
@@ -1805,6 +1861,7 @@ api.delete('/channels/:id', (req, res) => {
   forgetChannelRules(channel.server_id, channel.id);
   // era a sala AFK do servidor: a função desliga (ninguém é movido para uma sala que não existe)
   run('UPDATE servers SET afk_channel_id = NULL WHERE id = ? AND afk_channel_id = ?', channel.server_id, channel.id);
+  audit(channel.server_id, uid(res), 'channel_delete', { target: { type: 'channel', id: channel.id, name: channelLabel(channel.name, channel.type) } });
   serverChanged(channel.server_id);
   res.json({ ok: true });
 });
@@ -1837,6 +1894,14 @@ api.put('/channels/:id/overwrites/:roleId', (req, res) => {
       deny,
     );
   }
+  audit(channel.server_id, me, 'channel_permissions', {
+    target: { type: 'channel', id: channel.id, name: channelLabel(channel.name, channel.type) },
+    ifChanged: true,
+    changes: [
+      ...permChange(`Liberado para ${role.name}`, old?.allow ?? 0, allow),
+      ...permChange(`Negado para ${role.name}`, old?.deny ?? 0, deny),
+    ],
+  });
   serverChanged(channel.server_id);
   res.json({ ok: true });
 });
@@ -1869,6 +1934,7 @@ api.post('/servers/:id/roles', (req, res) => {
       everyoneRole(server.id).permissions,
     );
   });
+  audit(server.id, me, 'role_create', { target: { type: 'role', id, name } });
   serverChanged(server.id);
   res.json(roleJson(getRole(id)));
 });
@@ -1900,14 +1966,26 @@ api.patch('/roles/:id', (req, res) => {
       tx(() => ordered.forEach((r, idx) => run('UPDATE roles SET position = ? WHERE id = ?', idx + 1, r.id)));
     }
   }
+  const after = getRole(role.id);
+  audit(role.server_id, me, 'role_update', {
+    target: { type: 'role', id: role.id, name: after.is_default ? '@everyone' : after.name },
+    ifChanged: true,
+    changes: [
+      ...change('Nome', role.name, after.name),
+      ...change('Cor', role.color, after.color),
+      ...change('Mostrar separado na lista', !!role.hoist, !!after.hoist),
+      ...permChange('Permissões', role.permissions, after.permissions),
+    ],
+  });
   serverChanged(role.server_id);
-  res.json(roleJson(getRole(role.id)));
+  res.json(roleJson(after));
 });
 
 api.delete('/roles/:id', (req, res) => {
   const role = requireManageableRole(req.params.id, uid(res));
   if (role.is_default) fail(400, 'O cargo @everyone não pode ser apagado');
   run('DELETE FROM roles WHERE id = ?', role.id);
+  audit(role.server_id, uid(res), 'role_delete', { target: { type: 'role', id: role.id, name: role.name } });
   serverChanged(role.server_id);
   res.json({ ok: true });
 });
@@ -1927,16 +2005,21 @@ api.put('/servers/:id/members/:userId/roles', (req, res) => {
   const roles = all<RoleRow>('SELECT * FROM roles WHERE server_id = ? AND is_default = 0', server.id);
   const current = new Set(memberRoles(server.id, target).map((r) => r.id));
 
+  const added: string[] = [];
+  const removed: string[] = [];
   tx(() => {
     for (const r of roles) {
       if (r.position >= mine) continue; // não pode mexer em cargos iguais ou acima do seu
       if (wanted.has(r.id) && !current.has(r.id)) {
         run('INSERT INTO member_roles (server_id, user_id, role_id) VALUES (?, ?, ?)', server.id, target, r.id);
+        added.push(r.name);
       } else if (!wanted.has(r.id) && current.has(r.id)) {
         run('DELETE FROM member_roles WHERE server_id = ? AND user_id = ? AND role_id = ?', server.id, target, r.id);
+        removed.push(r.name);
       }
     }
   });
+  audit(server.id, me, 'member_roles', { target: userTarget(target), changes: listChange('Cargos', added, removed), ifChanged: true });
   serverChanged(server.id);
   res.json({ ok: true });
 });
@@ -1950,6 +2033,8 @@ api.delete('/servers/:id/members/:userId', (req, res) => {
   emitToUser(target, 'server:removed', { serverId: server.id, reason: `Você foi expulso de ${server.name}.` });
   dropVoice(target, 'Você foi expulso do servidor.');
   removeMember(server.id, target);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) || null : null;
+  audit(server.id, me, 'member_kick', { target: userTarget(target), reason });
   res.json({ ok: true });
 });
 
@@ -1993,6 +2078,7 @@ api.post('/servers/:id/bans', (req, res) => {
   if (member && !outranks(server.id, me, user.id)) fail(403, 'Você não pode banir este membro');
   run('INSERT INTO server_bans (server_id, user_id, reason, banned_by, created_at) VALUES (?, ?, ?, ?, ?)', server.id, user.id, reason, me, now());
   invalidateTrust(user.id);
+  audit(server.id, me, 'member_ban', { target: userTarget(user.id), reason });
   if (member) {
     emitToUser(user.id, 'server:removed', { serverId: server.id, reason: `Você foi banido de ${server.name}.` });
     dropVoice(user.id, 'Você foi banido do servidor.');
@@ -2006,6 +2092,7 @@ api.delete('/servers/:id/bans/:userId', (req, res) => {
   if (!isBanned(server.id, req.params.userId)) fail(404, 'Essa pessoa não está banida');
   run('DELETE FROM server_bans WHERE server_id = ? AND user_id = ?', server.id, req.params.userId);
   invalidateTrust(req.params.userId);
+  audit(server.id, uid(res), 'member_unban', { target: userTarget(req.params.userId) });
   res.json({ ok: true });
 });
 
@@ -2045,6 +2132,7 @@ api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
     // o Mecenas silencia o alvo dele sem precisar de cargo no servidor
     requireMember(serverId, me);
     await mecenasMute(me, target, muted, serverId);
+    audit(serverId, me, muted ? 'voice_mute' : 'voice_unmute', { target: userTarget(target), reason: MECENATO });
     return res.json({ ok: true, muted });
   }
   if (getVoiceState(target)?.serverId === serverId) {
@@ -2057,6 +2145,7 @@ api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
     });
   }
   setServerMute(serverId, target, muted);
+  audit(serverId, me, muted ? 'voice_mute' : 'voice_unmute', { target: userTarget(target) });
   res.json({ ok: true, muted });
 });
 
@@ -2064,7 +2153,9 @@ api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
 api.post('/servers/:id/members/:userId/voice-deafen', async (req, res) => {
   const me = uid(res);
   requireMember(req.params.id, me);
-  await mecenasDeafen(me, req.params.userId, req.body?.deafened !== false, req.params.id);
+  const deafened = req.body?.deafened !== false;
+  await mecenasDeafen(me, req.params.userId, deafened, req.params.id);
+  audit(req.params.id, me, deafened ? 'voice_deafen' : 'voice_undeafen', { target: userTarget(req.params.userId), reason: MECENATO });
   res.json({ ok: true });
 });
 
@@ -2075,12 +2166,15 @@ api.post('/servers/:id/members/:userId/voice-disconnect', async (req, res) => {
   if (mecenas === 'yes') {
     requireMember(req.params.id, me);
     if (getVoiceState(target)?.serverId !== req.params.id) fail(400, 'Este membro não está em uma sala de voz');
+    const room = getVoiceState(target)?.channelId;
     await mecenasDisconnect(me, target, req.params.id);
+    audit(req.params.id, me, 'voice_disconnect', { target: userTarget(target), changes: roomChange(room), reason: MECENATO });
     return res.json({ ok: true });
   }
   const v = shieldAware(mecenas, target, () => voiceTarget(req.params.id, me, target, P.MOVE_MEMBERS));
   dropVoice(v.userId, 'Você foi desconectado da sala por um moderador.');
   await removeFromRoom(v.channelId, v.userId);
+  audit(req.params.id, me, 'voice_disconnect', { target: userTarget(target), changes: roomChange(v.channelId) });
   res.json({ ok: true });
 });
 
@@ -2147,6 +2241,7 @@ api.post('/servers/:id/members/:userId/stop-stream', async (req, res) => {
   const v = voiceTarget(req.params.id, uid(res), req.params.userId, P.MUTE_MEMBERS);
   emitToUser(v.userId, 'voice:stop-stream', { reason: 'Um moderador encerrou sua transmissão.' });
   await muteTracks(v.channelId, v.userId, [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO]);
+  audit(req.params.id, uid(res), 'stream_stop', { target: userTarget(v.userId), changes: roomChange(v.channelId) });
   res.json({ ok: true });
 });
 
@@ -2179,6 +2274,13 @@ api.get('/servers/:id/invites', (req, res) => {
 
 const inviteCreateRate = limiter(10, 60 * 60_000);
 
+/** "em 7 dias", "em 12 horas", "em 30 minutos" (validade do convite, no registro de auditoria). */
+function inviteExpiry(seconds: number) {
+  if (seconds % 86_400 === 0) return `em ${seconds / 86_400} dia(s)`;
+  if (seconds % 3600 === 0) return `em ${seconds / 3600} hora(s)`;
+  return `em ${Math.round(seconds / 60)} minuto(s)`;
+}
+
 api.post('/servers/:id/invites', (req, res) => {
   const me = uid(res);
   if (!inviteCreateRate(me)) fail(429, 'Muitos convites criados em pouco tempo. Espere um pouco.');
@@ -2203,6 +2305,13 @@ api.post('/servers/:id/invites', (req, res) => {
     invite.expires_at,
     invite.created_at,
   );
+  audit(server.id, me, 'invite_create', {
+    target: { type: 'invite', id: invite.code, name: invite.code },
+    changes: [
+      ...change('Usos', null, maxUses ? `até ${maxUses}` : 'sem limite'),
+      ...change('Expira', null, expiresIn > 0 ? inviteExpiry(expiresIn) : 'nunca'),
+    ],
+  });
   res.json(inviteJson(invite));
 });
 
@@ -2211,6 +2320,10 @@ api.delete('/invites/:code', (req, res) => {
   const invite = get<InviteRow>('SELECT * FROM invites WHERE code = ?', req.params.code) ?? fail(404, 'Convite não encontrado');
   if (invite.creator_id !== me) requireServerPerm(invite.server_id, me, P.MANAGE_SERVER);
   run('DELETE FROM invites WHERE code = ?', invite.code);
+  audit(invite.server_id, me, 'invite_delete', {
+    target: { type: 'invite', id: invite.code, name: invite.code },
+    changes: invite.creator_id !== me ? change('Criado por', null, userName(invite.creator_id)) : [],
+  });
   res.json({ ok: true });
 });
 
@@ -2703,6 +2816,10 @@ api.delete('/messages/:id', async (req, res) => {
     : requireChannelPerm(msg.channel_id, me, P.MANAGE_MESSAGES);
   run('DELETE FROM messages WHERE id = ?', msg.id);
   deleteAttachments(msg.id);
+  // só quando alguém apaga a mensagem de outra pessoa (como no Discord); o texto não vai para o registro
+  if (msg.author_id !== me) {
+    audit(channel.server_id, me, 'message_delete', { target: userTarget(msg.author_id), changes: change('Canal', null, channelLabel(channel.name, channel.type)) });
+  }
   await emitToChannel(channel, 'message:delete', { id: msg.id, channelId: channel.id });
   res.json({ ok: true });
 });
@@ -2824,6 +2941,7 @@ api.post('/servers/:id/sounds', humansOnly, express.raw({ type: () => true, limi
     me,
     sound.created_at,
   );
+  audit(server.id, me, 'sound_create', { target: { type: 'sound', id: sound.id, name } });
   emitToServer(server.id, 'sounds:changed', { serverId: server.id });
   res.json(soundJson(sound));
 });
@@ -2834,6 +2952,7 @@ api.delete('/sounds/:id', (req, res) => {
   if (sound.uploader_id !== me) requireServerPerm(sound.server_id, me, P.MANAGE_SERVER);
   run('DELETE FROM sounds WHERE id = ?', sound.id);
   removeUpload(sound.url);
+  audit(sound.server_id, me, 'sound_delete', { target: { type: 'sound', id: sound.id, name: sound.name } });
   emitToServer(sound.server_id, 'sounds:changed', { serverId: sound.server_id });
   res.json({ ok: true });
 });
@@ -2894,6 +3013,7 @@ api.post('/servers/:id/patches', humansOnly, (req, res) => {
   if (!patch.text && !patch.icon && !patch.image) fail(400, 'O patch precisa de texto, emoji ou imagem');
   const row: ServerPatchRow = { id, server_id: server.id, creator_id: me, data: JSON.stringify(patch), created_at: now() };
   run('INSERT INTO server_patches (id, server_id, creator_id, data, created_at) VALUES (?, ?, ?, ?, ?)', id, server.id, me, row.data, row.created_at);
+  audit(server.id, me, 'patch_create', { target: { type: 'patch', id, name: patch.text || patch.icon || null } });
   emitToServer(server.id, 'server-patches:changed', { serverId: server.id });
   res.json(serverPatchJson(row));
 });
@@ -2903,7 +3023,12 @@ api.delete('/server-patches/:id', (req, res) => {
   const row = get<ServerPatchRow>('SELECT * FROM server_patches WHERE id = ?', req.params.id) ?? fail(404, 'Patch não encontrado');
   if (row.creator_id !== me) requireServerPerm(row.server_id, me, P.MANAGE_SERVER);
   run('DELETE FROM server_patches WHERE id = ?', row.id);
-  dropPatchImage(serverPatchJson(row).patch.image);
+  const gone = serverPatchJson(row).patch;
+  dropPatchImage(gone.image);
+  audit(row.server_id, me, 'patch_delete', {
+    target: { type: 'patch', id: row.id, name: gone.text || gone.icon || null },
+    changes: row.creator_id && row.creator_id !== me ? change('Criado por', null, userName(row.creator_id)) : [],
+  });
   emitToServer(row.server_id, 'server-patches:changed', { serverId: row.server_id });
   res.json({ ok: true });
 });
@@ -2960,6 +3085,7 @@ api.post('/servers/:id/stickers', humansOnly, imageBody, (req, res) => {
     me,
     row.created_at,
   );
+  audit(server.id, me, 'sticker_create', { target: { type: 'sticker', id: row.id, name } });
   emitToServer(server.id, 'custom-stickers:changed', { serverId: server.id });
   res.json(customStickerJson(row));
 });
@@ -2975,6 +3101,10 @@ api.delete('/stickers/:id', (req, res) => {
   run('DELETE FROM placed_stickers WHERE sticker = ?', `custom:${row.id}`);
   run('DELETE FROM custom_stickers WHERE id = ?', row.id);
   removeUpload(row.url);
+  audit(row.server_id, me, 'sticker_delete', {
+    target: { type: 'sticker', id: row.id, name: row.name },
+    changes: row.uploader_id && row.uploader_id !== me ? change('Enviado por', null, userName(row.uploader_id)) : [],
+  });
   emitToServer(row.server_id, 'custom-stickers:changed', { serverId: row.server_id });
   channels.forEach(stickersChanged);
   res.json({ ok: true });
@@ -3062,7 +3192,8 @@ api.delete('/channels/:id/stickers/:sid', (req, res) => {
 
 api.delete('/channels/:id/stickers', (req, res) => {
   const channel = requireChannelPerm(req.params.id, uid(res), P.MANAGE_MESSAGES);
-  run('DELETE FROM placed_stickers WHERE channel_id = ?', channel.id);
+  const n = Number(run('DELETE FROM placed_stickers WHERE channel_id = ?', channel.id).changes);
+  if (n) audit(channel.server_id, uid(res), 'stickers_clear', { target: { type: 'channel', id: channel.id, name: channelLabel(channel.name, channel.type) } });
   stickersChanged(channel);
   res.json({ ok: true });
 });
@@ -3162,6 +3293,7 @@ api.post('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
     if (isBanned(server.id, bot.id)) fail(403, 'Este bot está banido do servidor. Desbana antes de adicionar.');
     run('INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)', server.id, bot.id, now());
     joinServerRoom(bot.id, server.id);
+    audit(server.id, me, 'bot_add', { target: { type: 'user', id: bot.id, name: bot.display_name } });
     serverChanged(server.id);
   }
   res.json(botById(bot.id));
@@ -3169,7 +3301,8 @@ api.post('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
 
 api.delete('/bots/:id/servers/:serverId', humansOnly, (req, res) => {
   const bot = requireOwnBot(req.params.id, uid(res));
-  run('DELETE FROM members WHERE server_id = ? AND user_id = ?', req.params.serverId, bot.id);
+  const left = Number(run('DELETE FROM members WHERE server_id = ? AND user_id = ?', req.params.serverId, bot.id).changes);
+  if (left) audit(req.params.serverId, uid(res), 'bot_remove', { target: { type: 'user', id: bot.id, name: bot.display_name } });
   leaveServerRoom(bot.id, req.params.serverId);
   serverChanged(req.params.serverId);
   res.json(botById(bot.id));
@@ -3591,6 +3724,7 @@ registerAdminRoutes(api);
 // depois do admin: as rotas /admin/contracts* ficam atrás do requireAdmin
 registerContractRoutes(api);
 registerTrustRoutes(api);
+registerAuditRoutes(api);
 registerDirectorRoutes(api);
 // também depois do admin: /admin/reports* só para a equipe
 registerReportRoutes(api, {

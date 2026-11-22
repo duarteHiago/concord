@@ -1,12 +1,13 @@
 // Rotas do Fator de Confiança (o cálculo e a máscara de permissões ficam em trust.ts).
 import type { Router } from 'express';
 import { P } from '../../shared/permissions.ts';
-import { parseTrustRules } from '../../shared/trust.ts';
+import { ACTION_INFO, TRUST_ACTIONS, parseTrustRules, requirementText, type TrustRules } from '../../shared/trust.ts';
 import { getChannel, requireServerPerm } from './access.ts';
 import { all } from './db.ts';
 import { fail, uid } from './http.ts';
 import { resyncServerVoice, serverChanged } from './realtime.ts';
 import { channelRulesOf, rulesOf, saveRules, trustOf } from './trust.ts';
+import { audit, change, type AuditTarget } from './audit.ts';
 
 export function registerTrustRoutes(api: Router) {
   /** A própria conta: o nível e a faixa (a nota exata e o que entrou nela, só a equipe vê). */
@@ -27,7 +28,9 @@ export function registerTrustRoutes(api: Router) {
     const server = requireServerPerm(req.params.id, me, P.MANAGE_SERVER);
     const rules = parseTrustRules(req.body?.rules, false);
     if (typeof rules === 'string') fail(400, rules);
+    const before = structuredClone(rulesOf(server.id));
     saveRules(server.id, null, rules as Exclude<typeof rules, string>, me);
+    auditRules(server.id, me, { type: 'server', id: server.id, name: server.name }, before, rulesOf(server.id));
     serverChanged(server.id);
     resyncServerVoice(server.id);
     res.json({ rules: rulesOf(server.id) });
@@ -46,9 +49,21 @@ export function registerTrustRoutes(api: Router) {
     requireServerPerm(channel.server_id, me, P.MANAGE_CHANNELS);
     const rules = parseTrustRules(req.body?.rules, true);
     if (typeof rules === 'string') fail(400, rules);
+    const before = structuredClone(rulesOf(channel.server_id, channel.id));
     saveRules(channel.server_id, channel.id, rules as Exclude<typeof rules, string>, me);
+    auditRules(channel.server_id, me, { type: 'channel', id: channel.id, name: channel.type === 'voice' ? channel.name : `#${channel.name}` }, before, rulesOf(channel.server_id, channel.id));
     serverChanged(channel.server_id);
     resyncServerVoice(channel.server_id);
     res.json({ rules: rulesOf(channel.server_id, channel.id) });
+  });
+}
+
+/** Uma linha por exigência que mudou ("Falar: qualquer conta -> conta com e-mail confirmado"). */
+function auditRules(serverId: string, me: string, target: AuditTarget, before: TrustRules, after: TrustRules) {
+  const text = (r: TrustRules[keyof TrustRules]) => (r ? requirementText(r) : 'qualquer conta');
+  audit(serverId, me, 'trust_rules', {
+    target,
+    ifChanged: true,
+    changes: TRUST_ACTIONS.flatMap((a) => change(ACTION_INFO[a].label, text(before[a]), text(after[a]))),
   });
 }
