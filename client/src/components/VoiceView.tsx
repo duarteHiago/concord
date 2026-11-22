@@ -48,6 +48,7 @@ import { onVisibilityChange } from '../lib/visibility';
 import { MobileBackButton } from './MobileNav';
 import { Avatar, AvatarStack, Button, LivePill, Spinner, cx } from './ui';
 import { SearchButton } from './modals/SearchMessages';
+import { useRoomChat } from './RoomChatDock';
 
 /**
  * Fotos (sem movimento de GIF) de quem mais está vendo essa transmissão com você: recolhidas,
@@ -112,10 +113,15 @@ export function VoiceView({ channel }: { channel: Channel }) {
     setChatOpen(!chatOpen);
     writeFlag('concord.roomChat', !chatOpen);
   };
+  // o painel do lado só cabe em telas largas (xl); no celular e no tablet o papo abre na janelinha que sobe de baixo
+  const wide = window.matchMedia('(min-width: 1280px)').matches;
+  const dockOpen = useRoomChat((s) => s.open?.channelId === channel.id);
+  const chatShown = wide ? chatOpen : dockOpen;
+  const onChatButton = () => (wide ? toggleChat() : useRoomChat.getState().show(detail.server.id, channel.id));
 
   return (
     <>
-      <main className="flex min-w-0 flex-1 flex-col gap-3.5">
+      <main className="flex min-w-0 flex-1 flex-col gap-3.5 pb-[env(safe-area-inset-bottom)] md:pb-0">
         {recorders.length > 0 && (
           <div role="status" className="mx-1.5 mt-2 flex items-center gap-2 rounded-2xl bg-danger/12 px-3.5 py-2 text-sm font-semibold text-danger">
             <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger" />
@@ -140,13 +146,13 @@ export function VoiceView({ channel }: { channel: Channel }) {
             {status === 'connected' && <ConnectionQuality />}
             {canChat && (
               <button
-                onClick={toggleChat}
-                title={chatOpen ? 'Fechar o papo da sala' : 'Abrir o papo da sala'}
-                aria-label={chatOpen ? 'Fechar o papo da sala' : 'Abrir o papo da sala'}
-                aria-pressed={chatOpen}
+                onClick={onChatButton}
+                title={chatShown ? 'Fechar o papo da sala' : 'Abrir o papo da sala'}
+                aria-label={chatShown ? 'Fechar o papo da sala' : 'Abrir o papo da sala'}
+                aria-pressed={chatShown}
                 className={cx(
-                  'hidden h-10 w-10 items-center justify-center rounded-full transition-colors xl:flex',
-                  chatOpen ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:bg-surface-3 hover:text-fg',
+                  'flex h-10 w-10 items-center justify-center rounded-full transition-colors',
+                  chatShown ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:bg-surface-3 hover:text-fg',
                 )}
               >
                 <MessageSquare size={18} />
@@ -611,7 +617,7 @@ function Tile({
         )}
 
         {canView && (
-          <div className="absolute top-4 right-4 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
+          <div className="touch-show absolute top-4 right-4 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
             {!isLocal && <StreamVolume identity={p.identity} />}
             {track && (
               <OverlayButton
@@ -934,6 +940,8 @@ function ControlDock({ channel }: { channel: Channel }) {
         <ReactionsButton />
         <StickerButton channel={channel} />
         <ClipButton />
+        {/* celular: o navegador não deixa capturar a tela, então o botão (o maior da barra) nem aparece */}
+        {(sharing || !!navigator.mediaDevices?.getDisplayMedia) && (
         <button
           onClick={() => (sharing ? void stopShare() : openModal({ type: 'shareScreen' }))}
           aria-label={sharing ? 'Parar transmissão' : 'Transmitir tela'}
@@ -945,6 +953,7 @@ function ControlDock({ channel }: { channel: Channel }) {
           {sharing ? <ScreenShareOff size={19} /> : <MonitorUp size={19} />}
           <span className="dock-label">{sharing ? 'Parar transmissão' : 'Transmitir tela'}</span>
         </button>
+        )}
         {sharing && round('Trocar qualidade ou fonte', () => openModal({ type: 'shareScreen' }), <Settings2 size={20} />)}
         {round('Sair da sala', () => void leave(), <PhoneOff size={20} />, 'danger')}
       </div>

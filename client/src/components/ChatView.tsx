@@ -1,6 +1,7 @@
 import { ClipCard } from './Clip';
 import { useDraft } from '../lib/drafts';
-import { Flag, Hash, Pencil, Reply, Trash2, Users } from 'lucide-react';
+import { Copy, Flag, Hash, Pencil, Reply, SendHorizontal, Trash2, Users } from 'lucide-react';
+import { ActionSheet, useLongPress, type SheetAction } from './ActionSheet';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
 import { P, has } from '../../../shared/permissions.ts';
@@ -20,6 +21,7 @@ import { StickerButton, StickerMessage } from './StickerPicker';
 import { JamCard, useJamInMessage } from './Jam';
 import { ReplyBar, ReplyQuote, startReply } from './Replies';
 import { MobileBackButton } from './MobileNav';
+import { useMobile } from '../lib/mobile';
 import { trustBlockMessage } from '../lib/trust';
 import { SearchButton } from './modals/SearchMessages';
 
@@ -201,16 +203,30 @@ function Bubble({
   };
 
   const canReport = !mine;
+  const canEdit = mine && (message.kind ?? 'text') === 'text';
+  // celular: as mesmas ações num menu de toque longo (lá a barrinha abaixo não aparece)
+  const [sheet, setSheet] = useState(false);
+  const sheetActions: SheetAction[] = [
+    ...(canReply ? [{ label: 'Responder', icon: <Reply size={18} />, onClick: () => startReply(channel.id, message, `composer-${channel.id}`) }] : []),
+    ...(message.content && plain ? [{ label: 'Copiar texto', icon: <Copy size={18} />, onClick: () => void copyText(message.content) }] : []),
+    ...(canEdit ? [{ label: 'Editar', icon: <Pencil size={18} />, onClick: () => { setDraft(message.content); setEditing(true); } }] : []),
+    ...(canReport
+      ? [{ label: 'Denunciar', icon: <Flag size={18} />, onClick: () => useApp.getState().openModal({ type: 'report', target: { kind: 'message', id: message.id, authorName: name } }) }]
+      : []),
+    ...(canDelete ? [{ label: 'Apagar', icon: <Trash2 size={18} />, danger: true, onClick: () => void api.del(`/messages/${message.id}`).catch(toast.error) }] : []),
+  ];
+  const hold = useLongPress(() => setSheet(true), !editing && sheetActions.length > 0);
   const actions = !editing && (canReply || mine || canDelete || canReport) && (
     // barrinha flutuante no canto direito da linha: não ocupa espaço, não fica espremida no chat estreito
-    // da sala e não cobre o nome nem a citação de mensagens curtas
-    <div className="absolute -top-4 right-2 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+    // da sala e não cobre o nome nem a citação de mensagens curtas (no toque some: invisível, ainda dava para
+    // apagar a mensagem sem querer tocando no canto)
+    <div className="touch-hide absolute -top-4 right-2 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100">
       {canReply && (
         <IconButton label="Responder" className="h-8 w-8" onClick={() => startReply(channel.id, message, `composer-${channel.id}`)}>
           <Reply size={14} />
         </IconButton>
       )}
-      {mine && (message.kind ?? 'text') === 'text' && (
+      {canEdit && (
         <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
           <Pencil size={14} />
         </IconButton>
@@ -235,9 +251,11 @@ function Bubble({
   return (
     <div
       id={`msg-${message.id}`}
-      className={cx('group relative -mx-2 flex items-end gap-2.5 rounded-2xl px-2 transition-colors duration-500', grouped && !message.replyTo ? 'mt-1' : 'mt-4')}
+      className={cx('group touch-hold relative -mx-2 flex items-end gap-2.5 rounded-2xl px-2 transition-colors duration-500', grouped && !message.replyTo ? 'mt-1' : 'mt-4')}
+      {...hold}
     >
       {actions}
+      {sheet && <ActionSheet title={`${name}: ${message.content.slice(0, 80)}`} actions={sheetActions} onClose={() => setSheet(false)} />}
       <div className="shrink-0" style={{ width: size }}>
         {(!grouped || message.replyTo) &&
           (hook ? (
@@ -273,7 +291,7 @@ function Bubble({
           </div>
         )}
         {editing ? (
-          <div className="w-[min(520px,70vw)]">
+          <div className="w-[min(520px,75vw)]">
             <textarea
               autoFocus
               value={draft}
@@ -288,7 +306,7 @@ function Bubble({
               className="w-full resize-none rounded-2xl bg-surface-3 p-3 text-[15px] outline-none ring-2 ring-accent"
               rows={Math.min(8, draft.split('\n').length)}
             />
-            <p className="px-1 text-xs text-fg-subtle">Esc cancela · Enter salva</p>
+            <EditHint onCancel={() => setEditing(false)} onSave={() => void saveEdit()} />
           </div>
         ) : message.kind === 'clip' ? (
           <ClipCard text={message.content} author={mine ? 'Você' : name} />
@@ -323,6 +341,49 @@ function Bubble({
         {!editing && <MessageAttachments items={message.attachments} />}
       </div>
     </div>
+  );
+}
+
+/** Enviar, no celular: o Enter do teclado virtual também envia, mas ninguém adivinha isso. */
+export function SendButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Enviar"
+      disabled={disabled}
+      // não tira o foco do campo (o teclado não fecha a cada mensagem)
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent transition-opacity disabled:opacity-35"
+    >
+      <SendHorizontal size={18} />
+    </button>
+  );
+}
+
+export async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success('Texto copiado');
+  } catch {
+    toast.error('Não deu para copiar');
+  }
+}
+
+/** Embaixo da mensagem sendo editada: no computador, a dica do teclado; no toque (sem Esc), os botões. */
+export function EditHint({ onCancel, onSave }: { onCancel: () => void; onSave: () => void }) {
+  return (
+    <>
+      <p className="hidden px-1 text-xs text-fg-subtle [@media(hover:hover)]:block">Esc cancela · Enter salva</p>
+      <div className="mt-1.5 flex justify-end gap-2 [@media(hover:hover)]:hidden">
+        <button onClick={onCancel} className="h-9 rounded-full px-4 text-sm font-semibold text-fg-muted active:bg-surface-3">
+          Cancelar
+        </button>
+        <button onClick={onSave} className="h-9 rounded-full bg-accent px-4 text-sm font-bold text-on-accent">
+          Salvar
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -382,6 +443,9 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   const typing = useApp((s) => s.typing[channel.id]);
   const [, force] = useState(0);
   const canSend = has(channel.permissions, P.SEND_MESSAGES);
+  // celular: botões menores, o anexo vai para o menu do "+" e aparece o botão de enviar (sem Shift+Enter por lá)
+  const mobile = useMobile();
+  const tight = compact || mobile;
   const files = useAttachmentDraft();
   const replying = useApp((s) => s.replying[channel.id]);
   const replyName = (m: Message) => {
@@ -539,10 +603,12 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
       ? 'Mensagem…'
       : channel.type === 'voice'
         ? 'Fala com a galera…'
-        : `Mensagem em #${channel.name} (/ para comandos)`;
+        : mobile
+          ? 'Mensagem' // o nome do canal já está no cabeçalho logo acima; em tela estreita a dica longa ficava cortada
+          : `Mensagem em #${channel.name} (/ para comandos)`;
 
   return (
-    <div className={cx('relative shrink-0', compact ? 'px-3 pb-3' : 'px-4 pb-3 md:px-6 md:pb-5')}>
+    <div className={cx('relative shrink-0', compact ? 'px-3 pb-safe-3' : 'px-4 pb-safe-3 md:px-6 md:pb-5')}>
       {open && (
         <div
           role="listbox"
@@ -570,9 +636,9 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
       <ReplyBar conversationId={channel.id} name={replyName} />
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => canSend && e.preventDefault()} onDrop={(e) => canSend && files.onDrop(e)}>
-        {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} compact={compact} onAttach={compact ? () => void pickAttachments().then((f) => f && files.add(f)) : undefined} />}
-        {canSend && <StickerButton target={{ kind: 'channel', id: channel.id }} compact={compact} />}
-        {canSend && !compact && <AttachButton onFiles={files.add} />}
+        {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} compact={tight} onAttach={tight ? () => void pickAttachments().then((f) => f && files.add(f)) : undefined} />}
+        {canSend && <StickerButton target={{ kind: 'channel', id: channel.id }} compact={tight} />}
+        {canSend && !tight && <AttachButton onFiles={files.add} />}
         <label className="sr-only" htmlFor={`composer-${channel.id}`}>
           Mensagem
         </label>
@@ -588,13 +654,14 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
           aria-autocomplete="list"
           aria-expanded={open}
           className={cx(
-            'block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed',
-            compact ? 'px-4 py-2.5 text-sm' : 'px-5 py-3.5 text-[15px]',
+            'composer-input block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed',
+            tight ? 'px-4 py-2.5 text-sm' : 'px-5 py-3.5 text-[15px]',
             text.includes('\n') ? 'rounded-3xl' : 'rounded-full',
           )}
         />
+        {canSend && mobile && <SendButton disabled={!text.trim() && !files.ids.length} onClick={() => void send()} />}
       </div>
-      <div className="h-5 px-4 pt-1 text-xs text-fg-muted">
+      <div className={cx('px-4 pt-1 text-xs text-fg-muted', mobile && !typers.length ? 'h-1' : 'h-5')}>
         {typers.length > 0 && (
           <span className="animate-fade-in">
             <b>{typers.slice(0, 3).join(', ')}</b> {typers.length === 1 ? 'está digitando…' : 'estão digitando…'}

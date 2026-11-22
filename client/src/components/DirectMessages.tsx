@@ -1,4 +1,6 @@
-import { Flag, Gamepad2, Headphones, Pencil, Reply, Search, Trash2, Users, Zap } from 'lucide-react';
+import { Copy, Flag, Gamepad2, Headphones, Pencil, Reply, Search, Trash2, Users, Zap } from 'lucide-react';
+import { ActionSheet, useLongPress, type SheetAction } from './ActionSheet';
+import { useMobile } from '../lib/mobile';
 import { useDraft } from '../lib/drafts';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../lib/api';
@@ -8,8 +10,8 @@ import { STATUS_INFO } from '../lib/status';
 import { useApp } from '../store/app';
 import { profileTriggers } from '../store/popover';
 import { toast } from '../store/toast';
-import { AttachButton, MessageAttachments, PendingAttachments, useAttachmentDraft } from './Attachments';
-import { RichText } from './ChatView';
+import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
+import { EditHint, RichText, SendButton, copyText } from './ChatView';
 import { GameCard, GameMenuButton } from './Games';
 import { StickerButton, StickerMessage } from './StickerPicker';
 import { activityLabel } from './MemberList';
@@ -265,12 +267,26 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const nameOf = (authorId: string, fallback: string) => (authorId === me.id ? 'Você' : fallback);
 
+  const canEdit = mine && (message.kind ?? 'text') === 'text';
+  // celular: as mesmas ações num menu de toque longo (lá a barrinha abaixo não aparece)
+  const [sheet, setSheet] = useState(false);
+  const sheetActions: SheetAction[] = [
+    { label: 'Responder', icon: <Reply size={18} />, onClick: () => startReply(message.channelId, message, 'dm-composer') },
+    ...(message.content && (message.kind ?? 'text') === 'text' ? [{ label: 'Copiar texto', icon: <Copy size={18} />, onClick: () => void copyText(message.content) }] : []),
+    ...(canEdit ? [{ label: 'Editar', icon: <Pencil size={18} />, onClick: () => { setDraft(message.content); setEditing(true); } }] : []),
+    ...(!mine
+      ? [{ label: 'Denunciar', icon: <Flag size={18} />, onClick: () => useApp.getState().openModal({ type: 'report', target: { kind: 'dm_message', id: message.id, authorName: message.author.displayName } }) }]
+      : []),
+    ...(mine ? [{ label: 'Apagar', icon: <Trash2 size={18} />, danger: true, onClick: () => void api.del(`/dm-messages/${message.id}`).catch(toast.error) }] : []),
+  ];
+  const hold = useLongPress(() => setSheet(true), !editing);
+
   const actions = !editing && (
-    <div className="absolute -top-4 right-2 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+    <div className="touch-hide absolute -top-4 right-2 z-10 flex items-center gap-0.5 rounded-full bg-popover p-0.5 opacity-0 shadow-lg ring-1 ring-line transition-opacity group-hover:opacity-100 focus-within:opacity-100">
       <IconButton label="Responder" className="h-8 w-8" onClick={() => startReply(message.channelId, message, 'dm-composer')}>
         <Reply size={14} />
       </IconButton>
-      {mine && (message.kind ?? 'text') === 'text' && (
+      {canEdit && (
         <IconButton label="Editar" className="h-8 w-8" onClick={() => { setDraft(message.content); setEditing(true); }}>
           <Pencil size={14} />
         </IconButton>
@@ -302,9 +318,11 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
   return (
     <div
       id={`msg-${message.id}`}
-      className={cx('group relative -mx-2 flex items-end gap-2.5 rounded-2xl px-2 transition-colors duration-500', grouped && !message.replyTo ? 'mt-1' : 'mt-4')}
+      className={cx('group touch-hold relative -mx-2 flex items-end gap-2.5 rounded-2xl px-2 transition-colors duration-500', grouped && !message.replyTo ? 'mt-1' : 'mt-4')}
+      {...hold}
     >
       {actions}
+      {sheet && <ActionSheet title={`${message.author.displayName}: ${message.content.slice(0, 80)}`} actions={sheetActions} onClose={() => setSheet(false)} />}
       <div className="w-9 shrink-0">
         {(!grouped || message.replyTo) && (
           <button
@@ -325,6 +343,7 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
           </div>
         )}
         {editing ? (
+          <div className="w-[min(520px,75vw)]">
           <textarea
             autoFocus
             value={draft}
@@ -337,8 +356,10 @@ function DmBubble({ message, grouped }: { message: Message; grouped: boolean }) 
               if (e.key === 'Escape') setEditing(false);
             }}
             rows={Math.min(8, draft.split('\n').length)}
-            className="w-[min(520px,60vw)] resize-none rounded-2xl bg-surface-3 p-3 text-[15px] outline-none ring-2 ring-accent"
+            className="w-full resize-none rounded-2xl bg-surface-3 p-3 text-[15px] outline-none ring-2 ring-accent"
           />
+          <EditHint onCancel={() => setEditing(false)} onSave={() => void save()} />
+          </div>
         ) : message.kind === 'game' && message.data ? (
           <GameCard id={message.id} data={message.data as GameData} author={mine ? 'Você' : message.author.displayName} />
         ) : message.kind === 'sticker' && message.data ? (
@@ -364,6 +385,8 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
   const [text, setText] = useDraft(dm.id);
   const files = useAttachmentDraft();
   const replying = useApp((s) => s.replying[dm.id]);
+  // celular: botões menores, o anexo vai para o menu do "+" e aparece o botão de enviar
+  const mobile = useMobile();
   useEffect(() => {
     files.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -393,13 +416,13 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
   };
 
   return (
-    <div className="relative shrink-0 px-4 pb-3 md:px-6 md:pb-5">
+    <div className="relative shrink-0 px-4 pb-safe-3 md:px-6 md:pb-5">
       <ReplyBar conversationId={dm.id} name={(m) => (m.author.id === dm.user.id ? m.author.displayName : 'você mesmo')} />
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => e.preventDefault()} onDrop={files.onDrop}>
-        <GameMenuButton target={{ kind: 'dm', id: dm.id }} />
-        <StickerButton target={{ kind: 'dm', id: dm.id }} />
-        <AttachButton onFiles={files.add} />
+        <GameMenuButton target={{ kind: 'dm', id: dm.id }} compact={mobile} onAttach={mobile ? () => void pickAttachments().then((f) => f && files.add(f)) : undefined} />
+        <StickerButton target={{ kind: 'dm', id: dm.id }} compact={mobile} />
+        {!mobile && <AttachButton onFiles={files.add} />}
         <label className="sr-only" htmlFor="dm-composer">
           Mensagem para {dm.user.displayName}
         </label>
@@ -412,10 +435,12 @@ function DmComposer({ dm }: { dm: DirectChannel }) {
           rows={Math.min(6, text.split('\n').length)}
           placeholder={`Mensagem para ${dm.user.displayName}`}
           className={cx(
-            'block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 px-5 py-3.5 text-[15px] outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60',
+            'composer-input block max-h-48 min-w-0 flex-1 resize-none bg-surface-3 outline-none placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/60',
+            mobile ? 'px-4 py-2.5 text-sm' : 'px-5 py-3.5 text-[15px]',
             text.includes('\n') ? 'rounded-3xl' : 'rounded-full',
           )}
         />
+        {mobile && <SendButton disabled={!text.trim() && !files.ids.length} onClick={() => void send()} />}
       </div>
     </div>
   );

@@ -100,6 +100,51 @@ h3,
   }
 }
 
+/* Telas de toque não têm "passar o mouse": o hover: do Tailwind nem existe lá. Botões que no computador
+   aparecem só com o mouse em cima ganham touch-show (sempre à vista no toque); os que dão lugar a um
+   menu de toque longo ganham touch-hide (somem, em vez de ficarem invisíveis e ainda clicáveis). */
+@media (hover: none) {
+  .touch-show {
+    opacity: 1;
+  }
+  .touch-hide {
+    display: none;
+  }
+  /* mensagens: o toque longo abre as ações (com "Copiar texto"), não a seleção/lupa do sistema */
+  .touch-hold {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+/* O Safari do iPhone dá zoom na página ao focar um campo com letra menor que 16px (e não desfaz) */
+@media (pointer: coarse) {
+  :is(input, textarea, select):is(.text-xs, .text-sm, .text-\[13px\], .text-\[14px\], .text-\[15px\]) {
+    font-size: 16px;
+  }
+}
+
+/* espaço de baixo que respeita a barrinha do iPhone (no computador, env() é 0 e fica o 0.75rem de sempre) */
+@utility pb-safe-3 {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* fileira que rola de lado (filtros, abas) sem a barra de rolagem aparecendo */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* campo de mensagem de uma linha: a dica não quebra no meio da palavra em tela estreita */
+.composer-input::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .text-brand {
   color: var(--color-accent);
 }
@@ -589,6 +634,14 @@ video::-webkit-media-controls {
   }
   .dock-row > .dock-share .dock-label {
     display: none;
+  }
+}
+/* celular: os botões quebram em duas linhas em vez de rolar de lado (o "Sair da sala", no fim, sumia da tela) */
+@container dock (max-width: 520px) {
+  .dock-row {
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 28px;
   }
 }
 
