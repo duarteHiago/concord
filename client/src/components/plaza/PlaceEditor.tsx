@@ -142,16 +142,29 @@ export function PlaceEditor({
     </div>
   );
 
+  const tap = matchMedia('(hover: none)').matches ? 'toque' : 'clique';
   return (
-    <div className={cx(hud.panel, 'animate-pop-in absolute top-[72px] left-3 z-[64] flex max-h-[calc(100%-11rem)] w-[min(92vw,316px)] flex-col overflow-hidden')}>
-      <div className="border-b border-line px-4 py-3.5">
+    // celular: sobe de baixo e ocupa no máximo metade da tela, para o mapa (onde o móvel vai) continuar à vista
+    <div
+      data-plaza-sheet
+      className={cx(
+        hud.panel,
+        'absolute top-[calc(var(--plaza-top)+8px)] left-3 z-[64] flex max-h-[calc(100%-11rem)] w-[min(92vw,316px)] animate-pop-in flex-col overflow-hidden',
+        'max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:max-h-[48dvh] max-md:w-full max-md:animate-slide-up max-md:rounded-b-none max-md:pb-[env(safe-area-inset-bottom)]',
+      )}
+    >
+      <div className="border-b border-line px-4 py-3.5 max-md:py-2.5">
         <div className={cx(hud.title, 'text-[16px]')}>{scene === 'lobby' ? 'Montando a praça' : scene === 'room' ? 'Montando o seu quarto' : 'Montando o prédio'}</div>
-        <div className="mt-0.5 text-[12px] text-fg-muted">Escolha um móvel e clique no chão para pôr. Com a setinha, clique num móvel para mexer nele.</div>
+        <div className="mt-0.5 text-[12px] text-fg-muted">
+          {tap === 'toque'
+            ? 'Escolha um móvel e toque no chão para pôr. Com a setinha, toque num móvel para mexer nele.'
+            : 'Escolha um móvel e clique no chão para pôr. Com a setinha, clique num móvel para mexer nele.'}
+        </div>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
         {section(
           'Móveis',
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5 max-md:no-scrollbar max-md:-mx-4 max-md:flex max-md:overflow-x-auto max-md:px-4 max-md:[&>button]:w-[68px] max-md:[&>button]:shrink-0">
             <button
               onClick={() => setTool('select')}
               title="Selecionar"
@@ -182,7 +195,7 @@ export function PlaceEditor({
           <div className="space-y-2 rounded-2xl bg-surface-2 p-3">
             <div className="text-[12px] font-semibold">{sel ? `Mexendo em: ${FURNITURE[sel.k].label}` : `Pondo: ${FURNITURE[tool as FurnitureKind].label}`}</div>
             {!sel && tool !== 'select' && furnitureDef(tool).place && (
-              <div className="text-[11.5px] text-fg-muted">{furnitureDef(tool).place === 'shelf' ? 'Clique em cima de uma prateleira (cabe um enfeite em cada metade).' : 'Clique numa das paredes.'}</div>
+              <div className="text-[11.5px] text-fg-muted">{furnitureDef(tool).place === 'shelf' ? `${tap === 'toque' ? 'Toque' : 'Clique'} em cima de uma prateleira (cabe um enfeite em cada metade).` : `${tap === 'toque' ? 'Toque' : 'Clique'} numa das paredes.`}</div>
             )}
             {colorTarget && (
               <div className="flex flex-wrap gap-1.5">

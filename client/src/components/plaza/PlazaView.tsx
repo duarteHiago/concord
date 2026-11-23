@@ -50,6 +50,7 @@ import { toast } from '../../store/toast';
 import { DeviceChevron } from '../DeviceMenu';
 import { useVoice } from '../../store/voice';
 import { cx } from '../ui';
+import { useMobile } from '../../lib/mobile';
 import { AvatarEditor } from './AvatarEditor';
 import { StreamPip } from './StreamPip';
 import { TvShareMenu } from './TvShareMenu';
@@ -221,6 +222,35 @@ export default function PlazaView() {
   const openedAt = useRef(performance.now());
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  // celular: a barra de cima e a de baixo comem a tela. As alturas viram --plaza-top/--plaza-bottom (os painéis se
+  // posicionam por elas, em vez de números que só batiam com a barra de uma linha do computador) e a câmera
+  // centraliza o boneco no espaço que sobra entre as duas.
+  const [editingPlace, setEditingPlace] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const insets = useRef({ top: 0, bottom: 0 });
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () => {
+      const r = root.getBoundingClientRect();
+      const top = topBarRef.current ? topBarRef.current.getBoundingClientRect().bottom - r.top : 0;
+      // o que estiver embaixo de verdade: a barra, ou a folha do editor no celular (que esconde a barra)
+      const lowest = [bottomBarRef.current, root.querySelector<HTMLElement>('[data-plaza-sheet]')]
+        .filter((el): el is HTMLElement => !!el && el.offsetHeight > 0)
+        .map((el) => r.bottom - el.getBoundingClientRect().top);
+      const bottom = Math.max(0, ...lowest);
+      insets.current = { top, bottom };
+      root.style.setProperty('--plaza-top', `${Math.round(top)}px`);
+      root.style.setProperty('--plaza-bottom', `${Math.round(bottom)}px`);
+    };
+    const ro = new ResizeObserver(measure);
+    for (const el of [root, topBarRef.current, bottomBarRef.current, root.querySelector('[data-plaza-sheet]')]) if (el) ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [editingPlace]);
+  const touch = useTouch();
 
   useEffect(loadPixelFont, []);
 
@@ -249,6 +279,8 @@ export default function PlazaView() {
   const places = usePlaza((s) => s.places);
   const canManage = has(detail?.permissions ?? 0, P.MANAGE_SERVER);
   const [draft, setDraft] = useState<PlaceStyle | null>(null);
+  // a folha do editor entra e sai: as medidas da tela (logo acima) refazem a lista do que observar
+  useEffect(() => setEditingPlace(!!draft), [draft]);
   const [tool, setTool] = useState<EditorTool>('select');
   const [rot, setRot] = useState<0 | 1>(0);
   const [itemColor, setItemColor] = useState(0);
@@ -660,7 +692,7 @@ export default function PlazaView() {
       w.cam.x += (focus.x - w.cam.x) * k;
       w.cam.y += (focus.y - w.cam.y) * k;
       const viewX = Math.round(w.cam.x + w.pan.x - lw / 2);
-      const viewY = Math.round(w.cam.y + w.pan.y - lh / 2);
+      const viewY = Math.round(w.cam.y + w.pan.y - lh / 2 + (((insets.current.bottom - insets.current.top) / 2) * dpr) / scale);
       w.view = { x: viewX, y: viewY, scale, dpr };
 
       // ---- desenho ----
@@ -889,9 +921,27 @@ export default function PlazaView() {
   };
 
   const down = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
+  // dois dedos: pinça para aproximar/afastar (em degraus, para o pixel art continuar inteiro)
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<number | null>(null);
+  const spread = () => {
+    const [a, b] = [...touches.current.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
 
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch') {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.current.size === 2) {
+        pinch.current = spread();
+        // o segundo dedo cancela o toque do primeiro (não anda nem abre nada ao soltar)
+        if (down.current) down.current.moved = true;
+        editRef.current.drag = null;
+        return;
+      }
+      if (touches.current.size > 2) return;
+    }
     down.current = { x: e.clientX, y: e.clientY, panX: world.current.pan.x, panY: world.current.pan.y, moved: false };
     setCard(null);
     if (draft && tool === 'select') {
@@ -957,6 +1007,19 @@ export default function PlazaView() {
     return -1;
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (touches.current.has(e.pointerId)) touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.current !== null) {
+      if (touches.current.size < 2) return;
+      const d = spread();
+      if (d / pinch.current > 1.3) {
+        setZoom((z) => Math.min(5, z + 1));
+        pinch.current = d;
+      } else if (d / pinch.current < 0.77) {
+        setZoom((z) => Math.max(1, z - 1));
+        pinch.current = d;
+      }
+      return;
+    }
     const drag = editRef.current.drag;
     if (draft) editRef.current.hover = editorTile(e, drag ? draft.items[drag.idx].k : tool);
     const d = down.current;
@@ -973,6 +1036,13 @@ export default function PlazaView() {
     world.current.pan = { x: d.panX - (dx * dpr) / scale, y: d.panY - (dy * dpr) / scale };
   };
   const onPointerUp = (e: React.PointerEvent) => {
+    touches.current.delete(e.pointerId);
+    if (pinch.current !== null) {
+      // só volta ao normal quando o último dedo sai
+      if (touches.current.size === 0) pinch.current = null;
+      down.current = null;
+      return;
+    }
     const d = down.current;
     down.current = null;
     const drag = editRef.current.drag;
@@ -1344,13 +1414,14 @@ export default function PlazaView() {
   const canEdit = myScene === 'room' ? myRoom === me.id : myScene !== 'hall' && canManage && myFloor === 0;
 
   return (
-    <div className="plaza-root fixed inset-0 z-[60] overflow-hidden select-none" style={{ background: PAL.night }}>
+    <div ref={rootRef} className="plaza-root fixed inset-0 z-[60] overflow-hidden select-none [--plaza-bottom:84px] [--plaza-top:64px]" style={{ background: PAL.night }}>
       <canvas
         ref={canvasRef}
         className="plaza-canvas absolute inset-0 h-full w-full cursor-pointer touch-none"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       />
 
       {/* rótulos presos ao mapa: num contexto próprio, para nunca passar por cima da barra e das janelas */}
@@ -1441,7 +1512,12 @@ export default function PlazaView() {
       </div>
 
       {/* topo: servidor e quantos estão na praça */}
-      <div className="absolute top-3 left-3 flex max-w-[calc(100%-15rem)] items-center gap-2.5 rounded-full bg-surface-2 py-1.5 pr-4 pl-1.5 text-fg shadow-[0_10px_28px_-12px_rgba(0,0,0,0.65)]">
+      {/* uma fileira só: o nome encolhe (reticências) e os botões ficam inteiros; no iPhone, abaixo do entalhe */}
+      <div
+        ref={topBarRef}
+        className="pointer-events-none absolute inset-x-3 top-[max(12px,env(safe-area-inset-top))] flex items-start justify-between gap-2 pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]"
+      >
+      <div className="pointer-events-auto flex min-w-0 items-center gap-2.5 rounded-full bg-surface-2 py-1.5 pr-4 pl-1.5 text-fg shadow-[0_10px_28px_-12px_rgba(0,0,0,0.65)]">
         <Globe size={32} />
         <div className="min-w-0 leading-tight">
           <div className={cx(hud.title, 'truncate text-[15px]')}>{title}</div>
@@ -1452,20 +1528,26 @@ export default function PlazaView() {
           </div>
         </div>
       </div>
-      <div className="absolute top-3 right-3 flex items-center gap-2">
-        <HudButton float label="Afastar" onClick={() => setZoom((z) => Math.max(1, z - 1))}>
-          <Minus size={18} />
-        </HudButton>
-        <HudButton float label="Aproximar" onClick={() => setZoom((z) => Math.min(5, z + 1))}>
-          <Plus size={18} />
-        </HudButton>
+      <div className="pointer-events-auto flex shrink-0 items-center gap-2">
+        {/* no toque, a pinça com dois dedos faz o zoom */}
+        {!touch && (
+          <>
+            <HudButton float label="Afastar" onClick={() => setZoom((z) => Math.max(1, z - 1))}>
+              <Minus size={18} />
+            </HudButton>
+            <HudButton float label="Aproximar" onClick={() => setZoom((z) => Math.min(5, z + 1))}>
+              <Plus size={18} />
+            </HudButton>
+          </>
+        )}
         {canEdit && !draft && (
           <button
             onClick={startEdit}
             title={myScene === 'room' ? 'Montar o seu quarto' : inside ? 'Montar o prédio' : 'Montar a praça'}
-            className="flex h-10 items-center gap-2 rounded-full bg-surface-2 px-4 font-display text-[14px] font-bold text-fg shadow-[0_8px_20px_-8px_rgba(0,0,0,0.6)] transition-all hover:scale-[1.03] hover:bg-surface-3"
+            aria-label="Montar"
+            className="flex h-10 items-center gap-2 rounded-full bg-surface-2 px-4 font-display text-[14px] font-bold text-fg shadow-[0_8px_20px_-8px_rgba(0,0,0,0.6)] transition-all hover:scale-[1.03] hover:bg-surface-3 max-sm:w-10 max-sm:justify-center max-sm:px-0"
           >
-            <Hammer size={16} /> Montar
+            <Hammer size={16} /> <span className="max-sm:hidden">Montar</span>
           </button>
         )}
         <HudButton float label="Centralizar em mim" onClick={() => (world.current.pan = { x: 0, y: 0 })}>
@@ -1475,11 +1557,12 @@ export default function PlazaView() {
           <X size={18} />
         </HudButton>
       </div>
+      </div>
 
       {hint && phase === 'ready' && (
-        <div className={cx(hud.panel, 'absolute top-20 left-1/2 w-[min(92vw,440px)] -translate-x-1/2 p-5 text-sm text-fg-muted')}>
+        <div className={cx(hud.panel, 'absolute top-[calc(var(--plaza-top)+8px)] left-1/2 max-h-[calc(100%-var(--plaza-top)-var(--plaza-bottom)-16px)] w-[min(calc(100vw-24px),440px)] -translate-x-1/2 overflow-y-auto p-5 text-sm text-fg-muted')}>
           <div className={cx(hud.title, 'mb-1.5 text-lg')}>Bem-vindo à praça!</div>
-          Clique no chão para andar (ou use as setas). A conversa é <b>por proximidade</b>, aqui fora e dentro do prédio: ligue o microfone e quem estiver perto te ouve, e os balões do lado de fora só chegam a quem está perto. Quem está sentado numa mesa está na call, e não ouve a praça. As calls ficam <b>dentro do prédio</b>: entre pela porta e clique numa mesa para sentar. Clique na TV de uma mesa para assistir a transmissão numa telinha. O que você escreve vira balão e <b>não fica salvo</b>.
+          {touch ? 'Toque no chão para andar, arraste para olhar em volta e use dois dedos para aproximar.' : 'Clique no chão para andar (ou use as setas).'} A conversa é <b>por proximidade</b>, aqui fora e dentro do prédio: ligue o microfone e quem estiver perto te ouve, e os balões do lado de fora só chegam a quem está perto. Quem está sentado numa mesa está na call, e não ouve a praça. As calls ficam <b>dentro do prédio</b>: entre pela porta e {touch ? 'toque' : 'clique'} numa mesa para sentar. {touch ? 'Toque' : 'Clique'} na TV de uma mesa para assistir a transmissão numa telinha. O que você escreve vira balão e <b>não fica salvo</b>.
           <button onClick={dismissHint} className={cx(primarySm('md'), 'mt-4')}>
             Entendi
           </button>
@@ -1490,7 +1573,10 @@ export default function PlazaView() {
       {logOpen && <PlazaLog members={memberById} onClose={() => setLogOpen(false)} />}
 
       {/* barra de baixo */}
-      <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-center gap-2 p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+      <div
+        ref={bottomBarRef}
+        className={cx('absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-center gap-2 p-3 pb-[max(12px,env(safe-area-inset-bottom))]', draft && 'max-md:hidden')}
+      >
         <SayBox />
         <div className={hud.dock}>
           <EmotePicker />
@@ -1508,7 +1594,7 @@ export default function PlazaView() {
         </div>
         {myChannel && (
           <div className={hud.dock}>
-            <div className="mr-0.5 max-w-[140px] min-w-0 pl-3 leading-tight">
+            <div className="mr-0.5 max-w-[140px] min-w-0 pl-3 leading-tight max-sm:hidden">
               <div className="text-[11px] text-fg-subtle">Na mesa</div>
               <div className={cx(hud.title, 'truncate text-[13px]')}>#{myChannel.name}</div>
             </div>
@@ -1520,9 +1606,12 @@ export default function PlazaView() {
             >
               {closedTables?.includes(voiceChannelId!) ? <EyeOff size={19} /> : <Eye size={19} />}
             </HudButton>
-            <HudButton label="TV da mesa: transmitir a tela" onClick={() => setTvMenu(true)}>
-              <MonitorUp size={19} />
-            </HudButton>
+            {/* celular: o navegador não captura a tela */}
+            {!!navigator.mediaDevices?.getDisplayMedia && (
+              <HudButton label="TV da mesa: transmitir a tela" onClick={() => setTvMenu(true)}>
+                <MonitorUp size={19} />
+              </HudButton>
+            )}
             <HudButton label="Abrir a call" onClick={openCall}>
               <Maximize2 size={19} />
             </HudButton>
@@ -1630,7 +1719,7 @@ export default function PlazaView() {
 function TableMenu({ channel, people, closed, onSit, onPeek, onClose }: { channel?: Channel; people: number; closed: boolean; onSit: () => void; onPeek: () => void; onClose: () => void }) {
   const peekBlock = closed ? 'A mesa fechou para espiadas' : people === 0 ? 'Ninguém na mesa' : null;
   return (
-    <div className={cx(hud.dock, 'animate-pop-in absolute bottom-[84px] left-1/2 z-[64] -translate-x-1/2 gap-1.5 pl-4')}>
+    <div className={cx(hud.dock, 'animate-pop-in absolute bottom-[calc(var(--plaza-bottom)+8px)] left-1/2 z-[64] max-w-[calc(100vw-24px)] -translate-x-1/2 gap-1.5 pl-4')}>
       <span className={cx(hud.title, 'max-w-[150px] truncate text-[14px]')}>#{channel?.name ?? 'mesa'}</span>
       {people > 0 && <span className="text-[12px] text-fg-subtle">· {people}</span>}
       <button onClick={onSit} className={cx(primarySm('md'), 'ml-1')}>
@@ -1658,13 +1747,13 @@ function PeekBar({ channel, until, whispering, near }: { channel?: Channel; unti
   const peek = usePlazaPeek.getState();
   if (near) {
     return (
-      <div className="pointer-events-none absolute top-[72px] left-1/2 z-[63] -translate-x-1/2 rounded-full bg-surface-2 px-3.5 py-1.5 font-display text-[12.5px] font-bold text-fg shadow-[0_8px_22px_-10px_rgba(0,0,0,0.6)]">
+      <div className="pointer-events-none absolute top-[calc(var(--plaza-top)+8px)] left-1/2 z-[63] -translate-x-1/2 rounded-full bg-surface-2 px-3.5 py-1.5 font-display text-[12.5px] font-bold text-fg shadow-[0_8px_22px_-10px_rgba(0,0,0,0.6)]">
         👂 ouvindo #{channel?.name ?? 'mesa'}
       </div>
     );
   }
   return (
-    <div className={cx(hud.dock, 'absolute top-[72px] left-1/2 z-[63] -translate-x-1/2 gap-1 py-1 pr-1 pl-4')}>
+    <div className={cx(hud.dock, 'absolute top-[calc(var(--plaza-top)+8px)] left-1/2 z-[63] -translate-x-1/2 gap-1 py-1 pr-1 pl-4')}>
       <span className={cx(hud.title, 'text-[13px]')}>
         👀 #{channel?.name ?? 'mesa'} · {left}s
       </span>
@@ -1674,7 +1763,9 @@ function PeekBar({ channel, until, whispering, near }: { channel?: Channel; unti
         onPointerLeave={() => void peek.setWhisper(false)}
         title="Segure para cochichar"
         aria-label="Segure para cochichar"
-        className={cx('grid h-8 w-8 place-items-center rounded-full transition select-none', whispering ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg hover:bg-surface-4')}
+        onPointerCancel={() => void peek.setWhisper(false)}
+        onContextMenu={(e) => e.preventDefault()}
+        className={cx('grid h-8 w-8 touch-none place-items-center rounded-full transition select-none max-md:h-10 max-md:w-10', whispering ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg hover:bg-surface-4')}
       >
         <Mic size={14} />
       </button>
@@ -1770,7 +1861,7 @@ function FloorMenu({
   onClose: () => void;
 }) {
   return (
-    <div className={cx(hud.panel, 'animate-pop-in absolute bottom-[84px] left-1/2 z-[64] w-[min(92vw,380px)] -translate-x-1/2 p-2.5')}>
+    <div className={cx(hud.panel, 'animate-pop-in absolute bottom-[calc(var(--plaza-bottom)+8px)] left-1/2 z-[64] w-[min(calc(100vw-24px),380px)] -translate-x-1/2 p-2.5')}>
       <div className="mb-1.5 flex items-center justify-between px-1.5">
         <span className={cx(hud.title, 'text-[15px]')}>Elevador</span>
         <button onClick={onClose} aria-label="Fechar" className={hud.close}>
@@ -1827,6 +1918,18 @@ function BarMenu({ holding, onPick, onClose }: { holding: string | null; onPick:
   );
 }
 
+/** Tela de toque, sem mouse: troca os textos de "clique" e tira os botões de zoom (a pinça faz o zoom). */
+function useTouch() {
+  const [touch, setTouch] = useState(() => matchMedia('(hover: none)').matches);
+  useEffect(() => {
+    const mq = matchMedia('(hover: none)');
+    const on = () => setTouch(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return touch;
+}
+
 function HudButton({ label, onClick, children, float: floating, active }: { label: string; onClick: () => void; children: React.ReactNode; float?: boolean; active?: boolean }) {
   return (
     <button title={label} aria-label={label} aria-pressed={active} onClick={onClick} className={(floating ? float : round)(active ? 'off' : 'default')}>
@@ -1879,7 +1982,8 @@ function WithDevice({ kind, children }: { kind: 'audioinput' | 'audiooutput'; ch
   return (
     <span className="flex shrink-0 items-center">
       {children}
-      <DeviceChevron kind={kind} className="h-11 w-5 rounded-full" />
+      {/* celular: a setinha sai (o aparelho se escolhe em Ajustes > Voz e vídeo) */}
+      <DeviceChevron kind={kind} className="h-11 w-5 rounded-full max-md:hidden" />
     </span>
   );
 }
@@ -1946,6 +2050,7 @@ function VoiceButtons({ myVoice }: { myVoice?: VoiceState }) {
 }
 
 function SayBox() {
+  const narrow = useMobile();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const send = async () => {
@@ -1972,7 +2077,7 @@ function SayBox() {
         onKeyDown={(e) => {
           if (e.key === 'Escape') (e.target as HTMLInputElement).blur();
         }}
-        placeholder="Fale na praça… (vira balão, não fica salvo)"
+        placeholder={narrow ? 'Fale na praça…' : 'Fale na praça… (vira balão, não fica salvo)'}
         className={hud.input}
         autoComplete="off"
       />
@@ -2059,7 +2164,7 @@ function PlazaLog({ members, onClose }: { members: Map<string, Member>; onClose:
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [log.length]);
   return (
-    <div className={cx(hud.panel, 'absolute right-3 bottom-24 flex max-h-[45vh] w-[min(92vw,330px)] flex-col')}>
+    <div className={cx(hud.panel, 'absolute right-3 bottom-[calc(var(--plaza-bottom)+8px)] z-[64] flex max-h-[min(45vh,calc(100%-var(--plaza-top)-var(--plaza-bottom)-24px))] w-[min(calc(100vw-24px),330px)] flex-col')}>
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <div className={cx(hud.title, 'text-[15px]')}>Conversa da praça</div>
         <button onClick={onClose} aria-label="Fechar" className={hud.close}>
@@ -2092,7 +2197,7 @@ function PersonCard({ userId, member, isMe, onEdit, onClose, serverId }: { userI
     fn();
   };
   return (
-    <div className={cx(hud.panel, 'animate-pop-in absolute bottom-24 left-1/2 w-[min(92vw,320px)] -translate-x-1/2 p-4')}>
+    <div className={cx(hud.panel, 'animate-pop-in absolute bottom-[calc(var(--plaza-bottom)+8px)] left-1/2 z-[64] w-[min(calc(100vw-24px),320px)] -translate-x-1/2 p-4')}>
       <div className="flex items-center gap-3">
         {member?.avatarUrl ? (
           <img src={member.avatarUrl} alt="" className="h-11 w-11 rounded-full object-cover" />

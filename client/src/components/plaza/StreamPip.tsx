@@ -30,8 +30,10 @@ export function StreamPip({
   const setVolume = useVoice((s) => s.setVolume);
   const boxRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState(() => {
-    const w = Math.min(420, window.innerWidth - 32);
-    return { x: window.innerWidth - w - 16, y: 76, w };
+    // celular: quase a largura toda, centralizada e abaixo da barra de cima (e do entalhe do iPhone)
+    const narrow = window.innerWidth < 768;
+    const w = Math.min(420, window.innerWidth - (narrow ? 24 : 32));
+    return narrow ? { x: (window.innerWidth - w) / 2, y: 112, w } : { x: window.innerWidth - w - 16, y: 76, w };
   });
 
   // assistir = assinar a tela de quem transmite (o app só recebe as telas que a pessoa assiste)
@@ -112,7 +114,7 @@ export function StreamPip({
       </div>
       <div className="rounded-[22px] border-4 border-[#1b1430] bg-[#3d3166] p-2 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.7),inset_0_2px_0_rgba(255,255,255,0.12)]">
         {/* barra de cima: arrastar */}
-        <div onPointerDown={(e) => drag(e, 'move')} className="flex cursor-grab items-center gap-2 px-1.5 pb-1.5 text-white active:cursor-grabbing">
+        <div onPointerDown={(e) => drag(e, 'move')} className="flex cursor-grab touch-none items-center gap-2 px-1.5 pb-1.5 text-white active:cursor-grabbing">
           <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#ff4d5e] shadow-[0_0_6px_#ff4d5e]" />
           <span className="plaza-pixel min-w-0 flex-1 truncate text-[13px] font-bold">{name} ao vivo</span>
           <button onPointerDown={(e) => e.stopPropagation()} onClick={onOpenCall} title="Abrir na call" aria-label="Abrir na call" className="rounded-lg p-1 hover:bg-white/10">
@@ -166,7 +168,7 @@ export function StreamPip({
             <ChevronRight size={13} />
           </button>
           {/* canto para redimensionar */}
-          <span onPointerDown={(e) => drag(e, 'resize')} title="Arraste para redimensionar" className="ml-1 h-4 w-4 cursor-nwse-resize rounded-sm bg-[linear-gradient(135deg,transparent_50%,rgba(255,255,255,0.45)_50%)]" />
+          <span onPointerDown={(e) => drag(e, 'resize')} title="Arraste para redimensionar" className="ml-1 h-4 w-4 cursor-nwse-resize touch-none rounded-sm max-md:h-6 max-md:w-6 bg-[linear-gradient(135deg,transparent_50%,rgba(255,255,255,0.45)_50%)]" />
         </div>
       </div>
     </div>
