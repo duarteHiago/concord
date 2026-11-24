@@ -10,6 +10,7 @@ import { MemberList } from './components/MemberList';
 import { ModalHost } from './components/modals/ModalHost';
 import { RecordDialog } from './components/RecordDialog';
 import { Spinner, Toasts, cx } from './components/ui';
+import { NotificationsHost } from './components/NotificationsHost';
 import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard, NudgeMessageToast } from './components/NudgeCard';
@@ -163,6 +164,7 @@ function MainApp() {
       <ModalHost />
       {me && <RecordDialog />}
       <Toasts />
+      {me && !remote && <NotificationsHost />}
       <UpdateBanner />
       <PwaUpdateBanner />
       {me && <NudgeCard />}

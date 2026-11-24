@@ -75,6 +75,7 @@ import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerFeedbackRoutes } from './feedback.ts';
 import { signFileUrl } from './fileLinks.ts';
 import { registerForumRoutes } from './forum.ts';
+import { markRead, recordMentions, registerUnreadRoutes } from './unreads.ts';
 import { registerPublicWebhookRoutes, registerWebhookRoutes, type WebhookFile } from './webhooks.ts';
 import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
@@ -2663,6 +2664,8 @@ api.post('/channels/:id/messages', async (req, res) => {
   const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
   await emitToChannel(channel, 'message:new', msg);
   notifyMentions(channel, me, content, msg);
+  // quem escreve já leu até a própria mensagem
+  markRead(me, channel.id, msg.createdAt);
   jamFromChat(channel, me, content);
   res.json(msg);
 });
@@ -2791,6 +2794,8 @@ function notifyMentions(channel: ChannelRow, authorId: string, content: string, 
       has(channelPermissions(channel, m.id), P.VIEW_CHANNEL),
   );
   const server = getServer(channel.server_id);
+  // guarda para o contador vermelho (some quando a pessoa lê o canal)
+  recordMentions(channel.id, msg.id, msg.createdAt, targets.map((t) => t.id));
   for (const t of targets) {
     emitToUser(t.id, 'mention', { message: msg, serverId: server.id, serverName: server.name, channelName: channel.name, everyone });
   }
@@ -3714,6 +3719,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 // ============================================================ Fórum
 
 registerForumRoutes(api, authorJson);
+registerUnreadRoutes(api);
 registerWebhookRoutes(api);
 registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);

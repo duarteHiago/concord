@@ -7,6 +7,7 @@ import { HOME, useApp } from '../store/app';
 import { usePendingCount } from '../lib/friends';
 import { useVoice } from '../store/voice';
 import { useCommunity, usePendingCommunity } from '../store/community';
+import { serverBadge, useUnreads } from '../store/unreads';
 import { DragGhost, DrawerLine, pinnedServers, RAIL_MAX, ServerDrawerPanel, useServerDrag } from './ServerDrawer';
 import { cx, initials } from './ui';
 
@@ -21,6 +22,9 @@ export function ServerStrip() {
   const pending = usePendingCount();
   const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0)) + pending;
   const releasesOpen = useApp((s) => s.releasesOpen);
+  // bolinha (mensagem nova) e contador (menções) de cada servidor
+  const unreadChannels = useUnreads((s) => s.channels);
+  const notifyLevels = useUnreads((s) => s.levels);
   const openReleases = useApp((s) => s.openReleases);
   const closeReleases = useApp((s) => s.closeReleases);
   const newReleases = useUnseenReleases().length > 0;
@@ -123,6 +127,7 @@ export function ServerStrip() {
               {voiceServer === s.id && (
                 <span title="Você está numa sala deste servidor" className="absolute -right-0.5 -bottom-0.5 h-4 w-4 rounded-full border-[3px] border-surface-2 bg-ok" />
               )}
+              <ServerBadge {...serverBadge({ channels: unreadChannels, levels: notifyLevels }, s.id)} />
             </button>
             {editing && isPinned && (
               <button
@@ -217,4 +222,20 @@ export function ServerStrip() {
     {drag && dragged && <DragGhost server={dragged} x={drag.x} y={drag.y} />}
     </div>
   );
+}
+
+/** Contador vermelho de menções (o mesmo das mensagens diretas) ou, sem menção, uma bolinha de "tem coisa nova". */
+function ServerBadge({ unread, mentions }: { unread: boolean; mentions: number }) {
+  if (mentions > 0) {
+    return (
+      <span
+        aria-label={`${mentions} ${mentions === 1 ? 'menção' : 'menções'}`}
+        className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-surface-2 bg-danger px-1 text-[10px] font-bold text-white"
+      >
+        {mentions > 99 ? '99+' : mentions}
+      </span>
+    );
+  }
+  if (!unread) return null;
+  return <span aria-label="Mensagens novas" className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-surface-2 bg-fg" />;
 }

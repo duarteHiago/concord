@@ -1,4 +1,6 @@
 import {
+  Bell,
+  BellOff,
   ChevronDown,
   FolderPlus,
   Hash,
@@ -31,6 +33,7 @@ import { api } from '../lib/api';
 import { memberName, type Category, type Channel, type PresenceStatus, type ServerDetail, type VoiceState } from '../lib/types';
 import { STATUSES, STATUS_INFO, asStatus } from '../lib/status';
 import { HOME, memberColor, useActiveDetail, useApp } from '../store/app';
+import { effectiveLevel, isUnread, useUnreads } from '../store/unreads';
 import { DmSidebar } from './DirectMessages';
 import { armPopoverToggle, toggleOrOpenPopover } from '../store/popover';
 import { toast } from '../store/toast';
@@ -144,6 +147,7 @@ function ServerHeader({ detail }: { detail: ServerDetail }) {
             item('Meu apelido aqui', <Pencil size={16} />, () => openModal({ type: 'nickname', serverId: detail.server.id, userId: me.id }))}
           {(has(perms, P.MANAGE_SERVER) || has(perms, P.MANAGE_ROLES) || has(perms, P.KICK_MEMBERS) || has(perms, P.BAN_MEMBERS) || me.isAuthority) &&
             item('Configurações do servidor', <Settings size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id }))}
+          {item('Notificações', <Bell size={16} />, () => openModal({ type: 'notifyLevel', serverId: detail.server.id }))}
           {item('Patches do servidor', <Shirt size={16} />, () => openModal({ type: 'serverSettings', serverId: detail.server.id, tab: 'patches' }))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar sala ou canal', <Plus size={16} />, () => openModal({ type: 'createChannel', serverId: detail.server.id, kind: 'voice' }))}
           {has(perms, P.MANAGE_CHANNELS) && item('Criar categoria', <FolderPlus size={16} />, () => openModal({ type: 'category', serverId: detail.server.id }))}
@@ -267,7 +271,12 @@ function CategorySection({ detail, category }: { detail: ServerDetail; category:
     .filter((c) => c.categoryId === category.id)
     .sort((a, b) => KIND_ORDER[a.type] - KIND_ORDER[b.type] || a.position - b.position);
   // recolhida, continua à vista o canal aberto e as salas com gente (como quem está na call sabe onde está)
-  const shown = collapsed ? all.filter((c) => c.id === activeId || c.id === myRoom || (c.type === 'voice' && states.some((v) => v.channelId === c.id))) : all;
+  const mentionIn = useUnreads((s) => s.channels);
+  const shown = collapsed
+    ? all.filter(
+        (c) => c.id === activeId || c.id === myRoom || (c.type === 'voice' && states.some((v) => v.channelId === c.id)) || (mentionIn[c.id]?.mentions ?? 0) > 0,
+      )
+    : all;
 
   return (
     <section>
@@ -342,6 +351,12 @@ function useChannelBasics(detail: ServerDetail, channel: Channel) {
 
 function TextChannelRow({ detail, channel }: { detail: ServerDetail; channel: Channel }) {
   const { serverId, active, openChannel, isPrivate, settingsButton } = useChannelBasics(detail, channel);
+  const unread = useUnreads((s) => s.channels[channel.id]);
+  const levels = useUnreads((s) => s.levels);
+  // silenciado: fica mais apagado e sem negrito (o contador de menção continua)
+  const muted = effectiveLevel(levels, serverId, channel.id).muted;
+  const bold = !active && !muted && isUnread(unread);
+  const mentions = unread?.mentions ?? 0;
   return (
     <div
       role="button"
@@ -350,12 +365,22 @@ function TextChannelRow({ detail, channel }: { detail: ServerDetail; channel: Ch
       onKeyDown={(e) => e.key === 'Enter' && openChannel(serverId, channel.id)}
       className={cx(
         'group flex h-11 cursor-pointer items-center gap-2 rounded-2xl px-3 text-[15px] transition-colors',
-        active ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:bg-surface-3/60 hover:text-fg',
+        active ? 'bg-surface-3 text-fg' : bold ? 'text-fg hover:bg-surface-3/60' : 'text-fg-muted hover:bg-surface-3/60 hover:text-fg',
+        muted && !active && 'opacity-60',
       )}
     >
       {channel.type === 'forum' ? <MessagesSquare size={17} className="shrink-0 opacity-70" /> : <Hash size={17} className="shrink-0 opacity-70" />}
-      <span className="flex-1 truncate font-semibold">{channel.name}</span>
+      <span className={cx('flex-1 truncate', bold ? 'font-extrabold' : 'font-semibold')}>{channel.name}</span>
+      {muted && <BellOff size={13} aria-label="Silenciado" className="shrink-0 opacity-60" />}
       {isPrivate && <Lock size={13} className="shrink-0 opacity-60" />}
+      {mentions > 0 && !active && (
+        <span
+          aria-label={`${mentions} ${mentions === 1 ? 'menção' : 'menções'}`}
+          className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-bold text-white"
+        >
+          {mentions > 99 ? '99+' : mentions}
+        </span>
+      )}
       {settingsButton}
     </div>
   );

@@ -1,7 +1,8 @@
 import { ClipCard } from './Clip';
 import { useDraft } from '../lib/drafts';
-import { Copy, Flag, Hash, Pencil, Reply, SendHorizontal, Trash2, Users } from 'lucide-react';
+import { Bell, BellOff, Copy, Flag, Hash, Pencil, Reply, SendHorizontal, Trash2, Users } from 'lucide-react';
 import { ActionSheet, useLongPress, type SheetAction } from './ActionSheet';
+import { effectiveLevel, useUnreads } from '../store/unreads';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AttachButton, MessageAttachments, PendingAttachments, pickAttachments, useAttachmentDraft } from './Attachments';
 import { P, has } from '../../../shared/permissions.ts';
@@ -27,6 +28,24 @@ import { SearchButton } from './modals/SearchMessages';
 
 const EMPTY: Message[] = [];
 
+/** Sininho do canal: abre o nível de aviso e silenciar. Riscado quando o canal (ou o servidor) está silenciado. */
+function ChannelBell({ channelId }: { channelId: string }) {
+  const serverId = useActiveDetail()?.server.id;
+  const levels = useUnreads((s) => s.levels);
+  if (!serverId) return null;
+  const { level, muted } = effectiveLevel(levels, serverId, channelId);
+  const quiet = muted || level === 'none';
+  return (
+    <IconButton
+      label={quiet ? 'Notificações (silenciado)' : 'Notificações do canal'}
+      className="h-10 w-10"
+      onClick={() => useApp.getState().openModal({ type: 'notifyLevel', serverId, channelId })}
+    >
+      {quiet ? <BellOff size={20} /> : <Bell size={20} />}
+    </IconButton>
+  );
+}
+
 export function ChatView({ channel }: { channel: Channel }) {
   const toggleMemberList = useApp((s) => s.toggleMemberList);
   const memberListOpen = useApp((s) => s.memberListOpen);
@@ -41,6 +60,7 @@ export function ChatView({ channel }: { channel: Channel }) {
           {channel.topic && <p className="truncate text-sm text-fg-muted">{channel.topic}</p>}
         </div>
         <SearchButton />
+        <ChannelBell channelId={channel.id} />
         <IconButton
           label="Lista de membros"
           active={memberListOpen}

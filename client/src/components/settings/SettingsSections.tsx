@@ -1,7 +1,9 @@
-import { BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
+import { Bell, BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { STATUSES, STATUS_INFO, asStatus } from '../../lib/status';
 import { closeAskDisabled, setCloseAsk } from '../../lib/closeGuard';
+import { deliverNotice } from '../../lib/notify';
+import { playNotify } from '../../lib/sounds';
 import { clipSettings } from '../../lib/clip';
 import { NOISE_LABEL, NOISE_MODES, canVoiceIsolation, micLevels, preloadDfn, startMicTest, type ActiveNotice, type GateMode, type MicLevel, type MicTestHandle } from '../../lib/voiceEffects';
 import { systemReducesMotion } from '../../lib/motion';
@@ -584,17 +586,77 @@ export function Notifications() {
       </div>
 
       <div>
-        <SectionTitle>Menções e mensagens diretas</SectionTitle>
+        <div className="mb-2 flex items-center justify-between">
+          <SectionTitle>Mensagens e menções</SectionTitle>
+          <Button
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            onClick={() =>
+              deliverNotice(
+                {
+                  who: me.displayName,
+                  where: 'teste de aviso',
+                  text: `@${me.username} é assim que um aviso de menção aparece.`,
+                  avatar: { url: me.avatarUrl, color: me.avatarColor },
+                  mention: true,
+                  target: { friends: true },
+                },
+                'mention',
+              )
+            }
+          >
+            <Bell size={14} /> Testar aviso
+          </Button>
+        </div>
         <div className="divide-y divide-line rounded-2xl bg-surface-0">
-          {row('Avisar quando te mencionarem', 'Vale para @menção e mensagem direta nova.', prefs.mentions, (mentions) => set({ mentions }))}
           {row(
-            'Notificação do sistema',
+            'Avisar quando te mencionarem',
+            'Vale para @menção, resposta e mensagem direta. Cada servidor começa em "só menções": troque no menu do servidor ou no sininho do canal.',
+            prefs.mentions,
+            (mentions) => set({ mentions }),
+          )}
+          {row('Tocar som', 'Uma gota para mensagem e um acorde curto para menção.', prefs.chatSound, (chatSound) => set({ chatSound }), !prefs.mentions)}
+          <div className={cx('flex flex-wrap items-center gap-3 p-4', (!prefs.mentions || !prefs.chatSound) && 'opacity-50')}>
+            <label htmlFor="notify-volume" className="text-sm font-semibold">
+              Volume
+            </label>
+            <input
+              id="notify-volume"
+              type="range"
+              min={0}
+              max={100}
+              value={prefs.volume}
+              disabled={!prefs.mentions || !prefs.chatSound}
+              onChange={(e) => set({ volume: Number(e.target.value) })}
+              onPointerUp={() => playNotify('mention', prefs.volume)}
+              className="w-40 accent-accent"
+            />
+            <span className="w-10 text-xs text-fg-muted tabular-nums">{prefs.volume}%</span>
+            <div className="flex gap-2">
+              <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!prefs.mentions || !prefs.chatSound} onClick={() => playNotify('message', prefs.volume)}>
+                <Volume2 size={14} /> Mensagem
+              </Button>
+              <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!prefs.mentions || !prefs.chatSound} onClick={() => playNotify('mention', prefs.volume)}>
+                <Volume2 size={14} /> Menção
+              </Button>
+            </div>
+          </div>
+          {row(
+            'Avisar fora do Concord',
             // independente da notificação de "chamar atenção" ali em cima: uma não liga/desliga a outra
-            desktop ? 'Aparece na central de notificações do Windows.' : 'Aparece quando a aba do Concord não está visível.',
+            desktop ? 'Com o Concord minimizado ou atrás de outra janela.' : 'Quando a aba do Concord não está visível.',
             prefs.mentionDesktop,
             (v) => set({ mentionDesktop: v }),
             !prefs.mentions,
           )}
+          {desktop &&
+            row(
+              'Aviso do Concord por cima de tudo',
+              'O mesmo cartão de dentro do app, no canto da tela. Desligado, usa a notificação do Windows (que respeita o "Não perturbe" dele).',
+              prefs.overlay,
+              (overlay) => set({ overlay }),
+              !prefs.mentions || !prefs.mentionDesktop,
+            )}
         </div>
       </div>
 

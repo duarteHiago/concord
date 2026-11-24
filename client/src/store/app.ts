@@ -1,13 +1,14 @@
 import { useStickers } from './stickers';
 import type { FeedbackKind } from '../../../shared/feedback.ts';
 import { receiveClip, type ClipEvent } from '../lib/clip';
-import type { PlacedSticker } from '../lib/types';
+import type { NotifyLevel, PlacedSticker } from '../lib/types';
 import { asStatus } from '../lib/status';
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { applyTheme, DEFAULT_THEME, normalizeTheme } from '../lib/theme';
-import { receiveDirectMessage, receiveFriendRequest, receiveMention, type MentionEvent } from '../lib/mentions';
+import { receiveChannelMessage, receiveDirectMessage, receiveFriendRequest, receiveMention, type MentionEvent } from '../lib/mentions';
+import { useUnreads } from './unreads';
 import { directorShake, receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
 import { installShortcuts, syncGlobalShortcuts } from '../lib/shortcuts';
@@ -55,6 +56,7 @@ export type Modal =
   | { type: 'channelSettings'; channelId: string; serverId: string }
   | { type: 'createChannel'; serverId: string; kind: 'text' | 'voice' | 'forum'; categoryId?: string | null }
   | { type: 'category'; serverId: string; categoryId?: string }
+  | { type: 'notifyLevel'; serverId: string; channelId?: string }
   | { type: 'userSettings'; tab?: SettingsTab | 'style' }
   | { type: 'support' }
   | { type: 'shareScreen' }
@@ -247,6 +249,8 @@ export const useApp = create<AppState>((set, get) => {
       if (!needsEmail(get().me)) {
         void get().loadServers();
         void get().loadRelationships();
+        // o que ficou por ler (a reconexão também traz o que chegou enquanto estava fora)
+        void useUnreads.getState().load();
       }
       useVoice.getState().resync();
       // contrato de Mecenato: a renovação do contrato antigo aparece logo ao entrar (ver Mecenato.tsx)
@@ -304,6 +308,11 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('director:shake', () => directorShake());
     socket.on('reaction', (r: unknown) => window.dispatchEvent(new CustomEvent('concord:reaction', { detail: r })));
     socket.on('mention', (m: MentionEvent) => receiveMention(m));
+    // leitura e nível de aviso mudados em outro aparelho
+    socket.on('read:update', (d: { channelId: string; lastReadAt: number }) => useUnreads.getState().applyRead(d.channelId, d.lastReadAt));
+    socket.on('notify-levels:update', (d: { targetId: string; level: NotifyLevel | null; mutedUntil: number | null }) =>
+      useUnreads.getState().applyLevel(d.targetId, { level: d.level, mutedUntil: d.mutedUntil }),
+    );
     socket.on('sounds:changed', ({ serverId }: { serverId: string }) => {
       if (get().sounds[serverId]) void get().loadSounds(serverId);
     });
@@ -351,6 +360,16 @@ export const useApp = create<AppState>((set, get) => {
         typing: { ...get().typing, [msg.channelId]: typing },
         ...(list && !list.some((m) => m.id === msg.id) ? { messages: { ...get().messages, [msg.channelId]: [...list, msg] } } : {}),
       });
+      const me = get().me;
+      if (!me) return;
+      useUnreads.getState().onMessage(msg, me.id);
+      // com o canal aberto e a janela em foco, já conta como lido; senão, talvez avise (canal em "todas as mensagens")
+      const serverId = useUnreads.getState().channels[msg.channelId]?.serverId;
+      if (serverId && get().activeServerId === serverId && get().activeChannels[serverId] === msg.channelId && document.hasFocus()) {
+        useUnreads.getState().markRead(msg.channelId, msg.createdAt);
+      } else {
+        receiveChannelMessage(msg);
+      }
     });
     socket.on('message:update', (msg: Message) => {
       const list = get().messages[msg.channelId];

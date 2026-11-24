@@ -12,6 +12,7 @@ import { ConfirmCloseModal } from './ConfirmCloseModal';
 import { Button, Input, Modal } from '../ui';
 import { AddServerModal } from './AddServerModal';
 import { CategoryModal, ChannelSettingsModal, CreateChannelModal } from './ChannelModals';
+import { NotifyLevelModal } from './NotifyLevelModal';
 import { InviteModal } from './InviteModal';
 import { OnboardingModal } from './OnboardingModal';
 import { WhatsNewModal } from './WhatsNewModal';
@@ -59,6 +60,8 @@ function ModalSwitch({ modal }: { modal: ModalState }) {
       return <ServerSettingsModal serverId={modal.serverId} initialTab={modal.tab} />;
     case 'createChannel':
       return <CreateChannelModal serverId={modal.serverId} kind={modal.kind} categoryId={modal.categoryId} />;
+    case 'notifyLevel':
+      return <NotifyLevelModal serverId={modal.serverId} channelId={modal.channelId} />;
     case 'category':
       return <CategoryModal serverId={modal.serverId} categoryId={modal.categoryId} />;
     case 'channelSettings':
