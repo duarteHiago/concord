@@ -266,7 +266,14 @@ function ColorPicker({ value, onChange, allowNone }: { value: string | null; onC
           style={{ background: c }}
         />
       ))}
-      <input type="color" value={value ?? '#99aab5'} onChange={(e) => onChange(e.target.value)} className="h-8 w-10 cursor-pointer rounded bg-transparent" />
+      {/* cor personalizada: do mesmo tamanho dos quadradinhos (o seletor nativo vinha como um retângulo largo) */}
+      <input
+        type="color"
+        title="Cor personalizada"
+        value={value ?? '#99aab5'}
+        onChange={(e) => onChange(e.target.value)}
+        className="color-swatch h-8 w-8 cursor-pointer rounded-lg border-2 border-line-strong bg-transparent p-0"
+      />
     </div>
   );
 }

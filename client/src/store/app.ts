@@ -804,7 +804,8 @@ export const useApp = create<AppState>((set, get) => {
     releasesOpen: false,
     openReleases: () => set({ releasesOpen: true, profile: null, settings: null, mobileView: 'chat' }),
     profile: null,
-    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false, settings: null, mobileView: 'chat' }),
+    // fecha a janela de onde veio (ex.: a lista de membros no celular), senão ela ficava aberta por cima do perfil
+    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false, settings: null, modal: null, mobileView: 'chat' }),
     settings: null,
     openSettings: (tab = 'profile') => set({ settings: tab, profile: null, releasesOpen: false, mobileView: 'chat' }),
     closeSettings: () => set({ settings: null, mobileView: 'sidebar' }),

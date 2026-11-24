@@ -1,4 +1,5 @@
 import { Download, Minus, Newspaper, MessageCircle, Plus, Compass, MessageSquareHeart } from 'lucide-react';
+import { useBackHandler } from '../lib/backStack';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { desktop } from '../lib/desktop';
@@ -12,6 +13,10 @@ import { DragGhost, DrawerLine, pinnedServers, RAIL_MAX, ServerDrawerPanel, useS
 import { cx, initials } from './ui';
 
 /** Fileira de servidores no topo da barra lateral. Mostra até RAIL_MAX servidores; o resto fica na gaveta. */
+// fora do componente: no celular a fileira some quando a conversa cobre a tela e volta depois, e a lembrança de
+// "abri este pela gaveta" precisa sobreviver a isso
+let openedFromDrawer: string | null = null;
+
 export function ServerStrip() {
   const servers = useApp((s) => s.servers);
   const activeId = useApp((s) => s.activeServerId);
@@ -36,6 +41,7 @@ export function ServerStrip() {
   const savedPins = useApp((s) => s.me?.settings?.pinnedServers);
   const saveSettings = useApp((s) => s.saveSettings);
   const [drawer, setDrawer] = useState(false);
+  useBackHandler(drawer, () => setDrawer(false));
   const pinned = pinnedServers(servers, savedPins);
   const pinnedIds = pinned.map((s) => s.id);
   const savePins = (ids: string[]) => void saveSettings({ pinnedServers: ids.slice(0, RAIL_MAX) });
@@ -44,8 +50,10 @@ export function ServerStrip() {
   const byId = new Map(servers.map((s) => [s.id, s]));
   const top = preview.map((id) => byId.get(id)).filter((s) => !!s);
   const rest = servers.filter((s) => !preview.includes(s.id));
-  // servidor aberto que está na gaveta: aparece no topo enquanto estiver aberto, para não sumir da vista
-  const extra = drawer ? undefined : servers.find((s) => s.id === activeId && !pinnedIds.includes(s.id));
+  // servidor que você ABRIU pela gaveta: aparece no topo enquanto estiver aberto, para não sumir da vista. Só esse
+  // caso: o servidor aberto que você acabou de guardar na gaveta fica na gaveta (antes ele voltava para o topo)
+  const extra =
+    drawer || activeId !== openedFromDrawer ? undefined : servers.find((s) => s.id === activeId && !pinnedIds.includes(s.id));
   const shown = extra ? [...top, extra] : top;
   const dragged = drag ? byId.get(drag.id) : undefined;
 
@@ -212,6 +220,7 @@ export function ServerStrip() {
       editing={editing}
       handle={handle}
       onOpen={(id) => {
+        openedFromDrawer = id;
         openServer(id);
         setDrawer(false);
       }}

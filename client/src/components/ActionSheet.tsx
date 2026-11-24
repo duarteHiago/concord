@@ -1,4 +1,6 @@
 import { useEffect, useRef, type MouseEvent, type ReactNode, type TouchEvent } from 'react';
+import { useBackHandler } from '../lib/backStack';
+import { useSwipeDown } from './SwipeBack';
 import { createPortal } from 'react-dom';
 import { cx } from './ui';
 
@@ -11,16 +13,22 @@ export function ActionSheet({ title, actions, onClose }: { title?: ReactNode; ac
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  useBackHandler(true, onClose);
+  const { sheet, handleProps } = useSwipeDown(onClose);
 
   // no body: dentro da lista de mensagens, um ancestral com transform prenderia o "fixed" a ele
   return createPortal(
     <div className="fixed inset-0 z-[70] flex animate-fade-in items-end bg-black/50" onClick={onClose}>
       <div
+        ref={sheet}
         role="menu"
         className="w-full animate-slide-up rounded-t-[28px] bg-surface-2 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-line-strong" />
+        {/* pegadinha: arrastar para baixo fecha */}
+        <div {...handleProps} className="-mx-3 -mt-2 flex touch-none justify-center pt-2 pb-2">
+          <span className="h-1 w-10 rounded-full bg-line-strong" />
+        </div>
         {title && <div className="mb-1 truncate px-3 py-1 text-sm text-fg-muted">{title}</div>}
         {actions.map((a) => (
           <button
