@@ -237,5 +237,7 @@ function ServerBadge({ unread, mentions }: { unread: boolean; mentions: number }
     );
   }
   if (!unread) return null;
-  return <span aria-label="Mensagens novas" className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-surface-2 bg-fg" />;
+  // pontinho discreto na cor de destaque do tema (a mesma do servidor aberto), com um anel fino do fundo para
+  // descolar da foto do servidor
+  return <span aria-label="Mensagens novas" className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-surface-2" />;
 }

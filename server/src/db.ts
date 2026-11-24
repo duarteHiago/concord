@@ -652,6 +652,25 @@ db.exec(`
 // quando a pessoa provou quem é para abrir a sessão (ver signToken em http.ts)
 addColumn('sessions', 'auth_at', 'INTEGER');
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+// Uma vez só, no primeiro deploy depois do lançamento das notificações (#199): tudo que já existia conta como lido.
+// Sem isso, canal que a pessoa nunca abriu contava desde a entrada no servidor e todo servidor acendia com o
+// histórico inteiro como "novo". Daqui para a frente, servidor novo conta a partir da entrada, como antes.
+if (!db.prepare("SELECT 1 FROM meta WHERE key = 'unreads_baseline'").get()) {
+  const at = Date.now();
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO channel_reads (user_id, channel_id, last_read_at)
+       SELECT m.user_id, c.id, ? FROM members m JOIN channels c ON c.server_id = m.server_id WHERE c.type != 'forum'`,
+    ).run(at);
+    db.prepare('UPDATE channel_reads SET last_read_at = MAX(last_read_at, ?)').run(at);
+    db.prepare("INSERT INTO meta (key, value) VALUES ('unreads_baseline', ?)").run(String(at));
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
 // Denúncias (ver reports.ts). Só a equipe vê. O alvo fica sem chave estrangeira de propósito: apagar a conta não
 // pode apagar a prova. As provas em si (texto da mensagem, imagens) ficam em `evidence` e na pasta reports/.
 db.exec(`

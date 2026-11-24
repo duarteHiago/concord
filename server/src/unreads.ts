@@ -17,7 +17,6 @@ export type NotifyLevel = 'all' | 'mentions' | 'none';
 const LEVELS = new Set<NotifyLevel>(['all', 'mentions', 'none']);
 /** "até eu reativar": silencia até o ano 9999 */
 export const MUTED_FOREVER = 253402300799000;
-
 /** Marca o canal como lido até `at` (nunca volta para trás) e limpa as menções até ali. */
 export function markRead(userId: string, channelId: string, at: number) {
   run(
