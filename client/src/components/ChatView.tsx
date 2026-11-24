@@ -1,6 +1,8 @@
 import { ClipCard } from './Clip';
 import { useDraft } from '../lib/drafts';
-import { Bell, BellOff, Copy, Flag, Hash, Pencil, Reply, SendHorizontal, Trash2, Users } from 'lucide-react';
+import { Bell, BellOff, CheckCircle2, Copy, Flag, Hash, MessagesSquare, Pencil, Reply, SendHorizontal, Trash2, Users } from 'lucide-react';
+import { useThreads } from '../store/threads';
+import type { ThreadMeta } from '../lib/types';
 import { ActionSheet, useLongPress, type SheetAction } from './ActionSheet';
 import { effectiveLevel, useUnreads } from '../store/unreads';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
@@ -174,18 +176,21 @@ export function MessageFeed({ channel, compact = false }: { channel: Channel; co
   );
 }
 
-function Bubble({
+export function Bubble({
   detail,
   channel,
   message,
   grouped,
   compact,
+  inThread = false,
 }: {
   detail: ServerDetail;
   channel: Channel;
   message: Message;
   grouped: boolean;
   compact: boolean;
+  /** dentro do painel da thread: sem "responder" (citar) nem abrir outra thread */
+  inThread?: boolean;
 }) {
   const me = useApp((s) => s.me)!;
   const [editing, setEditing] = useState(false);
@@ -215,7 +220,10 @@ function Bubble({
     }
   }
 
-  const canReply = has(channel.permissions, P.SEND_MESSAGES);
+  const canReply = has(channel.permissions, P.SEND_MESSAGES) && !inThread;
+  // thread: só nos canais de texto, a partir de uma mensagem do canal (não de outra resposta de thread)
+  const canThread = !inThread && channel.type === 'text' && !message.threadId && has(channel.permissions, P.VIEW_CHANNEL);
+  const openThread = () => useThreads.getState().openThread(detail.server.id, channel.id, message.id);
   const nameOf = (authorId: string, fallback: string) => {
     if (authorId === me.id) return 'Você';
     const m = detail.members.find((x) => x.id === authorId);
@@ -228,6 +236,7 @@ function Bubble({
   const [sheet, setSheet] = useState(false);
   const sheetActions: SheetAction[] = [
     ...(canReply ? [{ label: 'Responder', icon: <Reply size={18} />, onClick: () => startReply(channel.id, message, `composer-${channel.id}`) }] : []),
+    ...(canThread ? [{ label: 'Responder em thread', icon: <MessagesSquare size={18} />, onClick: openThread }] : []),
     ...(message.content && plain ? [{ label: 'Copiar texto', icon: <Copy size={18} />, onClick: () => void copyText(message.content) }] : []),
     ...(canEdit ? [{ label: 'Editar', icon: <Pencil size={18} />, onClick: () => { setDraft(message.content); setEditing(true); } }] : []),
     ...(canReport
@@ -236,7 +245,7 @@ function Bubble({
     ...(canDelete ? [{ label: 'Apagar', icon: <Trash2 size={18} />, danger: true, onClick: () => void api.del(`/messages/${message.id}`).catch(toast.error) }] : []),
   ];
   const hold = useLongPress(() => setSheet(true), !editing && sheetActions.length > 0);
-  const actions = !editing && (canReply || mine || canDelete || canReport) && (
+  const actions = !editing && (canReply || canThread || mine || canDelete || canReport) && (
     // barrinha flutuante no canto direito da linha: não ocupa espaço, não fica espremida no chat estreito
     // da sala e não cobre o nome nem a citação de mensagens curtas (no toque some: invisível, ainda dava para
     // apagar a mensagem sem querer tocando no canto)
@@ -244,6 +253,11 @@ function Bubble({
       {canReply && (
         <IconButton label="Responder" className="h-8 w-8" onClick={() => startReply(channel.id, message, `composer-${channel.id}`)}>
           <Reply size={14} />
+        </IconButton>
+      )}
+      {canThread && (
+        <IconButton label="Responder em thread" className="h-8 w-8" onClick={openThread}>
+          <MessagesSquare size={14} />
         </IconButton>
       )}
       {canEdit && (
@@ -291,6 +305,15 @@ function Bubble({
       </div>
       <div className={cx('flex min-w-0 flex-col items-start', compact ? 'max-w-[82%]' : 'max-w-[85%] md:max-w-[70%]')}>
         {message.replyTo && <ReplyQuote reply={message.replyTo} nameOf={nameOf} />}
+        {/* resposta de thread que também veio para o canal: leva para a thread */}
+        {!inThread && message.threadId && message.alsoChannel && (
+          <button
+            onClick={() => useThreads.getState().openThread(detail.server.id, channel.id, message.threadId!)}
+            className="mb-1 flex items-center gap-1 px-1 text-xs font-semibold text-fg-muted hover:text-accent"
+          >
+            <MessagesSquare size={12} /> respondeu numa thread
+          </button>
+        )}
         {(!grouped || message.replyTo) && (
           <div className="mb-1 flex items-baseline gap-2 px-1">
             <span className="flex items-center gap-1 text-[13px] font-bold" style={{ color: memberColor(detail, message.author.id) }}>
@@ -359,6 +382,9 @@ function Bubble({
         {!editing && hook?.embeds && <WebhookEmbeds embeds={hook.embeds} />}
         {!editing && jamLink && !onlyJamLink && <JamCard url={jamLink.url} jam={jamLink.jam} authorName={name} mine={mine} />}
         {!editing && <MessageAttachments items={message.attachments} />}
+        {!editing && !inThread && message.thread && (message.thread.replyCount > 0 || message.thread.status === 'resolved') && (
+          <ThreadSummary thread={message.thread} onOpen={openThread} />
+        )}
       </div>
     </div>
   );
@@ -453,9 +479,18 @@ interface Suggestion {
 }
 
 /** Campo de mensagem em pílula, com comandos (/), menções (@) e aviso de quem está digitando. */
-export function Composer({ channel, compact = false }: { channel: Channel; compact?: boolean }) {
-  // o rascunho de cada canal fica guardado (trocar de canal ou recarregar não apaga)
-  const [text, setText] = useDraft(channel.id);
+export function Composer({
+  channel,
+  compact = false,
+  thread,
+}: {
+  channel: Channel;
+  compact?: boolean;
+  /** respondendo numa thread: vai com threadId (e "também enviar para o canal"); sem comandos, jogos e figurinhas */
+  thread?: { rootId: string; alsoChannel: boolean };
+}) {
+  // o rascunho de cada canal (ou thread) fica guardado (trocar de canal ou recarregar não apaga)
+  const [text, setText] = useDraft(thread ? `thread:${thread.rootId}` : channel.id);
   const [selected, setSelected] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const lastTyping = useRef(0);
@@ -467,7 +502,8 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   const mobile = useMobile();
   const tight = compact || mobile;
   const files = useAttachmentDraft();
-  const replying = useApp((s) => s.replying[channel.id]);
+  const channelReplying = useApp((s) => s.replying[channel.id]);
+  const replying = thread ? undefined : channelReplying;
   const replyName = (m: Message) => {
     if (m.author.id === useApp.getState().me?.id) return 'você mesmo';
     const member = detail.members.find((x) => x.id === m.author.id);
@@ -506,7 +542,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
 
   // ---- sugestões: "/comando" no começo, ou "@pessoa" na última palavra ----
   let suggestions: Suggestion[] = [];
-  const commandMatch = /^\/(\w*)$/.exec(text);
+  const commandMatch = thread ? null : /^\/(\w*)$/.exec(text);
   const mentionMatch = /(^|\s)@([\w.]*)$/.exec(text);
   if (commandMatch) {
     const q = commandMatch[1].toLowerCase();
@@ -545,19 +581,20 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
     const attachments = files.ids;
     if (!content && !attachments.length) return;
     const replyTo = replying?.id;
+    const inThread = thread ? { threadId: thread.rootId, alsoChannel: thread.alsoChannel } : {};
     const post = async (c: string) => {
-      await api.post(`/channels/${channel.id}/messages`, { content: c, replyTo });
+      await api.post(`/channels/${channel.id}/messages`, { content: c, replyTo, ...inThread });
     };
     setText('');
     try {
       if (attachments.length) {
         // se falhar, o texto volta (catch abaixo) e os arquivos continuam na fila
-        await api.post(`/channels/${channel.id}/messages`, { content, attachments, replyTo });
+        await api.post(`/channels/${channel.id}/messages`, { content, attachments, replyTo, ...inThread });
         files.clear();
         useApp.getState().setReplying(channel.id, null);
         return;
       }
-      if (content.startsWith('/')) {
+      if (!thread && content.startsWith('/')) {
         const handled = await runCommand(content, { detail, channel, send: post });
         if (!handled) {
           setText(content);
@@ -604,7 +641,7 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
     setText(v);
     setDismissed(false);
     setSelected(0);
-    if (Date.now() - lastTyping.current > 3000 && v && !v.startsWith('/')) {
+    if (!thread && Date.now() - lastTyping.current > 3000 && v && !v.startsWith('/')) {
       lastTyping.current = Date.now();
       getSocket()?.emit('typing', { channelId: channel.id });
     }
@@ -614,12 +651,16 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
   // sem permissão por causa da exigência de confiança do canal: o texto diz o que falta (ver lib/trust.ts)
   const trustNotice = !canSend ? trustBlockMessage(channel, 'speak') : null;
   const placeholder = !canSend
-    ? compact
+    ? thread
+      ? 'Você não pode escrever aqui'
+      : compact
       ? trustNotice
         ? 'Este canal pede uma conta mais confiável'
         : 'Você não pode escrever aqui'
       : (trustNotice ?? 'Você não pode enviar mensagens aqui')
-    : compact
+    : thread
+      ? 'Responder na thread…'
+      : compact
       ? 'Mensagem…'
       : channel.type === 'voice'
         ? 'Fala com a galera…'
@@ -653,17 +694,17 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
           ))}
         </div>
       )}
-      <ReplyBar conversationId={channel.id} name={replyName} />
+      {!thread && <ReplyBar conversationId={channel.id} name={replyName} />}
       <PendingAttachments items={files.items} onRemove={files.remove} />
       <div className="flex items-end gap-2" onDragOver={(e) => canSend && e.preventDefault()} onDrop={(e) => canSend && files.onDrop(e)}>
-        {canSend && <GameMenuButton target={{ kind: 'channel', id: channel.id }} compact={tight} onAttach={tight ? () => void pickAttachments().then((f) => f && files.add(f)) : undefined} />}
-        {canSend && <StickerButton target={{ kind: 'channel', id: channel.id }} compact={tight} />}
-        {canSend && !tight && <AttachButton onFiles={files.add} />}
-        <label className="sr-only" htmlFor={`composer-${channel.id}`}>
+        {canSend && !thread && <GameMenuButton target={{ kind: 'channel', id: channel.id }} compact={tight} onAttach={tight ? () => void pickAttachments().then((f) => f && files.add(f)) : undefined} />}
+        {canSend && !thread && <StickerButton target={{ kind: 'channel', id: channel.id }} compact={tight} />}
+        {canSend && (thread || !tight) && <AttachButton onFiles={files.add} />}
+        <label className="sr-only" htmlFor={thread ? `composer-thread-${thread.rootId}` : `composer-${channel.id}`}>
           Mensagem
         </label>
         <textarea
-          id={`composer-${channel.id}`}
+          id={thread ? `composer-thread-${thread.rootId}` : `composer-${channel.id}`}
           value={text}
           disabled={!canSend}
           onChange={(e) => onChange(e.target.value)}
@@ -681,13 +722,52 @@ export function Composer({ channel, compact = false }: { channel: Channel; compa
         />
         {canSend && mobile && <SendButton disabled={!text.trim() && !files.ids.length} onClick={() => void send()} />}
       </div>
-      <div className={cx('px-4 pt-1 text-xs text-fg-muted', mobile && !typers.length ? 'h-1' : 'h-5')}>
-        {typers.length > 0 && (
+      <div className={cx('px-4 pt-1 text-xs text-fg-muted', (mobile || thread) && !typers.length ? 'h-1' : 'h-5')}>
+        {!thread && typers.length > 0 && (
           <span className="animate-fade-in">
             <b>{typers.slice(0, 3).join(', ')}</b> {typers.length === 1 ? 'está digitando…' : 'estão digitando…'}
           </span>
         )}
       </div>
     </div>
+  );
+}
+
+/** "há 3 min", "há 2 h", "ontem"... para o resumo da thread. */
+function ago(t: number) {
+  const min = Math.round((Date.now() - t) / 60_000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'ontem' : `há ${d} dias`;
+}
+
+/** Embaixo da mensagem que abriu uma thread: quantas respostas, a última e se está resolvida. Clicar abre a thread. */
+function ThreadSummary({ thread, onOpen }: { thread: ThreadMeta; onOpen: () => void }) {
+  const resolved = thread.status === 'resolved';
+  return (
+    <button
+      onClick={onOpen}
+      className="mt-1 flex max-w-full items-center gap-2 rounded-full bg-surface-3 py-1 pr-3 pl-1.5 text-xs font-semibold text-fg-muted transition-colors hover:bg-surface-4 hover:text-fg"
+    >
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+        <MessagesSquare size={11} />
+      </span>
+      {thread.replyCount > 0 ? (
+        <span className="truncate">
+          <b className="text-accent">{thread.replyCount === 1 ? '1 resposta' : `${thread.replyCount} respostas`}</b>
+          {thread.lastReplyAt && <span className="font-normal text-fg-subtle"> · última {ago(thread.lastReplyAt)}</span>}
+        </span>
+      ) : (
+        <span>Thread</span>
+      )}
+      {resolved && (
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-ok/15 px-2 py-0.5 text-[11px] font-bold text-ok">
+          <CheckCircle2 size={11} /> Resolvida
+        </span>
+      )}
+    </button>
   );
 }

@@ -14,7 +14,8 @@ import express, { type NextFunction, type Request, type Response, type Router } 
 import { P, has } from '../../shared/permissions.ts';
 import { channelPermissions, getChannel, requireChannelPerm } from './access.ts';
 import { config } from './config.ts';
-import { all, get, run, tx, type ChannelRow, type UserRow } from './db.ts';
+import { all, get, run, tx, type ChannelRow, type MessageRow, type UserRow } from './db.ts';
+import { setStatus, threadRoot } from './threads.ts';
 import { fail, humansOnly, optStr, str, uid } from './http.ts';
 import { clientIp, limiter } from './recovery.ts';
 import { removeUpload, saveImage } from './uploads.ts';
@@ -56,7 +57,14 @@ interface WebhookRow {
 }
 
 interface Deliver {
-  deliver: (channel: ChannelRow, authorId: string, content: string, files: WebhookFile[], data: WebhookMessageData | null) => Promise<{ id: string }>;
+  deliver: (
+    channel: ChannelRow,
+    authorId: string,
+    content: string,
+    files: WebhookFile[],
+    data: WebhookMessageData | null,
+    root?: MessageRow | null,
+  ) => Promise<{ id: string }>;
 }
 
 const MAX_CONTENT = 2000;
@@ -293,18 +301,27 @@ export function registerPublicWebhookRoutes(api: Router, deps: Deliver) {
     const parsed = format === 'slack' ? fromSlack(body) : fromDiscord(body);
     const { content, embeds } = parsed;
     const name = cleanName(parsed.name);
-    if (!content && embeds.length === 0 && files.length === 0) fail(400, 'Mensagem vazia: mande content, embeds ou um arquivo');
+    const channel = getChannel(hook.channel_id);
+    // thread: ?thread_id= (como no Discord) ou thread_id no corpo = a mensagem que abriu a thread, neste canal.
+    // thread_status "resolved"/"open" muda o status dela (dá para mandar só o status, sem mensagem).
+    const rawThread = (typeof req.query.thread_id === 'string' ? req.query.thread_id : undefined) ?? body.thread_id;
+    const root = rawThread ? threadRoot(rawThread, channel.id) : null;
+    const status = body.thread_status;
+    if (status !== undefined && status !== 'resolved' && status !== 'open') fail(400, 'thread_status deve ser "resolved" ou "open"');
+    if (status && !root) fail(400, 'thread_status precisa de thread_id');
+    const empty = !content && embeds.length === 0 && files.length === 0;
+    if (empty && !status) fail(400, 'Mensagem vazia: mande content, embeds ou um arquivo');
     for (let i = 0; i < files.length; i++) {
       if (!filesPerWebhook(hook.id)) fail(429, 'Muitos arquivos deste webhook na última hora. Mande só o texto ou espere.');
     }
-    const channel = getChannel(hook.channel_id);
     const data: WebhookMessageData = { webhook: name ? { name } : {} };
     if (embeds.length) data.embeds = embeds;
-    const msg = await deps.deliver(channel, hook.user_id, content, files, data);
+    const msg = empty ? null : await deps.deliver(channel, hook.user_id, content, files, data, root);
+    if (status && root) await setStatus(root, status as 'resolved' | 'open', null);
     run('UPDATE webhooks SET last_used_at = ? WHERE id = ?', Date.now(), hook.id);
     if (format === 'slack') return void res.type('text/plain').send('ok');
     // como no Discord: sem ?wait=true, responde 204 sem corpo
-    if (req.query.wait === 'true') return void res.json({ id: msg.id, channel_id: channel.id, content });
+    if (req.query.wait === 'true') return void res.json({ id: msg?.id ?? null, channel_id: channel.id, content, thread_id: root?.id ?? null });
     res.status(204).end();
   }
 

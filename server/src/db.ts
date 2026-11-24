@@ -361,6 +361,34 @@ db.exec(`
 `);
 addColumn('users', 'is_webhook', 'INTEGER NOT NULL DEFAULT 0');
 
+// Threads (ver threads.ts): uma resposta numa thread é uma mensagem comum do canal com `thread_id` = a mensagem que
+// abriu a thread. Ela não aparece na lista do canal (só dentro da thread), a não ser com `also_channel` ("também
+// enviar para o canal"). Apagar a mensagem que abriu a thread leva as respostas junto.
+addColumn('messages', 'thread_id', 'TEXT REFERENCES messages(id) ON DELETE CASCADE');
+addColumn('messages', 'also_channel', 'INTEGER NOT NULL DEFAULT 0');
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, created_at);
+  CREATE TABLE IF NOT EXISTS threads (
+    id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    reply_count INTEGER NOT NULL DEFAULT 0,
+    last_reply_at INTEGER,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+    resolved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    resolved_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_threads_channel ON threads(channel_id, last_reply_at);
+  CREATE TABLE IF NOT EXISTS thread_followers (
+    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    following INTEGER NOT NULL DEFAULT 1,
+    last_read_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (thread_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_thread_followers_user ON thread_followers(user_id, following);
+`);
+
 // Notificações (ver unreads.ts): até onde cada pessoa leu cada canal (o que sincroniza entre aparelhos), as menções
 // que ela ainda não viu (o contador vermelho) e o nível de aviso que ela escolheu por servidor ou canal.
 db.exec(`
@@ -1052,8 +1080,23 @@ export interface MessageRow {
   data: string | null;
   attachments?: string | null;
   reply_to?: string | null;
+  /** resposta numa thread: a mensagem que abriu a thread */
+  thread_id?: string | null;
+  /** resposta de thread que também aparece no canal */
+  also_channel?: number;
   created_at: number;
   edited_at: number | null;
+}
+
+export interface ThreadRow {
+  id: string;
+  channel_id: string;
+  reply_count: number;
+  last_reply_at: number | null;
+  status: 'open' | 'resolved';
+  resolved_by: string | null;
+  resolved_at: number | null;
+  created_at: number;
 }
 
 export interface DmChannelRow {

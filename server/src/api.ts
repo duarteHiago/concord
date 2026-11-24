@@ -76,6 +76,7 @@ import { registerFeedbackRoutes } from './feedback.ts';
 import { signFileUrl } from './fileLinks.ts';
 import { registerForumRoutes } from './forum.ts';
 import { markRead, recordMentions, registerUnreadRoutes } from './unreads.ts';
+import { onReply, recount, registerThreadRoutes, threadJson, threadRoot } from './threads.ts';
 import { registerPublicWebhookRoutes, registerWebhookRoutes, type WebhookFile } from './webhooks.ts';
 import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
 import { STICKER_MESSAGE_TEXT, registerStickerPackRoutes, stickerMessageData } from './stickerPacks.ts';
@@ -309,7 +310,8 @@ interface ReplyColumns {
   r_author_id?: string | null;
   r_author_name?: string | null;
 }
-type MessageWithAuthor = MessageRow & Omit<PublicUser, 'id'> & ReplyColumns;
+type ThreadColumns = { t_count: number | null; t_last: number | null; t_status: 'open' | 'resolved' | null; t_by: string | null; t_at: number | null };
+type MessageWithAuthor = MessageRow & Omit<PublicUser, 'id'> & ReplyColumns & Partial<ThreadColumns>;
 const parseData = (raw: string | null) => {
   if (!raw) return null;
   try {
@@ -330,6 +332,13 @@ const messageJson = (m: MessageWithAuthor) => ({
   editedAt: m.edited_at,
   author: authorJson({ ...m, id: m.author_id }),
   replyTo: replyJson(m),
+  // resposta numa thread (a mensagem que abriu a thread) e, na mensagem que abriu, o resumo da thread
+  threadId: m.thread_id ?? null,
+  alsoChannel: !!m.also_channel,
+  thread:
+    m.t_count !== undefined && m.t_count !== null
+      ? threadJson({ id: m.id, reply_count: m.t_count, last_reply_at: m.t_last ?? null, status: m.t_status ?? 'open', resolved_by: m.t_by ?? null, resolved_at: m.t_at ?? null })
+      : null,
 });
 
 /** Prévia da mensagem respondida (só o começo do texto). */
@@ -351,8 +360,10 @@ const REPLY_COLUMNS = `r.id AS r_id, r.content AS r_content, r.kind AS r_kind, r
 
 const MESSAGE_SELECT = `SELECT m.*, u.username, u.display_name, u.avatar_color, u.avatar_url, u.banner_color, u.bio, u.banner_url, u.is_bot, u.is_webhook, u.profile_style,
   ${REPLY_COLUMNS}
+  , t.reply_count AS t_count, t.last_reply_at AS t_last, t.status AS t_status, t.resolved_by AS t_by, t.resolved_at AS t_at
   FROM messages m JOIN users u ON u.id = m.author_id
-  LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN users ru ON ru.id = r.author_id`;
+  LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN users ru ON ru.id = r.author_id
+  LEFT JOIN threads t ON t.id = m.id`;
 
 /** Id da mensagem respondida, conferindo que ela é da mesma conversa (senão, 400). */
 function replyTarget(raw: unknown, table: 'messages' | 'dm_messages', column: 'channel_id' | 'dm_id', parentId: string): string | null {
@@ -2403,12 +2414,23 @@ api.get('/channels/:id/messages', (req, res) => {
   const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
   const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
   const rows = all<MessageWithAuthor>(
-    `${MESSAGE_SELECT} WHERE m.channel_id = ? AND m.created_at < ? ORDER BY m.created_at DESC LIMIT ?`,
+    `${MESSAGE_SELECT} WHERE m.channel_id = ? AND (m.thread_id IS NULL OR m.also_channel = 1) AND m.created_at < ? ORDER BY m.created_at DESC LIMIT ?`,
     channel.id,
     before,
     limit,
   );
   res.json(rows.reverse().map(messageJson));
+});
+
+/** Uma thread: a mensagem que abriu, o resumo, se eu sigo e as respostas (as mais antigas primeiro). */
+api.get('/messages/:id/thread', (req, res) => {
+  const me = uid(res);
+  const rootRow = get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, req.params.id) ?? fail(404, 'Mensagem não encontrada');
+  requireChannelPerm(rootRow.channel_id, me, P.VIEW_CHANNEL);
+  if (rootRow.thread_id) fail(400, 'Isso já é uma resposta de thread');
+  const replies = all<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.thread_id = ? ORDER BY m.created_at ASC LIMIT 500`, rootRow.id);
+  const f = get<{ following: number }>('SELECT following FROM thread_followers WHERE thread_id = ? AND user_id = ?', rootRow.id, me);
+  res.json({ root: messageJson(rootRow), replies: replies.map(messageJson), following: !!f?.following });
 });
 
 // ---- Busca de mensagens (lupa / Ctrl+F) ----
@@ -2461,7 +2483,7 @@ api.get('/servers/:id/search', (req, res) => {
     `SELECT m.id, m.content, m.created_at, m.channel_id, m.author_id, u.display_name, u.username, u.avatar_color, u.avatar_url, mb.nickname
      FROM messages m JOIN users u ON u.id = m.author_id
      LEFT JOIN members mb ON mb.server_id = ? AND mb.user_id = m.author_id
-     WHERE m.channel_id IN (${channels.map(() => '?').join(',')}) AND m.kind = 'text' AND fold(m.content) LIKE ? ESCAPE '\\' AND m.created_at < ?
+     WHERE m.channel_id IN (${channels.map(() => '?').join(',')}) AND m.kind = 'text' AND (m.thread_id IS NULL OR m.also_channel = 1) AND fold(m.content) LIKE ? ESCAPE '\\' AND m.created_at < ?
      ORDER BY m.created_at DESC LIMIT ?`,
     server.id,
     ...channels.map((c) => c.id),
@@ -2576,7 +2598,7 @@ function deleteAttachments(messageId: string) {
  * Mensagem de um webhook (ver webhooks.ts): os arquivos chegam junto no pedido, então são gravados aqui,
  * já presos à mensagem. Avisa quem foi mencionado por @usuario (o @todos não vale: a conta não é membro).
  */
-async function deliverWebhookMessage(channel: ChannelRow, authorId: string, content: string, files: WebhookFile[], data: unknown) {
+async function deliverWebhookMessage(channel: ChannelRow, authorId: string, content: string, files: WebhookFile[], data: unknown, root: MessageRow | null = null) {
   const id = randomUUID();
   const rows: AttachmentRow[] = files.map((f) => {
     const name = cleanFileName(f.name);
@@ -2585,13 +2607,14 @@ async function deliverWebhookMessage(channel: ChannelRow, authorId: string, cont
   });
   tx(() => {
     run(
-      "INSERT INTO messages (id, channel_id, author_id, content, kind, data, attachments, created_at) VALUES (?, ?, ?, ?, 'text', ?, ?, ?)",
+      "INSERT INTO messages (id, channel_id, author_id, content, kind, data, attachments, thread_id, created_at) VALUES (?, ?, ?, ?, 'text', ?, ?, ?, ?)",
       id,
       channel.id,
       authorId,
       content,
       data ? JSON.stringify(data) : null,
       attachmentsField(rows),
+      root?.id ?? null,
       now(),
     );
     for (const r of rows) {
@@ -2609,8 +2632,9 @@ async function deliverWebhookMessage(channel: ChannelRow, authorId: string, cont
     }
   });
   const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
-  await emitToChannel(channel, 'message:new', msg);
-  if (content) notifyMentions(channel, authorId, content, msg);
+  if (!root) await emitToChannel(channel, 'message:new', msg);
+  const mentioned = content ? notifyMentions(channel, authorId, content, msg) : [];
+  if (root) await onReply(channel, root, authorId, msg, mentioned);
   return msg;
 }
 
@@ -2649,23 +2673,29 @@ api.post('/channels/:id/messages', async (req, res) => {
   const files = pendingAttachments(req.body?.attachments, me);
   const content = messageContent(req.body?.content, files.length > 0);
   const replyTo = replyTarget(req.body?.replyTo, 'messages', 'channel_id', channel.id);
+  // resposta numa thread: só aparece dentro dela, a não ser com "também enviar para o canal"
+  const root = req.body?.threadId ? threadRoot(req.body.threadId, channel.id) : null;
+  const alsoChannel = !!root && req.body?.alsoChannel === true;
   const id = randomUUID();
   run(
-    'INSERT INTO messages (id, channel_id, author_id, content, attachments, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO messages (id, channel_id, author_id, content, attachments, reply_to, thread_id, also_channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     id,
     channel.id,
     me,
     content,
     attachmentsField(files),
     replyTo,
+    root?.id ?? null,
+    alsoChannel ? 1 : 0,
     now(),
   );
   claimAttachments(files, id);
   const msg = messageJson(get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, id)!);
-  await emitToChannel(channel, 'message:new', msg);
-  notifyMentions(channel, me, content, msg);
+  if (!root || alsoChannel) await emitToChannel(channel, 'message:new', msg);
+  const mentioned = notifyMentions(channel, me, content, msg);
+  if (root) await onReply(channel, root, me, msg, mentioned);
   // quem escreve já leu até a própria mensagem
-  markRead(me, channel.id, msg.createdAt);
+  if (!root || alsoChannel) markRead(me, channel.id, msg.createdAt);
   jamFromChat(channel, me, content);
   res.json(msg);
 });
@@ -2776,12 +2806,12 @@ api.delete('/channels/:id/jam', humansOnly, (req, res) => {
 });
 
 /** @usuario avisa a pessoa; @todos avisa todo mundo que vê o canal (precisa de "Mencionar todos"). */
-function notifyMentions(channel: ChannelRow, authorId: string, content: string, msg: ReturnType<typeof messageJson>) {
+function notifyMentions(channel: ChannelRow, authorId: string, content: string, msg: ReturnType<typeof messageJson>): string[] {
   const everyone = /(^|\s)@(todos|everyone|all)\b/i.test(content) && has(channelPermissions(channel, authorId), P.MENTION_EVERYONE);
   const names = [...content.matchAll(/(^|\s)@([a-zA-Z0-9_.]{3,32})/g)].map((m) => m[2].toLowerCase());
   // responder alguém também avisa a pessoa (como no Discord)
   const replied = msg.replyTo && !('deleted' in msg.replyTo) ? msg.replyTo.authorId : null;
-  if (!everyone && names.length === 0 && !replied) return;
+  if (!everyone && names.length === 0 && !replied) return [];
 
   const members = all<{ id: string; username: string }>(
     'SELECT u.id, u.username FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ?',
@@ -2799,6 +2829,7 @@ function notifyMentions(channel: ChannelRow, authorId: string, content: string, 
   for (const t of targets) {
     emitToUser(t.id, 'mention', { message: msg, serverId: server.id, serverName: server.name, channelName: channel.name, everyone });
   }
+  return targets.map((t) => t.id);
 }
 
 api.patch('/messages/:id', async (req, res) => {
@@ -2821,6 +2852,10 @@ api.delete('/messages/:id', async (req, res) => {
     : requireChannelPerm(msg.channel_id, me, P.MANAGE_MESSAGES);
   run('DELETE FROM messages WHERE id = ?', msg.id);
   deleteAttachments(msg.id);
+  if (msg.thread_id) {
+    const t = recount(msg.thread_id);
+    if (t) await emitToChannel(channel, 'thread:update', { channelId: channel.id, rootId: t.id, thread: threadJson(t) });
+  }
   // só quando alguém apaga a mensagem de outra pessoa (como no Discord); o texto não vai para o registro
   if (msg.author_id !== me) {
     audit(channel.server_id, me, 'message_delete', { target: userTarget(msg.author_id), changes: change('Canal', null, channelLabel(channel.name, channel.type)) });
@@ -3720,6 +3755,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 
 registerForumRoutes(api, authorJson);
 registerUnreadRoutes(api);
+registerThreadRoutes(api);
 registerWebhookRoutes(api);
 registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);

@@ -6,6 +6,7 @@
 // O som (Gota para mensagem, Acorde para menção) toca nos três casos, se estiver ligado.
 import { useApp } from '../store/app';
 import { useNotices, type Notice, type NoticeTarget } from '../store/notices';
+import { useThreads } from '../store/threads';
 import { desktop } from './desktop';
 import { notifySettings } from './nudge';
 import { playNotify } from './sounds';
@@ -70,5 +71,6 @@ export function openNoticeTarget(target: NoticeTarget | null | undefined) {
   else {
     app.openServer(target.serverId);
     app.openChannel(target.serverId, target.channelId);
+    if (target.threadId) useThreads.getState().openThread(target.serverId, target.channelId, target.threadId);
   }
 }

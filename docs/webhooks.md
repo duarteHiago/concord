@@ -78,6 +78,29 @@ Os campos `embeds[].image`, `embeds[].thumbnail` e `avatar_url` (imagem por link
 do webhook se troca nas configurações do canal. Um link de imagem escrito no texto (`content` ou
 `description`) aparece como em qualquer mensagem do chat.
 
+### Responder numa thread e resolver
+
+Para acompanhar um alerta na thread dele (por exemplo, "continua alto" e depois "normalizou"), guarde o `id`
+da primeira mensagem (mande com `?wait=true`) e use-o como `thread_id`, igual ao Discord: no endereço
+(`?thread_id=ID`) ou no corpo. A resposta entra na thread, não no canal.
+
+```bash
+# 1) o alerta: guarde o id que volta
+curl -X POST "https://seu-concord.com/api/webhooks/ID/TOKEN?wait=true" \
+  -H "Content-Type: application/json" -d '{"content": "API com 40% de erro"}'
+
+# 2) uma atualização dentro da thread do alerta
+curl -X POST "https://seu-concord.com/api/webhooks/ID/TOKEN?thread_id=ID_DO_ALERTA" \
+  -H "Content-Type: application/json" -d '{"content": "Continua alto: 35%"}'
+
+# 3) marcar como resolvido (dá para mandar só o status, sem mensagem)
+curl -X POST "https://seu-concord.com/api/webhooks/ID/TOKEN" \
+  -H "Content-Type: application/json" -d '{"thread_id": "ID_DO_ALERTA", "thread_status": "resolved"}'
+```
+
+`thread_status` aceita `resolved` (resolvida) e `open` (reaberta). A thread tem que ser de uma mensagem do
+mesmo canal do webhook.
+
 ## 3. Formato do Slack
 
 Para ferramentas que só falam com o Slack, acrescente `/slack` no fim do endereço:

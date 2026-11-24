@@ -1,14 +1,15 @@
 import { useStickers } from './stickers';
 import type { FeedbackKind } from '../../../shared/feedback.ts';
 import { receiveClip, type ClipEvent } from '../lib/clip';
-import type { NotifyLevel, PlacedSticker } from '../lib/types';
+import type { NotifyLevel, PlacedSticker, ThreadMeta } from '../lib/types';
 import { asStatus } from '../lib/status';
 import { create } from 'zustand';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { applyTheme, DEFAULT_THEME, normalizeTheme } from '../lib/theme';
-import { receiveChannelMessage, receiveDirectMessage, receiveFriendRequest, receiveMention, type MentionEvent } from '../lib/mentions';
+import { receiveChannelMessage, receiveDirectMessage, receiveFriendRequest, receiveMention, receiveThreadActivity, type MentionEvent, type ThreadActivity } from '../lib/mentions';
 import { useUnreads } from './unreads';
+import { useThreads } from './threads';
 import { directorShake, receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
 import { installShortcuts, syncGlobalShortcuts } from '../lib/shortcuts';
@@ -107,6 +108,10 @@ interface AppState {
   /** página "Novidades" aberta no lugar da conversa (abrir um servidor, canal ou conversa fecha) */
   releasesOpen: boolean;
   openReleases: () => void;
+  /** a aba "Threads" (as threads que sigo) aberta no lugar do chat */
+  threadsOpen: boolean;
+  openThreads: () => void;
+  closeThreads: () => void;
   closeReleases: () => void;
   /** página do perfil de alguém aberta no lugar da conversa (mesmas regras de fechar que a de Novidades) */
   profile: { userId: string; serverId: string | null } | null;
@@ -251,6 +256,7 @@ export const useApp = create<AppState>((set, get) => {
         void get().loadRelationships();
         // o que ficou por ler (a reconexão também traz o que chegou enquanto estava fora)
         void useUnreads.getState().load();
+        void useThreads.getState().loadFollowed();
       }
       useVoice.getState().resync();
       // contrato de Mecenato: a renovação do contrato antigo aparece logo ao entrar (ver Mecenato.tsx)
@@ -374,12 +380,23 @@ export const useApp = create<AppState>((set, get) => {
     socket.on('message:update', (msg: Message) => {
       const list = get().messages[msg.channelId];
       if (list) set({ messages: { ...get().messages, [msg.channelId]: replaceMessage(list, msg) } });
+      useThreads.getState().onMessageUpdate(msg);
     });
     socket.on('message:delete', ({ id, channelId }: { id: string; channelId: string }) => {
       const list = get().messages[channelId];
       if (list) set({ messages: { ...get().messages, [channelId]: removeMessage(list, id) } });
       dropReplying(channelId, id);
+      useThreads.getState().onMessageDelete(id);
     });
+    // threads: resposta nova (resumo na mensagem e painel aberto), status, e o que sigo
+    socket.on('thread:reply', (e: { channelId: string; rootId: string; message: Message; thread: ThreadMeta }) => useThreads.getState().onReply(e));
+    socket.on('thread:update', (e: { channelId: string; rootId: string; thread: ThreadMeta }) => useThreads.getState().onUpdate(e));
+    socket.on('thread:activity', (e: ThreadActivity) => {
+      useThreads.getState().onActivity(e);
+      receiveThreadActivity(e);
+    });
+    socket.on('thread:read', ({ rootId }: { rootId: string }) => useThreads.getState().onRead(rootId));
+    socket.on('thread:follow', ({ rootId, following }: { rootId: string; following: boolean }) => useThreads.getState().onFollow(rootId, following));
     socket.on('dm:message', ({ dm, message }: { dm: DirectChannel; message: Message }) => {
       if (message.kind === 'game') announceGame(message, { kind: 'dm', id: dm.id });
       const list = get().messages[dm.id];
@@ -459,7 +476,7 @@ export const useApp = create<AppState>((set, get) => {
       }
     },
     openFriends: () => {
-      set({ activeServerId: HOME, activeDmId: null, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' });
+      set({ activeServerId: HOME, activeDmId: null, releasesOpen: false, threadsOpen: false, profile: null, settings: null, mobileView: 'chat' });
       saveLast(HOME, get().activeChannels);
       void get().loadDms();
     },
@@ -710,7 +727,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openServer: (serverId) => {
-      set({ activeServerId: serverId, releasesOpen: false, profile: null, settings: null });
+      set({ activeServerId: serverId, releasesOpen: false, threadsOpen: false, profile: null, settings: null });
       saveLast(serverId, get().activeChannels);
       if (serverId === HOME) {
         void get().loadDms();
@@ -742,7 +759,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openDmById: (dmId) => {
-      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' });
+      set({ activeServerId: HOME, activeDmId: dmId, releasesOpen: false, threadsOpen: false, profile: null, settings: null, mobileView: 'chat' });
       saveLast(HOME, get().activeChannels);
       if (!get().messages[dmId]) void get().loadDmMessages(dmId);
       get().markDmRead(dmId);
@@ -771,7 +788,7 @@ export const useApp = create<AppState>((set, get) => {
 
     openChannel: (serverId, channelId) => {
       const activeChannels = { ...get().activeChannels, [serverId]: channelId };
-      set({ activeChannels, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' });
+      set({ activeChannels, releasesOpen: false, threadsOpen: false, profile: null, settings: null, mobileView: 'chat' });
       saveLast(serverId, activeChannels);
       const ch = get().details[serverId]?.channels.find((c) => c.id === channelId);
       if (ch?.type === 'text' && !get().messages[channelId]) void get().loadMessages(channelId);
@@ -795,17 +812,20 @@ export const useApp = create<AppState>((set, get) => {
     // as Configurações viraram página: quem pede a "janela" de configurações (de qualquer lugar do app) abre ela
     openModal: (modal) =>
       modal.type === 'userSettings'
-        ? set({ settings: modal.tab === 'style' || !modal.tab ? 'profile' : modal.tab, profile: null, releasesOpen: false, modal: null })
+        ? set({ settings: modal.tab === 'style' || !modal.tab ? 'profile' : modal.tab, profile: null, releasesOpen: false, threadsOpen: false, modal: null })
         : set({ modal }),
     closeModal: () => set({ modal: null }),
     toggleMemberList: () => set({ memberListOpen: !get().memberListOpen }),
     mobileView: 'sidebar' as const,
     setMobileView: (view) => set({ mobileView: view }),
     releasesOpen: false,
-    openReleases: () => set({ releasesOpen: true, profile: null, settings: null, mobileView: 'chat' }),
+    openReleases: () => set({ releasesOpen: true, threadsOpen: false, profile: null, settings: null, mobileView: 'chat' }),
+    threadsOpen: false,
+    openThreads: () => set({ threadsOpen: true, releasesOpen: false, profile: null, settings: null, mobileView: 'chat' }),
+    closeThreads: () => set({ threadsOpen: false, mobileView: 'sidebar' }),
     profile: null,
     // fecha a janela de onde veio (ex.: a lista de membros no celular), senão ela ficava aberta por cima do perfil
-    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false, settings: null, modal: null, mobileView: 'chat' }),
+    openProfile: (userId, serverId = null) => set({ profile: { userId, serverId }, releasesOpen: false, threadsOpen: false, settings: null, modal: null, mobileView: 'chat' }),
     settings: null,
     openSettings: (tab = 'profile') => set({ settings: tab, profile: null, releasesOpen: false, mobileView: 'chat' }),
     closeSettings: () => set({ settings: null, mobileView: 'sidebar' }),

@@ -4,7 +4,20 @@ import { toast } from '../store/toast';
 import { effectiveLevel, useUnreads } from '../store/unreads';
 import { deliverNotice } from './notify';
 import { notifySettings } from './nudge';
-import type { DirectChannel, Message, User } from './types';
+import type { DirectChannel, Message, ThreadMeta, User } from './types';
+import { threadVisible } from '../store/threads';
+
+/** Resposta numa thread que eu sigo (ver server/src/threads.ts#onReply). */
+export interface ThreadActivity {
+  serverId: string;
+  serverName: string;
+  channelId: string;
+  channelName: string;
+  rootId: string;
+  rootPreview: string;
+  message: Message;
+  thread: ThreadMeta;
+}
 
 export interface MentionEvent {
   message: Message;
@@ -78,7 +91,10 @@ export function receiveMention(m: MentionEvent) {
   const me = app.me;
   useUnreads.getState().onMention(m.message.channelId, m.serverId);
   if (!me || !notifySettings(me).mentions) return;
-  if (viewingChannel(m.serverId, m.message.channelId)) return;
+  // menção dentro de uma thread só conta como vista com a thread aberta (no canal a resposta não aparece)
+  const threadId = m.message.threadId;
+  const seen = threadId ? threadVisible(threadId) : viewingChannel(m.serverId, m.message.channelId);
+  if (seen) return;
   // servidor/canal em "nada" ou silenciado: fica só o contador
   const { level, muted } = effectiveLevel(useUnreads.getState().levels, m.serverId, m.message.channelId);
   if (muted || level === 'none') return;
@@ -90,9 +106,35 @@ export function receiveMention(m: MentionEvent) {
       text: preview(m.message),
       avatar: { url: m.message.author.avatarUrl, color: m.message.author.avatarColor },
       mention: true,
-      target: { serverId: m.serverId, channelId: m.message.channelId },
+      // menção dentro de uma thread: o clique abre a thread
+      target: { serverId: m.serverId, channelId: m.message.channelId, ...(m.message.threadId ? { threadId: m.message.threadId } : {}) },
     },
     'mention',
+  );
+}
+
+/**
+ * Resposta numa thread que sigo: aviso com o som de mensagem, a não ser que eu já esteja com a thread aberta, que o
+ * canal esteja silenciado/em "nada", ou que a resposta me mencione (aí o aviso de menção já cuida).
+ */
+export function receiveThreadActivity(e: ThreadActivity) {
+  const me = useApp.getState().me;
+  if (!me || !notifySettings(me).mentions) return;
+  if (e.message.author.id === me.id) return;
+  if (threadVisible(e.rootId)) return;
+  const { level, muted } = effectiveLevel(useUnreads.getState().levels, e.serverId, e.channelId);
+  if (muted || level === 'none') return;
+  if (mentionsMe(e.message.content, me.username)) return;
+  deliverNotice(
+    {
+      who: authorName(e.message),
+      where: `respondeu numa thread em #${e.channelName} · ${e.serverName}`,
+      text: preview(e.message),
+      avatar: { url: e.message.author.avatarUrl, color: e.message.author.avatarColor },
+      mention: false,
+      target: { serverId: e.serverId, channelId: e.channelId, threadId: e.rootId },
+    },
+    'message',
   );
 }
 
