@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   onCloseRequest: listen('concord:close-request'),
   showClip: (data) => ipcRenderer.invoke('concord:show-clip', data),
   showNudgeMessage: (data) => ipcRenderer.invoke('concord:show-nudge-message', data),
+  showNotice: (data) => ipcRenderer.invoke('concord:show-notice', data),
   setStreaming: (on) => ipcRenderer.invoke('concord:streaming', on).catch(() => []),
   onNotificationClick: listen('concord:notification-click'),
   getActivity: () => ipcRenderer.invoke('concord:activity').catch(() => null),
