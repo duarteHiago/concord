@@ -329,6 +329,11 @@ let intentionalLeave = false;
 let micBeforeDeafen = false;
 /** se a pessoa já estava com o fone desligado antes de o servidor ensurdecer (volta assim depois) */
 let deafBeforeServer = false;
+/**
+ * O microfone que a própria pessoa escolheu (ligado ao entrar, depois o botão). O silêncio do moderador não mexe
+ * nisso: quando ele tira o silêncio, o microfone volta como a pessoa tinha deixado.
+ */
+let micIntent = true;
 /** efeito surpresa do Mecenas: vale por uns segundos por cima do efeito escolhido, sem mudar a escolha na tela */
 let prankOverride: EffectId | null = null;
 let prankTimer: ReturnType<typeof setTimeout> | undefined;
@@ -788,8 +793,10 @@ export const useVoice = create<VoiceStore>((set, get) => {
         await room.connect(wsUrl, token, { autoSubscribe: false });
 
         await new Promise<void>((resolve, reject) => {
-          getSocket()?.emit('voice:join', { channelId }, (r: { ok: boolean; error?: string; serverDeafened?: boolean }) => {
+          getSocket()?.emit('voice:join', { channelId }, (r: { ok: boolean; error?: string; serverDeafened?: boolean; serverMuted?: boolean }) => {
             if (!r.ok) return reject(new Error(r.error));
+            // já entrou silenciado por um moderador: não tenta ligar o microfone (o LiveKit recusaria)
+            set({ serverMuted: !!r.serverMuted });
             // já entrou ensurdecido pelo Mecenas (o token veio sem poder ouvir)
             if (r.serverDeafened) {
               deafBeforeServer = get().deafened;
@@ -805,7 +812,10 @@ export const useVoice = create<VoiceStore>((set, get) => {
         syncSubscriptions();
         applyVolumes();
 
-        if (has(permissions, P.SPEAK) && !get().deafened) {
+        micIntent = has(permissions, P.SPEAK);
+        if (get().serverMuted) {
+          toast.info('Você está silenciado por um moderador neste servidor.');
+        } else if (micIntent && !get().deafened) {
           try {
             await enableMic(true);
           } catch (err) {
@@ -847,6 +857,7 @@ export const useVoice = create<VoiceStore>((set, get) => {
           applyVolumes();
         }
         await enableMic(next);
+        micIntent = next;
         playSound(next ? 'unmute' : 'mute');
       } catch (err) {
         toast.error(err);
@@ -1072,6 +1083,16 @@ export const useVoice = create<VoiceStore>((set, get) => {
         if (muted) {
           await enableMic(false).catch(() => {});
           toast.info('Você foi silenciado por um moderador.');
+        } else if (micIntent && !get().deafened && has(get().permissions, P.SPEAK)) {
+          // o microfone volta como a pessoa tinha deixado antes do silêncio (o servidor só avisa depois que o
+          // LiveKit já devolveu a permissão)
+          try {
+            await enableMic(true);
+            playSound('unmute');
+            toast.info('Um moderador removeu seu silenciamento. Seu microfone voltou.');
+          } catch {
+            toast.info('Um moderador removeu seu silenciamento. Clique no microfone para falar.');
+          }
         } else {
           toast.info('Um moderador removeu seu silenciamento.');
         }
