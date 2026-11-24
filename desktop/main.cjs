@@ -968,7 +968,7 @@ function noticeHtml() {
     const el=document.createElement('div');el.className='n in';
     const x=document.createElement('button');x.className='x';x.setAttribute('aria-label','Fechar');x.innerHTML='<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
     x.onclick=(e)=>{e.stopPropagation();drop(el)};el.appendChild(x);
-    const pic=document.createElement('div');pic.className='pic';const av=document.createElement('div');av.className='av';av.style.background=n.avatar.color;
+    const pic=document.createElement('div');pic.className='pic';const av=document.createElement('div');av.className='av';av.style.backgroundColor=n.avatar.color;
     av.textContent=(n.who||'?').trim().charAt(0).toUpperCase();
     if(n.avatar.url){const img=new Image();img.onload=()=>{av.textContent='';av.style.backgroundImage='url("'+img.src+'")'};img.src=n.avatar.url}
     pic.appendChild(av);if(n.logo){const l=document.createElement('img');l.className='logo';l.src=n.logo;pic.appendChild(l)}el.appendChild(pic);
