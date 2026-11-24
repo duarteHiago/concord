@@ -16,7 +16,7 @@ import { onVisibilityChange } from '../lib/visibility';
 import { memberColor, useActiveDetail, useApp } from '../store/app';
 import { profileTriggers } from '../store/popover';
 import { toast } from '../store/toast';
-import { Avatar, IconButton, Spinner, VerifiedBadge, cx } from './ui';
+import { Avatar, AvatarStack, IconButton, Spinner, VerifiedBadge, cx } from './ui';
 import { mentionsMe } from '../lib/mentions';
 import { availableCommands, runCommand } from '../lib/commands';
 import { GameCard, GameMenuButton } from './Games';
@@ -752,9 +752,18 @@ function ThreadSummary({ thread, onOpen }: { thread: ThreadMeta; onOpen: () => v
       onClick={onOpen}
       className="mt-1 flex max-w-full items-center gap-2 rounded-full bg-surface-3 py-1 pr-3 pl-1.5 text-xs font-semibold text-fg-muted transition-colors hover:bg-surface-4 hover:text-fg"
     >
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
-        <MessagesSquare size={11} />
-      </span>
+      {/* fotos de quem respondeu (até 3); sem ninguém ainda, o ícone */}
+      {thread.participants?.length ? (
+        <AvatarStack
+          size={20}
+          max={3}
+          people={thread.participants.map((p) => ({ id: p.id, name: p.displayName, color: p.avatarColor, src: p.avatarUrl }))}
+        />
+      ) : (
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+          <MessagesSquare size={11} />
+        </span>
+      )}
       {thread.replyCount > 0 ? (
         <span className="truncate">
           <b className="text-accent">{thread.replyCount === 1 ? '1 resposta' : `${thread.replyCount} respostas`}</b>

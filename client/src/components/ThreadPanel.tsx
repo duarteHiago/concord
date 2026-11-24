@@ -37,12 +37,32 @@ export function ThreadPanel() {
     return () => window.removeEventListener('focus', read);
   }, [open?.rootId, open?.loading, replyCount]);
 
-  // resposta nova: rola até ela (se já estava perto do fim)
+  // abriu: começa no fim (as respostas mais recentes). Resposta nova: rola até ela se já estava perto do fim.
+  // Respostas antigas chegando em cima (rolou para o topo): mantém na tela o que a pessoa estava lendo.
   const count = open?.replies.length ?? 0;
+  const firstId = open?.replies[0]?.id;
+  const rootId = open?.rootId;
+  const before = useRef<{ rootId?: string; firstId?: string; height: number; top: number }>({ height: 0, top: 0 });
   useLayoutEffect(() => {
     const el = list.current;
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 240) el.scrollTop = el.scrollHeight;
-  }, [count, open?.loading]);
+    if (!el) return;
+    const prev = before.current;
+    // mesma thread, a primeira resposta mudou e o conteúdo cresceu: chegaram respostas antigas em cima
+    const older = prev.rootId === rootId && prev.firstId && firstId && prev.firstId !== firstId && el.scrollHeight > prev.height;
+    if (older) {
+      el.scrollTop = prev.top + (el.scrollHeight - prev.height);
+    } else if (prev.rootId !== rootId || !prev.firstId || el.scrollHeight - el.scrollTop - el.clientHeight < 240) {
+      el.scrollTop = el.scrollHeight;
+    }
+    before.current = { rootId, firstId, height: el.scrollHeight, top: el.scrollTop };
+  }, [count, firstId, rootId, open?.loading]);
+
+  function onScroll() {
+    const el = list.current;
+    if (!el) return;
+    before.current = { rootId, firstId, height: el.scrollHeight, top: el.scrollTop };
+    if (el.scrollTop < 120) void useThreads.getState().loadOlder();
+  }
 
   if (!open || !detail || !channel || detail.server.id !== open.serverId) return null;
   const resolved = open.root?.thread?.status === 'resolved';
@@ -83,7 +103,7 @@ export function ThreadPanel() {
         </IconButton>
       </header>
 
-      <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
+      <div ref={list} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
         {open.loading || !open.root ? (
           <div className="flex justify-center py-10">
             <Spinner />
@@ -109,6 +129,17 @@ export function ThreadPanel() {
               </button>
               <span className="h-px flex-1 bg-line" />
             </div>
+            {open.hasMore && (
+              <div className="flex justify-center py-3">
+                {open.loadingOlder ? (
+                  <Spinner size={20} />
+                ) : (
+                  <button onClick={() => void useThreads.getState().loadOlder()} className="rounded-full bg-surface-3 px-3 py-1 text-xs font-semibold text-fg-muted hover:bg-surface-4 hover:text-fg">
+                    Carregar respostas anteriores
+                  </button>
+                )}
+              </div>
+            )}
             {replies.map((m, i) => {
               const prev = replies[i - 1];
               const grouped = !!prev && prev.author.id === m.author.id && m.createdAt - prev.createdAt < 5 * 60_000;

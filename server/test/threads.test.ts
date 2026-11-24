@@ -133,4 +133,35 @@ describe('threads', () => {
     assert.equal(t.root.thread.status, 'resolved');
     assert.equal((await post('', { thread_status: 'resolved' })).status, 400, 'status sem thread');
   });
+
+  it('o resumo traz as fotos de até 3 pessoas que responderam, a mais recente primeiro', async () => {
+    const { owner, member, channel, serverId } = await setup();
+    const third = await signUp(server, 'terceira');
+    const inv = await owner.post(`/servers/${serverId}/invites`, {});
+    await third.post(`/invites/${inv.body.code}`);
+    const root = (await send(owner, channel, { content: 'raiz' })).body;
+    await send(member, channel, { content: 'a', threadId: root.id });
+    await send(third, channel, { content: 'b', threadId: root.id });
+    await send(member, channel, { content: 'c', threadId: root.id });
+    const meta = (await list(owner, channel)).find((m) => m.id === root.id)!.thread as unknown as { participants: { id: string }[] };
+    // member respondeu por último, depois third; cada pessoa aparece uma vez só
+    assert.deepEqual(meta.participants.map((p) => p.id), [member.id, third.id]);
+  });
+
+  it('as respostas vêm aos poucos: as mais recentes primeiro, e as anteriores com before', async () => {
+    const { owner, member, channel } = await setup();
+    const root = (await send(owner, channel, { content: 'raiz' })).body;
+    for (let i = 1; i <= 12; i++) {
+      await send(i % 2 ? owner : member, channel, { content: `r${i}`, threadId: root.id });
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const p1 = (await owner.get(`/messages/${root.id}/thread?limit=5`)).body;
+    assert.deepEqual(p1.replies.map((r: { content: string }) => r.content), ['r8', 'r9', 'r10', 'r11', 'r12']);
+    assert.equal(p1.hasMore, true);
+    const p2 = (await owner.get(`/messages/${root.id}/thread?limit=5&before=${p1.replies[0].createdAt}`)).body;
+    assert.deepEqual(p2.replies.map((r: { content: string }) => r.content), ['r3', 'r4', 'r5', 'r6', 'r7']);
+    const p3 = (await owner.get(`/messages/${root.id}/thread?limit=5&before=${p2.replies[0].createdAt}`)).body;
+    assert.deepEqual(p3.replies.map((r: { content: string }) => r.content), ['r1', 'r2']);
+    assert.equal(p3.hasMore, false);
+  });
 });

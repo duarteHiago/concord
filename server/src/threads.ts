@@ -16,7 +16,26 @@ export type ThreadStatus = 'open' | 'resolved';
 
 /** O resumo que vai junto da mensagem que abriu a thread (e nos eventos). */
 export function threadJson(t: Pick<ThreadRow, 'id' | 'reply_count' | 'last_reply_at' | 'status' | 'resolved_by' | 'resolved_at'>) {
-  return { id: t.id, replyCount: t.reply_count, lastReplyAt: t.last_reply_at, status: t.status, resolvedBy: t.resolved_by, resolvedAt: t.resolved_at };
+  return {
+    id: t.id,
+    replyCount: t.reply_count,
+    lastReplyAt: t.last_reply_at,
+    status: t.status,
+    resolvedBy: t.resolved_by,
+    resolvedAt: t.resolved_at,
+    participants: t.reply_count > 0 ? participantsOf(t.id) : [],
+  };
+}
+
+/** As fotos do resumo: até 3 pessoas que responderam, de quem respondeu por último para trás. */
+function participantsOf(threadId: string) {
+  return all<{ id: string; display_name: string; avatar_url: string | null; avatar_color: string }>(
+    `SELECT u.id, u.display_name, u.avatar_url, u.avatar_color
+       FROM (SELECT author_id, MAX(created_at) AS last FROM messages WHERE thread_id = ? GROUP BY author_id ORDER BY last DESC LIMIT 3) p
+       JOIN users u ON u.id = p.author_id
+      ORDER BY p.last DESC`,
+    threadId,
+  ).map((u) => ({ id: u.id, displayName: u.display_name, avatarUrl: u.avatar_url, avatarColor: u.avatar_color }));
 }
 
 const getThread = (id: string) => get<ThreadRow>('SELECT * FROM threads WHERE id = ?', id);
