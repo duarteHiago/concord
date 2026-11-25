@@ -199,7 +199,9 @@ function createWindow() {
   });
   // maximizar uma janela escondida a mostra na hora: fica para quando ela aparecer
   const startMaximized = config.maximized || smallScreen;
-  if (!win.isVisible()) createSplash(startMaximized ? screen.getDisplayMatching(bounds).workArea : bounds);
+  // abertura desligada em Ajustes → App (config.intro): a janela aparece na hora, como antes
+  const withSplash = config.intro !== false;
+  if (withSplash) createSplash(startMaximized ? screen.getDisplayMatching(bounds).workArea : bounds);
   let revealed = false;
   const reveal = () => {
     if (revealed || !win || win.isDestroyed()) return;
@@ -209,7 +211,7 @@ function createWindow() {
     win.show();
     closeSplash();
   };
-  const revealTimer = setTimeout(reveal, SPLASH_MAX_MS);
+  const revealTimer = setTimeout(reveal, withSplash ? SPLASH_MAX_MS : 0);
   // página carregada (ou a tela offline): espera a animação entrar e mostra
   win.webContents.on('did-finish-load', () => setTimeout(reveal, Math.max(0, SPLASH_MIN_MS - (Date.now() - splashAt))));
   // outra parte do app mostrou a janela antes (segunda instância, bandeja): a abertura sai junto
@@ -436,6 +438,15 @@ handle('concord:window', (event, action) => {
     w.close();
   }
   return { maximized: w.isMaximized(), fullscreen: w.isFullScreen(), platform: process.platform };
+});
+
+// liga/desliga a animação de abertura; sem argumento, só responde como está
+handle('concord:intro', (_e, on) => {
+  if (typeof on === 'boolean') {
+    config.intro = on;
+    saveConfig();
+  }
+  return config.intro !== false;
 });
 
 handle('concord:info', () => ({
