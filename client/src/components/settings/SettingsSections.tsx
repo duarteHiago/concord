@@ -1207,7 +1207,6 @@ function DesktopServer() {
       </Button>
       <UpdateRow />
       <AskBeforeClose />
-      <IntroSetting />
     </div>
   );
 }
@@ -1226,30 +1225,6 @@ function AskBeforeClose() {
         onChange={(v) => {
           setCloseAsk(v);
           setAsk(v);
-        }}
-      />
-    </div>
-  );
-}
-
-/** A animação do símbolo enquanto o app desktop abre (desktop/intro.html). Só em versões do app que têm a opção. */
-function IntroSetting() {
-  const [on, setOn] = useState<boolean | null>(null);
-  useEffect(() => {
-    void desktop?.intro?.().then((v) => setOn(v ?? true));
-  }, []);
-  if (!desktop?.intro || on === null) return null;
-  return (
-    <div className="flex items-center justify-between gap-4 border-t border-line pt-3">
-      <div>
-        <div className="text-sm font-semibold">Animação de abertura</div>
-        <div className="text-xs text-fg-muted">O símbolo do Concord se monta no meio da tela enquanto o app abre. Desligada, a janela aparece direto.</div>
-      </div>
-      <Toggle
-        checked={on}
-        onChange={(v) => {
-          setOn(v);
-          void desktop!.intro!(v);
         }}
       />
     </div>
