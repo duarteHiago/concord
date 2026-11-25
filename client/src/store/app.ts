@@ -10,6 +10,7 @@ import { applyTheme, DEFAULT_THEME, normalizeTheme } from '../lib/theme';
 import { receiveChannelMessage, receiveDirectMessage, receiveFriendRequest, receiveMention, receiveThreadActivity, type MentionEvent, type ThreadActivity } from '../lib/mentions';
 import { useUnreads } from './unreads';
 import { useThreads } from './threads';
+import { reportVisibility, syncPush } from '../lib/push';
 import { directorShake, receiveNudge } from '../lib/nudge';
 import { startActivityReporter } from '../lib/activity';
 import { installShortcuts, syncGlobalShortcuts } from '../lib/shortcuts';
@@ -250,6 +251,8 @@ export const useApp = create<AppState>((set, get) => {
     const socket = connectSocket(token);
 
     socket.on('connect', () => {
+      // o push no celular só vai com o Concord fora da tela (ver lib/push.ts)
+      reportVisibility();
       // conta antiga sem e-mail: o servidor só libera o resto depois do e-mail (ver EmailGateScreen)
       if (!needsEmail(get().me)) {
         void get().loadServers();
@@ -257,6 +260,7 @@ export const useApp = create<AppState>((set, get) => {
         // o que ficou por ler (a reconexão também traz o que chegou enquanto estava fora)
         void useUnreads.getState().load();
         void useThreads.getState().loadFollowed();
+        void syncPush();
       }
       useVoice.getState().resync();
       // contrato de Mecenato: a renovação do contrato antigo aparece logo ao entrar (ver Mecenato.tsx)

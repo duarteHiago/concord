@@ -11,6 +11,8 @@ import { channelPermissions, getChannel, getServer, requireChannelPerm } from '.
 import { all, get, run, type ChannelRow, type MessageRow, type ThreadRow } from './db.ts';
 import { fail, uid } from './http.ts';
 import { emitToChannel, emitToUser } from './realtime.ts';
+import { absoluteUrl, pushPreview, pushTo } from './push.ts';
+import { effectiveLevel } from './unreads.ts';
 
 export type ThreadStatus = 'open' | 'resolved';
 
@@ -81,7 +83,13 @@ export function recount(threadId: string) {
  * Resposta nova: atualiza o resumo, faz quem respondeu (e quem abriu a thread, e quem foi mencionado) seguir,
  * avisa a sala (o contador na mensagem e o painel aberto) e quem segue (a aba Threads e o aviso).
  */
-export async function onReply(channel: ChannelRow, root: MessageRow, authorId: string, msg: { id: string; createdAt: number; content: string }, mentioned: string[]) {
+export async function onReply(
+  channel: ChannelRow,
+  root: MessageRow,
+  authorId: string,
+  msg: { id: string; createdAt: number; content: string; author: { displayName: string; avatarUrl: string | null }; data?: unknown; attachments?: unknown[] },
+  mentioned: string[],
+) {
   ensureThread(root);
   run('UPDATE threads SET reply_count = reply_count + 1, last_reply_at = ? WHERE id = ?', msg.createdAt, root.id);
   follow(root.id, authorId);
@@ -98,6 +106,20 @@ export async function onReply(channel: ChannelRow, root: MessageRow, authorId: s
   for (const f of followers) {
     // quem perdeu acesso ao canal não recebe nada dele
     if (!has(channelPermissions(channel, f.user_id), P.VIEW_CHANNEL)) continue;
+    // push no celular de quem segue (menos quem foi mencionado: esse já recebeu o push da menção)
+    if (!mentioned.includes(f.user_id)) {
+      const { level, muted } = effectiveLevel(f.user_id, channel.server_id, channel.id);
+      if (!muted && level !== 'none') {
+        const name = (msg.data as { webhook?: { name?: string } } | null)?.webhook?.name || msg.author.displayName;
+        pushTo(f.user_id, {
+          title: `${name} · thread em #${channel.name}`,
+          body: pushPreview(msg.content, msg.attachments?.length ?? 0),
+          tag: `th:${root.id}`,
+          icon: absoluteUrl(msg.author.avatarUrl),
+          target: { serverId: channel.server_id, channelId: channel.id, threadId: root.id },
+        });
+      }
+    }
     emitToUser(f.user_id, 'thread:activity', {
       serverId: server.id,
       serverName: server.name,

@@ -28,6 +28,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       workbox: {
+        // push no celular: recebe a notificação e o toque nela (ver public/push-sw.js e server/src/push.ts)
+        importScripts: ['push-sw.js'],
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
         // Navegação para estes caminhos vai para a rede. O resto recebe o app guardado no cache (navigateFallback),

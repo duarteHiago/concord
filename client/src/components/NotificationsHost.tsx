@@ -4,6 +4,9 @@ import { useEffect } from 'react';
 import { HOME, useApp } from '../store/app';
 import { totalMentions, useUnreads } from '../store/unreads';
 import { NoticeStack } from './NoticeStack';
+import { PushPrompt } from './PushPrompt';
+import { openNoticeTarget } from '../lib/notify';
+import { takeOpenFromUrl, wirePush } from '../lib/push';
 
 export function NotificationsHost() {
   const serverId = useApp((s) => s.activeServerId);
@@ -34,5 +37,19 @@ export function NotificationsHost() {
     document.title = n > 0 ? `(${n > 99 ? '99+' : n}) Concord` : 'Concord';
   }, [mentions, dms]);
 
-  return <NoticeStack />;
+  // toque numa notificação push: com o app aberto chega por mensagem do service worker; fechado, vem no endereço
+  const ready = useApp((s) => s.servers.length > 0);
+  useEffect(() => wirePush(openNoticeTarget), []);
+  useEffect(() => {
+    if (!ready) return;
+    const t = takeOpenFromUrl();
+    if (t) openNoticeTarget(t);
+  }, [ready]);
+
+  return (
+    <>
+      <NoticeStack />
+      <PushPrompt />
+    </>
+  );
 }
