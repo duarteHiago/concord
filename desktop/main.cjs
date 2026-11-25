@@ -122,6 +122,56 @@ function fitBounds() {
   return { x, y, width, height };
 }
 
+// ---- abertura
+// Janelinha transparente com o símbolo se montando (intro.html), no meio de onde a janela principal vai abrir,
+// enquanto a principal carrega escondida. A principal aparece quando a página termina de carregar, depois de a
+// animação ter tido tempo de entrar (SPLASH_MIN_MS); se a página demorar, aparece mesmo assim (SPLASH_MAX_MS).
+const SPLASH_SIZE = 320;
+const SPLASH_MIN_MS = 1500;
+const SPLASH_MAX_MS = 10_000;
+let splash = null;
+let splashAt = 0;
+
+function createSplash(bounds) {
+  splashAt = Date.now();
+  splash = new BrowserWindow({
+    x: Math.round(bounds.x + (bounds.width - SPLASH_SIZE) / 2),
+    y: Math.round(bounds.y + (bounds.height - SPLASH_SIZE) / 2),
+    width: SPLASH_SIZE,
+    height: SPLASH_SIZE,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false,
+    hasShadow: false,
+    // transparente e sem nada ainda: pode aparecer já (o ready-to-show de janela transparente demora ~0,7 s)
+    show: false,
+    icon: APP_ICON,
+    webPreferences: { sandbox: true, contextIsolation: true },
+  });
+  splash.showInactive();
+  splash.on('closed', () => {
+    splash = null;
+  });
+  void splash.loadFile(path.join(__dirname, 'intro.html')).catch(() => {});
+}
+
+/** Tira a abertura: o símbolo some (0,32 s, ver intro.html) e a janela é fechada. */
+function closeSplash() {
+  const s = splash;
+  if (!s || s.isDestroyed()) return;
+  splash = null;
+  void s.webContents.executeJavaScript("document.documentElement.classList.add('out')").catch(() => {});
+  setTimeout(() => {
+    if (!s.isDestroyed()) s.destroy();
+  }, 360);
+}
+
 function createWindow() {
   const bounds = fitBounds();
   // primeira abertura numa tela menor que o tamanho padrão: já abre maximizada
@@ -137,6 +187,8 @@ function createWindow() {
     // sem a barra de título do sistema: a página desenha a dela (logo no meio, botões na cor do tema, ver
     // client/src/components/TitleBar.tsx). No Mac os três botões nativos ficam, no canto esquerdo da barra.
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    // aparece quando a página carrega (reveal, abaixo), no lugar da abertura
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -145,7 +197,27 @@ function createWindow() {
       backgroundThrottling: false,
     },
   });
-  if (config.maximized || smallScreen) win.maximize();
+  // maximizar uma janela escondida a mostra na hora: fica para quando ela aparecer
+  const startMaximized = config.maximized || smallScreen;
+  if (!win.isVisible()) createSplash(startMaximized ? screen.getDisplayMatching(bounds).workArea : bounds);
+  let revealed = false;
+  const reveal = () => {
+    if (revealed || !win || win.isDestroyed()) return;
+    revealed = true;
+    clearTimeout(revealTimer);
+    if (startMaximized) win.maximize();
+    win.show();
+    closeSplash();
+  };
+  const revealTimer = setTimeout(reveal, SPLASH_MAX_MS);
+  // página carregada (ou a tela offline): espera a animação entrar e mostra
+  win.webContents.on('did-finish-load', () => setTimeout(reveal, Math.max(0, SPLASH_MIN_MS - (Date.now() - splashAt))));
+  // outra parte do app mostrou a janela antes (segunda instância, bandeja): a abertura sai junto
+  win.once('show', () => {
+    revealed = true;
+    clearTimeout(revealTimer);
+    closeSplash();
+  });
   // a barra da página troca o ícone de maximizar/restaurar
   const sendWindowState = () => win?.webContents.send('concord:window-state', { maximized: win.isMaximized(), fullscreen: win.isFullScreen() });
   for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, sendWindowState);
@@ -180,6 +252,7 @@ function createWindow() {
   // a janelinha da mensagem da tremida (escondida, pronta pra uso) é "filha" da janela principal: sem
   // isso, ela continuaria aberta (só escondida) depois de fechar o Concord, e o app nunca terminaria
   win.on('closed', () => {
+    if (splash && !splash.isDestroyed()) splash.destroy();
     if (nudgeMsgWin && !nudgeMsgWin.isDestroyed()) nudgeMsgWin.destroy();
   });
 
