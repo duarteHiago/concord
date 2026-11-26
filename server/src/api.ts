@@ -2422,15 +2422,27 @@ api.get('/channels/:id/messages', (req, res) => {
   res.json(rows.reverse().map(messageJson));
 });
 
-/** Uma thread: a mensagem que abriu, o resumo, se eu sigo e as respostas (as mais antigas primeiro). */
+/**
+ * Uma thread: a mensagem que abriu, o resumo, se eu sigo e as respostas, aos poucos: as 50 mais recentes (na ordem
+ * de leitura) e, com `before` (a hora da mais antiga que já tenho), as anteriores. `hasMore` diz se ainda tem antes.
+ */
 api.get('/messages/:id/thread', (req, res) => {
   const me = uid(res);
   const rootRow = get<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.id = ?`, req.params.id) ?? fail(404, 'Mensagem não encontrada');
   requireChannelPerm(rootRow.channel_id, me, P.VIEW_CHANNEL);
   if (rootRow.thread_id) fail(400, 'Isso já é uma resposta de thread');
-  const replies = all<MessageWithAuthor>(`${MESSAGE_SELECT} WHERE m.thread_id = ? ORDER BY m.created_at ASC LIMIT 500`, rootRow.id);
+  const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
+  const page = all<MessageWithAuthor>(
+    `${MESSAGE_SELECT} WHERE m.thread_id = ? AND m.created_at < ? ORDER BY m.created_at DESC LIMIT ?`,
+    rootRow.id,
+    before,
+    limit + 1,
+  );
+  const hasMore = page.length > limit;
+  const replies = page.slice(0, limit).reverse().map(messageJson);
   const f = get<{ following: number }>('SELECT following FROM thread_followers WHERE thread_id = ? AND user_id = ?', rootRow.id, me);
-  res.json({ root: messageJson(rootRow), replies: replies.map(messageJson), following: !!f?.following });
+  res.json({ root: messageJson(rootRow), replies, hasMore, following: !!f?.following });
 });
 
 // ---- Busca de mensagens (lupa / Ctrl+F) ----

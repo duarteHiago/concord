@@ -14,6 +14,9 @@ export interface OpenThread {
   replies: Message[];
   following: boolean;
   loading: boolean;
+  /** ainda tem respostas mais antigas para buscar (elas vêm aos poucos, ao rolar para cima) */
+  hasMore: boolean;
+  loadingOlder: boolean;
 }
 
 /** Uma linha da aba "Threads". */
@@ -31,6 +34,8 @@ interface ThreadState {
   followed: FollowedThread[] | null;
   openThread: (serverId: string, channelId: string, rootId: string) => void;
   closeThread: () => void;
+  /** busca as respostas anteriores às que já estão no painel */
+  loadOlder: () => Promise<void>;
   loadFollowed: () => Promise<void>;
   setStatus: (status: 'open' | 'resolved') => Promise<void>;
   setFollowing: (following: boolean) => Promise<void>;
@@ -87,12 +92,14 @@ export const useThreads = create<ThreadState>((set, get) => ({
   followed: null,
 
   openThread: (serverId, channelId, rootId) => {
-    set({ open: { serverId, channelId, rootId, root: null, replies: [], following: false, loading: true } });
+    set({ open: { serverId, channelId, rootId, root: null, replies: [], following: false, loading: true, hasMore: false, loadingOlder: false } });
     void api
-      .get<{ root: Message; replies: Message[]; following: boolean }>(`/messages/${rootId}/thread`)
+      .get<{ root: Message; replies: Message[]; following: boolean; hasMore: boolean }>(`/messages/${rootId}/thread`)
       .then((t) => {
         if (get().open?.rootId !== rootId) return;
-        set({ open: { serverId, channelId, rootId, root: t.root, replies: t.replies, following: t.following, loading: false } });
+        set({
+          open: { serverId, channelId, rootId, root: t.root, replies: t.replies, following: t.following, loading: false, hasMore: !!t.hasMore, loadingOlder: false },
+        });
         markRead(rootId);
         get().onRead(rootId);
       })
@@ -103,6 +110,23 @@ export const useThreads = create<ThreadState>((set, get) => ({
   },
 
   closeThread: () => set({ open: null }),
+
+  loadOlder: async () => {
+    const o = get().open;
+    if (!o || o.loading || o.loadingOlder || !o.hasMore || !o.replies.length) return;
+    set({ open: { ...o, loadingOlder: true } });
+    try {
+      const t = await api.get<{ replies: Message[]; hasMore: boolean }>(`/messages/${o.rootId}/thread?before=${o.replies[0].createdAt}`);
+      const cur = get().open;
+      if (cur?.rootId !== o.rootId) return;
+      const known = new Set(cur.replies.map((m) => m.id));
+      set({ open: { ...cur, replies: [...t.replies.filter((m) => !known.has(m.id)), ...cur.replies], hasMore: t.hasMore, loadingOlder: false } });
+    } catch (err) {
+      toast.error(err);
+      const cur = get().open;
+      if (cur?.rootId === o.rootId) set({ open: { ...cur, loadingOlder: false } });
+    }
+  },
 
   loadFollowed: async () => {
     try {

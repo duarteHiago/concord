@@ -492,6 +492,8 @@ export interface ThreadMeta {
   status: 'open' | 'resolved';
   resolvedBy: string | null;
   resolvedAt: number | null;
+  /** fotos do resumo: até 3 pessoas que responderam, a mais recente primeiro */
+  participants?: { id: string; displayName: string; avatarUrl: string | null; avatarColor: string }[];
 }
 
 /** Cartão de uma mensagem de webhook (o "embed" do Discord). Ver server/src/webhooks.ts. */
