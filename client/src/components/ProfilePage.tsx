@@ -288,8 +288,10 @@ function Hero({
               </span>
             </span>
           )}
-          <h1 className="flex flex-wrap items-center gap-3 font-display text-5xl leading-none font-extrabold tracking-tight md:text-6xl">
-            <span className="truncate">{user.displayName}</span>
+          {/* no celular um tamanho menor: em 5xl um nome de 10 letras já ocupava a tela toda */}
+          <h1 className="flex flex-wrap items-center gap-3 font-display text-4xl leading-none font-extrabold tracking-tight sm:text-5xl md:text-6xl">
+            {/* folga embaixo: o corte do truncate comia o "_" e as perninhas do g, p, y */}
+            <span className="max-w-full min-w-0 truncate pb-[0.12em]">{user.displayName}</span>
             {user.verified && <VerifiedBadge size={28} />}
             {user.mecenas && <span className="rounded-full bg-warn/15 px-3 text-xs leading-7 font-extrabold tracking-widest text-warn">MECENAS</span>}
           </h1>
@@ -304,9 +306,9 @@ function Hero({
           </div>
         </div>
         {!own && (
-          <div className="flex gap-2 pb-2">
+          <div className="flex flex-wrap gap-2 pb-2">
             {relationship !== 'blocked' && (
-              <Button className="h-11 px-6" onClick={() => void openDm(user.id)}>
+              <Button className="h-11 px-5 whitespace-nowrap md:px-6" onClick={() => void openDm(user.id)}>
                 Mensagem
               </Button>
             )}

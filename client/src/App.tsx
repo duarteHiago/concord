@@ -11,6 +11,7 @@ import { ModalHost } from './components/modals/ModalHost';
 import { RecordDialog } from './components/RecordDialog';
 import { Spinner, Toasts, cx } from './components/ui';
 import { NotificationsHost } from './components/NotificationsHost';
+import { BackLayers } from './components/BackLayers';
 import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard, NudgeMessageToast } from './components/NudgeCard';
@@ -165,6 +166,7 @@ function MainApp() {
       {me && <RecordDialog />}
       <Toasts />
       {me && !remote && <NotificationsHost />}
+      {me && !remote && <BackLayers />}
       <UpdateBanner />
       <PwaUpdateBanner />
       {me && <NudgeCard />}

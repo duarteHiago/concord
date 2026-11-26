@@ -305,7 +305,13 @@ function Swatches({ value, onChange, allowNone }: { value: string | null; onChan
           style={{ background: c }}
         />
       ))}
-      <input type="color" value={value ?? '#7c5cff'} onChange={(e) => onChange(e.target.value)} className="h-7 w-9 cursor-pointer rounded bg-transparent" title="Cor personalizada" />
+      <input
+        type="color"
+        value={value ?? '#7c5cff'}
+        onChange={(e) => onChange(e.target.value)}
+        className="color-swatch h-7 w-7 cursor-pointer rounded-full border-2 border-line-strong bg-transparent p-0"
+        title="Cor personalizada"
+      />
     </div>
   );
 }

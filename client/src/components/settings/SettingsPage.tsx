@@ -3,6 +3,7 @@
 // As seções em si ficam em SettingsSections.tsx; quem abre uma seção específica usa
 // openModal({ type: 'userSettings', tab }) e cai aqui (ver store/app.ts).
 import { Bell, Bot, ChevronLeft, ChevronRight, EyeOff, Gem, Heart, Keyboard, LogOut, Mic, Palette, Search, ShieldCheck, UserRound, Wrench, X, type LucideIcon } from 'lucide-react';
+import { useBackHandler } from '../../lib/backStack';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../../store/app';
 import { useMobile } from '../../lib/mobile';
@@ -154,6 +155,7 @@ export function SettingsPage() {
   const mobile = useMobile();
   const [query, setQuery] = useState('');
   const [mobileSection, setMobileSection] = useState<SettingsTab | null>(null);
+  useBackHandler(mobile && !!mobileSection, () => setMobileSection(null));
   const current = ALL.find((i) => i.id === (mobile ? (mobileSection ?? tab) : tab)) ?? ALL[0];
 
   const matches = useMemo(() => {

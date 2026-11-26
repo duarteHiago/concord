@@ -834,3 +834,21 @@ video::-webkit-media-controls {
 :root[data-motion='reduce'] .plaza-globe-spin,
 :root[data-motion='reduce'] .plaza-fab,
 :root[data-motion='reduce'] .plaza-zzz { animation: none; }
+
+/* seletor de cor nativo com cara de quadradinho de cor (sem a moldura cinza e o espaço interno do navegador) */
+.color-swatch {
+  appearance: none;
+  -webkit-appearance: none;
+  overflow: hidden;
+}
+.color-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.color-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 0;
+}
+.color-swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 0;
+}

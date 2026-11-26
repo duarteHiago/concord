@@ -1,4 +1,6 @@
 import { BadgeCheck, Eye, EyeOff, X } from 'lucide-react';
+import { useBackHandler } from '../lib/backStack';
+import { useSwipeDown } from './SwipeBack';
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useToasts } from '../store/toast';
 import { STATUS_INFO } from '../lib/status';
@@ -295,6 +297,9 @@ export function Modal({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // botão/gesto voltar do celular fecha a janela; no celular ela também fecha arrastando para baixo
+  useBackHandler(true, onClose);
+  const { sheet, handleProps } = useSwipeDown(onClose);
 
   return (
     // no celular a janela sobe da parte de baixo (perto do polegar) e respeita a barrinha do iPhone;
@@ -304,12 +309,17 @@ export function Modal({
       onMouseDown={onClose}
     >
       <div
+        ref={sheet}
         className="flex max-h-[92dvh] w-full animate-slide-up flex-col overflow-hidden rounded-t-[28px] bg-surface-2 pb-[env(safe-area-inset-bottom)] shadow-2xl ring-1 ring-line md:max-h-[90vh] md:animate-pop-in md:rounded-[28px] md:pb-0"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        {/* pegadinha (só no celular): arrastar para baixo fecha */}
+        <div {...handleProps} className="flex shrink-0 touch-none justify-center pt-2.5 pb-1 md:hidden">
+          <span className="h-1 w-10 rounded-full bg-line-strong" />
+        </div>
         {(title || subtitle) && (
-          <div className="relative px-5 pt-6 pb-2 md:px-6">
+          <div {...handleProps} className="relative px-5 pt-3 pb-2 md:px-6 md:pt-6">
             {title && <h2 className="pr-10 text-xl font-bold">{title}</h2>}
             {subtitle && <p className="mt-1 text-sm text-fg-muted">{subtitle}</p>}
             <IconButton label="Fechar" className="absolute top-4 right-4 h-10 w-10 md:top-5 md:right-5 md:h-8 md:w-8" onClick={onClose}>

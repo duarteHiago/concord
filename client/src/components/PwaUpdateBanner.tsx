@@ -53,7 +53,7 @@ export function PwaUpdateBanner() {
       <button
         onClick={() => pwa.applyUpdate()}
         title="Atualização disponível — clique para aplicar"
-        className="fixed right-4 bottom-4 z-[200] flex h-11 items-center gap-2 rounded-full bg-accent px-4 font-display text-sm font-bold text-on-accent shadow-xl ring-1 ring-accent/30 animate-slide-up hover:bg-accent-hover"
+        className="fixed top-[calc(env(safe-area-inset-top,0px)+0.75rem)] right-4 z-[200] flex h-11 md:top-auto md:bottom-4 items-center gap-2 rounded-full bg-accent px-4 font-display text-sm font-bold text-on-accent shadow-xl ring-1 ring-accent/30 animate-slide-up hover:bg-accent-hover"
       >
         <RefreshCw size={15} className="animate-spin [animation-duration:3s]" />
         Atualizar
@@ -68,7 +68,8 @@ export function PwaUpdateBanner() {
       role="status"
       className={cx(
         'fixed z-[200] animate-slide-up shadow-2xl ring-1 ring-line',
-        'right-4 bottom-4 w-[min(360px,calc(100vw-2rem))] rounded-[22px] bg-surface-2 p-5',
+        // celular: no topo (embaixo cobria a barra de abas e o campo de mensagem)
+        'top-[calc(env(safe-area-inset-top,0px)+0.75rem)] right-4 w-[min(360px,calc(100vw-2rem))] rounded-[22px] bg-surface-2 p-5 md:top-auto md:bottom-4',
       )}
     >
       <button

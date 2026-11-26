@@ -281,7 +281,7 @@ export function FriendButton({ user, variant }: { user: User; variant: 'icon' | 
     );
   }
   return (
-    <Button variant={relation ? 'secondary' : 'primary'} loading={busy} title={s.title} className={cx('h-11 px-5', relation === 'friend' && 'text-ok')} onClick={() => void s.run()}>
+    <Button variant={relation ? 'secondary' : 'primary'} loading={busy} title={s.title} className={cx('h-11 px-4 whitespace-nowrap md:px-5', relation === 'friend' && 'text-ok')} onClick={() => void s.run()}>
       <Icon size={16} /> {s.label}
     </Button>
   );
