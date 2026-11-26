@@ -187,15 +187,15 @@ function syncVoicePermission(v: VoiceState) {
   } catch {
     // sala apagada: sem permissão nenhuma
   }
-  void updateVoicePermission(v.channelId, v.userId, { perms, serverMuted: v.serverMuted, serverDeafened: v.serverDeafened });
+  return updateVoicePermission(v.channelId, v.userId, { perms, serverMuted: v.serverMuted, serverDeafened: v.serverDeafened });
 }
 
 /** As permissões de quem está nas salas do servidor mudaram (exigências de confiança): o LiveKit acompanha. */
 export function resyncServerVoice(serverId: string) {
-  for (const v of voice.values()) if (v.serverId === serverId) syncVoicePermission(v);
+  for (const v of voice.values()) if (v.serverId === serverId) void syncVoicePermission(v);
 }
 
-export function setServerMute(serverId: string, userId: string, muted: boolean) {
+export async function setServerMute(serverId: string, userId: string, muted: boolean) {
   const key = `${serverId}:${userId}`;
   if (muted) serverMutes.add(key);
   else serverMutes.delete(key);
@@ -203,7 +203,9 @@ export function setServerMute(serverId: string, userId: string, muted: boolean) 
   if (v && v.serverId === serverId) {
     v.serverMuted = muted;
     if (muted) v.muted = true;
-    syncVoicePermission(v);
+    // o app só fica sabendo depois que o LiveKit já trocou a permissão: ao tirar o silêncio, ele religa o
+    // microfone na hora, e antes disso o LiveKit ainda recusaria a faixa
+    await syncVoicePermission(v);
     io.to(v.socketId).emit('voice:server-mute', { muted });
     broadcastVoice(serverId);
   }
@@ -217,7 +219,7 @@ export function setServerDeafen(serverId: string, userId: string, deafened: bool
   if (v && v.serverId === serverId) {
     v.serverDeafened = deafened;
     if (deafened) v.deafened = true;
-    syncVoicePermission(v);
+    void syncVoicePermission(v);
     io.to(v.socketId).emit('voice:server-deafen', { deafened });
     broadcastVoice(serverId);
   }
@@ -581,7 +583,8 @@ export function setupRealtime(httpServer: HttpServer) {
         lastActive.set(userId, Date.now());
         if (prev && prev.serverId !== channel.server_id) broadcastVoice(prev.serverId);
         broadcastVoice(channel.server_id);
-        ack?.({ ok: true, serverDeafened });
+        // já entra silenciado: o app não tenta ligar o microfone (o LiveKit recusaria) e mostra o aviso certo
+        ack?.({ ok: true, serverDeafened, serverMuted });
       } catch (err) {
         ack?.({ ok: false, error: (err as Error).message });
       }

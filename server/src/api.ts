@@ -2145,7 +2145,7 @@ api.post('/servers/:id/members/:userId/voice-mute', async (req, res) => {
       if (!outranks(serverId, me, target)) fail(403, 'Você não pode moderar este membro');
     });
   }
-  setServerMute(serverId, target, muted);
+  await setServerMute(serverId, target, muted);
   audit(serverId, me, muted ? 'voice_mute' : 'voice_unmute', { target: userTarget(target) });
   res.json({ ok: true, muted });
 });

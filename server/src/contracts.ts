@@ -424,7 +424,7 @@ async function liftApplied(contractId: string, onlyUser?: string) {
     const [kind, serverId, userId] = key.split('|');
     if (onlyUser && userId !== onlyUser) continue;
     set.delete(key);
-    if (kind === 'mute') setServerMute(serverId, userId, false);
+    if (kind === 'mute') void setServerMute(serverId, userId, false);
     else setServerDeafen(serverId, userId, false);
   }
   if (!set.size) applied.delete(contractId);
@@ -448,7 +448,7 @@ export async function mecenasMute(me: string, target: string, muted: boolean, se
     for (const key of applied.get(c.id) ?? []) {
       const [kind, sid, userId] = key.split('|');
       if (kind === 'mute' && userId === target) {
-        setServerMute(sid, target, false);
+        await setServerMute(sid, target, false);
         noteApplied(c.id, 'mute', sid, target, false);
       }
     }
@@ -456,7 +456,7 @@ export async function mecenasMute(me: string, target: string, muted: boolean, se
   }
   const { serverId: sid, voice } = voiceServer(c, me, target, serverId);
   if (muted && voice) await muteTracks(voice.channelId, target, [TrackSource.MICROPHONE]);
-  setServerMute(sid, target, muted);
+  await setServerMute(sid, target, muted);
   noteApplied(c.id, 'mute', sid, target, muted);
   logPower(c, me, target, muted ? 'mute' : 'unmute', { serverId: sid });
 }
