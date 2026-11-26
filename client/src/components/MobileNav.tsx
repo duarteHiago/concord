@@ -30,6 +30,7 @@ export function useInConversation() {
       !s.settings &&
       !s.profile &&
       !s.releasesOpen &&
+      !s.threadsOpen &&
       !!s.activeServerId &&
       (s.activeServerId !== HOME || !!s.activeDmId),
   );

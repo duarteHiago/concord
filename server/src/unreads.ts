@@ -65,7 +65,7 @@ export function registerUnreadRoutes(api: Router) {
       if (!visible.length) continue;
       const last = new Map(
         all<{ channel_id: string; t: number }>(
-          `SELECT channel_id, MAX(created_at) AS t FROM messages WHERE channel_id IN (${visible.map(() => '?').join(',')}) AND author_id != ? GROUP BY channel_id`,
+          `SELECT channel_id, MAX(created_at) AS t FROM messages WHERE channel_id IN (${visible.map(() => '?').join(',')}) AND author_id != ? AND (thread_id IS NULL OR also_channel = 1) GROUP BY channel_id`,
           ...visible.map((c) => c.id),
           me,
         ).map((r) => [r.channel_id, r.t]),

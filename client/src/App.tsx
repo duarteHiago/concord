@@ -12,6 +12,9 @@ import { RecordDialog } from './components/RecordDialog';
 import { Spinner, Toasts, cx } from './components/ui';
 import { NotificationsHost } from './components/NotificationsHost';
 import { BackLayers } from './components/BackLayers';
+import { ThreadPanel } from './components/ThreadPanel';
+import { ThreadsView } from './components/ThreadsView';
+import { useThreads } from './store/threads';
 import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NudgeCard, NudgeMessageToast } from './components/NudgeCard';
@@ -205,6 +208,8 @@ function Shell() {
   const mobile = useMobile();
   const mobileView = useApp((s) => s.mobileView);
   const releasesOpen = useApp((s) => s.releasesOpen);
+  const threadsOpen = useApp((s) => s.threadsOpen);
+  const threadOpen = useThreads((s) => !!s.open);
   const profileOpen = useApp((s) => !!s.profile);
   const settingsOpen = useApp((s) => !!s.settings);
   const detail = useActiveDetail();
@@ -212,7 +217,7 @@ function Shell() {
   const channelId = useApp((s) => (s.activeServerId ? s.activeChannels[s.activeServerId] : undefined));
   const memberListOpen = useApp((s) => s.memberListOpen);
   const channel = detail?.channels.find((c) => c.id === channelId);
-  const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : ''}|${activeServerId}|${channelId}`;
+  const view = `${settingsOpen ? 'config' : profileOpen ? 'perfil' : releasesOpen ? 'novidades' : threadsOpen ? 'threads' : ''}|${activeServerId}|${channelId}`;
 
   const showSidebar = !mobile || mobileView === 'sidebar';
   const showContent = !mobile || mobileView === 'chat';
@@ -225,6 +230,8 @@ function Shell() {
         <ProfilePage />
       ) : releasesOpen ? (
         <ReleasesView />
+      ) : threadsOpen ? (
+        <ThreadsView />
       ) : activeServerId === HOME ? (
         <DmView />
       ) : activeServerId ? (
@@ -243,7 +250,8 @@ function Shell() {
                 </div>
               )}
             </main>
-            {memberListOpen && channel && !mobile && <MemberList />}
+            {/* thread aberta: o painel dela fica no lugar da lista de membros (no celular, tela cheia por cima) */}
+            {threadOpen ? <ThreadPanel /> : memberListOpen && channel && !mobile && <MemberList />}
           </>
         )
       ) : (

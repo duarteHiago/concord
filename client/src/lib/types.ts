@@ -476,6 +476,22 @@ export interface Message {
   author: User;
   /** mensagem que esta responde (prévia), ou null */
   replyTo?: ReplyPreview | null;
+  /** resposta numa thread: a mensagem que abriu a thread */
+  threadId?: string | null;
+  /** resposta de thread que também apareceu no canal ("também enviar para o canal") */
+  alsoChannel?: boolean;
+  /** na mensagem que abriu uma thread: o resumo dela */
+  thread?: ThreadMeta | null;
+}
+
+/** Resumo de uma thread (ver server/src/threads.ts). */
+export interface ThreadMeta {
+  id: string;
+  replyCount: number;
+  lastReplyAt: number | null;
+  status: 'open' | 'resolved';
+  resolvedBy: string | null;
+  resolvedAt: number | null;
 }
 
 /** Cartão de uma mensagem de webhook (o "embed" do Discord). Ver server/src/webhooks.ts. */

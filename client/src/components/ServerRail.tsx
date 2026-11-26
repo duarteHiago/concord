@@ -1,4 +1,4 @@
-import { Download, Minus, Newspaper, MessageCircle, Plus, Compass, MessageSquareHeart } from 'lucide-react';
+import { Download, Minus, Newspaper, MessageCircle, MessagesSquare, Plus, Compass, MessageSquareHeart } from 'lucide-react';
 import { useBackHandler } from '../lib/backStack';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
@@ -9,6 +9,7 @@ import { usePendingCount } from '../lib/friends';
 import { useVoice } from '../store/voice';
 import { useCommunity, usePendingCommunity } from '../store/community';
 import { serverBadge, useUnreads } from '../store/unreads';
+import { unreadThreads, useThreads } from '../store/threads';
 import { DragGhost, DrawerLine, pinnedServers, RAIL_MAX, ServerDrawerPanel, useServerDrag } from './ServerDrawer';
 import { cx, initials } from './ui';
 
@@ -27,6 +28,10 @@ export function ServerStrip() {
   const pending = usePendingCount();
   const unread = useApp((s) => (s.dms ?? []).reduce((n, d) => n + d.unread, 0)) + pending;
   const releasesOpen = useApp((s) => s.releasesOpen);
+  const threadsOpen = useApp((s) => s.threadsOpen);
+  const openThreads = useApp((s) => s.openThreads);
+  const closeThreads = useApp((s) => s.closeThreads);
+  const threadsUnread = useThreads((s) => unreadThreads(s.followed));
   // bolinha (mensagem nova) e contador (menções) de cada servidor
   const unreadChannels = useUnreads((s) => s.channels);
   const notifyLevels = useUnreads((s) => s.levels);
@@ -189,6 +194,20 @@ export function ServerStrip() {
         className={cx(tile, 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-accent')}
       >
         <MessageSquareHeart size={20} />
+      </button>
+      <button
+        title="Threads que você segue"
+        aria-label={`Threads${threadsUnread ? ` (${threadsUnread} com resposta nova)` : ''}`}
+        aria-current={threadsOpen ? 'true' : undefined}
+        onClick={threadsOpen ? closeThreads : openThreads}
+        className={cx(tile, threadsOpen ? 'bg-accent text-on-accent' : 'bg-surface-3 text-fg-muted hover:bg-surface-4 hover:text-fg')}
+      >
+        <MessagesSquare size={20} />
+        {threadsUnread > 0 && !threadsOpen && (
+          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-surface-2 bg-accent px-1 text-[10px] font-bold text-on-accent">
+            {threadsUnread > 99 ? '99+' : threadsUnread}
+          </span>
+        )}
       </button>
       <button
         title="Novidades"

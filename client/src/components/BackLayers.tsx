@@ -11,13 +11,15 @@ export function BackLayers() {
   const profile = useApp((s) => !!s.profile);
   const settings = useApp((s) => !!s.settings);
   const releases = useApp((s) => s.releasesOpen);
+  const threads = useApp((s) => s.threadsOpen);
   const chat = useApp((s) => s.mobileView === 'chat');
 
   useBackHandler(profile, () => useApp.getState().closeProfile());
   useBackHandler(settings, () => useApp.getState().closeSettings());
   useBackHandler(releases, () => useApp.getState().closeReleases());
+  useBackHandler(threads, () => useApp.getState().closeThreads());
   // celular: a conversa aberta cobre a lista de canais; voltar mostra a lista (como a seta do topo)
-  useBackHandler(mobile && chat && !profile && !settings && !releases, () => useApp.getState().setMobileView('sidebar'));
+  useBackHandler(mobile && chat && !profile && !settings && !releases && !threads, () => useApp.getState().setMobileView('sidebar'));
 
   return <SwipeBack />;
 }

@@ -1,7 +1,8 @@
 // Avisos de mensagem/menção dentro do app (o cartão de vidro no canto, ver NoticeStack.tsx).
 import { create } from 'zustand';
 
-export type NoticeTarget = { serverId: string; channelId: string } | { dmId: string } | { friends: true };
+/** threadId: abre também o painel da thread (resposta ou menção dentro de uma thread) */
+export type NoticeTarget = { serverId: string; channelId: string; threadId?: string } | { dmId: string } | { friends: true };
 
 export interface Notice {
   id: string;
