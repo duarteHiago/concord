@@ -107,9 +107,28 @@ export interface NotifySettings {
   nudgeDesktop: boolean;
   mentions: boolean; // avisar quando alguém mencionar você
   mentionDesktop: boolean;
+  /** som de mensagem (Gota) e de menção (Acorde) */
+  chatSound: boolean;
+  /** volume desses dois sons, de 0 a 100 */
+  volume: number;
+  /** app do Windows: com o Concord minimizado/atrás, o aviso aparece por cima de tudo (senão, notificação do Windows) */
+  overlay: boolean;
 }
 
-export const DEFAULT_NOTIFY: NotifySettings = { nudges: true, shake: true, sound: true, nudgeDesktop: true, mentions: true, mentionDesktop: true };
+export const DEFAULT_NOTIFY: NotifySettings = {
+  nudges: true,
+  shake: true,
+  sound: true,
+  nudgeDesktop: true,
+  mentions: true,
+  mentionDesktop: true,
+  chatSound: true,
+  volume: 60,
+  overlay: true,
+};
+
+/** Nível de aviso de um servidor ou canal (ver server/src/unreads.ts). null = herda (canal → servidor → "só menções"). */
+export type NotifyLevel = 'all' | 'mentions' | 'none';
 
 export interface UserSettings {
   theme?: Partial<ThemeSettings>;

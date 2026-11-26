@@ -361,6 +361,32 @@ db.exec(`
 `);
 addColumn('users', 'is_webhook', 'INTEGER NOT NULL DEFAULT 0');
 
+// Notificações (ver unreads.ts): até onde cada pessoa leu cada canal (o que sincroniza entre aparelhos), as menções
+// que ela ainda não viu (o contador vermelho) e o nível de aviso que ela escolheu por servidor ou canal.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS channel_reads (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    last_read_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, channel_id)
+  );
+  CREATE TABLE IF NOT EXISTS mentions (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, message_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_mentions_user ON mentions(user_id, channel_id, created_at);
+  CREATE TABLE IF NOT EXISTS notify_levels (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL,
+    level TEXT CHECK (level IN ('all', 'mentions', 'none')),
+    muted_until INTEGER,
+    PRIMARY KEY (user_id, target_id)
+  );
+`);
+
 // Patches de presente: quem criou o patch gera um link; cada pessoa resgata uma vez.
 db.exec(`
   CREATE TABLE IF NOT EXISTS patch_drops (

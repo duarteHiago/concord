@@ -15,7 +15,6 @@ const SOUNDS: Record<string, [number, number][]> = {
   // "chamar atenção": tem som próprio, mais alto e com zumbido (ver playNudge)
   nudge: [],
   nudgeSent: [[660, 0], [880, 0.06]],
-  mention: [[988, 0], [1319, 0.08]],
   // código compartilhado: "plim" duplo
   clip: [[1175, 0], [1568, 0.07], [1175, 0.16], [1568, 0.23]],
 };
@@ -183,4 +182,73 @@ export function playWin() {
     osc.start(at);
     osc.stop(at + 0.65);
   });
+}
+
+// ---- avisos de mensagem e menção ----
+// Escolhidos pelo usuário entre algumas opções (nov/2026): "Gota" para mensagem e "Acorde" para menção. Baixos e
+// curtos de propósito; passam por um passa-baixa suave (tira o chiado das senoides) e um compressor leve (segura
+// os picos quando dois tocam juntos). O volume é o das preferências (0 a 100, padrão 60).
+
+let notifyBus: { input: GainNode } | null = null;
+
+function notifyInput(volume: number): GainNode | null {
+  const c = ctxOrNull();
+  if (!c) return null;
+  if (c.state === 'suspended') void c.resume();
+  if (!notifyBus) {
+    const lowpass = c.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 5200;
+    lowpass.Q.value = 0.3;
+    const comp = c.createDynamicsCompressor();
+    comp.threshold.value = -24;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.15;
+    const input = c.createGain();
+    input.connect(lowpass).connect(comp).connect(c.destination);
+    notifyBus = { input };
+  }
+  notifyBus.input.gain.value = Math.max(0, Math.min(1, volume / 100));
+  return notifyBus.input;
+}
+
+/** Um tom curto: ataque, queda exponencial e, se pedir, a frequência escorregando (a "gota"). */
+function softTone(c: AudioContext, out: AudioNode, o: { freq: number; at?: number; attack?: number; decay: number; gain: number; glide?: number }) {
+  const t = c.currentTime + (o.at ?? 0);
+  const attack = o.attack ?? 0.006;
+  const env = c.createGain();
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(o.gain, t + attack);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + attack + o.decay);
+  env.connect(out);
+  const osc = c.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(o.freq, t);
+  if (o.glide) osc.frequency.exponentialRampToValueAtTime(o.freq * o.glide, t + Math.min(0.09, o.decay));
+  osc.connect(env);
+  osc.start(t);
+  osc.stop(t + attack + o.decay + 0.05);
+}
+
+let lastMessageSound = 0;
+
+/**
+ * "message" = Gota (um pingo que escorrega para baixo); "mention" = Acorde (duas notas juntas, levemente
+ * desencontradas). Numa conversa animada a Gota toca no máximo uma vez a cada 1,5 s.
+ */
+export function playNotify(kind: 'message' | 'mention', volume = 60) {
+  if (kind === 'message') {
+    if (Date.now() - lastMessageSound < 1500) return;
+    lastMessageSound = Date.now();
+  }
+  const out = notifyInput(volume);
+  const c = ctx;
+  if (!out || !c) return;
+  if (kind === 'message') {
+    softTone(c, out, { freq: 880, glide: 0.62, decay: 0.12, gain: 0.07 });
+  } else {
+    softTone(c, out, { freq: 494, attack: 0.012, decay: 0.42, gain: 0.04 });
+    softTone(c, out, { freq: 740, attack: 0.012, decay: 0.38, gain: 0.035, at: 0.035 });
+  }
 }

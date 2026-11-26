@@ -1,9 +1,9 @@
-// Menções (@usuario e @todos): som e notificação para quem foi mencionado.
+// Menções, mensagens diretas e mensagens de canal: som e aviso (ver notify.ts para onde o aviso aparece).
 import { useApp } from '../store/app';
 import { toast } from '../store/toast';
-import { desktop } from './desktop';
+import { effectiveLevel, useUnreads } from '../store/unreads';
+import { deliverNotice } from './notify';
 import { notifySettings } from './nudge';
-import { playSound } from './sounds';
 import type { DirectChannel, Message, User } from './types';
 
 export interface MentionEvent {
@@ -20,34 +20,38 @@ export function mentionsMe(content: string, username: string): boolean {
   return new RegExp(`(^|\\s)@${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(content);
 }
 
-/** Nova mensagem privada: som e notificação (o clique abre a conversa). */
+/** Texto curto do aviso: o começo da mensagem, ou o que ela carrega quando não tem texto. */
+function preview(message: Message): string {
+  if (message.content) return message.content.length > 200 ? `${message.content.slice(0, 200)}…` : message.content;
+  if (message.attachments?.length) return message.attachments.length > 1 ? `${message.attachments.length} arquivos` : message.attachments[0].name;
+  if (message.kind === 'sticker') return 'Figurinha';
+  return 'Mensagem';
+}
+
+/** Nome de quem mandou: o que vem da mensagem do webhook (se houver), senão o nome da conta. */
+const authorName = (message: Message) => (message.data as { webhook?: { name?: string } } | null)?.webhook?.name || message.author.displayName;
+
+/** Já estou olhando essa conversa com a janela em foco? Aí não precisa avisar. */
+function viewingChannel(serverId: string, channelId: string) {
+  const app = useApp.getState();
+  return app.activeServerId === serverId && app.activeChannels[serverId] === channelId && document.hasFocus() && !document.hidden;
+}
+
+/** Nova mensagem privada: som e aviso (o clique abre a conversa). */
 export function receiveDirectMessage(dm: DirectChannel, message: Message) {
   const me = useApp.getState().me;
-  if (!me || me.settings.status === 'dnd') return;
-  const prefs = notifySettings(me);
-  if (!prefs.mentions) return;
-  if (prefs.sound) playSound('mention');
-  if (!prefs.mentionDesktop) return;
-  const title = `${dm.user.displayName} (mensagem privada)`;
-  const body =
-    !message.content && message.attachments?.length
-      ? `📎 ${message.attachments.length > 1 ? `${message.attachments.length} arquivos` : message.attachments[0].name}`
-      : message.kind === 'game'
-        ? message.content
-        : message.content.length > 140
-          ? `${message.content.slice(0, 140)}…`
-          : message.content;
-  if (desktop?.notify) {
-    void desktop.notify({ title, body, data: { dmId: dm.id } });
-    return;
-  }
-  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const n = new Notification(title, { body, icon: dm.user.avatarUrl ?? '/icon-192.png', tag: `dm-${dm.id}` });
-  n.onclick = () => {
-    window.focus();
-    useApp.getState().openDmById(dm.id);
-    n.close();
-  };
+  if (!me || !notifySettings(me).mentions) return;
+  deliverNotice(
+    {
+      who: dm.user.displayName,
+      where: 'mensagem direta',
+      text: preview(message),
+      avatar: { url: dm.user.avatarUrl, color: dm.user.avatarColor },
+      mention: false,
+      target: { dmId: dm.id },
+    },
+    'message',
+  );
 }
 
 /** Pedido de amizade recebido: aviso no app, som e notificação (o clique abre a tela de Amigos). */
@@ -55,57 +59,68 @@ export function receiveFriendRequest(from: User) {
   const me = useApp.getState().me;
   if (!me) return;
   toast.info(`${from.displayName} quer ser seu amigo. Veja em Mensagens > Amigos.`);
-  if (me.settings.status === 'dnd') return;
-  const prefs = notifySettings(me);
-  if (!prefs.mentions) return;
-  if (prefs.sound) playSound('mention');
-  if (!prefs.mentionDesktop) return;
-  const title = 'Pedido de amizade';
-  const body = `${from.displayName} (@${from.username}) quer ser seu amigo.`;
-  if (desktop?.notify) {
-    void desktop.notify({ title, body, data: { friends: true } });
-    return;
-  }
-  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const n = new Notification(title, { body, icon: from.avatarUrl ?? '/icon-192.png', tag: `friend-${from.id}` });
-  n.onclick = () => {
-    window.focus();
-    useApp.getState().openFriends();
-    n.close();
-  };
+  if (!notifySettings(me).mentions) return;
+  deliverNotice(
+    {
+      who: from.displayName,
+      where: 'pedido de amizade',
+      text: `@${from.username} quer ser seu amigo.`,
+      avatar: { url: from.avatarUrl, color: from.avatarColor },
+      mention: false,
+      target: { friends: true },
+    },
+    'mention',
+  );
 }
 
 export function receiveMention(m: MentionEvent) {
   const app = useApp.getState();
   const me = app.me;
-  if (!me || me.settings.status === 'dnd') return;
-  const prefs = notifySettings(me);
-  if (!prefs.mentions) return;
+  useUnreads.getState().onMention(m.message.channelId, m.serverId);
+  if (!me || !notifySettings(me).mentions) return;
+  if (viewingChannel(m.serverId, m.message.channelId)) return;
+  // servidor/canal em "nada" ou silenciado: fica só o contador
+  const { level, muted } = effectiveLevel(useUnreads.getState().levels, m.serverId, m.message.channelId);
+  if (muted || level === 'none') return;
+  const channel = m.channelName.replace(/^#/, '');
+  deliverNotice(
+    {
+      who: authorName(m.message),
+      where: m.everyone ? `@todos em #${channel} · ${m.serverName}` : `mencionou você em #${channel} · ${m.serverName}`,
+      text: preview(m.message),
+      avatar: { url: m.message.author.avatarUrl, color: m.message.author.avatarColor },
+      mention: true,
+      target: { serverId: m.serverId, channelId: m.message.channelId },
+    },
+    'mention',
+  );
+}
 
-  // já está olhando esse canal com a janela em foco: não precisa avisar
-  const viewing =
-    app.activeServerId === m.serverId && app.activeChannels[m.serverId] === m.message.channelId && document.hasFocus();
-  if (viewing) return;
-
-  if (prefs.sound) playSound('mention');
-  if (!prefs.mentionDesktop) return;
-
-  const author = m.message.author.displayName;
-  const title = `${author} em ${m.channelName.startsWith('#') ? '' : '#'}${m.channelName} · ${m.serverName}`;
-  const body = m.message.content.length > 140 ? `${m.message.content.slice(0, 140)}…` : m.message.content;
-  const target = { serverId: m.serverId, channelId: m.message.channelId };
-
-  if (desktop?.notify) {
-    void desktop.notify({ title, body, data: target });
-    return;
-  }
-  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const n = new Notification(title, { body, icon: m.message.author.avatarUrl ?? '/icon-192.png', tag: `mention-${m.message.channelId}` });
-  n.onclick = () => {
-    window.focus();
-    const st = useApp.getState();
-    st.openServer(target.serverId);
-    st.openChannel(target.serverId, target.channelId);
-    n.close();
-  };
+/**
+ * Mensagem nova num canal: só avisa se o canal (ou o servidor) está em "todas as mensagens". Menção e resposta
+ * já chegam pelo evento de menção, com o som dela; aqui ficam de fora para não avisar duas vezes.
+ */
+export function receiveChannelMessage(message: Message) {
+  const app = useApp.getState();
+  const me = app.me;
+  if (!me || message.author.id === me.id) return;
+  const serverId = useUnreads.getState().channels[message.channelId]?.serverId;
+  if (!serverId || viewingChannel(serverId, message.channelId)) return;
+  const { level, muted } = effectiveLevel(useUnreads.getState().levels, serverId, message.channelId);
+  if (muted || level !== 'all') return;
+  const repliesToMe = !!message.replyTo && 'authorId' in message.replyTo && message.replyTo.authorId === me.id;
+  if (repliesToMe || mentionsMe(message.content, me.username)) return;
+  const server = app.servers.find((s) => s.id === serverId);
+  const channel = app.details[serverId]?.channels.find((c) => c.id === message.channelId);
+  deliverNotice(
+    {
+      who: authorName(message),
+      where: [channel ? `#${channel.name}` : null, server?.name].filter(Boolean).join(' · '),
+      text: preview(message),
+      avatar: { url: message.author.avatarUrl, color: message.author.avatarColor },
+      mention: false,
+      target: { serverId, channelId: message.channelId },
+    },
+    'message',
+  );
 }

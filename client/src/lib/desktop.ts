@@ -86,6 +86,19 @@ interface DesktopBridge {
   /** prioridade alta para os processos de captura enquanto transmite */
   setStreaming?(on: boolean): Promise<number[]>;
   onNotificationClick?(cb: (data: unknown) => void): () => void;
+  /**
+   * Aviso de mensagem/menção por cima de tudo (app minimizado ou atrás), no mesmo desenho do cartão de dentro do
+   * app, com as cores do tema. O clique volta por onNotificationClick com `target`. Ausente em versões antigas.
+   */
+  showNotice?(data: {
+    who: string;
+    where: string;
+    text: string;
+    avatar: { url: string | null; color: string };
+    mention: boolean;
+    target: unknown;
+    theme: { card: string; fg: string; muted: string; subtle: string; accent: string; dark: boolean };
+  }): Promise<boolean>;
   getActivity?(): Promise<unknown>;
   refreshActivity?(): Promise<unknown>;
   onActivity?(cb: (activity: unknown) => void): () => void;

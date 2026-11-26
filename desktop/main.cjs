@@ -903,6 +903,168 @@ function showNudgeMessage({ text, from }) {
 
 handle('concord:show-nudge-message', (_e, data) => showNudgeMessage(data ?? {}));
 
+// ------------------------------------------------------------------ aviso de mensagem/menção por cima de tudo
+// Com o Concord minimizado ou atrás de outra janela, o aviso aparece no canto de cima à direita da tela, no mesmo
+// desenho do cartão de dentro do app (client/src/components/NoticeStack.tsx), com as cores do tema da pessoa.
+// Uma janela só: os avisos novos empilham nela e cada um some sozinho. O clique volta pelo título da página (ela não
+// tem acesso a mais nada), como na janelinha do código compartilhado.
+
+const NOTICE_SHOW_MS = 6000;
+const NOTICE_WIDTH = 384;
+const NOTICE_HEIGHT = 140;
+let noticeWin = null;
+let noticeReady = null;
+const noticeTargets = new Map();
+let noticeSeq = 0;
+
+let noticeLogo = '';
+try {
+  noticeLogo = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'build', 'icon.png')).toString('base64')}`;
+} catch {
+  // sem o ícone, o cartão sai sem o selinho
+}
+
+function noticeHtml() {
+  return `<!doctype html><html><head><meta charset="utf-8">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+  :root{--card:#fff;--fg:#0f1b3d;--muted:#45537a;--subtle:#66739a;--accent:#1f4fd1;--shadow:rgba(15,27,61,.22);--edge:rgba(15,27,61,.09)}
+  :root.dark{--shadow:rgba(0,0,0,.5);--edge:rgba(255,255,255,.1)}
+  html,body{margin:0;background:transparent;overflow:hidden;font-family:'Nunito Sans','Segoe UI',system-ui,sans-serif;user-select:none}
+  #stack{position:absolute;top:10px;left:12px;right:12px;height:118px}
+  .n{position:absolute;inset:0 0 auto 0;display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:22px;cursor:pointer;
+    background:color-mix(in srgb,var(--card) 96%,transparent);box-shadow:0 0 0 1px var(--edge),0 10px 26px var(--shadow);
+    transform-origin:top center;transition:transform .45s cubic-bezier(.2,.9,.25,1.12),opacity .3s}
+  .n.in,.n.out{transform:translateY(-130%);opacity:0}
+  .n[data-d="1"]{transform:translateY(10px) scale(.94);opacity:.85}
+  .n[data-d="2"]{transform:translateY(19px) scale(.88);opacity:.6}
+  .n[data-d="3"]{opacity:0}
+  .n[data-d="1"]>*,.n[data-d="2"]>*,.n[data-d="3"]>*{visibility:hidden}
+  .pic{position:relative;flex:none;width:40px;height:40px}
+  .av{width:40px;height:40px;border-radius:999px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;overflow:hidden;background-size:cover;background-position:center}
+  .logo{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;border-radius:6px;background:var(--card);box-shadow:0 0 0 1.5px var(--card)}
+  .b{min-width:0;flex:1}
+  .h{display:flex;align-items:baseline;gap:8px}
+  .who{flex:1;min-width:0;font-weight:800;font-size:15px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .when{flex:none;font-size:12px;color:var(--subtle)}
+  .where{font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .t{font-size:14px;line-height:1.35;color:var(--fg);margin-top:1px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+  .t .m{color:var(--accent);font-weight:700}
+  .x{position:absolute;top:-6px;left:-6px;width:22px;height:22px;border-radius:999px;border:0;padding:0;display:grid;place-items:center;cursor:pointer;
+    background:var(--card);color:var(--muted);box-shadow:0 0 0 1px var(--edge),0 2px 6px var(--shadow);opacity:0;transition:opacity .15s}
+  .n:hover .x{opacity:1}
+  </style></head><body><div id="stack"></div><script>
+  const stack=document.getElementById('stack');let list=[];
+  const say=(what,id)=>{document.title=what+'-'+id+'-'+Date.now()};
+  function layout(){list.forEach((el,i)=>{el.dataset.d=String(Math.min(i,3));el.style.zIndex=String(10-i)})}
+  function drop(el,silent){if(!list.includes(el))return;clearTimeout(el._t);list=list.filter(x=>x!==el);el.classList.add('out');layout();
+    setTimeout(()=>{el.remove();if(!list.length)say('empty',0)},400)}
+  function text(parent,cls,value,mention){const d=document.createElement('div');d.className=cls;
+    if(mention){value.split(/(@[a-zA-Z0-9_.]{3,32})/g).forEach((p,i)=>{if(i%2){const s=document.createElement('span');s.className='m';s.textContent=p;d.appendChild(s)}else d.appendChild(document.createTextNode(p))})}
+    else d.textContent=value;parent.appendChild(d);return d}
+  window.push=(n)=>{
+    const r=document.documentElement;r.classList.toggle('dark',!!n.theme.dark);
+    for(const [k,v] of Object.entries(n.theme))if(typeof v==='string')r.style.setProperty('--'+k,v);
+    const el=document.createElement('div');el.className='n in';
+    const x=document.createElement('button');x.className='x';x.setAttribute('aria-label','Fechar');x.innerHTML='<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    x.onclick=(e)=>{e.stopPropagation();drop(el)};el.appendChild(x);
+    const pic=document.createElement('div');pic.className='pic';const av=document.createElement('div');av.className='av';av.style.background=n.avatar.color;
+    av.textContent=(n.who||'?').trim().charAt(0).toUpperCase();
+    if(n.avatar.url){const img=new Image();img.onload=()=>{av.textContent='';av.style.backgroundImage='url("'+img.src+'")'};img.src=n.avatar.url}
+    pic.appendChild(av);if(n.logo){const l=document.createElement('img');l.className='logo';l.src=n.logo;pic.appendChild(l)}el.appendChild(pic);
+    const b=document.createElement('div');b.className='b';const h=document.createElement('div');h.className='h';
+    text(h,'who',n.who);text(h,'when','agora');b.appendChild(h);text(b,'where',n.where);text(b,'t',n.text,n.mention);el.appendChild(b);
+    el.onclick=()=>{say('open',n.id);list.slice().forEach(e=>drop(e))};
+    el.onmouseenter=()=>clearTimeout(el._t);el.onmouseleave=()=>{el._t=setTimeout(()=>drop(el),${NOTICE_SHOW_MS})};
+    stack.appendChild(el);list.unshift(el);if(list.length>4)drop(list[list.length-1]);
+    void el.offsetWidth;el.classList.remove('in');layout();el._t=setTimeout(()=>drop(el),${NOTICE_SHOW_MS});
+  };
+  </script></body></html>`;
+}
+
+function ensureNoticeWin() {
+  if (noticeWin && !noticeWin.isDestroyed()) return noticeReady;
+  noticeWin = new BrowserWindow({
+    width: NOTICE_WIDTH,
+    height: NOTICE_HEIGHT,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false,
+    show: false,
+    alwaysOnTop: true,
+    hasShadow: false,
+    webPreferences: { sandbox: true, contextIsolation: true },
+  });
+  noticeWin.setAlwaysOnTop(true, 'screen-saver');
+  noticeWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  noticeWin.webContents.on('page-title-updated', (e, title) => {
+    e.preventDefault();
+    const [what, id] = title.split('-');
+    if (what === 'empty') {
+      if (noticeWin && !noticeWin.isDestroyed()) noticeWin.hide();
+      noticeTargets.clear();
+    } else if (what === 'open') {
+      const target = noticeTargets.get(id);
+      if (win && !win.isDestroyed()) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+        win.webContents.send('concord:notification-click', target ?? null);
+      }
+    }
+  });
+  noticeWin.on('closed', () => {
+    noticeWin = null;
+    noticeReady = null;
+    noticeTargets.clear();
+  });
+  noticeReady = noticeWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(noticeHtml())}`).catch(() => {});
+  return noticeReady;
+}
+
+const cssValue = (v) => (typeof v === 'string' && /^[#\w(),.\s%-]{1,40}$/.test(v) ? v : undefined);
+const httpUrl = (v) => (typeof v === 'string' && /^https?:\/\//.test(v) ? v.slice(0, 500) : null);
+
+async function showNotice(data) {
+  const id = String(++noticeSeq);
+  noticeTargets.set(id, data.target ?? null);
+  const theme = data.theme ?? {};
+  const payload = {
+    id,
+    who: String(data.who ?? 'Concord').slice(0, 60),
+    where: String(data.where ?? '').slice(0, 100),
+    text: String(data.text ?? '').slice(0, 300),
+    mention: !!data.mention,
+    avatar: { url: httpUrl(data.avatar?.url), color: cssValue(data.avatar?.color) ?? '#1f4fd1' },
+    logo: noticeLogo,
+    theme: {
+      card: cssValue(theme.card),
+      fg: cssValue(theme.fg),
+      muted: cssValue(theme.muted),
+      subtle: cssValue(theme.subtle),
+      accent: cssValue(theme.accent),
+      dark: !!theme.dark,
+    },
+  };
+  await ensureNoticeWin();
+  if (!noticeWin || noticeWin.isDestroyed()) return false;
+  // canto de cima à direita da tela onde está o mouse
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  noticeWin.setBounds({ x: area.x + area.width - NOTICE_WIDTH - 8, y: area.y + 8, width: NOTICE_WIDTH, height: NOTICE_HEIGHT });
+  // JSON vira um literal de JS válido: o texto das pessoas entra como dado, nunca como código
+  await noticeWin.webContents.executeJavaScript(`window.push(${JSON.stringify(payload)})`).catch(() => {});
+  if (!noticeWin.isVisible()) noticeWin.showInactive();
+  return true;
+}
+
+handle('concord:show-notice', (_e, data) => showNotice(data ?? {}));
+
 // ------------------------------------------------------------------ chamar atenção (estilo MSN)
 
 const activeNotifications = new Set(); // evita que o coletor de lixo descarte a notificação antes do clique
