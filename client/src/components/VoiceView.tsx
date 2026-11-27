@@ -1,4 +1,5 @@
 import { Track, type LocalTrack, type Participant, type RemoteTrack } from 'livekit-client';
+import { useMobile } from '../lib/mobile';
 import { DeckQrButton } from './Deck';
 import { RecordingControls, RecordingPill } from './Director';
 import {
@@ -88,6 +89,7 @@ function WatchersBadge({ people }: { people: { id: string; name: string; color: 
 
 export function VoiceView({ channel }: { channel: Channel }) {
   const detail = useActiveDetail()!;
+  const mobile = useMobile();
   const status = useVoice((s) => (s.channelId === channel.id ? s.status : 'idle'));
   const states = useApp((s) => s.voiceStates[detail.server.id]) ?? [];
   const inRoom = states.filter((v) => v.channelId === channel.id);
@@ -143,7 +145,7 @@ export function VoiceView({ channel }: { channel: Channel }) {
             {canChat && <SearchButton />}
             <DeckQrButton />
             <JamButton detail={detail} channel={channel} />
-            {status === 'connected' && <ConnectionQuality />}
+            {status === 'connected' && <ConnectionQuality onlyWhenBad={mobile} />}
             {canChat && (
               <button
                 onClick={onChatButton}
@@ -314,13 +316,15 @@ function writeFlag(key: string, value: boolean) {
   }
 }
 
-function ConnectionQuality() {
+function ConnectionQuality({ onlyWhenBad = false }: { onlyWhenBad?: boolean }) {
   const room = useVoice((s) => s.room);
   useVoice((s) => s.tick);
   const status = useVoice((s) => s.status);
   const q = room?.localParticipant.connectionQuality ?? 'unknown';
   const label = { excellent: 'excelente', good: 'boa', poor: 'instável', lost: 'perdida', unknown: '—' }[q] ?? '—';
   const bad = status === 'reconnecting' || q === 'poor' || q === 'lost';
+  // celular: o topo é apertado; a conexão só aparece quando há algo a avisar
+  if (onlyWhenBad && !bad) return null;
   return (
     <span className={cx('rounded-full px-3 py-1 text-xs font-bold', bad ? 'bg-warn/15 text-warn' : 'bg-surface-3 text-fg-muted')}>
       {status === 'reconnecting' ? 'reconectando…' : `conexão ${label}`}
@@ -394,6 +398,7 @@ function gridCols(n: number) {
 
 function Stage({ detail }: { detail: ServerDetail }) {
   const room = useVoice((s) => s.room);
+  const mobile = useMobile();
   useVoice((s) => s.tick);
   const focus = useVoice((s) => s.focus);
   const setFocus = useVoice((s) => s.setFocus);
@@ -447,6 +452,32 @@ function Stage({ detail }: { detail: ServerDetail }) {
           </div>
         </div>
         )}
+      </div>
+    );
+  }
+
+  // celular: a tela transmitida em destaque, na largura toda, e as pessoas em quadros quadrados embaixo (na grade
+  // de vídeo 16:9 do computador, com 3 colunas, cada pessoa virava uma faixa achatada de 100 × 56)
+  if (mobile) {
+    const screens = tiles.filter((t) => t.kind === 'screen');
+    const people = tiles.filter((t) => t.kind === 'person');
+    const cols = people.length <= 1 ? 1 : people.length <= 4 ? 2 : 3;
+    return (
+      <div className="h-full overflow-y-auto p-3">
+        <div className={cx('flex min-h-full flex-col gap-3', !screens.length && 'justify-center')}>
+          {screens.map((t) => (
+            <div key={t.key} className="aspect-video w-full shrink-0">
+              <Tile detail={detail} tile={t} viewers={viewersFor(tiles, t)} compact onClick={() => setFocus(t.key)} />
+            </div>
+          ))}
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+            {people.map((t) => (
+              <div key={t.key} className={cols === 1 ? 'aspect-[4/3]' : 'aspect-square'}>
+                <Tile detail={detail} tile={t} compact={cols === 3} onClick={() => setFocus(t.key)} />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -521,6 +552,7 @@ function Tile({
   tile,
   viewers,
   focused,
+  compact,
   onClick,
 }: {
   detail: ServerDetail;
@@ -528,6 +560,8 @@ function Tile({
   /** outras pessoas da sala assistindo essa transmissão junto com você (só telas) */
   viewers?: TileInfo[];
   focused?: boolean;
+  /** quadro pequeno (celular): foto, nome e botões menores */
+  compact?: boolean;
   onClick: () => void;
 }) {
   const { participant: p, kind, isLocal } = tile;
@@ -555,7 +589,7 @@ function Tile({
     else void ref.current?.requestFullscreen();
   };
 
-  const shape = focused ? 'h-full w-full' : 'h-full w-full rounded-[24px]';
+  const shape = focused ? 'h-full w-full' : compact ? 'h-full w-full rounded-[20px]' : 'h-full w-full rounded-[24px]';
 
   if (kind === 'screen') {
     const pub = p.getTrackPublication(Track.Source.ScreenShare);
@@ -587,9 +621,9 @@ function Tile({
             <Spinner />
           </div>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 bg-surface-2 p-4 text-center">
-            <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={focused ? 88 : 56} speaking />
-            <p className="font-display text-lg font-bold">{name} está transmitindo</p>
+          <div className={cx('flex h-full flex-col items-center justify-center bg-surface-2 text-center', compact ? 'gap-2 p-3' : 'gap-3 p-4')}>
+            <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={focused ? 88 : compact ? 44 : 56} speaking />
+            <p className={cx('font-display font-bold', compact ? 'text-base' : 'text-lg')}>{name} está transmitindo</p>
             <Button
               onClick={(e) => {
                 e.stopPropagation();
@@ -601,7 +635,7 @@ function Tile({
           </div>
         )}
 
-        <div className="pointer-events-none absolute top-5 left-5 flex items-center gap-2">
+        <div className={cx('pointer-events-none absolute flex items-center gap-2', compact ? 'top-3 left-3' : 'top-5 left-5')}>
           <LivePill className="px-3 py-1 text-xs">ao vivo</LivePill>
           {isLocal && <ShareCodecBadge />}
           {watcherPeople.length > 0 && <WatchersBadge people={watcherPeople} />}
@@ -679,12 +713,17 @@ function Tile({
       {camTrack ? (
         <VideoEl track={camTrack} fit={focused ? 'contain' : 'cover'} mirror={isLocal} />
       ) : (
-        <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={focused ? 128 : 84} speaking={speaking && !muted} />
+        <Avatar name={name} color={color} src={avatarUrl} frame={frame} size={focused ? 128 : compact ? 52 : 84} speaking={speaking && !muted} />
       )}
-      <span className="pointer-events-none absolute bottom-3 left-3 flex max-w-[85%] items-center gap-1.5 rounded-full bg-surface-1/85 px-3 py-1 text-xs font-bold backdrop-blur">
+      <span
+        className={cx(
+          'pointer-events-none absolute flex items-center gap-1 rounded-full bg-surface-1/85 font-bold backdrop-blur',
+          compact ? 'right-1.5 bottom-1.5 left-1.5 px-2 py-0.5 text-[11px]' : 'bottom-3 left-3 max-w-[85%] gap-1.5 px-3 py-1 text-xs',
+        )}
+      >
         {muted ? <MicOff size={12} className="shrink-0 text-danger" /> : <Mic size={12} className="shrink-0" />}
         {deafened && <HeadphoneOff size={12} className="shrink-0 text-danger" />}
-        <span className="truncate">{isLocal ? `${name} (você)` : name}</span>
+        <span className="min-w-0 truncate">{isLocal ? `${name} (você)` : name}</span>
         {recording && <span className="shrink-0 rounded-full bg-danger px-1.5 text-[9px] font-black text-white">REC</span>}
       </span>
     </div>
