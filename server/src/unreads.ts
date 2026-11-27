@@ -40,6 +40,30 @@ export function recordMentions(channelId: string, messageId: string, createdAt: 
   }
 }
 
+/** Como a pessoa quer ser avisada sobre um canal: o nível do canal, senão o do servidor, senão "só menções". */
+export function effectiveLevel(userId: string, serverId: string, channelId: string): { level: NotifyLevel; muted: boolean } {
+  const rows = all<{ target_id: string; level: NotifyLevel | null; muted_until: number | null }>(
+    'SELECT target_id, level, muted_until FROM notify_levels WHERE user_id = ? AND target_id IN (?, ?)',
+    userId,
+    serverId,
+    channelId,
+  );
+  const ch = rows.find((r) => r.target_id === channelId);
+  const srv = rows.find((r) => r.target_id === serverId);
+  const now = Date.now();
+  const muted = (!!ch?.muted_until && ch.muted_until > now) || (!!srv?.muted_until && srv.muted_until > now);
+  return { level: ch?.level ?? srv?.level ?? 'mentions', muted };
+}
+
+/** Quem pôs este canal (ou o servidor dele) em "todas as mensagens" e não silenciou (candidatos ao push de canal). */
+export function allLevelUsers(serverId: string, channelId: string): string[] {
+  const ids = all<{ user_id: string }>("SELECT DISTINCT user_id FROM notify_levels WHERE target_id IN (?, ?) AND level = 'all'", serverId, channelId);
+  return ids.map((r) => r.user_id).filter((id) => {
+    const e = effectiveLevel(id, serverId, channelId);
+    return e.level === 'all' && !e.muted;
+  });
+}
+
 function levelsOf(userId: string) {
   const out: Record<string, { level: NotifyLevel | null; mutedUntil: number | null }> = {};
   for (const r of all<{ target_id: string; level: NotifyLevel | null; muted_until: number | null }>('SELECT * FROM notify_levels WHERE user_id = ?', userId)) {

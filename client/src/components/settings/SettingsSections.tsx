@@ -1,6 +1,7 @@
 import { Bell, BellOff, Check, ImagePlus, LogOut, RotateCcw, Trash2, Volume2, Zap } from 'lucide-react';
 import { notifySettings, receiveNudge } from '../../lib/nudge';
 import { STATUSES, STATUS_INFO, asStatus } from '../../lib/status';
+import { currentSubscription, disablePush, enablePush, needsInstallForPush, pushSupported } from '../../lib/push';
 import { closeAskDisabled, setCloseAsk } from '../../lib/closeGuard';
 import { deliverNotice } from '../../lib/notify';
 import { playNotify } from '../../lib/sounds';
@@ -590,6 +591,8 @@ export function Notifications() {
           </div>
         )}
       </div>
+
+      {!desktop && <PushDeviceSection />}
 
       <div>
         <div className="mb-2 flex items-center justify-between">
@@ -1351,6 +1354,65 @@ export function DevTab() {
           a hora exata de um problema, até com o jogo aberto. Ao parar, um arquivo .json é salvo para anexar numa issue.
         </p>
         <LocalRecordControls className="rounded-2xl bg-surface-0 p-3" />
+      </div>
+    </div>
+  );
+}
+
+/** Push neste aparelho: ligar/desligar as notificações do sistema com o Concord fechado (ver lib/push.ts). */
+function PushDeviceSection() {
+  const [state, setState] = useState<'loading' | 'on' | 'off' | 'denied' | 'unsupported'>('loading');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!pushSupported()) return setState('unsupported');
+    if (Notification.permission === 'denied') return setState('denied');
+    void currentSubscription().then((s) => setState(s && Notification.permission === 'granted' ? 'on' : 'off'));
+  }, []);
+
+  async function toggle(on: boolean) {
+    setBusy(true);
+    try {
+      if (on) {
+        const r = await enablePush();
+        setState(r === 'ok' ? 'on' : r === 'denied' ? 'denied' : 'unsupported');
+      } else {
+        await disablePush();
+        setState('off');
+      }
+    } catch (err) {
+      toast.error(err);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div>
+      <SectionTitle>Neste aparelho</SectionTitle>
+      <div className="rounded-2xl bg-surface-0">
+        {state === 'unsupported' && needsInstallForPush() ? (
+          <div className="space-y-1 p-4">
+            <div className="text-sm font-semibold">Notificações com o Concord fechado</div>
+            <p className="text-xs text-fg-muted">
+              No iPhone, elas funcionam com o Concord na Tela de Início: no Safari, toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>.
+              Abra o Concord por lá e ligue aqui.
+            </p>
+          </div>
+        ) : state === 'unsupported' ? (
+          <p className="p-4 text-xs text-fg-muted">Este navegador não recebe notificações com o Concord fechado.</p>
+        ) : (
+          <div className="flex items-center justify-between gap-4 p-4">
+            <div>
+              <div className="text-sm font-semibold">Receber notificações neste aparelho</div>
+              <div className="text-xs text-fg-muted">
+                {state === 'denied'
+                  ? 'As notificações estão bloqueadas para o Concord. Libere nos ajustes do celular (ou do navegador) e volte aqui.'
+                  : 'Menções, mensagens diretas e respostas nas suas threads, mesmo com o Concord fechado ou a tela bloqueada.'}
+              </div>
+            </div>
+            <Toggle checked={state === 'on'} onChange={(v) => void toggle(v)} disabled={busy || state === 'loading' || state === 'denied'} />
+          </div>
+        )}
       </div>
     </div>
   );

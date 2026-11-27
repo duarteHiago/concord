@@ -361,6 +361,19 @@ db.exec(`
 `);
 addColumn('users', 'is_webhook', 'INTEGER NOT NULL DEFAULT 0');
 
+// Push no celular (ver push.ts): um aparelho por linha, com o endereço do serviço de push e as chaves.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_ok_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+`);
+
 // Threads (ver threads.ts): uma resposta numa thread é uma mensagem comum do canal com `thread_id` = a mensagem que
 // abriu a thread. Ela não aparece na lista do canal (só dentro da thread), a não ser com `also_channel` ("também
 // enviar para o canal"). Apagar a mensagem que abriu a thread leva as respostas junto.

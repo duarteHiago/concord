@@ -75,7 +75,8 @@ import { registerDiagnosticRoutes } from './diagnostics.ts';
 import { registerFeedbackRoutes } from './feedback.ts';
 import { signFileUrl } from './fileLinks.ts';
 import { registerForumRoutes } from './forum.ts';
-import { markRead, recordMentions, registerUnreadRoutes } from './unreads.ts';
+import { allLevelUsers, effectiveLevel, markRead, recordMentions, registerUnreadRoutes } from './unreads.ts';
+import { absoluteUrl, pushPreview, pushTo, registerPushRoutes } from './push.ts';
 import { onReply, recount, registerThreadRoutes, threadJson, threadRoot } from './threads.ts';
 import { registerPublicWebhookRoutes, registerWebhookRoutes, type WebhookFile } from './webhooks.ts';
 import { areFriends, blockedBetween, mutualFriends, registerFriendRoutes, relationOf } from './friends.ts';
@@ -2647,6 +2648,7 @@ async function deliverWebhookMessage(channel: ChannelRow, authorId: string, cont
   if (!root) await emitToChannel(channel, 'message:new', msg);
   const mentioned = content ? notifyMentions(channel, authorId, content, msg) : [];
   if (root) await onReply(channel, root, authorId, msg, mentioned);
+  else pushAllLevel(channel, authorId, msg, mentioned);
   return msg;
 }
 
@@ -2706,6 +2708,7 @@ api.post('/channels/:id/messages', async (req, res) => {
   if (!root || alsoChannel) await emitToChannel(channel, 'message:new', msg);
   const mentioned = notifyMentions(channel, me, content, msg);
   if (root) await onReply(channel, root, me, msg, mentioned);
+  if (!root || alsoChannel) pushAllLevel(channel, me, msg, mentioned);
   // quem escreve já leu até a própria mensagem
   if (!root || alsoChannel) markRead(me, channel.id, msg.createdAt);
   jamFromChat(channel, me, content);
@@ -2818,6 +2821,34 @@ api.delete('/channels/:id/jam', humansOnly, (req, res) => {
 });
 
 /** @usuario avisa a pessoa; @todos avisa todo mundo que vê o canal (precisa de "Mencionar todos"). */
+/**
+ * Push no celular de uma mensagem de canal (ver push.ts) para essas pessoas, respeitando o silenciar e o "nada" de
+ * cada uma. Título "Ana · #incidentes" (ou "· thread em #incidentes"), texto = o começo da mensagem.
+ */
+function pushChannelMessage(userIds: string[], channel: ChannelRow, msg: ReturnType<typeof messageJson>) {
+  if (!userIds.length) return;
+  const name = (msg.data as { webhook?: { name?: string } } | null)?.webhook?.name || msg.author.displayName;
+  for (const id of userIds) {
+    const { level, muted } = effectiveLevel(id, channel.server_id, channel.id);
+    if (muted || level === 'none') continue;
+    pushTo(id, {
+      title: msg.threadId ? `${name} · thread em #${channel.name}` : `${name} · #${channel.name}`,
+      body: pushPreview(msg.content, msg.attachments.length),
+      tag: msg.threadId ? `th:${msg.threadId}` : `ch:${channel.id}`,
+      icon: absoluteUrl(msg.author.avatarUrl),
+      target: { serverId: channel.server_id, channelId: channel.id, ...(msg.threadId ? { threadId: msg.threadId } : {}) },
+    });
+  }
+}
+
+/** Push de canal em "todas as mensagens": quem escolheu isso, vê o canal e não é o autor nem foi mencionado. */
+function pushAllLevel(channel: ChannelRow, authorId: string, msg: ReturnType<typeof messageJson>, mentioned: string[]) {
+  const ids = allLevelUsers(channel.server_id, channel.id).filter(
+    (id) => id !== authorId && !mentioned.includes(id) && has(channelPermissions(channel, id), P.VIEW_CHANNEL),
+  );
+  pushChannelMessage(ids, channel, msg);
+}
+
 function notifyMentions(channel: ChannelRow, authorId: string, content: string, msg: ReturnType<typeof messageJson>): string[] {
   const everyone = /(^|\s)@(todos|everyone|all)\b/i.test(content) && has(channelPermissions(channel, authorId), P.MENTION_EVERYONE);
   const names = [...content.matchAll(/(^|\s)@([a-zA-Z0-9_.]{3,32})/g)].map((m) => m[2].toLowerCase());
@@ -2841,6 +2872,11 @@ function notifyMentions(channel: ChannelRow, authorId: string, content: string, 
   for (const t of targets) {
     emitToUser(t.id, 'mention', { message: msg, serverId: server.id, serverName: server.name, channelName: channel.name, everyone });
   }
+  pushChannelMessage(
+    targets.map((t) => t.id),
+    channel,
+    msg,
+  );
   return targets.map((t) => t.id);
 }
 
@@ -3549,6 +3585,14 @@ function insertDmMessage(
   const fresh = get<DmChannelRow>('SELECT * FROM dm_channels WHERE id = ?', dm.id)!;
   const msg = messageJson(get<MessageWithAuthor>(`${DM_SELECT} WHERE m.id = ?`, id)!);
   deliverDm(fresh, 'dm:message', msg);
+  // push no celular de quem recebe (mensagem direta sempre avisa, menos no "Não perturbe")
+  pushTo(otherOf(dm, me), {
+    title: msg.author.displayName,
+    body: pushPreview(msg.content, msg.attachments.length),
+    tag: `dm:${dm.id}`,
+    icon: absoluteUrl(msg.author.avatarUrl),
+    target: { dmId: dm.id },
+  });
   return msg;
 }
 
@@ -3768,6 +3812,7 @@ api.get('/me/claimed-patches', (_req, res) => {
 registerForumRoutes(api, authorJson);
 registerUnreadRoutes(api);
 registerThreadRoutes(api);
+registerPushRoutes(api);
 registerWebhookRoutes(api);
 registerFriendRoutes(api, userJson);
 registerStickerPackRoutes(api);

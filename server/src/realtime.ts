@@ -164,6 +164,11 @@ export function leaveServerRoom(userId: string, serverId: string) {
   refreshPresence(userId);
 }
 
+/** O Concord está à vista (aba/app na tela) em algum aparelho da pessoa? Aí o push não vai (aparece o aviso do app). */
+export function userVisible(userId: string): boolean {
+  return socketsOf(userId).some((s) => s.data.visible === true);
+}
+
 function socketsOf(userId: string): Socket[] {
   return [...io.sockets.sockets.values()].filter((s) => s.data.userId === userId);
 }
@@ -429,7 +434,7 @@ export function liveStats() {
 const KNOWN_SOCKET_EVENTS = new Set(['voice:join', 'voice:update', 'voice:leave', 'voice:recording', 'voice:codec-fail', 'voice:codec-request', 'reaction', 'activity:set', 'typing', 'dev:ping', 'plaza:enter', 'plaza:leave', 'plaza:move', 'plaza:say', 'plaza:emote', 'plaza:avatar', 'plaza:avatars', 'plaza:door', 'plaza:floor',
   'plaza:hall',
   'plaza:stairs',
-  'plaza:room', 'plaza:table', 'plaza:drink', 'plaza:peek', 'plaza:peek-renew', 'plaza:peek-stop', 'plaza:close-table']);
+  'plaza:room', 'plaza:table', 'plaza:drink', 'plaza:peek', 'plaza:peek-renew', 'plaza:peek-stop', 'plaza:close-table', 'app:visible']);
 
 // Faxina das salas de voz. O LiveKit aceita qualquer um com token válido, mas só vale estar numa sala quem entrou
 // pelo app (aparece na lista dela) e ainda pode conectar nela. Sai quem foi expulso do servidor, perdeu a
@@ -719,6 +724,11 @@ export function setupRealtime(httpServer: HttpServer) {
       } catch {
         // canal inexistente
       }
+    });
+
+    // o app conta quando fica à vista ou vai para segundo plano (o push só vai sem o Concord na tela, ver push.ts)
+    socket.on('app:visible', (visible: unknown) => {
+      socket.data.visible = visible === true;
     });
 
     socket.on('disconnect', () => {

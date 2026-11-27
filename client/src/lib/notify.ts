@@ -54,12 +54,22 @@ export function deliverNotice(n: NoticeInput, sound: 'message' | 'mention' | nul
     useNotices.getState().push(n);
     return;
   }
-  const native = new Notification(title, { body, icon: absolute(n.avatar.url) ?? '/icon-192.png', tag: JSON.stringify(n.target) });
-  native.onclick = () => {
-    window.focus();
-    openNoticeTarget(n.target);
-    native.close();
-  };
+  const options = { body, icon: absolute(n.avatar.url) ?? '/icon-192.png', badge: '/badge-96.png', tag: JSON.stringify(n.target), data: { target: n.target } };
+  // pelo service worker quando dá (o Chrome do Android só aceita assim; o toque cai em public/push-sw.js)
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    void navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, options)).catch(() => {});
+    return;
+  }
+  try {
+    const native = new Notification(title, options);
+    native.onclick = () => {
+      window.focus();
+      openNoticeTarget(n.target);
+      native.close();
+    };
+  } catch {
+    useNotices.getState().push(n);
+  }
 }
 
 /** Abre a conversa de um aviso (clique no cartão, na janela por cima ou na notificação do sistema). */
