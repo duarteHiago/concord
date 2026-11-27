@@ -23,7 +23,7 @@
   "build": {
     "appId": "com.duartehiago.concord",
     "productName": "Concord",
-    "files": ["main.cjs", "preload.cjs", "offline.html", "intro.html", "update-signature.cjs", "update-key.pub", "build/icon.png", "build/icon.ico"],
+    "files": ["main.cjs", "preload.cjs", "offline.html", "update-signature.cjs", "update-key.pub", "build/icon.png", "build/icon.ico"],
     "directories": { "output": "release" },
     "publish": [{ "provider": "generic", "url": "https://concord-community.com/downloads/" }],
     "win": {

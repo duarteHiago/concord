@@ -45,7 +45,6 @@ contextBridge.exposeInMainWorld('concordDesktop', {
   setGlobalShortcuts: (map) => ipcRenderer.invoke('concord:global-shortcuts', map),
   onShortcut: listen('concord:shortcut'),
   reload: () => ipcRenderer.invoke('concord:reload'),
-  intro: (on) => ipcRenderer.invoke('concord:intro', on).catch(() => null),
   googleAuth: (link) => ipcRenderer.invoke('concord:google-auth', link),
   googleAuthCancel: () => ipcRenderer.invoke('concord:google-auth-cancel'),
 });
