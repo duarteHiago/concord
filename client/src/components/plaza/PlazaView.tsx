@@ -2,6 +2,7 @@
 // leva o boneco até ela e entra na call), a TV acende quando alguém transmite, e a conversa é por balão,
 // só para quem está na praça. Quem está numa call aparece sentado, mesmo sem ter aberto a praça.
 import { DoorOpen, Eye, EyeOff, Hammer, Hand, LogOut, MonitorUp, Maximize2, MessageSquare, Mic, MicOff, Minus, Plus, Headphones, HeadphoneOff, Shirt, Smile, X, Send, Crosshair, Lock, Radio } from 'lucide-react';
+import { isBackground } from '../../lib/economy';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { P, has } from '../../../../shared/permissions.ts';
 import {
@@ -403,6 +404,8 @@ export default function PlazaView() {
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
+      // janela sem foco (jogando no outro monitor): ~15 quadros/s em vez da taxa do monitor (ver lib/economy.ts)
+      if (isBackground() && now - last < 66) return;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const w = world.current;

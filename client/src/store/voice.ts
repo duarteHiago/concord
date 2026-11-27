@@ -462,6 +462,8 @@ export const useVoice = create<VoiceStore>((set, get) => {
   // Host: troca o codec da tela sem parar a captura. Enquanto isso, despublicar a faixa não pode
   // parecer "parou de transmitir" (áudio, foco, aviso de transmissão para a sala).
   let republishing = false;
+  /** o próprio app está parando a transmissão (botão, troca de fonte, moderador): não é "parou sozinha" */
+  let stoppingShare = false;
   let codecPoll: ReturnType<typeof setInterval> | undefined;
 
   /** Host em H.265 com troca permitida: o servidor pode ter passado todos para H.264 (alguém sem suporte entrou). */
@@ -645,6 +647,16 @@ export const useVoice = create<VoiceStore>((set, get) => {
           void stopDesktopShareAudio();
           clearInterval(codecPoll);
           set({ shareCodec: null, codecRequests: [] });
+          // Não foi o "parar" do Concord: o navegador ou o sistema encerrou a captura (botão "Parar de compartilhar"
+          // do navegador, a janela capturada fechou ou foi recriada — jogo trocando de tela cheia —, o macOS
+          // retirou a permissão). O navegador não deixa voltar sozinho (precisa de um clique); o aviso oferece.
+          if (!stoppingShare && room.state === ConnectionState.Connected) {
+            const ended = pub.track?.mediaStreamTrack.readyState === 'ended';
+            console.warn('[concord] a transmissão de tela parou por fora do app', { trackEnded: ended, label: pub.track?.mediaStreamTrack.label });
+            toast.action('Sua transmissão de tela parou: o navegador ou o sistema encerrou a captura.', 'Transmitir de novo', () =>
+              void import('./app').then(({ useApp }) => useApp.getState().openModal({ type: 'shareScreen' })),
+            );
+          }
         }
         if (pub.source === Track.Source.ScreenShare && get().focus === `${room.localParticipant.identity}:screen`) set({ focus: null });
         syncLocalFlags();
@@ -963,8 +975,13 @@ export const useVoice = create<VoiceStore>((set, get) => {
     stopShare: async () => {
       const room = get().room;
       if (!room) return;
-      await stopDesktopShareAudio();
-      await room.localParticipant.setScreenShareEnabled(false);
+      stoppingShare = true;
+      try {
+        await stopDesktopShareAudio();
+        await room.localParticipant.setScreenShareEnabled(false);
+      } finally {
+        stoppingShare = false;
+      }
       clearInterval(codecPoll);
       set({ shareCodec: null, codecRequests: [] });
       syncLocalFlags();

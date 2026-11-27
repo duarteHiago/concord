@@ -8,6 +8,7 @@ import { StagingBadge } from './components/StagingBadge';
 import { TitleBar } from './components/TitleBar';
 import './index.css';
 import './lib/pwa';
+import './lib/economy';
 import { getToken } from './lib/api';
 import { applyTheme, cachedTheme, DEFAULT_THEME } from './lib/theme';
 import { STAGING, markStagingTitle } from './lib/staging';

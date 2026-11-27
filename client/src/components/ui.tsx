@@ -342,7 +342,10 @@ export function Toasts() {
       {toasts.map((t) => (
         <button
           key={t.id}
-          onClick={() => dismiss(t.id)}
+          onClick={() => {
+            t.action?.run();
+            dismiss(t.id);
+          }}
           className={cx(
             'pointer-events-auto animate-slide-up rounded-full border px-5 py-2.5 text-sm font-semibold shadow-2xl backdrop-blur',
             t.kind === 'error' && 'border-danger/40 bg-red-950/90 text-red-100',
@@ -351,6 +354,7 @@ export function Toasts() {
           )}
         >
           {t.message}
+          {t.action && <span className="ml-2 font-bold text-accent underline underline-offset-2">{t.action.label}</span>}
         </button>
       ))}
     </div>
